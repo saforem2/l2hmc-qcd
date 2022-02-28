@@ -133,7 +133,7 @@ def update_wandb_config(
         cfg: DictConfig,
         id: Optional[str] = None,
         debug: Optional[bool] = None,
-        job_type: Optional[str] = None,
+        # job_type: Optional[str] = None,
         wbconfig: Optional[dict[Any, Any] | list[Any] | str] = None,
         wbdir: Optional[os.PathLike] = None,
 ) -> None:
@@ -149,8 +149,8 @@ def update_wandb_config(
     if id is not None:
         cfg.wandb.setup.update({'id': id})
 
-    if job_type is not None:
-        cfg.wandb.setup.update({'job_type': job_type})
+    # if job_type is not None:
+    #     cfg.wandb.setup.update({'job_type': job_type})
 
     if wbdir is not None:
         cfg.wandb.setup.update({'dir': Path(wbdir).as_posix()})
@@ -183,15 +183,15 @@ def eval(
         job_type: str,
         run: Any = None
 ) -> dict:
+    """Evaluate model (nested as `trainer.model`)"""
     therm_frac = cfg.get('therm_frac', 0.2)
     nchains = cfg.get('nchains', -1)
-    # job_type = cfg.wandb.setup.job_type
-    # objs = _setup(cfg=cfg, trainer=trainer, job_type=job_type)
     objs = get_summary_writer(cfg, trainer, job_type=job_type)
+    # job_type = cfg.wandb.setup.job_type
 
     eval_output = trainer.eval(run=run,
                                writer=objs['writer'],
-                               hmc=(job_type == 'hmc'),
+                               job_type=job_type,
                                width=cfg.get('width', None))
 
     eval_dset = eval_output['history'].get_dataset(therm_frac=therm_frac)
@@ -211,16 +211,12 @@ def eval(
     if objs['writer'] is not None:
         objs['writer'].close()
 
-    if objs['run'] is not None:
-        objs['run'].finish()
-
     return eval_output
 
 
 def train(cfg: DictConfig, trainer: Trainer, run: Any = None):
-    # run.watch(objs['dynamics'], objs['loss_fn'], log='all')
-    # objs = _setup(cfg, trainer, job_type='train')
     objs = get_summary_writer(cfg, trainer, job_type='train')
+    # run.watch(objs['dynamics'], objs['loss_fn'], log='all')
     train_output = trainer.train(run=run,
                                  writer=objs['writer'],
                                  train_dir=objs['dir'],
@@ -243,9 +239,6 @@ def train(cfg: DictConfig, trainer: Trainer, run: Any = None):
 
     if objs['writer'] is not None:
         objs['writer'].close()
-
-    # if objs['run'] is not None:
-    #     objs['run'].finish()
 
     return train_output
 
