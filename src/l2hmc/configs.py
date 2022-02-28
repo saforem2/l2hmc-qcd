@@ -11,7 +11,7 @@ import json
 import os
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple  # NamedTuple,
+from typing import Dict, List, Optional, Tuple
 
 from hydra.core.config_store import ConfigStore
 import numpy as np
@@ -247,6 +247,24 @@ class DynamicsConfig(BaseConfig):
         assert len(self.xshape) == 4
         self.nchains, self.nt, self.nx, self.dim = self.xshape
         self.xdim = int(np.cumprod(self.xshape[1:])[-1])
+
+
+# @dataclass
+# class wandbConfig:
+#     entity: str
+#     project: str
+#     dir: Optional[str] = None
+#     name: Optional[str] = None
+#     group: Optional[str] = None
+#     resume: Optional[str] = None
+#     config: Optional[dict] = None
+#     job_type: Optional[str] = None
+#     tags: Optional[list[str]] = None
+#     tensorboard: Optional[str] = None
+#     sync_tensorboard: Optional[bool] = None
+
+#     def set_job_type(self, job_type: str) -> None:
+#         self.job_type = job_type
 
 
 @dataclass
