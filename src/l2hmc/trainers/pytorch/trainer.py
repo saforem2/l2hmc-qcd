@@ -9,7 +9,7 @@ import logging
 import os
 from pathlib import Path
 import time
-from typing import Callable, Any
+from typing import Callable, Any, Optional
 
 from accelerate import Accelerator
 from accelerate.utils import extract_model_from_parallel
@@ -87,7 +87,6 @@ class Trainer:
             keep: str | list[str] = None,
             skip: str | list[str] = None,
             aux_weight: float = 0.0,
-            # evals_per_step: int = 1,
             dynamics_config: DynamicsConfig = None,
     ) -> None:
         self.steps = steps
@@ -116,6 +115,7 @@ class Trainer:
 
         self.history = BaseHistory(steps=steps)
         self.eval_history = BaseHistory()
+        self.hmc_history = BaseHistory()
         # evals_per_step = self.nlf * steps.log
         # evals_per_step = self.dynamics.config.nleapfrog * steps.log
         self.timer = StepTimer(evals_per_step=self.nlf)
@@ -202,9 +202,10 @@ class Trainer:
             skip: str | list[str] = None,
             width: int = 150,
             # eval_dir: os.PathLike = None,
-            run: Any = None,
-            writer: Any = None,
-            hmc: bool = False,
+            run: Optional[Any] = None,
+            writer: Optional[Any] = None,
+            job_type: Optional[str] = 'eval',
+            # hmc: bool = False,
     ) -> dict:
         summaries = []
         self.dynamics.eval()
@@ -218,11 +219,9 @@ class Trainer:
             x = random_angle(self.xshape)
             x = x.reshape(x.shape[0], -1)
 
-        if hmc:
-            prefix = 'hmc'
+        if job_type == 'hmc':
             eval_fn = self.hmc_step
         else:
-            prefix = 'eval'
             eval_fn = self.eval_step
 
         summaries = []
@@ -247,12 +246,12 @@ class Trainer:
                     record.update(self.metrics_to_numpy(metrics))
                     if writer is not None:
                         update_summaries(step=step,
-                                         prefix=prefix,
+                                         prefix=job_type,
                                          metrics=record,
                                          writer=writer)
                         writer.flush()
                     if run is not None:
-                        run.log({f'wandb/{prefix}': record})
+                        run.log({f'wandb/{job_type}': record})
 
                     avgs = self.eval_history.update(record)
                     summary = summarize_dict(avgs)
@@ -285,9 +284,9 @@ class Trainer:
 
     def train_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
         xinit, beta = inputs
-        xinit = xinit.to(self.accelerator.device)
-
-        xout, metrics = self.dynamics((to_u1(xinit), beta))
+        xinit = to_u1(xinit).to(self.accelerator.device)
+        xout, metrics = self.dynamics((xinit, beta))
+        xout = to_u1(xout)
         xprop = to_u1(metrics.pop('mc_states').proposed.x)
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
 
@@ -302,18 +301,13 @@ class Trainer:
 
         self.optimizer.zero_grad()
         self.accelerator.backward(loss)
-        # loss.backward()
         self.optimizer.step()
-        lmetrics = self.loss_fn.lattice_metrics(xinit=to_u1(xinit),
-                                                xout=to_u1(xout))
-        metrics.update(lmetrics)
-        record = {
-            'loss': loss.detach().cpu().numpy(),
-        }
-        for key, val in metrics.items():
-            record[key] = val
+        metrics.update(self.loss_fn.lattice_metrics(xinit=xinit, xout=xout))
+        # lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
+        # metrics.update(lmetrics)
+        metrics.update({'loss': loss.detach().cpu().numpy()})
 
-        return to_u1(xout).detach(), record
+        return xout.detach(), metrics
 
     def save_ckpt(self, era, epoch, train_dir, **kwargs) -> None:
         dynamics = extract_model_from_parallel(self.dynamics)
