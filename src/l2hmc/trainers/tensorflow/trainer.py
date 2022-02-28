@@ -9,7 +9,7 @@ from math import pi as PI
 import os
 from pathlib import Path
 import time
-from typing import Callable, Any
+from typing import Callable, Any, Optional
 # import wandb
 
 import horovod.tensorflow as hvd
@@ -200,6 +200,7 @@ class Trainer:
         return manager
 
     def draw_x(self) -> Tensor:
+        """Draw `x` """
         x = tf.random.uniform(self.dynamics.xshape,
                               *(-PI, PI), dtype=TF_FLOAT)
         x = tf.reshape(x, (x.shape[0], -1))
@@ -264,6 +265,18 @@ class Trainer:
 
         return m
 
+    def should_log(self, epoch):
+        return (
+            epoch % self.steps.log == 0
+            and self.rank == 0
+        )
+
+    def should_print(self, epoch):
+        return (
+            epoch % self.steps.print == 0
+            and self.rank == 0
+        )
+
     def hmc_step(self, inputs: tuple[Tensor, Tensor]) -> tuple[Tensor, dict]:
         xi, beta = inputs
         xi = to_u1(xi)
@@ -289,46 +302,6 @@ class Trainer:
         metrics.update({'loss': loss})
 
         return to_u1(xout), metrics
-
-    def train_step(
-            self,
-            inputs: tuple[Tensor, float],
-            # first_step: bool = False
-    ) -> tuple[Tensor, dict]:
-        xinit, beta = inputs
-        record = {'loss': None}
-        with tf.GradientTape() as tape:
-            tape.watch(xinit)
-            xout, metrics = self.dynamics((to_u1(xinit), beta), training=True)
-            xprop = to_u1(metrics.pop('mc_states').proposed.x)
-            loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
-
-            if self.aux_weight > 0:
-                yinit = to_u1(self.draw_x())
-                _, metrics_ = self.dynamics((yinit, beta), training=True)
-                yprop = to_u1(metrics_.pop('mc_states').proposed.x)
-                aux_loss = self.aux_weight * self.loss_fn(x_init=yinit,
-                                                          x_prop=yprop,
-                                                          acc=metrics_['acc'])
-                loss = (loss + aux_loss) / (1. + self.aux_weight)
-
-            record['loss'] = loss
-            record.update(metrics)
-
-        tape = hvd.DistributedGradientTape(tape, compression=self.compression)
-        grads = tape.gradient(loss, self.dynamics.trainable_variables)
-        updates = zip(grads, self.dynamics.trainable_variables)
-        self.optimizer.apply_gradients(updates)
-
-        # bconst = tf.cast(beta, dtype=TF_FLOAT)
-        lmetrics = self.loss_fn.lattice_metrics(xinit=to_u1(xinit),
-                                                xout=to_u1(xout))
-        record.update(lmetrics)
-        # if first_step:
-        #     hvd.broadcast_variables(self.dynamics.variables, root_rank=0)
-        #     hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
-
-        return to_u1(xout), record
 
     def eval(
             self,
@@ -373,10 +346,10 @@ class Trainer:
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
 
         if compile:
-            self.dynamics.compile(
-                loss=self.loss_fn,
-                experimental_run_tf_function=False,
-            )
+            # self.dynamics.compile(
+            #     loss=self.loss_fn,
+            #     experimental_run_tf_function=False,
+            # )
             eval_step = tf.function(eval_fn, jit_compile=jit_compile)
         else:
             eval_step = eval_fn
@@ -427,17 +400,45 @@ class Trainer:
             'tables': tables,
         }
 
-    def should_log(self, epoch):
-        return (
-            epoch % self.steps.log == 0
-            and self.rank == 0
-        )
+    def train_step(
+            self,
+            inputs: tuple[Tensor, float],
+            first_step: Optional[bool] = None,
+    ) -> tuple[Tensor, dict]:
+        xinit, beta = inputs
+        record = {'loss': None}
+        with tf.GradientTape() as tape:
+            tape.watch(xinit)
+            xout, metrics = self.dynamics((to_u1(xinit), beta), training=True)
+            xprop = to_u1(metrics.pop('mc_states').proposed.x)
+            loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
 
-    def should_print(self, epoch):
-        return (
-            epoch % self.steps.print == 0
-            and self.rank == 0
-        )
+            if self.aux_weight > 0:
+                yinit = to_u1(self.draw_x())
+                _, metrics_ = self.dynamics((yinit, beta), training=True)
+                yprop = to_u1(metrics_.pop('mc_states').proposed.x)
+                aux_loss = self.aux_weight * self.loss_fn(x_init=yinit,
+                                                          x_prop=yprop,
+                                                          acc=metrics_['acc'])
+                loss = (loss + aux_loss) / (1. + self.aux_weight)
+
+            record['loss'] = loss
+            record.update(metrics)
+
+        tape = hvd.DistributedGradientTape(tape, compression=self.compression)
+        grads = tape.gradient(loss, self.dynamics.trainable_variables)
+        updates = zip(grads, self.dynamics.trainable_variables)
+        self.optimizer.apply_gradients(updates)
+
+        # bconst = tf.cast(beta, dtype=TF_FLOAT)
+        lmetrics = self.loss_fn.lattice_metrics(xinit=to_u1(xinit),
+                                                xout=to_u1(xout))
+        record.update(lmetrics)
+        if first_step:
+            hvd.broadcast_variables(self.dynamics.variables, root_rank=0)
+            hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
+
+        return to_u1(xout), record
 
     def train(
             self,
@@ -466,23 +467,30 @@ class Trainer:
 
         if compile:
             self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
-            train_step = tf.function(self.train_step, jit_compile=jit_compile)
+            train_step = tf.function(  # type: Callable
+                self.train_step,
+                jit_compile=jit_compile
+            )
         else:
             train_step = self.train_step
 
-        x, _ = self.dynamics((x, tf.constant(1.)), training=True)
+        # assert train_step is not None and callable(train_step)
+        _ = train_step((x, tf.constant(1.)), first_step=True)
+
+        # x, _ = self.dynamics((x, tf.constant(1.)), training=True)
         # gstep = self.optimizer.iterations.numpy()
         # writer = self.setup_FileWriter(Path(train_dir))
         # if self.rank == 0 and writer is not None:
-        if writer is not None:
-            writer.set_as_default()
+        # if writer is not None:
+        #     writer.set_as_default()
 
         xarr = []
         tables = {}
         metrics = {}
         summaries = []
 
-        gstep = self.optimizer.iterations.numpy()
+        # gstep = self.optimizer.iterations  # .numpy()
+        gstep = 0
         for era in range(self.steps.nera):
             beta = tf.constant(self.schedule.betas[str(era)])
             if self.rank == 0:
@@ -526,10 +534,10 @@ class Trainer:
                         summaries.append(summary)
                         if epoch == 0:
                             table = add_columns(avgs, table)
-                            hvd.broadcast_variables(self.dynamics.variables,
-                                                    root_rank=0)
-                            hvd.broadcast_variables(self.optimizer.variables(),
-                                                    root_rank=0)
+                            # hvd.broadcast_variables(self.dynamics.variables,
+                            #                         root_rank=0)
+                            # hvd.broadcast_variables(self.optimizer.variables(),
+                            #                         root_rank=0)
 
                         if self.should_print(epoch):
                             table.add_row(*[f'{v}' for _, v in avgs.items()])
