@@ -8,7 +8,9 @@ import datetime
 import logging
 import os
 from pathlib import Path
+from typing import Any
 import joblib
+# import pandas as pd
 
 from omegaconf import DictConfig
 from rich.table import Table
@@ -74,8 +76,11 @@ def save_dataset(
 def save_logs(
         tables: dict[str, Table],
         summaries: list[str] = None,
-        logdir: os.PathLike = None
+        logdir: os.PathLike = None,
+        job_type: str = None,
+        run: Any = None,
 ) -> None:
+    job_type = 'job' if job_type is None else job_type
     if logdir is None:
         logdir = Path(os.getcwd()).joinpath('logs')
     else:
@@ -90,10 +95,10 @@ def save_logs(
     tdir = table_dir.joinpath('txt')
     hdir = table_dir.joinpath('html')
 
-    hfile = hdir.joinpath('training_table.html')
+    hfile = hdir.joinpath('table.html')
     hfile.parent.mkdir(exist_ok=True, parents=True)
 
-    tfile = tdir.joinpath('training_table.txt')
+    tfile = tdir.joinpath('table.txt')
     tfile.parent.mkdir(exist_ok=True, parents=True)
 
     for _, table in tables.items():
@@ -103,6 +108,12 @@ def save_logs(
         with open(hfile.as_posix(), 'a') as f:
             f.write(html)
 
+        # prefix = 'tables' if job_type is None else f'tables/{job_type}'
+        # grid = table.grid()
+        # if run is not None:
+        #     run.log({prefix: wandb.Html(html)})
+
+        # if run is not None:
         # tfile = tdir.joinpath(f'era{era}.txt')
         text = console.export_text()
         with open(tfile, 'a') as f:
