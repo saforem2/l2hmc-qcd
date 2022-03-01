@@ -7,8 +7,7 @@ from __future__ import absolute_import, annotations, division, print_function
 import logging
 
 import hydra
-from omegaconf import DictConfig, OmegaConf
-import rich
+from omegaconf import DictConfig
 
 log = logging.getLogger(__name__)
 
@@ -39,7 +38,7 @@ def train_pytorch(cfg: DictConfig) -> dict:
 @hydra.main(config_path='./conf', config_name='config')
 def main(cfg: DictConfig) -> None:
     # log.info(OmegaConf.create(cfg).pretty())
-    rich.print(OmegaConf.to_container(cfg, resolve=True))
+    # rich.print(OmegaConf.to_container(cfg, resolve=True))
     framework = cfg.get('framework', None)
     assert framework is not None, (
         'Framework must be specified, one of: [pytorch, tensorflow]'

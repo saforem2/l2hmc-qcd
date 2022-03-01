@@ -174,77 +174,93 @@ def get_summary_writer(
     if trainer.accelerator.is_local_main_process:
         writer = SummaryWriter(summary_dir.as_posix())
 
-    return {'dir': jobdir, 'writer': writer}
+    return {'jobdir': jobdir, 'writer': writer}
 
 
 def eval(
         cfg: DictConfig,
         trainer: Trainer,
         job_type: str,
-        run: Any = None
+        run: Optional[Any] = None,
+        writer: Optional[Any] = None,
+        jobdir: Optional[os.PathLike] = None,
 ) -> dict:
     """Evaluate model (nested as `trainer.model`)"""
-    therm_frac = cfg.get('therm_frac', 0.2)
     nchains = cfg.get('nchains', -1)
-    objs = get_summary_writer(cfg, trainer, job_type=job_type)
+    therm_frac = cfg.get('therm_frac', 0.2)
+    if jobdir is None:
+        jobdir = cfg.get('outdir', os.getcwd()).joinpath(job_type)
+
+    assert jobdir is not None
+    jobdir = Path(jobdir)
+    # objs = get_summary_writer(cfg, trainer, job_type=job_type)
     # job_type = cfg.wandb.setup.job_type
 
     eval_output = trainer.eval(run=run,
-                               writer=objs['writer'],
+                               writer=writer,
                                job_type=job_type,
                                width=cfg.get('width', None))
 
     eval_dset = eval_output['history'].get_dataset(therm_frac=therm_frac)
     _ = analyze_dataset(eval_dset,
                         nchains=nchains,
-                        outdir=objs['dir'],
+                        outdir=jobdir,
                         title=f'{job_type}: PyTorch')
 
     if not is_interactive():
-        edir = objs['dir'].joinpath('logs')
+        edir = jobdir.joinpath('logs')
         edir.mkdir(exist_ok=True, parents=True)
         log.info(f'Saving {job_type} logs to: {edir.as_posix()}')
         save_logs(logdir=edir,
                   tables=eval_output['tables'],
                   summaries=eval_output['summaries'])
 
-    if objs['writer'] is not None:
-        objs['writer'].close()
+    if writer is not None:
+        writer.close()
 
     return eval_output
 
 
-def train(cfg: DictConfig, trainer: Trainer, run: Any = None):
-    objs = get_summary_writer(cfg, trainer, job_type='train')
-    # run.watch(objs['dynamics'], objs['loss_fn'], log='all')
+def train(
+        cfg: DictConfig,
+        trainer: Trainer,
+        run: Optional[Any] = None,
+        writer: Optional[SummaryWriter] = None,
+        jobdir: Optional[os.PathLike] = None,
+) -> dict:
+    if jobdir is None:
+        jobdir = cfg.get('outdir', os.getcwd()).joinpath('train')
+    assert jobdir is not None
+    jobdir = Path(jobdir)
     train_output = trainer.train(run=run,
-                                 writer=objs['writer'],
-                                 train_dir=objs['dir'],
+                                 writer=writer,
+                                 train_dir=jobdir,
                                  width=cfg.get('width', None))
     if trainer.accelerator.is_local_main_process:
         train_dset = train_output['history'].get_dataset()
         _ = analyze_dataset(train_dset,
-                            outdir=objs['dir'],
+                            outdir=jobdir,
                             prefix='train',
                             title='Training: PyTorch',
                             nchains=cfg.get('nchains', None))
 
         if not is_interactive():
-            tdir = objs['dir'].joinpath('logs')
+            tdir = jobdir.joinpath('logs')
             tdir.mkdir(exist_ok=True, parents=True)
             log.info(f'Saving train logs to: {tdir.as_posix()}')
             save_logs(logdir=tdir,
                       tables=train_output['tables'],
                       summaries=train_output['summaries'])
 
-    if objs['writer'] is not None:
-        objs['writer'].close()
+    if writer is not None:
+        writer.close()
 
     return train_output
 
 
 # @record
 def main(cfg: DictConfig) -> dict:
+    outputs = {}
     objs = setup(cfg)
     trainer = objs['trainer']  # type: Trainer
 
@@ -266,32 +282,30 @@ def main(cfg: DictConfig) -> dict:
     if trainer.accelerator.is_local_main_process:
         run = wandb.init(**cfg.wandb.setup)
 
-    # Train model
-    train_output = train(cfg, trainer, run=run)
+    writers = {
+        'train': get_summary_writer(cfg, trainer, job_type='train'),
+        'eval': get_summary_writer(cfg, trainer, job_type='eval'),
+        'hmc': get_summary_writer(cfg, trainer, job_type='hmc'),
+    }
 
-    hmc_output = None
-    eval_output = None
+    # Train model
+    outputs['train'] = train(cfg, trainer, run=run, **writers['train'])
     if trainer.accelerator.is_local_main_process:
         # Evaluate trained model following training and update 'job_type''
-        cfg.wandb.setup.update({
-            # 'job_type': 'eval',
-            'tags': [f'beta={cfg.annealing_schedule.beta_final:1.2f}'],
-        })
+        # cfg.wandb.setup.update({
+        #     # 'job_type': 'eval',
+        #     'tags': [f'beta={cfg.annealing_schedule.beta_final:1.2f}'],
+        # })
+        jobs = ['eval', 'hmc']
+        for job in jobs:
+            log.warning(f'Running {job}')
+            outputs[job] = eval(cfg=cfg,
+                                run=run,
+                                job_type=job,
+                                trainer=trainer,
+                                **writers[job])
 
-        log.warning('Evaluating trained model')
-        eval_output = eval(cfg=cfg, trainer=trainer, job_type='eval', run=run)
-
-        # Run generic HMC w/ same cfg for baseline comparison
-        # cfg.wandb.setup.update({'job_type': 'hmc'})
-
-        log.warning('Running generic HMC for base comparison')
-        hmc_output = eval(cfg=cfg, trainer=trainer, job_type='hmc', run=run)
-
-    return {
-        'train': train_output,
-        'eval':  eval_output,
-        'hmc': hmc_output,
-    }
+    return outputs
 
 
 @hydra.main(config_path='./conf', config_name='config')
