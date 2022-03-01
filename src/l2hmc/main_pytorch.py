@@ -163,7 +163,7 @@ def get_summary_writer(
         cfg: DictConfig,
         trainer: Trainer,
         job_type: str
-) -> dict:
+):
     """Returns SummaryWriter object for tracking summaries."""
     outdir = Path(cfg.get('outdir', os.getcwd()))
     jobdir = outdir.joinpath(job_type)
@@ -174,7 +174,7 @@ def get_summary_writer(
     if trainer.accelerator.is_local_main_process:
         writer = SummaryWriter(summary_dir.as_posix())
 
-    return {'jobdir': jobdir, 'writer': writer}
+    return writer
 
 
 def eval(
@@ -182,20 +182,18 @@ def eval(
         trainer: Trainer,
         job_type: str,
         run: Optional[Any] = None,
-        writer: Optional[Any] = None,
+        # writer: Optional[Any] = None,
         jobdir: Optional[os.PathLike] = None,
 ) -> dict:
     """Evaluate model (nested as `trainer.model`)"""
     nchains = cfg.get('nchains', -1)
     therm_frac = cfg.get('therm_frac', 0.2)
     if jobdir is None:
-        jobdir = cfg.get('outdir', os.getcwd()).joinpath(job_type)
+        jobdir = Path(cfg.get('outdir', os.getcwd())).joinpath(job_type)
 
     assert jobdir is not None
     jobdir = Path(jobdir)
-    # objs = get_summary_writer(cfg, trainer, job_type=job_type)
-    # job_type = cfg.wandb.setup.job_type
-
+    writer = get_summary_writer(cfg, trainer, job_type=job_type)
     eval_output = trainer.eval(run=run,
                                writer=writer,
                                job_type=job_type,
@@ -212,6 +210,8 @@ def eval(
         edir.mkdir(exist_ok=True, parents=True)
         log.info(f'Saving {job_type} logs to: {edir.as_posix()}')
         save_logs(logdir=edir,
+                  run=run,
+                  job_type=job_type,
                   tables=eval_output['tables'],
                   summaries=eval_output['summaries'])
 
@@ -225,13 +225,14 @@ def train(
         cfg: DictConfig,
         trainer: Trainer,
         run: Optional[Any] = None,
-        writer: Optional[SummaryWriter] = None,
+        # writer: Optional[SummaryWriter] = None,
         jobdir: Optional[os.PathLike] = None,
 ) -> dict:
     if jobdir is None:
-        jobdir = cfg.get('outdir', os.getcwd()).joinpath('train')
+        jobdir = Path(cfg.get('outdir', os.getcwd())).joinpath('train')
     assert jobdir is not None
     jobdir = Path(jobdir)
+    writer = get_summary_writer(cfg, trainer, job_type='train')
     train_output = trainer.train(run=run,
                                  writer=writer,
                                  train_dir=jobdir,
@@ -282,14 +283,8 @@ def main(cfg: DictConfig) -> dict:
     if trainer.accelerator.is_local_main_process:
         run = wandb.init(**cfg.wandb.setup)
 
-    writers = {
-        'train': get_summary_writer(cfg, trainer, job_type='train'),
-        'eval': get_summary_writer(cfg, trainer, job_type='eval'),
-        'hmc': get_summary_writer(cfg, trainer, job_type='hmc'),
-    }
-
     # Train model
-    outputs['train'] = train(cfg, trainer, run=run, **writers['train'])
+    outputs['train'] = train(cfg, trainer, run=run)
     if trainer.accelerator.is_local_main_process:
         # Evaluate trained model following training and update 'job_type''
         # cfg.wandb.setup.update({
@@ -302,8 +297,7 @@ def main(cfg: DictConfig) -> dict:
             outputs[job] = eval(cfg=cfg,
                                 run=run,
                                 job_type=job,
-                                trainer=trainer,
-                                **writers[job])
+                                trainer=trainer)
 
     return outputs
 
