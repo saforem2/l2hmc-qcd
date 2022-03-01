@@ -362,32 +362,36 @@ class Trainer:
             writer: Any = None,
             # keep: str | list[str] = None,
     ) -> dict:
-        summaries = []
-        self.dynamics.train()
-        if isinstance(skip, str):
-            skip = [skip]
+        skip = [skip] if isinstance(skip, str) else skip
         if x is None:
             x = random_angle(self.xshape, requires_grad=True)
             x = x.reshape(x.shape[0], -1)
 
         era = 0
+        gstep = 0
         epoch = 0
         tables = {}
         metrics = {}
         summaries = []
-        gstep = 0
         timer = self.timers['train']
         history = self.histories['train']
+        tkwargs = {
+            'box': box.SIMPLE,
+            'row_styles': ['dim', 'none'],
+        }
+        self.dynamics.train()
         for era in range(self.steps.nera):
+            table = Table(**tkwargs)
             beta = self.schedule.betas[str(era)]
             if self.accelerator.is_local_main_process:
+                console.width = width
                 console.rule(f'ERA: {era}, BETA: {beta}')
-
-            table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
-            with Live(table, console=console, screen=False) as live:
-                if width != 0:
-                    live.console.width = width
-
+            with Live(
+                    table,
+                    screen=False,
+                    console=console,
+                    refresh_per_second=1,
+            ) as live:
                 estart = time.time()
                 for epoch in range(self.steps.nepoch):
                     timer.start()
@@ -400,7 +404,7 @@ class Trainer:
                             'beta': beta, 'dt': dt,
                             'loss': metrics['loss'],
                             'dQint': metrics['dQint'],
-                            'dQsin': metrics['dQSin'],
+                            'dQsin': metrics['dQsin'],
                         }
                         # Update metrics with train step metrics, tmetrics
                         record.update(self.metrics_to_numpy(metrics))
@@ -424,21 +428,19 @@ class Trainer:
                         if self.should_print(epoch):
                             table.add_row(*[f'{v}' for _, v in avgs.items()])
 
+            tables[str(era)] = table
             if self.accelerator.is_local_main_process:
                 if writer is not None:
                     model = extract_model_from_parallel(self.dynamics)
+                    model = model if isinstance(model, Module) else None
                     update_summaries(writer=writer, step=gstep,
-                                     model=model)  # type: ignore
+                                     model=model, optimizer=self.optimizer)
 
                 self.save_ckpt(era, epoch, train_dir, loss=metrics['loss'])
                 live.console.log(
-                    f'Era {era} took: {time.time() - estart:<5g}s',
-                )
-                live.console.log(
+                    f'Era {era} took: {time.time() - estart:<5g}s\n',
                     f'Avgs over last era:\n {self.history.era_summary(era)}',
                 )
-
-            tables[str(era)] = table
 
         return {
             # 'xarr': xarr,
