@@ -10,18 +10,19 @@ import os
 from pathlib import Path
 import time
 from typing import Callable, Any, Optional
-# import wandb
 
 import horovod.tensorflow as hvd
 import numpy as np
 from rich.layout import Layout
 from rich.live import Live
-# from rich.panel import Panel
-# from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich import box
 import tensorflow as tf
-# from tensorflow.python.keras import backend as K
+
+# import wandb
+# from rich.panel import Panel
+# from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+from tensorflow.python.keras import backend as K
 
 from l2hmc.configs import (
     AnnealingSchedule, DynamicsConfig, LearningRateConfig, Steps
@@ -35,12 +36,8 @@ from l2hmc.trackers.tensorflow.trackers import update_summaries
 # from l2hmc.utils.hvd_init import IS_CHIEF, RANK
 from l2hmc.utils.step_timer import StepTimer
 from l2hmc.utils.tensorflow.history import History
-# from l2hmc.learning_ra
 tf.autograph.set_verbosity(0)
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
-
-# wandb.Histogram
-
 
 log = logging.getLogger(__name__)
 
@@ -146,6 +143,8 @@ class Trainer:
             self.compression = hvd.Compression.none
 
         self.reduce_lr = ReduceLROnPlateau(lr_config)
+        self.dynamics.compile(loss=self.loss_fn,
+                              experimental_run_tf_function=True)
         self.reduce_lr.set_model(self.dynamics)
         self.reduce_lr.set_optimizer(self.optimizer)
         self.dynamics_config = (
@@ -153,11 +152,21 @@ class Trainer:
             else self.dynamics.config
         )
         self.history = History(steps=steps)
-        self.eval_history = History()
-        # evals_per_step = self.dynamics.config.nleapfrog * steps.log
         evals_per_step = self.dynamics.config.nleapfrog
         self.timer = StepTimer(evals_per_step=evals_per_step)
         self.eval_timer = StepTimer(evals_per_step=evals_per_step)
+        self.histories = {
+            'train': self.history,
+            'eval': History(),
+            'hmc': History(),
+        }
+        self.timers = {
+            'train': self.timer,
+            'eval': StepTimer(evals_per_step=evals_per_step),
+            'hmc': StepTimer(evals_per_step=evals_per_step),
+        }
+        # self.eval_history = History()
+        # evals_per_step = self.dynamics.config.nleapfrog * steps.log
 
     def setup_FileWriter(self, outdir: os.PathLike):
         """Setup file writer for saving TensorBoard summaries."""
@@ -290,6 +299,7 @@ class Trainer:
 
         return xo, metrics
 
+    @tf.function
     def eval_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
         xinit, beta = inputs
         xout, metrics = self.dynamics((to_u1(xinit), tf.constant(beta)),
@@ -308,13 +318,13 @@ class Trainer:
             beta: float = None,
             x: Tensor = None,
             skip: str | list[str] = None,
-            compile: bool = True,
-            jit_compile: bool = False,
             width: int = 150,
-            eval_dir: os.PathLike = None,
+            compile: bool = True,
             run: Any = None,
             writer: Any = None,
-            hmc: bool = False,
+            jit_compile: bool = False,
+            # eval_dir: os.PathLike = None,
+            job_type: Optional[str] = 'eval',
     ) -> dict:
         """Evaluate model."""
         if isinstance(skip, str):
@@ -323,8 +333,10 @@ class Trainer:
         if beta is None:
             beta = self.schedule.beta_final
 
-        if eval_dir is None:
-            eval_dir = Path(os.getcwd()).joinpath('eval')
+        assert job_type in ['eval', 'hmc']
+
+        # if eval_dir is None:
+        #     eval_dir = Path(os.getcwd()).joinpath('eval')
 
         if x is None:
             unif = tf.random.uniform(self.dynamics.xshape,
@@ -336,20 +348,18 @@ class Trainer:
         if writer is not None:
             writer.set_as_default()
 
-        if hmc:
-            prefix = 'hmc'
+        if job_type == 'hmc':
             eval_fn = self.hmc_step
         else:
-            prefix = 'eval'
             eval_fn = self.eval_step
 
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
 
         if compile:
-            # self.dynamics.compile(
-            #     loss=self.loss_fn,
-            #     experimental_run_tf_function=False,
-            # )
+            self.dynamics.compile(
+                loss=self.loss_fn,
+                experimental_run_tf_function=False,
+            )
             eval_step = tf.function(eval_fn, jit_compile=jit_compile)
         else:
             eval_step = eval_fn
@@ -357,22 +367,34 @@ class Trainer:
         tables = {}
         summaries = []
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
-        nlog = max(1, int(self.steps.test // 100))
-        nprint = max(1, int(self.steps.test // 20))
-        with Live(table, console=console, screen=True) as live:
+        nlog = max(110, int(self.steps.test) // 100)
+        nprint = max(10, int(self.steps.test) // 20)
+        timer = self.timers[job_type]
+        history = self.histories[job_type]
+        with Live(
+            table,
+            console=console,
+            screen=False,
+            refresh_per_second=4,
+            # auto_refresh=False,
+        ) as live:
             if width is not None and width > 0:
                 live.console.width = width
 
             for step in range(self.steps.test):
-                self.eval_timer.start()
+                timer.start()
                 x, metrics = eval_step((x, beta))  # type: ignore
-                dt = self.eval_timer.stop()
+                dt = timer.stop()
                 if step % nprint == 0 or step % nlog == 0:
                     record = {
-                        'step': step, 'dt': dt, 'loss': metrics['loss'],
-                        'dQint': metrics['dQint'], 'dQsin': metrics['dQsin'],
+                        'step': step, 'dt': dt, 'loss': 0,
+                        'dQint': 0.0, 'dQsin': 0.0,
                     }
                     record.update(self.metrics_to_numpy(metrics))
+                    avgs = history.update(record)
+                    summary = summarize_dict(avgs)
+                    summaries.append(summary)
+
                     if writer is not None:
                         update_summaries(step=step,
                                          prefix='eval',
@@ -380,11 +402,9 @@ class Trainer:
                         writer.flush()
 
                     if run is not None:
-                        run.log({f'wandb/{prefix}': record})
+                        run.log({f'wandb/{job_type}': record}, commit=False)
+                        run.log({f'avgs/wandb.{job_type}': avgs})
 
-                    avgs = self.eval_history.update(record)
-                    summary = summarize_dict(avgs)
-                    summaries.append(summary)
                     if step == 0:
                         table = add_columns(avgs, table)
 
@@ -394,22 +414,24 @@ class Trainer:
             tables[str(0)] = table
 
         return {
-            # 'xarr': xarr,
-            'history': self.eval_history,
+            'timer': timer,
+            'history': history,
             'summaries': summaries,
             'tables': tables,
         }
 
+    @tf.function
     def train_step(
             self,
             inputs: tuple[Tensor, float],
             first_step: Optional[bool] = None,
     ) -> tuple[Tensor, dict]:
         xinit, beta = inputs
+        xinit = to_u1(xinit)
         record = {'loss': None}
         with tf.GradientTape() as tape:
             tape.watch(xinit)
-            xout, metrics = self.dynamics((to_u1(xinit), beta), training=True)
+            xout, metrics = self.dynamics((xinit, beta), training=True)
             xprop = to_u1(metrics.pop('mc_states').proposed.x)
             loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
 
@@ -429,14 +451,14 @@ class Trainer:
         grads = tape.gradient(loss, self.dynamics.trainable_variables)
         updates = zip(grads, self.dynamics.trainable_variables)
         self.optimizer.apply_gradients(updates)
-
-        # bconst = tf.cast(beta, dtype=TF_FLOAT)
-        lmetrics = self.loss_fn.lattice_metrics(xinit=to_u1(xinit),
-                                                xout=to_u1(xout))
-        record.update(lmetrics)
         if first_step:
             hvd.broadcast_variables(self.dynamics.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
+
+        # bconst = tf.cast(beta, dtype=TF_FLOAT)
+        xout = to_u1(xout)
+        lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
+        record.update(lmetrics)
 
         return to_u1(xout), record
 
@@ -461,7 +483,7 @@ class Trainer:
         if train_dir is None:
             train_dir = Path(os.getcwd()).joinpath('train')
 
-        x = self.draw_x() if xinit is None else tf.Variable(xinit, TF_FLOAT)
+        x = self.draw_x() if xinit is None else tf.constant(xinit, TF_FLOAT)
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
         manager = self.setup_CheckpointManager(train_dir)
 
@@ -469,25 +491,27 @@ class Trainer:
             self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
             train_step = tf.function(  # type: Callable
                 self.train_step,
-                jit_compile=jit_compile
+                jit_compile=jit_compile,
             )
         else:
             train_step = self.train_step
 
-        # assert train_step is not None and callable(train_step)
         _ = train_step((x, tf.constant(1.)), first_step=True)
+        # assert train_step is not None and callable(train_step)
+        # _ = train_step((x, tf.constant(1.)), first_step=True)
 
         # x, _ = self.dynamics((x, tf.constant(1.)), training=True)
         # gstep = self.optimizer.iterations.numpy()
         # writer = self.setup_FileWriter(Path(train_dir))
         # if self.rank == 0 and writer is not None:
-        # if writer is not None:
-        #     writer.set_as_default()
+        if writer is not None:
+            writer.set_as_default()
 
-        xarr = []
         tables = {}
         metrics = {}
         summaries = []
+        timer = self.timers['train']
+        history = self.histories['train']
 
         # gstep = self.optimizer.iterations  # .numpy()
         gstep = 0
@@ -498,28 +522,42 @@ class Trainer:
                 console.width = width
 
             table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
-            with Live(table, console=console, screen=False) as live:
+            with Live(
+                table,
+                console=console,
+                screen=False,
+                refresh_per_second=1,
+                # auto_refresh=False,
+            ) as live:
                 if width != 0:
                     live.console.width = width
 
                 estart = time.time()
                 for epoch in range(self.steps.nepoch):
-                    self.timer.start()
-                    x, metrics = train_step((x, beta))  # type: ignore
-                    dt = self.timer.stop()
+                    timer.start()
+                    x, metrics = train_step(  # type: ignore
+                        (x, beta),
+                        first_step=False
+                    )
+                    dt = timer.stop()
                     gstep += 1
+                    # if self.should_print(epoch) or self.should_log(epoch):
+                    # if (
+                    #         (epoch % self.steps.print == 0)
+                    #         or (epoch % self.steps.log == 0)
+                    # ):
                     if self.should_print(epoch) or self.should_log(epoch):
-                        # if save_x:
-                        #     xarr.append(x.numpy())  # type: ignore
-                        loss = metrics.pop('loss')
-                        dQint = metrics.pop('dQint')
-                        dQsin = metrics.pop('dQsin')
-
                         record = {
-                            'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
-                            'loss': loss, 'dQint': dQint, 'dQsin': dQsin,
+                            'era': era, 'epoch': epoch,
+                            'beta': beta, 'dt': dt,
+                            'loss': metrics['loss'],
+                            'dQint': metrics['dQint'],
+                            'dQsin': metrics['dQsin'],
                         }
                         record.update(self.metrics_to_numpy(metrics))
+                        avgs = history.update(record)
+                        summary = summarize_dict(avgs)
+                        summaries.append(summary)
                         if writer is not None:
                             update_summaries(step=gstep,
                                              prefix='train',
@@ -527,33 +565,28 @@ class Trainer:
                             writer.flush()
 
                         if run is not None:
-                            run.log({'wandb/train': record})
+                            # run.log({'wandb/train': record}, commit=False)
+                            run.log({'avgs/wandb.train': avgs})
 
-                        avgs = self.history.update(record)
-                        summary = summarize_dict(avgs)
-                        summaries.append(summary)
                         if epoch == 0:
                             table = add_columns(avgs, table)
-                            # hvd.broadcast_variables(self.dynamics.variables,
-                            #                         root_rank=0)
-                            # hvd.broadcast_variables(self.optimizer.variables(),
-                            #                         root_rank=0)
-
+                            live.refresh()
                         if self.should_print(epoch):
                             table.add_row(*[f'{v}' for _, v in avgs.items()])
+                            live.refresh()
 
-                if self.rank == 0:
-                    if writer is not None:
-                        update_summaries(step=gstep,
-                                         model=self.dynamics,
-                                         optimizer=self.optimizer)
-                    live.console.log(
-                        f'Era {era} took: {time.time() - estart:<5g}s',
-                    )
-                    live.console.log(
-                        f'Avgs over last era:\n'
-                        f'{self.history.era_summary(era)}',
-                    )
+                if writer is not None:
+                    update_summaries(step=gstep,
+                                     model=self.dynamics,
+                                     optimizer=self.optimizer)
+                live.console.log(
+                    f'Era {era} took: {time.time() - estart:<5g}s',
+                )
+                live.console.log(
+                    f'Avgs over last era:\n'
+                    f'{self.history.era_summary(era)}',
+                )
+                live.refresh()
 
             self.reduce_lr.on_epoch_end((era + 1) * self.steps.nepoch, {
                 'loss': metrics.get('loss', tf.constant(np.Inf)),
@@ -568,9 +601,9 @@ class Trainer:
             tables[str(era)] = table
 
         return {
-            'xarr': xarr,
+            'timer': timer,
             'summaries': summaries,
-            'history': self.history,
+            'history': history,
             'tables': tables,
         }
 
