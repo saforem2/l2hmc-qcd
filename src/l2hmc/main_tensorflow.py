@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import tensorflow as tf
-import numpy as np
+# import numpy as np
 import horovod.tensorflow as hvd
 
 import wandb
@@ -21,7 +21,7 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 
 from l2hmc.common import analyze_dataset, save_logs
-from l2hmc.configs import InputSpec
+from l2hmc.configs import InputSpec, SRC_DIR
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.lattice.tensorflow.lattice import Lattice
 from l2hmc.loss.tensorflow.loss import LatticeLoss
@@ -114,11 +114,7 @@ def update_wandb_config(
         cfg.wandb.setup.update({'config': wbconfig})
 
 
-def get_summary_writer(
-        cfg: DictConfig,
-        trainer: Trainer,
-        job_type: str
-) -> dict:
+def get_summary_writer(cfg: DictConfig, job_type: str):
     """Returns SummaryWriter object for tracking summaries."""
     outdir = Path(cfg.get('outdir', os.getcwd()))
     jobdir = outdir.joinpath(job_type)
@@ -126,11 +122,11 @@ def get_summary_writer(
     sdir.mkdir(exist_ok=True, parents=True)
 
     writer = None
-    if trainer.rank == 0:
+    if RANK == 0:
         writer = tf.summary.create_file_writer(sdir.as_posix())  # type: ignore
-        # writer.set_as_default()
 
-    return {'dir': jobdir, 'writer': writer}
+    # return {'dir': jobdir, 'writer': writer}
+    return writer
 
 
 def eval(
@@ -138,7 +134,7 @@ def eval(
         trainer: Trainer,
         job_type: str,
         run: Optional[Any] = None,
-        writer: Optional[Any] = None,
+        # writer: Optional[Any] = None,
         jobdir: Optional[os.PathLike] = None,
 ) -> dict:
     nchains = cfg.get('nchains', -1)
@@ -148,6 +144,10 @@ def eval(
 
     assert jobdir is not None
     jobdir = Path(jobdir)
+    writer = get_summary_writer(cfg, job_type=job_type)
+    if writer is not None:
+        writer.set_as_default()
+
     eval_output = trainer.eval(run=run,
                                writer=writer,
                                job_type=job_type,
@@ -162,11 +162,13 @@ def eval(
         edir.mkdir(exist_ok=True, parents=True)
         log.info(f'Saving {job_type} logs to: {edir.as_posix()}')
         save_logs(logdir=edir,
+                  run=run,
+                  job_type=job_type,
                   tables=eval_output['tables'],
                   summaries=eval_output['summaries'])
 
     if writer is not None:
-        writer.close()
+        writer.close()  # type: ignore
 
     return eval_output
 
@@ -175,7 +177,7 @@ def train(
         cfg: DictConfig,
         trainer: Trainer,
         run: Optional[Any] = None,
-        writer: Optional[Any] = None,
+        # writer: Optional[Any] = None,
         jobdir: Optional[os.PathLike] = None,
         **kwargs,
 ) -> dict:
@@ -184,6 +186,9 @@ def train(
 
     jobdir = Path(jobdir)
     jobdir.mkdir(exist_ok=True, parents=True)
+    writer = get_summary_writer(cfg, job_type='train')
+    if writer is not None:
+        writer.set_as_default()
     # objs = get_summary_writer(cfg, trainer, job_type='train')
     # objs = _setup(cfg, trainer, job_type='train')
     train_output = trainer.train(run=run,
@@ -191,7 +196,7 @@ def train(
                                  train_dir=jobdir,
                                  width=cfg.get('width', None),
                                  **kwargs)
-    if trainer.rank == 0:
+    if RANK == 0:
         dset = train_output['history'].get_dataset()
         _ = analyze_dataset(dset,
                             outdir=jobdir,
@@ -203,11 +208,13 @@ def train(
             tdir.mkdir(exist_ok=True, parents=True)
             log.info(f'Saving train logs to: {tdir.as_posix()}')
             save_logs(logdir=tdir,
+                      run=run,
+                      job_type='train',
                       tables=train_output['tables'],
                       summaries=train_output['summaries'])
 
     if writer is not None:
-        writer.close()
+        writer.close()  # type: ignore
 
     return train_output
 
@@ -226,17 +233,13 @@ def main(cfg: DictConfig) -> dict:
     update_wandb_config(cfg,
                         id=id,
                         debug=debug,
-                        # job_type='train',
                         wbconfig=wbconfig)
     run = None
-    if trainer.rank == 0:
+    if RANK == 0:
+        # wandb.tensorboard.patch(root_logdir=outdir.as_posix(),
+        #                         tensorboardX=False)
         run = wandb.init(**cfg.wandb.setup)
-
-    writers = {
-        'train': get_summary_writer(cfg, trainer, job_type='train'),
-        'eval': get_summary_writer(cfg, trainer, job_type='eval'),
-        'hmc': get_summary_writer(cfg, trainer, job_type='hmc'),
-    }
+        wandb.run.log_code(SRC_DIR)
 
     kwargs = {
         'compile': cfg.get('compile', True),
@@ -244,19 +247,13 @@ def main(cfg: DictConfig) -> dict:
     }
     outputs['train'] = train(cfg, trainer, run=run, **kwargs)
 
-    if trainer.rank == 0:
+    if RANK == 0:
         for job in ['eval', 'hmc']:
             log.warning(f'Running {job}')
             outputs[job] = eval(cfg=cfg,
                                 run=run,
                                 job_type=job,
-                                trainer=trainer,
-                                writer=writers[job]['writer'])
-        # cfg.wandb.setup.update({
-        #     # 'job_type': 'eval',
-        #     'tags': [f'beta={cfg.annealing_schedule.beta_final:1.2f}'],
-        # })
-
+                                trainer=trainer)
     return outputs
 
 
