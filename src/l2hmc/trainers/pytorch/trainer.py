@@ -114,12 +114,17 @@ class Trainer:
         self.nlf = dynamics_config.nleapfrog
 
         self.history = BaseHistory(steps=steps)
-        self.eval_history = BaseHistory()
-        self.hmc_history = BaseHistory()
-        # evals_per_step = self.nlf * steps.log
-        # evals_per_step = self.dynamics.config.nleapfrog * steps.log
         self.timer = StepTimer(evals_per_step=self.nlf)
-        self.eval_timer = StepTimer(evals_per_step=self.nlf)
+        self.histories = {
+            'train': self.history,
+            'eval': BaseHistory(),
+            'hmc': BaseHistory(),
+        }
+        self.timers = {
+            'train': self.timer,
+            'eval': StepTimer(evals_per_step=self.nlf),
+            'hmc': StepTimer(evals_per_step=self.nlf)
+        }
 
     def draw_x(self) -> Tensor:
         x = random_angle(self.xshape)
@@ -148,21 +153,22 @@ class Trainer:
     def metrics_to_numpy(
             self,
             metrics: dict[str, Tensor | list | np.ndarray]
-    ) -> dict[str, Tensor | list | np.ndarray]:
+    ) -> dict[str, list[np.ndarray] | np.ndarray | int | float]:
+        m = {}
         for key, val in metrics.items():
             if isinstance(val, dict):
                 for k, v in val.items():
-                    metrics[f'{key}/{k}'] = self.metric_to_numpy(v)
+                    m[f'{key}/{k}'] = self.metric_to_numpy(v)
             else:
                 try:
-                    metrics[key] = self.metric_to_numpy(val)
+                    m[key] = self.metric_to_numpy(val)
                 except ValueError:
                     log.warning(
                         f'Error converting metrics[{key}] to numpy. Skipping!'
                     )
                     continue
 
-        return metrics
+        return m
 
     def hmc_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
         xinit, beta = inputs
@@ -229,33 +235,38 @@ class Trainer:
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
         nlog = max(1, int(self.steps.test // 100))
         nprint = max(1, int(self.steps.test // 20))
+        assert job_type in ['eval', 'hmc']
+        timer = self.timers[job_type]
+        history = self.histories[job_type]
 
         with Live(table, console=console, screen=True) as live:
             if width is not None and width > 0:
                 live.console.width = width
 
             for step in range(self.steps.test):
-                self.eval_timer.start()
+                timer.start()
                 x, metrics = eval_fn((x, beta))
-                dt = self.eval_timer.stop()
+                dt = timer.stop()
                 if step % nlog == 0 or step % nprint == 0:
                     record = {
                         'step': step, 'dt': dt, 'loss': metrics['loss'],
                         'dQint': metrics['dQint'], 'dQsin': metrics['dQsin'],
                     }
                     record.update(self.metrics_to_numpy(metrics))
+                    avgs = history.update(record)
+                    summary = summarize_dict(avgs)
+                    summaries.append(summary)
                     if writer is not None:
                         update_summaries(step=step,
                                          prefix=job_type,
                                          metrics=record,
                                          writer=writer)
                         writer.flush()
-                    if run is not None:
-                        run.log({f'wandb/{job_type}': record})
 
-                    avgs = self.eval_history.update(record)
-                    summary = summarize_dict(avgs)
-                    summaries.append(summary)
+                    if run is not None:
+                        run.log({f'wandb/{job_type}': record}, commit=False)
+                        run.log({f'avgs/wandb.{job_type}': avgs})
+
                     if step == 0:
                         table = add_columns(avgs, table)
 
@@ -265,7 +276,8 @@ class Trainer:
             tables[str(0)] = table
 
         return {
-            'history': self.eval_history,
+            'timer': timer,
+            'history': history,
             'summaries': summaries,
             'tables': tables,
         }
@@ -364,6 +376,8 @@ class Trainer:
         metrics = {}
         summaries = []
         gstep = 0
+        timer = self.timers['train']
+        history = self.histories['train']
         for era in range(self.steps.nera):
             beta = self.schedule.betas[str(era)]
             if self.accelerator.is_local_main_process:
@@ -376,13 +390,17 @@ class Trainer:
 
                 estart = time.time()
                 for epoch in range(self.steps.nepoch):
-                    self.timer.start()
+                    timer.start()
                     x, metrics = self.train_step((x, beta))
                     gstep += 1
-                    dt = self.timer.stop()
+                    dt = timer.stop()
                     if self.should_print(epoch) or self.should_log(epoch):
                         record = {
-                            'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt
+                            'era': era, 'epoch': epoch,
+                            'beta': beta, 'dt': dt,
+                            'loss': metrics['loss'],
+                            'dQint': metrics['dQint'],
+                            'dQsin': metrics['dQSin'],
                         }
                         # Update metrics with train step metrics, tmetrics
                         record.update(self.metrics_to_numpy(metrics))
@@ -394,13 +412,13 @@ class Trainer:
                                              prefix='train')
                             writer.flush()
 
-                        if run is not None:
-                            run.log({'wandb/train': record})
-
-                        avgs = self.history.update(record)
-                        # wandb.log({'train/avgs': avgs})
+                        avgs = history.update(record)
                         summary = summarize_dict(avgs)
                         summaries.append(summary)
+                        if run is not None:
+                            run.log({'wandb/train': record}, commit=False)
+                            run.log({'avgs/wandb.train': avgs})
+
                         if epoch == 0:
                             table = add_columns(avgs, table)
                         if self.should_print(epoch):
