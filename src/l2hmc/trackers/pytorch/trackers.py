@@ -72,7 +72,7 @@ def update_summaries(
         step: int = None,
         metrics: dict[str, ArrayLike] = None,
         model: torch.nn.Module = None,
-        # optimizer: torch.optim.Optimizer = None,
+        optimizer: torch.optim.Optimizer = None,
         prefix: str = None,
 ):
     if metrics is not None:
@@ -83,3 +83,10 @@ def update_summaries(
             if param.requires_grad:
                 tag = f'model/{name}'
                 log_item(writer=writer, val=param, step=step, tag=tag)
+
+    if optimizer is not None:
+        for group in optimizer.param_groups:
+            for p in group['params']:
+                if p.grad is not None:
+                    tag = f'optimizer/{p}'
+                    log_item(writer=writer, val=p, step=step, tag=tag)
