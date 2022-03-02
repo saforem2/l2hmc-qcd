@@ -12,16 +12,12 @@ from typing import Any, Optional
 from accelerate import Accelerator
 import hydra
 from hydra.utils import instantiate
-from omegaconf import DictConfig, OmegaConf
-import torch
-# from torch.distributed.elastic.multiprocessing.errors import record
-from torch.utils.tensorboard.writer import SummaryWriter
-
 from l2hmc.common import analyze_dataset, save_logs
 from l2hmc.configs import (
     AnnealingSchedule,
     ConvolutionConfig,
     DynamicsConfig,
+    HERE,
     InputSpec,
     LearningRateConfig,
     LossConfig,
@@ -35,6 +31,9 @@ from l2hmc.loss.pytorch.loss import LatticeLoss
 from l2hmc.network.pytorch.network import NetworkFactory
 from l2hmc.trainers.pytorch.trainer import Trainer
 from l2hmc.utils.console import is_interactive
+from omegaconf import DictConfig, OmegaConf
+import torch
+from torch.utils.tensorboard.writer import SummaryWriter
 import wandb
 from wandb.util import generate_id
 
@@ -133,10 +132,8 @@ def update_wandb_config(
         cfg: DictConfig,
         id: Optional[str] = None,
         debug: Optional[bool] = None,
-        # job_type: Optional[str] = None,
-        wbconfig: Optional[dict[Any, Any] | list[Any] | str] = None,
         wbdir: Optional[os.PathLike] = None,
-) -> None:
+) -> DictConfig:
     group = [
         'pytorch',
         'gpu' if torch.cuda.is_available() else 'cpu',
@@ -149,14 +146,10 @@ def update_wandb_config(
     if id is not None:
         cfg.wandb.setup.update({'id': id})
 
-    # if job_type is not None:
-    #     cfg.wandb.setup.update({'job_type': job_type})
-
     if wbdir is not None:
         cfg.wandb.setup.update({'dir': Path(wbdir).as_posix()})
 
-    if wbconfig is not None:
-        cfg.wandb.setup.update({'config': wbconfig})
+    return cfg
 
 
 def get_summary_writer(
@@ -177,43 +170,47 @@ def get_summary_writer(
     return writer
 
 
+def get_jobdir(cfg: DictConfig, job_type: str) -> Path:
+    jobdir = Path(cfg.get('outdir', os.getcwd())).joinpath(job_type)
+    jobdir.mkdir(exist_ok=True, parents=True)
+    assert jobdir is not None
+    return jobdir
+
+
 def eval(
         cfg: DictConfig,
         trainer: Trainer,
         job_type: str,
         run: Optional[Any] = None,
-        # writer: Optional[Any] = None,
-        jobdir: Optional[os.PathLike] = None,
 ) -> dict:
     """Evaluate model (nested as `trainer.model`)"""
     nchains = cfg.get('nchains', -1)
     therm_frac = cfg.get('therm_frac', 0.2)
-    if jobdir is None:
-        jobdir = Path(cfg.get('outdir', os.getcwd())).joinpath(job_type)
 
-    assert jobdir is not None
-    jobdir = Path(jobdir)
+    jobdir = get_jobdir(cfg, job_type=job_type)
     writer = get_summary_writer(cfg, trainer, job_type=job_type)
     eval_output = trainer.eval(run=run,
                                writer=writer,
                                job_type=job_type,
                                width=cfg.get('width', None))
-
     eval_dset = eval_output['history'].get_dataset(therm_frac=therm_frac)
-    _ = analyze_dataset(eval_dset,
-                        nchains=nchains,
-                        outdir=jobdir,
-                        title=f'{job_type}: PyTorch')
+    if trainer.accelerator.is_local_main_process:
+        _ = analyze_dataset(eval_dset,
+                            outdir=jobdir,
+                            nchains=nchains,
+                            job_type=job_type,
+                            save=True,
+                            title=f'{job_type}: PyTorch')
 
-    if not is_interactive():
-        edir = jobdir.joinpath('logs')
-        edir.mkdir(exist_ok=True, parents=True)
-        log.info(f'Saving {job_type} logs to: {edir.as_posix()}')
-        save_logs(logdir=edir,
-                  run=run,
-                  job_type=job_type,
-                  tables=eval_output['tables'],
-                  summaries=eval_output['summaries'])
+        if not is_interactive():
+            edir = jobdir.joinpath('logs')
+            edir.mkdir(exist_ok=True, parents=True)
+            log.info(f'Saving {job_type} logs to: {edir.as_posix()}')
+            save_logs(logdir=edir,
+                      run=run,
+                      job_type=job_type,
+                      tables=eval_output['tables'],
+                      summaries=eval_output['summaries'])
 
     if writer is not None:
         writer.close()
@@ -225,13 +222,8 @@ def train(
         cfg: DictConfig,
         trainer: Trainer,
         run: Optional[Any] = None,
-        # writer: Optional[SummaryWriter] = None,
-        jobdir: Optional[os.PathLike] = None,
 ) -> dict:
-    if jobdir is None:
-        jobdir = Path(cfg.get('outdir', os.getcwd())).joinpath('train')
-    assert jobdir is not None
-    jobdir = Path(jobdir)
+    jobdir = get_jobdir(cfg, job_type='train')
     writer = get_summary_writer(cfg, trainer, job_type='train')
     train_output = trainer.train(run=run,
                                  writer=writer,
@@ -241,7 +233,7 @@ def train(
         train_dset = train_output['history'].get_dataset()
         _ = analyze_dataset(train_dset,
                             outdir=jobdir,
-                            prefix='train',
+                            job_type='train',
                             title='Training: PyTorch',
                             nchains=cfg.get('nchains', None))
 
@@ -270,29 +262,29 @@ def main(cfg: DictConfig) -> dict:
     cfg.update({'width': width, 'nchains': nchains})
 
     id = generate_id() if trainer.accelerator.is_local_main_process else None
-    wbconfig = OmegaConf.to_container(cfg, resolve=True)
     outdir = Path(cfg.get('outdir', os.getcwd()))
     debug = any([s in outdir.as_posix() for s in ['debug', 'test']])
-    update_wandb_config(cfg,
-                        id=id,
-                        debug=debug,
-                        # job_type='train',
-                        wbconfig=wbconfig)
+    cfg = update_wandb_config(cfg, id=id, debug=debug)
 
     run = None
     if trainer.accelerator.is_local_main_process:
         run = wandb.init(**cfg.wandb.setup)
+        run.log_code(HERE)
+        run.config.update(OmegaConf.to_container(cfg,
+                                                 resolve=True,
+                                                 throw_on_missing=True))
 
-    # Train model
-    outputs['train'] = train(cfg, trainer, run=run)
+    # ----------------------------------------------------------
+    # 1. Train model
+    # 2. Evaluate trained model
+    # 3. Run generic HMC as baseline w/ same trajectory length
+    # ----------------------------------------------------------
+    outputs['train'] = train(cfg, trainer, run=run)     # [1.]
     if trainer.accelerator.is_local_main_process:
-        # Evaluate trained model following training and update 'job_type''
-        # cfg.wandb.setup.update({
-        #     # 'job_type': 'eval',
-        #     'tags': [f'beta={cfg.annealing_schedule.beta_final:1.2f}'],
-        # })
-        jobs = ['eval', 'hmc']
-        for job in jobs:
+        if run is not None:
+            run.config.update({'eval_beta': cfg.annealing_schedule.beta_final})
+
+        for job in ['eval', 'hmc']:                     # [2.], [3.]
             log.warning(f'Running {job}')
             outputs[job] = eval(cfg=cfg,
                                 run=run,
