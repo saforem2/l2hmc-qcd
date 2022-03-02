@@ -143,8 +143,7 @@ class Trainer:
             self.compression = hvd.Compression.none
 
         self.reduce_lr = ReduceLROnPlateau(lr_config)
-        self.dynamics.compile(loss=self.loss_fn,
-                              experimental_run_tf_function=True)
+        self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
         self.reduce_lr.set_model(self.dynamics)
         self.reduce_lr.set_optimizer(self.optimizer)
         self.dynamics_config = (
@@ -356,12 +355,13 @@ class Trainer:
 
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
 
-        if compile:
-            self.dynamics.compile(
-                loss=self.loss_fn,
-                experimental_run_tf_function=False,
-            )
-            # eval_step = tf.function(eval_fn, jit_compile=jit_compile)
+        # if compile:
+        #     self.dynamics.compile(
+        #         optimizer=self.optimizer,
+        #         loss=self.loss_fn,
+        #         # experimental_run_tf_function=False,
+        #     )
+        #     # eval_step = tf.function(eval_fn, jit_compile=jit_compile)
 
         tables = {}
         summaries = []
@@ -486,7 +486,7 @@ class Trainer:
         inputs = (x, tf.constant(1.))
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
         manager = self.setup_CheckpointManager(train_dir)
-        self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
+        # self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
         _ = self.train_step(inputs, first_step=True)  # type: ignore
         if writer is not None:
             writer.set_as_default()
