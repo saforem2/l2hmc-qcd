@@ -6,4 +6,4 @@ dir: "outputs/runs/\
   /merge_directions-${dynamics.merge_directions}\
   /${framework}\
   /${now:%Y-%m-%d}\
-    /${now:%H-%M-%S}"
+  /${now:%H-%M-%S}"

@@ -2,11 +2,8 @@
 
 defaults:
   - override /dynamics: gpu.yaml
-  - override /steps: long.yaml
+  - override /steps: gpu.yaml
   - override /network: gpu.yaml
 
-
-hydra:
-  verbose: [l2hmc]
 
 print_config: True
