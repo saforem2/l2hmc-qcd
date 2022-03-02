@@ -18,6 +18,8 @@ defaults:
   # for example, use them to store best hyperparameters for each model configuration
   - experiment: null
 
+  # - hydra/run: default.yaml
+
   # - optional local: default.yaml
   - override hydra/hydra_logging: colorlog
   - override hydra/job_logging: colorlog
