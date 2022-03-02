@@ -374,7 +374,7 @@ class Trainer:
             table,
             console=console,
             screen=False,
-            refresh_per_second=4,
+            # refresh_per_second=4,
             # auto_refresh=False,
         ) as live:
             if width is not None and width > 0:
@@ -514,7 +514,7 @@ class Trainer:
                 table,
                 screen=False,
                 console=console,
-                refresh_per_second=1,
+                # refresh_per_second=1,
             ) as live:
                 estart = time.time()
                 for epoch in range(self.steps.nepoch):

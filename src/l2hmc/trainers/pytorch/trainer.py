@@ -239,7 +239,7 @@ class Trainer:
         timer = self.timers[job_type]
         history = self.histories[job_type]
 
-        with Live(table, console=console, screen=True) as live:
+        with Live(table, console=console, screen=False) as live:
             if width is not None and width > 0:
                 live.console.width = width
 
@@ -390,7 +390,7 @@ class Trainer:
                     table,
                     screen=False,
                     console=console,
-                    refresh_per_second=1,
+                    # refresh_per_second=1,
             ) as live:
                 estart = time.time()
                 for epoch in range(self.steps.nepoch):
@@ -433,8 +433,7 @@ class Trainer:
                 if writer is not None:
                     model = extract_model_from_parallel(self.dynamics)
                     model = model if isinstance(model, Module) else None
-                    update_summaries(writer=writer, step=gstep,
-                                     model=model, optimizer=self.optimizer)
+                    update_summaries(writer=writer, step=gstep, model=model)
 
                 self.save_ckpt(era, epoch, train_dir, loss=metrics['loss'])
                 live.console.log(
