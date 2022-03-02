@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 import tensorflow as tf
-# import numpy as np
 import horovod.tensorflow as hvd
 
 import wandb
@@ -21,7 +20,7 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 
 from l2hmc.common import analyze_dataset, save_logs
-from l2hmc.configs import InputSpec, SRC_DIR
+from l2hmc.configs import InputSpec, HERE
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.lattice.tensorflow.lattice import Lattice
 from l2hmc.loss.tensorflow.loss import LatticeLoss
@@ -91,10 +90,9 @@ def update_wandb_config(
         cfg: DictConfig,
         id: Optional[str] = None,
         debug: Optional[bool] = None,
-        wbconfig: Optional[dict | list | str] = None,
         # job_type: Optional[str] = None,
         # wbdir: Optional[os.PathLike] = None,
-) -> None:
+) -> DictConfig:
     """Updates config using runtime information for W&B."""
     group = ['tensorflow', 'horovod' if SIZE > 1 else 'local']
     if debug:
@@ -104,14 +102,7 @@ def update_wandb_config(
     if id is not None:
         cfg.wandb.setup.update({'id': id})
 
-    # if job_type is not None:
-    #     cfg.wandb.setup.update({'job_type': job_type})
-
-    # if wbdir is not None:
-    #     cfg.wandb.setup.update({'dir': Path(wbdir).as_posix()})
-
-    if wbconfig is not None:
-        cfg.wandb.setup.update({'config': wbconfig})
+    return cfg
 
 
 def get_summary_writer(cfg: DictConfig, job_type: str):
@@ -125,8 +116,14 @@ def get_summary_writer(cfg: DictConfig, job_type: str):
     if RANK == 0:
         writer = tf.summary.create_file_writer(sdir.as_posix())  # type: ignore
 
-    # return {'dir': jobdir, 'writer': writer}
     return writer
+
+
+def get_jobdir(cfg: DictConfig, job_type: str) -> Path:
+    jobdir = Path(cfg.get('outdir', os.getcwd())).joinpath(job_type)
+    jobdir.mkdir(exist_ok=True, parents=True)
+    assert jobdir is not None
+    return jobdir
 
 
 def eval(
@@ -134,16 +131,10 @@ def eval(
         trainer: Trainer,
         job_type: str,
         run: Optional[Any] = None,
-        # writer: Optional[Any] = None,
-        jobdir: Optional[os.PathLike] = None,
 ) -> dict:
     nchains = cfg.get('nchains', -1)
     therm_frac = cfg.get('therm_frac', 0.2)
-    if jobdir is None:
-        jobdir = Path(cfg.get('outdir', os.getcwd())).joinpath(job_type)
-
-    assert jobdir is not None
-    jobdir = Path(jobdir)
+    jobdir = get_jobdir(cfg, job_type=job_type)
     writer = get_summary_writer(cfg, job_type=job_type)
     if writer is not None:
         writer.set_as_default()
@@ -177,22 +168,13 @@ def train(
         cfg: DictConfig,
         trainer: Trainer,
         run: Optional[Any] = None,
-        # writer: Optional[Any] = None,
-        jobdir: Optional[os.PathLike] = None,
         **kwargs,
 ) -> dict:
-    if jobdir is None:
-        jobdir = Path(cfg.get('outdir', os.getcwd())).joinpath('train')
-
-    jobdir = Path(jobdir)
-    jobdir.mkdir(exist_ok=True, parents=True)
+    jobdir = get_jobdir(cfg, job_type='train')
     writer = get_summary_writer(cfg, job_type='train')
     if writer is not None:
         writer.set_as_default()
-    # objs = get_summary_writer(cfg, trainer, job_type='train')
-    # objs = _setup(cfg, trainer, job_type='train')
     train_output = trainer.train(run=run,
-                                 writer=writer,
                                  train_dir=jobdir,
                                  width=cfg.get('width', None),
                                  **kwargs)
@@ -200,7 +182,7 @@ def train(
         dset = train_output['history'].get_dataset()
         _ = analyze_dataset(dset,
                             outdir=jobdir,
-                            prefix='train',
+                            job_type='train',
                             title='Training: TensorFlow',
                             nchains=cfg.get('nchains', -1))
         if not is_interactive():
@@ -223,37 +205,46 @@ def main(cfg: DictConfig) -> dict:
     outputs = {}
     objs = setup(cfg)
     trainer = objs['trainer']  # type: Trainer
+
     nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
     width = max((150, int(cfg.get('width', os.environ.get('COLUMNS', 150)))))
     cfg.update({'width': width, 'nchains': nchains})
+
     id = generate_id() if trainer.rank == 0 else None
-    wbconfig = OmegaConf.to_container(cfg, resolve=True)
     outdir = Path(cfg.get('outdir', os.getcwd()))
     debug = any([s in outdir.as_posix() for s in ['debug', 'test']])
-    update_wandb_config(cfg,
-                        id=id,
-                        debug=debug,
-                        wbconfig=wbconfig)
+    cfg = update_wandb_config(cfg, id=id, debug=debug)
+
     run = None
     if RANK == 0:
-        # wandb.tensorboard.patch(root_logdir=outdir.as_posix(),
-        #                         tensorboardX=False)
         run = wandb.init(**cfg.wandb.setup)
-        wandb.run.log_code(SRC_DIR)
-
-    kwargs = {
-        'compile': cfg.get('compile', True),
-        'jit_compile': cfg.get('jit_compile', False),
-    }
-    outputs['train'] = train(cfg, trainer, run=run, **kwargs)
+        run.log_code(HERE)
+        run.config.update(OmegaConf.to_container(cfg,
+                                                 resolve=True,
+                                                 throw_on_missing=True))
+    # ----------------------------------------------------------
+    # 1. Train model
+    # 2. Evaluate trained model
+    # 3. Run generic HMC as baseline w/ same trajectory length
+    # ----------------------------------------------------------
+    outputs['train'] = train(cfg,                        # [1.]
+                             trainer,
+                             run=run,
+                             compile=cfg.get('compile', True),
+                             jit_compile=cfg.get('jit_compile', False))
 
     if RANK == 0:
-        for job in ['eval', 'hmc']:
+        if run is not None:
+            run.config.update({'eval_beta': cfg.annealing_schedule.beta_final})
+        for job in ['eval', 'hmc']:                      # [2.], [3.]
             log.warning(f'Running {job}')
             outputs[job] = eval(cfg=cfg,
                                 run=run,
                                 job_type=job,
                                 trainer=trainer)
+    if run is not None:
+        run.save()
+
     return outputs
 
 

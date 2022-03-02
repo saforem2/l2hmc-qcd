@@ -63,9 +63,9 @@ def setup_annealing_schedule(cfg: DictConfig) -> AnnealingSchedule:
 def save_dataset(
         dataset: xr.Dataset,
         outdir: os.PathLike,
-        name: str = None,
+        job_type: str = None,
 ) -> None:
-    fname = 'dataset.nc' if name is None else f'{name}_dataset.nc'
+    fname = 'dataset.nc' if job_type is None else f'{job_type}_dataset.nc'
     datafile = Path(outdir).joinpath(fname)
     mode = 'a' if datafile.is_file() else 'w'
     log.info(f'Saving dataset to: {datafile.as_posix()}')
@@ -104,20 +104,17 @@ def save_logs(
     for _, table in tables.items():
         console.print(table)
         html = console.export_html(clear=False)
-        # hfile = hdir.joinpath(f'era{era}.html')
+        text = console.export_text()
         with open(hfile.as_posix(), 'a') as f:
             f.write(html)
-
-        # prefix = 'tables' if job_type is None else f'tables/{job_type}'
-        # grid = table.grid()
-        # if run is not None:
-        #     run.log({prefix: wandb.Html(html)})
-
-        # if run is not None:
-        # tfile = tdir.joinpath(f'era{era}.txt')
-        text = console.export_text()
         with open(tfile, 'a') as f:
             f.write(text)
+
+        if run is not None:
+            try:
+                run.log({f'tables/{job_type}': text})
+            except Exception:
+                continue
 
     if summaries is not None:
         sfile = logdir.joinpath('summaries.txt').as_posix()
@@ -140,23 +137,12 @@ def plot_dataset(
         nchains: int = 10,
         outdir: os.PathLike = None,
         title: str = None,
-        prefix: str | list = None,
+        job_type: str = None,
+        run: Any = None,
 ) -> None:
     outdir = Path(outdir) if outdir is not None else Path(os.getcwd())
     outdir = outdir.joinpath('plots')
-    if prefix is None:
-        if outdir is not None:
-            if 'train' in outdir.as_posix():
-                prefix = 'train'
-            elif 'eval' in outdir.as_posix():
-                prefix = 'eval'
-
-    name = []
-    if prefix is not None:
-        name.append(prefix)
-
-    tag = '/'.join(name)
-    pngs = {tag: {}}
+    job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
     for key, val in dataset.data_vars.items():
         if key == 'x':
             continue
@@ -186,11 +172,14 @@ def plot_dataset(
         pngdir = outdir.joinpath('pngs')
         pngdir.mkdir(exist_ok=True, parents=True)
         outpng = pngdir.joinpath(f'{key}.png')
-        fig.savefig(outpng.as_posix(), dpi=500, bbox_inches='tight')
-        pngs[tag].update({key: outpng.as_posix()})
+        if run is not None:
+            try:
+                run.log({f'plots/{job_type}.{key}': fig})
+            except Exception:
+                log.error(f'Unable to create plot for {key}, skipping!')
+                pass
 
-    # for tag, fname in pngs.items():
-    #     wandb.log({'pngs': wandb.Image(fname)})
+        fig.savefig(outpng.as_posix(), dpi=500, bbox_inches='tight')
 
     _ = make_ridgeplots(dataset, num_chains=nchains, out_dir=outdir)
 
@@ -200,18 +189,21 @@ def analyze_dataset(
         outdir: os.PathLike,
         nchains: int = 16,
         title: str = None,
-        prefix: str = 'dataset',
+        job_type: str = None,
         save: bool = True,
+        run: Any = None,
 ):
+    job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
     dirs = make_subdirs(outdir)
     plot_dataset(dataset,
+                 run=run,
                  nchains=nchains,
                  title=title,
-                 prefix=prefix,
+                 job_type=job_type,
                  outdir=dirs['plots'])
     if save:
         try:
-            save_dataset(dataset, outdir=dirs['data'], name=prefix)
+            save_dataset(dataset, outdir=dirs['data'], job_type=job_type)
         except ValueError:
             for key, val in dataset.data_vars.items():
                 fout = Path(dirs['data']).joinpath(f'{key}.z')
