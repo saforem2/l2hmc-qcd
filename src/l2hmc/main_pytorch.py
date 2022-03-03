@@ -258,7 +258,8 @@ def main(cfg: DictConfig) -> dict:
     trainer = objs['trainer']  # type: Trainer
 
     nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
-    width = max((150, int(cfg.get('width', os.environ.get('COLUMNS', 150)))))
+    env_width = int(os.environ.get('COLUMNS', 150))
+    width = max((150, env_width))
     cfg.update({'width': width, 'nchains': nchains})
 
     id = generate_id() if trainer.accelerator.is_local_main_process else None

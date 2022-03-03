@@ -366,7 +366,7 @@ class Trainer:
         tables = {}
         summaries = []
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
-        nlog = max(110, int(self.steps.test) // 100)
+        nlog = max(10, int(self.steps.test) // 500)
         nprint = max(10, int(self.steps.test) // 20)
         timer = self.timers[job_type]
         history = self.histories[job_type]

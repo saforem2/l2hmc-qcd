@@ -125,9 +125,9 @@ class Dynamics(nn.Module):
         fveps = netdir.joinpath('veps.npy')
         outfile = netdir.joinpath('dynamics.pt')
         netdir.mkdir(exist_ok=True, parents=True)
-        log.info(
-            f'Saving `xeps`, `veps`, `self.state_dict()` to: {netdir}'
-        )
+        # log.info(
+        #     f'Saving `xeps`, `veps`, `self.state_dict()` to: {netdir}'
+        # )
         xeps = np.array([
             i.detach().cpu().numpy() for i in list(self.xeps.values())
         ])
@@ -138,7 +138,7 @@ class Dynamics(nn.Module):
         np.save(fveps, veps)
         np.savetxt(netdir.joinpath('xeps.txt').as_posix(), xeps)
         np.savetxt(netdir.joinpath('veps.txt').as_posix(), veps)
-        log.info(f'Saving dynamics to: {outfile}')
+        # log.info(f'Saving dynamics to: {outfile}')
         torch.save(self.state_dict(), outfile.as_posix())
 
     def save_eps(self, outdir: os.PathLike) -> None:
@@ -151,7 +151,7 @@ class Dynamics(nn.Module):
         veps = np.array([
             i.detach().cpu().numpy() for i in list(self.veps.values())
         ])
-        log.info(f'Saving `xeps`, `veps` to: {netdir}')
+        # log.info(f'Saving `xeps`, `veps` to: {netdir}')
         np.save(fxeps, xeps)
         np.save(fveps, veps)
         np.savetxt(netdir.joinpath('xeps.txt').as_posix(), xeps)
