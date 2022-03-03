@@ -233,8 +233,8 @@ class Trainer:
         summaries = []
         tables = {}
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
-        nlog = max(1, int(self.steps.test // 100))
-        nprint = max(1, int(self.steps.test // 20))
+        nlog = max(10, int(self.steps.test // 500))
+        nprint = max(10, int(self.steps.test // 20))
         assert job_type in ['eval', 'hmc']
         timer = self.timers[job_type]
         history = self.histories[job_type]

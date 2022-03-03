@@ -780,7 +780,7 @@ class Dynamics(Model):
         """Save networks to `outdir`."""
         outdir = Path(outdir).joinpath('networks')
         outdir.mkdir(exist_ok=True, parents=True)
-        log.info(f'Saving `xeps`, `veps`, `vnet`, `xnet` to: {outdir}')
+        # log.info(f'Saving `xeps`, `veps`, `vnet`, `xnet` to: {outdir}')
 
         veps = np.array([e.numpy() for e in self.veps])
         xeps = np.array([e.numpy() for e in self.xeps])
@@ -798,8 +798,8 @@ class Dynamics(Model):
                 vnet = self._get_vnet(lf)
                 xnet1 = self._get_xnet(lf, first=True)
 
-                log.info(f'Saving `vnet-{lf} to {fvnet}')
-                log.info(f'Saving `xnet-{lf}_first to {fxnet1}')
+                # log.info(f'Saving `vnet-{lf} to {fvnet}')
+                # log.info(f'Saving `xnet-{lf}_first to {fxnet1}')
 
                 vnet.save(fvnet)
                 xnet1.save(fxnet1)
@@ -807,7 +807,7 @@ class Dynamics(Model):
                 if self.config.use_split_xnets:
                     xnet2 = self._get_xnet(lf, first=False)
                     fxnet2 = outdir.joinpath(f'xnet-{lf}_second').as_posix()
-                    log.info(f'Saving `xnet-{lf}_second to {fxnet2}')
+                    # log.info(f'Saving `xnet-{lf}_second to {fxnet2}')
                     xnet2.save(fxnet2)
         else:
             vnet = self._get_vnet(0)
@@ -816,13 +816,13 @@ class Dynamics(Model):
             fvnet = outdir.joinpath('vnet').as_posix()
             fxnet1 = outdir.joinpath('xnet_first').as_posix()
 
-            log.info(f'Saving vnet to: {fvnet}')
+            # log.info(f'Saving vnet to: {fvnet}')
             vnet.save(fvnet)
-            log.info(f'Saving xnet_first to: {fxnet1}')
+            # log.info(f'Saving xnet_first to: {fxnet1}')
             xnet1.save(fxnet1)
 
             if self.config.use_split_xnets:
                 xnet2 = self._get_xnet(0, first=False)
                 fxnet2 = outdir.joinpath('xnet_second').as_posix()
-                log.info(f'Saving xnet_second to: {fxnet2}')
+                # log.info(f'Saving xnet_second to: {fxnet2}')
                 xnet2.save(fxnet2)
