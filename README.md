@@ -5,8 +5,11 @@
 <!---![HitCount] (http://hits.dwyl.com/saforem2/l2hmc-qcd.svg)--->
 
 
- ## 📒 [Example Notebook](./l2hmc-qcd/notebooks/l2hmc-qcd.ipynb)
+## 📊 [Slides](https://www.bit.ly/l2hmc-ect2021)
+  - Recent talk on **Training Topological Samplers for Lattice Gauge Theory** 
+    from the [*Machine Learning for High Energy Physics, on and off the Lattice*](https://indico.ectstar.eu/event/77/) @ ect* Trento (09/30/2021)
 
+ ## 📒 [Example Notebook](./l2hmc-qcd/notebooks/l2hmc-qcd.ipynb)
 
 - [x]   Accepted to the [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) at **ICLR 2021**
   - 📚 : [arXiv:2105.03418](https://arxiv.org/abs/2105.03418)  
@@ -109,7 +112,7 @@ Or via the [` bin/train.sh `](bin/train.sh) script provided in [` bin/ `](bin/).
 
 If you use this code or found this work interesting, please cite our work along with the original paper:
 
-```latex
+```bibtex
 @misc{foreman2021deep,
       title={Deep Learning Hamiltonian Monte Carlo}, 
       author={Sam Foreman and Xiao-Yong Jin and James C. Osborn},
@@ -120,7 +123,7 @@ If you use this code or found this work interesting, please cite our work along 
 }
 ```
 
-```latex
+```bibtex
 @article{levy2017generalizing,
   title={Generalizing Hamiltonian Monte Carlo with Neural Networks},
   author={Levy, Daniel and Hoffman, Matthew D. and Sohl-Dickstein, Jascha},
@@ -137,7 +140,7 @@ If you use this code or found this work interesting, please cite our work along 
 This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357.  This work describes objective technical results and analysis. Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States
 Government. Declaration of Interests - None.
 
+[![Hits](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fsaforem2%2Fl2hmc-qcd&count_bg=%2379C83D&title_bg=%23555555&icon=&icon_color=%23E7E7E7&title=hits&edge_flat=false)](https://hits.seeyoufarm.com)
 
-## Stargazers over time
 
 [![Stargazers over time](https://starchart.cc/saforem2/l2hmc-qcd.svg)](https://starchart.cc/saforem2/l2hmc-qcd)
