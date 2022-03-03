@@ -5,22 +5,3 @@
 default_mode: true
 print_config: true
 ignore_warnings: true
-
-hydra:
-  # launcher:
-  #   # override the number of jobs from joblib
-  #   n_jobs = 10
-  run:
-    # Default output paths for all file logs
-    dir: "outputs/runs/\
-      /${dynamics.xshape[1]}x${dynamics.xshape[2]}\
-      /nlf-${dynamics.nleapfrog}\
-      /beta-${annealing_schedule.beta_final}\
-      /merge_directions-${dynamics.merge_directions}\
-      /${framework}\
-      /${now:%Y-%m-%d}\
-      /${now:%H-%M-%S}"
-  sweep:
-    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}"
-    subdir: ${hydra.job.override_dirname}
-    # subdir: ${hydra.job.num}
