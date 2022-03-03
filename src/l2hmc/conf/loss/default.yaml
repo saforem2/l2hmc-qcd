@@ -1,0 +1,6 @@
+_target_: l2hmc.configs.LossConfig
+
+use_mixed_loss: true
+charge_weight: 0.01
+plaq_weight: 0.0
+aux_weight: 0.0

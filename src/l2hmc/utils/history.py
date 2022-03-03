@@ -15,10 +15,11 @@ import xarray as xr
 import matplotlib.pyplot as plt
 import matplotx
 import seaborn as sns
-from src.l2hmc.configs import MonteCarloStates, Steps
-from src.l2hmc.utils.plot_helpers import set_size
+from l2hmc.configs import MonteCarloStates, Steps
+import l2hmc.utils.plot_helpers as hplt
 
 
+xplt = xr.plot
 LW = plt.rcParams.get('axes.linewidth', 1.75)
 
 
@@ -42,18 +43,19 @@ class StateHistory:
         self.out['v'].append(mc_states.out.v.numpy())
 
 
-class History:
-    def __init__(self, steps: Steps):
+class BaseHistory:
+    def __init__(self, steps: Steps = None):
         self.steps = steps
         self.history = {}
-        self.era_metrics = {str(era): {} for era in range(steps.nera)}
+        nera = 1 if steps is None else steps.nera
+        self.era_metrics = {str(era): {} for era in range(nera)}
 
     def _update(self, key: str, val: Any) -> float:
+        if val is None:
+            raise ValueError(f'None encountered: {key}: {val}')
+
         if isinstance(val, list):
             val = np.array(val)
-
-        if hasattr(val, 'numpy'):
-            val = val.numpy()
 
         try:
             self.history[key].append(val)
@@ -67,33 +69,36 @@ class History:
 
     def era_summary(self, era) -> str:
         emetrics = self.era_metrics[str(era)]
-        return '\n'.join([
-            f'{k}={np.mean(v):<3.2g}' for k, v in emetrics.items()
+        return ', '.join([
+            f'{k}={np.mean(v):<5.4g}' for k, v in emetrics.items()
             if k not in ['era', 'epoch']
         ])
 
     def update(self, metrics: dict) -> dict:
         avgs = {}
-        era = metrics.get('era', None)
-        assert era is not None
+        era = metrics.get('era', 0)
         for key, val in metrics.items():
-            name = key
             avg = None
-            if isinstance(val, dict):
-                for k, v in val.items():
-                    name = f'{key}/{k}'
-                    try:
-                        avg = self._update(key=name, val=v)
-                    except Exception:
-                        continue
+            if isinstance(val, (float, int)):
+                avg = val
             else:
-                avg = self._update(key=key, val=val)
+                if isinstance(val, dict):
+                    for k, v in val.items():
+                        key = f'{key}/{k}'
+                        try:
+                            avg = self._update(key=key, val=v)
+                        # TODO: Figure out how to deal with exception
+                        except Exception:  # some weird tensorflow exception
+                            continue
+                else:
+                    avg = self._update(key=key, val=val)
 
-            avgs[name] = avg
-            try:
-                self.era_metrics[str(era)][name].append(avg)
-            except KeyError:
-                self.era_metrics[str(era)][name] = [avg]
+            if avg is not None:
+                avgs[key] = avg
+                try:
+                    self.era_metrics[str(era)][key].append(avg)
+                except KeyError:
+                    self.era_metrics[str(era)][key] = [avg]
 
         return avgs
 
@@ -111,7 +116,7 @@ class History:
     ) -> tuple:
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
-        figsize = subplots_kwargs.get('figsize', set_size())
+        figsize = subplots_kwargs.get('figsize', hplt.set_size())
         subplots_kwargs.update({'figsize': figsize})
         subfigs = None
 
@@ -211,7 +216,7 @@ class History:
     ):
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
-        figsize = subplots_kwargs.get('figsize', set_size())
+        figsize = subplots_kwargs.get('figsize', hplt.set_size())
         subplots_kwargs.update({'figsize': figsize})
 
         # tmp = val[0]
@@ -279,7 +284,7 @@ class History:
         if num_chains > 0 and len(arr.shape) > 1:
             lw = LW / 2.
             for idx in range(min(num_chains, arr.shape[1])):
-                #ax = subfigs[0].subplots(1, 1)
+                # ax = subfigs[0].subplots(1, 1)
                 # plot values of invidual chains, arr[:, idx]
                 # where arr[:, idx].shape = [ndraws, 1]
                 ax.plot(steps, arr[:, idx], alpha=0.5, lw=lw/2., **plot_kwargs)
@@ -327,12 +332,10 @@ class History:
                 plt.rcParams['axes.edgecolor'] = plt.rcParams['axes.facecolor']
                 ax = subfigs[0].subplots(1, 1)
                 # ax = fig[1].subplots(constrained_layout=True)
-                cbar_kwargs = {
-                    # 'location': 'top',
-                    # 'orientation': 'horizontal',
-                }
-                im = val.plot(ax=ax, cbar_kwargs=cbar_kwargs)
-                im.colorbar.set_label(f'{key}')  # , labelpad=1.25)
+                _ = xplt.pcolormesh(val, 'draw', 'chain', ax=ax,
+                                    robust=True, add_colorbar=True)
+                # im = val.plot(ax=ax, cbar_kwargs=cbar_kwargs)
+                # im.colorbar.set_label(f'{key}')  # , labelpad=1.25)
                 sns.despine(subfigs[0], top=True, right=True,
                             left=True, bottom=True)
                 if outdir is not None:
@@ -343,8 +346,15 @@ class History:
 
         return dataset
 
-    def to_DataArray(self, x: Union[list, np.ndarray]) -> xr.DataArray:
+    def to_DataArray(
+            self,
+            x: Union[list, np.ndarray],
+            therm_frac: float = 0.0,
+    ) -> xr.DataArray:
         arr = np.array(x)
+        if therm_frac > 0:
+            drop = int(therm_frac * arr.shape[0])
+            arr = arr[drop:]
         # steps = np.arange(len(arr))
         if len(arr.shape) == 1:                     # [ndraws]
             ndraws = arr.shape[0]
@@ -369,7 +379,11 @@ class History:
         else:
             raise ValueError('Invalid shape encountered')
 
-    def get_dataset(self, data: dict[str, Union[list, np.ndarray]] = None):
+    def get_dataset(
+            self,
+            data: dict[str, Union[list, np.ndarray]] = None,
+            therm_frac: float = 0.0,
+    ):
         data = self.history if data is None else data
         data_vars = {}
         for key, val in data.items():
@@ -378,7 +392,8 @@ class History:
             #     if isinstance(val[0], (dict, AttrDict)):
             #         tmp = invert
             #      data_vars[key] = dataset = self.get_dataset(val)
+            name = key.replace('/', '_')
 
-            data_vars[key] = self.to_DataArray(val)
+            data_vars[name] = self.to_DataArray(val, therm_frac)
 
         return xr.Dataset(data_vars)

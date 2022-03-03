@@ -1,0 +1,34 @@
+[tool.poetry]
+name = "l2hmc"
+version = "0.1.0"
+description = "L2HMC algorithm for sampling in Lattice QCD"
+authors = ["Sam Foreman <saforem2@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = ">=3.8,<3.11"
+horovod = "^0.24.0"
+matplotx = "^0.3.6"
+ipython = "^8.1.0"
+accelerate = "^0.5.1"
+mpi4py = "^3.1.3"
+pyright = "^1.1.226"
+
+[tool.poetry.dev-dependencies]
+numpy = ">=1.20"
+torch = ">=1.10.2"
+tensorflow-cpu = ">=2.8.0"
+joblib = ">=1.1.0"
+rich = ">=11.2.0"
+hydra-core = ">=1.1.1"
+hydra-colorlog = ">=1.1.0"
+wandb = ">=0.12.11"
+seaborn = ">=0.11.2"
+matplotlib = ">=3.5.1"
+arviz = ">=0.11.4"
+xarray = ">=2022.3.0"
+celerite = ">=0.4.2"
+pyright = ">=1.1.225"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

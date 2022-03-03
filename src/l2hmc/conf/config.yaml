@@ -1,0 +1,74 @@
+---
+hydra:
+  # launcher:
+  #   # override the number of jobs from joblib
+  #   n_jobs = 10
+  run:
+    # Default output paths for all file logs
+    dir: "outputs/runs/\
+      /${dynamics.xshape[1]}x${dynamics.xshape[2]}\
+      /nlf-${dynamics.nleapfrog}\
+      /beta-${annealing_schedule.beta_final}\
+      /merge_directions-${dynamics.merge_directions}\
+      /${framework}\
+      /${now:%Y-%m-%d}\
+      /${now:%H-%M-%S}"
+  sweep:
+    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+    subdir: ${hydra.job.override_dirname}
+    # subdir: ${hydra.job.num}
+defaults:
+  - _self_
+  - steps: default.yaml
+  - dynamics: default.yaml
+  - wandb: default.yaml             # Weights & Biases config
+  - loss: default.yaml
+  - network: default.yaml
+  - conv: none.yaml
+  - net_weights: default.yaml
+  - learning_rate: default.yaml
+  - annealing_schedule: default.yaml
+  # modes are special collections of config options for different purposes, e.g. debugging
+  - mode: default.yaml
+  # - mode: default.yaml
+
+  # experiment configs allow for version control of specific configurations
+  # for example, use them to store best hyperparameters for each model configuration
+  - experiment: null
+
+  # - hydra/run: default.yaml
+
+  # - optional local: default.yaml
+  - override hydra/hydra_logging: colorlog
+  - override hydra/job_logging: colorlog
+
+  # - override hydra/launcher: joblib
+
+  # https://hydra.cc/docs/tutorials/basic/running_your_app/logging/
+  # use this to set level of only chosen command line loggers to 'DEBUG'
+  # verbose: [src.train, src.utils]
+
+framework: ???
+width: null
+nchains: ${dynamics.nleapfrog}
+# pretty print config at the start of the run using Rich library
+# print_config: True
+# disable python warnings if they annoy you
+ignore_warnings: True
+
+# seed for random number generators in pytorch, numpy and python.random
+# seed: null
+
+compile: True
+
+# name of the run, should be used along with experiment mode
+name: null
+
+# path to original working directory
+# hydra hijacks working directory by changing it to the new log directory
+# so it's useful to have this path as a special variable
+# https://hydra.cc/docs/next/tutorials/basic/running_your_app/working_directory
+# work_dir: ${hydra:runtime.cwd}
+
+# path to folder with data
+# data_dir: ${work_dir}/data/

@@ -1,0 +1,9 @@
+# @package _global_
+
+defaults:
+  - override /dynamics: gpu.yaml
+  - override /steps: gpu.yaml
+  - override /network: gpu.yaml
+
+
+print_config: True

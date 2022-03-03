@@ -3,11 +3,13 @@ lattice.py
 
 TensorFlow implementation of the Lattice object.
 """
-from __future__ import absolute_import, division, print_function, annotations
+from __future__ import absolute_import, annotations, division, print_function
+from dataclasses import asdict, dataclass
 
 import numpy as np
 import tensorflow as tf
-from dataclasses import dataclass, asdict
+
+from l2hmc.lattice.lattice import BaseLattice
 
 TF_FLOAT = tf.keras.backend.floatx()
 PI = tf.constant(np.pi)
@@ -45,9 +47,11 @@ def area_law(beta: float, num_plaqs: int) -> float:
     return (tf.math.bessel_i1(beta) / tf.math.bessel_i0(beta)) ** num_plaqs
 
 
-def plaq_exact(beta: float) -> float:
+def plaq_exact(beta: float | Tensor) -> Tensor:
     """Computes the expected value of the avg. plaquette for 2D U(1)."""
-    return tf.math.bessel_i1(beta) / tf.math.bessel_i0(beta)
+    beta = tf.constant(beta, dtype=TF_FLOAT)
+    pexact = tf.constant(tf.math.bessel_i1(beta) / tf.math.bessel_i0(beta))
+    return pexact
 
 
 def project_angle(x):
@@ -55,16 +59,9 @@ def project_angle(x):
     return x - TWO_PI * tf.math.floor((x + PI) / TWO_PI)
 
 
-Observables = dict[str, Tensor]
-
-
-class Lattice:
+class Lattice(BaseLattice):
     def __init__(self, shape: tuple):
-        self._shape = shape
-        self.batch_size, self.x_shape = shape[0], shape[1:]
-        self.nt, self.nx, self._dim = self.x_shape
-        self.nplaqs = self.nt * self.nx
-        self.nlinks = self.nplaqs * self._dim
+        super().__init__(shape=shape)
 
     def draw_uniform_batch(self) -> Tensor:
         """Draw batch of samples, uniformly from [-pi, pi)."""
@@ -73,15 +70,31 @@ class Lattice:
     def unnormalized_log_prob(self, x: Tensor) -> Tensor:
         return self.action(x)
 
-    def calc_metrics(self, x: Tensor) -> Observables:
+    def action(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
+        """Calculate the Wilson gauge action for a batch of lattices."""
+        wloops = self._get_wloops(x) if wloops is None else wloops
+        local_action = tf.ones_like(wloops) - tf.math.cos(wloops)
+        return tf.reduce_sum(local_action, (1, 2))
+
+    def calc_metrics(
+            self,
+            x: Tensor,
+            beta: Tensor = None,
+    ) -> dict[str, Tensor]:
         wloops = self.wilson_loops(x)
         plaqs = self.plaqs(wloops=wloops)
         charges = self.charges(wloops=wloops)
-        return {
-            'plaqs': plaqs,
-            'intQ': charges.intQ,
-            'sinQ': charges.sinQ,
-        }
+        metrics = {'plaqs': plaqs}
+        if beta is not None:
+            pexact = plaq_exact(beta) * tf.ones_like(plaqs)
+            metrics.update({
+               'plaqs_err': pexact - plaqs
+            })
+
+        metrics.update({
+            'intQ': charges.intQ, 'sinQ': charges.sinQ
+        })
+        return metrics
 
     def observables(self, x: Tensor) -> LatticeMetrics:
         """Calculate Lattice observables."""
@@ -105,7 +118,7 @@ class Lattice:
         #       wloop = U0(x, y) +  U1(x+1, y) - U0(x, y+1) - U(1)(x, y)
         #   and so output = wloop.T, with output.shape = [-1, Lt, Lx]
         # --------------------------
-        xt = tf.transpose(tf.reshape(x, (-1, *self.x_shape)))
+        xt = tf.transpose(tf.reshape(x, (-1, *self.xshape)))
         x0 = xt[0]
         x1 = xt[1]
         wl = x0 + tf.roll(x1, -1, axis=0) - tf.roll(x0, -1, axis=1) - x1
@@ -113,7 +126,7 @@ class Lattice:
 
     def wilson_loops4x4(self, x: Tensor) -> Tensor:
         """Calculate the 4x4 Wilson loops"""
-        xt = tf.transpose(tf.reshape(x, (-1, *self.x_shape)))
+        xt = tf.transpose(tf.reshape(x, (-1, *self.xshape)))
         x0 = xt[0]
         x1 = xt[1]
         return tf.transpose(
@@ -135,11 +148,18 @@ class Lattice:
             - x1                                    # -Uy [x, y]
         )
 
-    def plaqs(
+    def plaqs_diff(
             self,
+            beta: float,
             x: Tensor = None,
             wloops: Tensor = None,
     ) -> Tensor:
+        wloops = self._get_wloops(x) if wloops is None else wloops
+        plaqs = self.plaqs(wloops=wloops)
+        pexact = plaq_exact(beta) * tf.ones_like(plaqs)
+        return pexact - self.plaqs(wloops=wloops)
+
+    def plaqs(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
         """Calculate the avg plaq for each of the lattices in x."""
         wloops = self._get_wloops(x) if wloops is None else wloops
         return tf.reduce_mean(tf.math.cos(wloops), (1, 2))
@@ -147,11 +167,7 @@ class Lattice:
     def _plaqs4x4(self, wloops4x4: Tensor) -> Tensor:
         return tf.reduce_mean(tf.math.cos(wloops4x4), (1, 2))
 
-    def plaqs4x4(
-            self,
-            x: Tensor = None,
-            wloops4x4: Tensor = None
-    ) -> Tensor:
+    def plaqs4x4(self, x: Tensor = None, wloops4x4: Tensor = None) -> Tensor:
         """Calculate 4x4 wilson loops."""
         if wloops4x4 is None:
             if x is None:
@@ -172,41 +188,19 @@ class Lattice:
             raise ValueError('Expected input `x`')
         return self.wilson_loops(x)
 
-    def sin_charges(
-            self,
-            x: Tensor = None,
-            wloops: Tensor = None
-    ) -> Tensor:
+    def sin_charges(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
         """Calculate the real-valued charge approximation, sin(Q)"""
         wloops = self._get_wloops(x) if wloops is None else wloops
         return self._sin_charges(wloops)
 
-    def int_charges(
-            self,
-            x: Tensor = None,
-            wloops: Tensor = None
-    ) -> Tensor:
+    def int_charges(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
         """Calculate the integer valued charges."""
         wloops = self._get_wloops(x) if wloops is None else wloops
         return self._int_charges(wloops)
 
-    def charges(
-            self,
-            x: Tensor = None,
-            wloops: Tensor = None,
-    ) -> Charges:
+    def charges(self, x: Tensor = None, wloops: Tensor = None) -> Charges:
         """Calculate both charge representations and return as single object"""
         wloops = self._get_wloops(x) if wloops is None else wloops
         sinQ = self._sin_charges(wloops)
         intQ = self._int_charges(wloops)
         return Charges(intQ=intQ, sinQ=sinQ)
-
-    def action(
-            self,
-            x: Tensor = None,
-            wloops: Tensor = None,
-    ) -> Tensor:
-        """Calculate the Wilson gauge action for a batch of lattices."""
-        wloops = self._get_wloops(x) if wloops is None else wloops
-        local_action = tf.ones_like(wloops) - tf.math.cos(wloops)
-        return tf.reduce_sum(local_action, (1, 2))

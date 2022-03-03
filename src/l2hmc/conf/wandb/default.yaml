@@ -1,0 +1,20 @@
+---
+setup:
+    id: null
+    group: null
+    config: null
+    # job_type: null
+    save_code: true
+    sync_tensorboard: true
+    mode: online
+    resume: allow
+    entity: l2hmc-qcd
+    project: l2hmc-qcd
+    settings:
+        start_method: thread
+    tags:
+      - "beta_init=${annealing_schedule.beta_init}"
+      - "beta_final=${annealing_schedule.beta_final}"
+# watch:
+#   log: all
+#   # log_freq: 100
