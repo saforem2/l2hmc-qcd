@@ -1,9 +1,0 @@
----
-dir: "outputs/runs/\
-  /${dynamics.xshape[1]}x${dynamics.xshape[2]}\
-  /nlf-${dynamics.nleapfrog}\
-  /beta-${annealing_schedule.beta_final}\
-  /merge_directions-${dynamics.merge_directions}\
-  /${framework}\
-  /${now:%Y-%m-%d}\
-  /${now:%H-%M-%S}"
