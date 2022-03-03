@@ -44,7 +44,7 @@ def setup(cfg: DictConfig) -> dict:
     net_weights = instantiate(cfg.net_weights)
     schedule = instantiate(cfg.annealing_schedule)
     schedule.setup(steps)
-    clipnorm = cfg.get('clipnorm', 10.0)
+    # clipnorm = cfg.get('clipnorm', 10.0)
 
     try:
         conv_cfg = instantiate(cfg.get('conv', None))
@@ -65,8 +65,7 @@ def setup(cfg: DictConfig) -> dict:
                         potential_fn=lattice.action,
                         network_factory=net_factory)
     loss_fn = LatticeLoss(lattice=lattice, loss_config=loss_cfg)
-    optimizer = tf.keras.optimizers.Adam(cfg.learning_rate.lr_init,
-                                         clipnorm=clipnorm)
+    optimizer = tf.keras.optimizers.Adam(cfg.learning_rate.lr_init)
     trainer = Trainer(steps=steps,
                       rank=RANK,
                       loss_fn=loss_fn,
@@ -174,7 +173,9 @@ def train(
     writer = get_summary_writer(cfg, job_type='train')
     if writer is not None:
         writer.set_as_default()
+
     train_output = trainer.train(run=run,
+                                 writer=writer,
                                  train_dir=jobdir,
                                  width=cfg.get('width', None),
                                  **kwargs)
