@@ -1,0 +1,11 @@
+_target_: l2hmc.configs.NetWeights
+x:
+  _target_: l2hmc.configs.NetWeight
+  s: 1.0
+  t: 1.0
+  q: 1.0
+v:
+  _target_: l2hmc.configs.NetWeight
+  s: 1.0
+  t: 1.0
+  q: 1.0

@@ -6,12 +6,14 @@ Contains pytorch implementation of Lattice object.
 Author: Sam Foreman
 Date: 06/02/2021
 """
-from __future__ import absolute_import, division, print_function, annotations
-
-import torch
+from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass
 from math import pi as PI
-from scipy.special import i1, i0
+
+from scipy.special import i0, i1
+import torch
+
+from l2hmc.lattice.lattice import BaseLattice
 
 TWO_PI = 2. * PI
 Tensor = torch.Tensor
@@ -22,9 +24,6 @@ class Charges:
     intQ: Tensor
     sinQ: Tensor
 
-    def asdict(self):
-        return {'intQ': self.intQ, 'sinQ': self.sinQ}
-
 
 @dataclass
 class LatticeMetrics:
@@ -32,20 +31,12 @@ class LatticeMetrics:
     charges: Charges
     p4x4: Tensor
 
-    def asdict(self):
-        return {
-            'plaqs': self.plaqs,
-            'p4x4': self.p4x4,
-            'sinQ': self.charges.sinQ,
-            'intQ': self.charges.intQ,
-        }
-
 
 def area_law(beta: float, nplaqs: int):
     return (i1(beta) / i0(beta)) ** nplaqs
 
 
-def plaq_exact(beta: float):
+def plaq_exact(beta: float | Tensor):
     return i1(beta) / i0(beta)
 
 
@@ -54,15 +45,11 @@ def project_angle(x: Tensor) -> Tensor:
     return x - TWO_PI * torch.floor((x + PI) / TWO_PI)
 
 
-class Lattice:
+class Lattice(BaseLattice):
     def __init__(self, shape: tuple):
-        self._shape = shape
-        self.batch_size, self.x_shape = shape[0], shape[1:]
-        self.nt, self.nx, self._dim = self.x_shape
-        self.nplaqs = self.nt * self.nx
-        self.nlinks = self.nplaqs * self._dim
+        super().__init__(shape=shape)
 
-    def draw_uniform_batch(self, requires_grad=True):
+    def draw_uniform_batch(self, requires_grad=True) -> Tensor:
         """Draw batch of samples, uniformly from [-pi, pi)."""
         unif = torch.rand(self._shape, requires_grad=requires_grad)
         return TWO_PI * unif - PI
@@ -70,13 +57,41 @@ class Lattice:
     def unnormalized_log_prob(self, x: Tensor) -> Tensor:
         return self.action(x=x)
 
-    def calc_metrics(self, x: Tensor) -> dict[str, Tensor]:
+    def action(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
+        """Calculate the Wilson gauge action for a batch of lattices."""
+        wloops = self._get_wloops(x) if wloops is None else wloops
+        return (1. - torch.cos(wloops)).sum((1, 2))
+
+    def plaqs_diff(
+            self,
+            beta: float,
+            x: Tensor = None,
+            wloops: Tensor = None,
+    ) -> Tensor:
+        """Calculate the difference between plaquettes and expected value"""
+        wloops = self._get_wloops(x) if wloops is None else wloops
+        plaqs = self.plaqs(wloops=wloops)
+        pexact = plaq_exact(beta) * torch.ones_like(plaqs)
+        return pexact - self.plaqs(wloops=wloops)
+
+    def calc_metrics(self, x: Tensor, beta: float = None) -> dict[str, Tensor]:
+        """Calculate various metrics and return as dict"""
         wloops = self.wilson_loops(x)
         plaqs = self.plaqs(wloops=wloops)
         charges = self.charges(wloops=wloops)
-        return {'plaqs': plaqs, 'intQ': charges.intQ, 'sinQ': charges.sinQ}
+        metrics = {'plaqs': plaqs}
+        if beta is not None:
+            metrics.update({
+               'plaqs_err': plaq_exact(torch.from_numpy(beta)) - plaqs
+            })
+        metrics.update({
+            'intQ': charges.intQ, 'sinQ': charges.sinQ
+        })
+
+        return metrics
 
     def observables(self, x: Tensor) -> LatticeMetrics:
+        """Calculate observables and return as LatticeMetrics object"""
         wloops = self.wilson_loops(x)
         return LatticeMetrics(p4x4=self.plaqs4x4(x=x),
                               plaqs=self.plaqs(wloops=wloops),
@@ -97,12 +112,12 @@ class Lattice:
         #       wloop = U0(x, y) +  U1(x+1, y) - U0(x, y+1) - U(1)(x, y)
         #   and so output = wloop.T, with output.shape = [-1, Lt, Lx]
         # --------------------------
-        x0, x1 = x.reshape(-1, *self.x_shape).T
+        x0, x1 = x.reshape(-1, *self.xshape).T
         return (x0 + x1.roll(-1, dims=0) - x0.roll(-1, dims=1) - x1).T
 
     def wilson_loops4x4(self, x: Tensor) -> Tensor:
         """Calculate the 4x4 Wilson loops"""
-        x0, x1 = x.reshape(-1, *self.x_shape).T
+        x0, x1 = x.reshape(-1, *self.xshape).T
         return (
             x0                                  # Ux  [x, y]
             + x0.roll(-1, dims=2)               # Ux  [x+1, y]
@@ -177,8 +192,3 @@ class Lattice:
         sinQ = self._sin_charges(wloops)
         intQ = self._int_charges(wloops)
         return Charges(intQ=intQ, sinQ=sinQ)
-
-    def action(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
-        """Calculate the Wilson gauge action for a batch of lattices."""
-        wloops = self._get_wloops(x) if wloops is None else wloops
-        return (1. - torch.cos(wloops)).sum((1, 2))

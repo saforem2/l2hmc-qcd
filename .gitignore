@@ -1,6 +1,9 @@
 ## --------------------------------
 ## USER-DEFINED .gitignore below
 ## --------------------------------
+*.output
+*.error
+*.cobaltlog
 logs/
 plots/
 data/
@@ -13,6 +16,9 @@ tags
 ./pyrightconfig.json
 ./l2hmc-qcd/utils/rich_table_movie.py
 l2hmc-qcd.code-workspace
+src/l2hmc/outputs/runs/
+src/l2hmc/outputs/multirun/
+src/l2hmc/outputs/debug
 
 .vscode/
 bin/restore.sh

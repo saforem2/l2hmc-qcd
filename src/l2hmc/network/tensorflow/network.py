@@ -4,42 +4,39 @@ tensorflow/network.py
 Tensorflow implementation of the network used to train the L2HMC sampler.
 """
 from __future__ import absolute_import, annotations, division, print_function
+from typing import Optional
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.initializers import VarianceScaling
-from tensorflow.keras.layers import (
-    Add,
-    BatchNormalization,
-    Conv2D,
-    Dense,
-    Dropout,
-    Flatten,
-    Input,
-    Layer,
-    MaxPooling2D,
-)
+
 from tensorflow.python.types.core import Callable
 
-from src.l2hmc.configs import (
+from l2hmc.configs import (
     ConvolutionConfig,
     NetWeight,
     NetworkConfig,
-    Shape,
 )
-from src.l2hmc.network.factory import BaseNetworkFactory
-from src.l2hmc.network.tensorflow.utils import PeriodicPadding
-
+from l2hmc.network.factory import BaseNetworkFactory
+from l2hmc.network.tensorflow.utils import PeriodicPadding
 
 Tensor = tf.Tensor
 Model = tf.keras.Model
+Add = tf.keras.layers.Add
+Input = tf.keras.layers.Input
+Dense = tf.keras.layers.Dense
+Conv2D = tf.keras.layers.Conv2D
+Dropout = tf.keras.layers.Dropout
+Flatten = tf.keras.layers.Flatten
+Reshape = tf.keras.layers.Reshape
+Multiply = tf.keras.layers.Multiply
+Activation = tf.keras.layers.Activation
+MaxPooling2D = tf.keras.layers.MaxPooling2D
+BatchNormalization = tf.keras.layers.BatchNormalization
+
 PI = np.pi
 TWO_PI = 2. * PI
 
 TF_FLOAT = tf.keras.backend.floatx()
-
-NetworkInputs = tuple[Tensor, Tensor]
-NetworkOutputs = tuple[Tensor, Tensor, Tensor]
 
 
 def to_u1(x: Tensor) -> Tensor:
@@ -57,6 +54,11 @@ ACTIVATIONS = {
     'linear': linear_activation,
 }
 
+# FUNCTIONAL_ACTIVATIONS = {
+#     'relu': tf.keras.layers.ReLU,
+#     'tanh': tf.keras.layers.T
+# }
+
 
 class NetworkFactory(BaseNetworkFactory):
     def build_networks(self, n: int, split_xnets: bool) -> dict:
@@ -67,75 +69,31 @@ class NetworkFactory(BaseNetworkFactory):
         cfg = self.get_build_configs()
         if n == 1:
             return {
-                'xnet': get_network(**cfg['xnet'], name='xNet'),
-                'vnet': get_network(**cfg['vnet'], name='vNet'),
+                'xnet': get_network(**cfg['xnet'], name='xnet'),
+                'vnet': get_network(**cfg['vnet'], name='vnet'),
             }
 
         vnet = {
-            str(i): get_network(**cfg['vnet'], name=f'vNet/lfLayer{i}')
+            str(i): get_network(**cfg['vnet'], name=f'vnet_{i}')
             for i in range(n)
         }
         if split_xnets:
-            xstr = 'xNet/lfLayer'
+            # xstr = 'xnet'
             labels = ['first', 'second']
             xnet = {}
             for i in range(n):
                 nets = [
-                    get_network(**cfg['xnet'], name=f'{xstr}{i}/first'),
-                    get_network(**cfg['xnet'], name=f'{xstr}{i}/second')
+                    get_network(**cfg['xnet'], name=f'xnet_{i}_first'),
+                    get_network(**cfg['xnet'], name=f'xnet_{i}_second')
                 ]
                 xnet[str(i)] = dict(zip(labels, nets))
         else:
             xnet = {
-                str(i): get_network(**cfg['xnet'], name=f'xNet/lfLayer{i}')
+                str(i): get_network(**cfg['xnet'], name=f'xnet_{i}')
                 for i in range(n)
             }
 
         return {'xnet': xnet, 'vnet': vnet}
-
-
-def get_kinit(scale: float = 1., seed: int = None):
-    return VarianceScaling(scale=2. * scale,
-                           mode='fan_in', seed=seed,
-                           distribution='truncated_normal')
-
-
-class CustomDense(Layer):
-    def __init__(
-            self,
-            units: int,
-            scale: float = 1.,
-            activation: str | Callable = None,
-            **kwargs,
-    ):
-        super(CustomDense, self).__init__(**kwargs)
-        if isinstance(activation, str):
-            activation = ACTIVATIONS.get(activation, ACTIVATIONS['relu'])
-
-        self.units = units
-        self.scale = scale
-        self.activation = activation
-        kinit = tf.keras.initializers.VarianceScaling(
-            mode='fan_in',
-            scale=2.*self.scale,
-            distribution='truncated_normal',
-        )
-        self.layer = Dense(self.units,
-                           name=self.name,
-                           activation=activation,
-                           kernel_initializer=kinit)
-
-    def get_config(self) -> dict:
-        config = super(CustomDense, self).get_config()
-        config.update({
-            'units': self.units,
-            'scale': self.scale,
-            'activation': self.activation,
-        })
-        return config
-
-    def call(self, x: Tensor) -> Tensor:
-        return self.layer(x)
 
 
 def get_network_configs(
@@ -143,27 +101,30 @@ def get_network_configs(
         network_config: NetworkConfig,
         # factor: float = 1.,
         activation_fn: str | Callable = None,
-        name: str = 'Network',
+        name: str = 'network',
 ) -> dict:
     """Returns network configs."""
     if isinstance(activation_fn, str):
-        activation_fn = ACTIVATIONS.get(activation_fn, ACTIVATIONS['relu'])
+        activation_fn = Activation(activation_fn)
+        assert callable(activation_fn)
+        # activation_fn = ACTIVATIONS.get(activation_fn, ACTIVATIONS['relu'])
 
     assert callable(activation_fn)
     names = {
-        'x_input': f'{name}/xInput',
-        'v_input': f'{name}/vInput',
-        'x_layer': f'{name}/xLayer',
-        'v_layer': f'{name}/vLayer',
-        'scale': f'{name}/scaleLayer',
-        'transl': f'{name}/translationLayer',
-        'transf': f'{name}/transformationLayer',
-        's_coeff': f'{name}/scaleCoeff',
-        'q_coeff': f'{name}/transformationCoeff',
+        'x_input': f'{name}_xinput',
+        'v_input': f'{name}_vinput',
+        'x_layer': f'{name}_xLayer',
+        'v_layer': f'{name}_vLayer',
+        'scale': f'{name}_scaleLayer',
+        'transf': f'{name}_transformationLayer',
+        'transl': f'{name}_translationLayer',
+        's_coeff': f'{name}_scaleCoeff',
+        'q_coeff': f'{name}_transformationCoeff',
     }
     coeff_kwargs = {
         'trainable': True,
         'initial_value': tf.zeros([1, xdim], dtype=TF_FLOAT),
+        'dtype': TF_FLOAT,
     }
 
     args = {
@@ -209,11 +170,11 @@ def get_network_configs(
 
 # pylint:disable=too-many-locals, too-many-arguments
 def get_network(
-        xshape: Shape,
+        xshape: tuple,
         network_config: NetworkConfig,
         input_shapes: dict[str, tuple[int]] = None,
         net_weight: NetWeight = None,
-        conv_config: ConvolutionConfig = None,
+        conv_config: Optional[ConvolutionConfig] = None,
         # factor: float = 1.,
         name: str = None,
 ) -> Model:
@@ -240,14 +201,13 @@ def get_network(
     x_input = Input(input_shapes['x'], name=names['x_input'], dtype=TF_FLOAT)
     v_input = Input(input_shapes['v'], name=names['v_input'], dtype=TF_FLOAT)
 
-    s_coeff = tf.Variable(**cfg['coeff_kwargs'],
-                          name=names['s_coeff'],
-                          dtype=TF_FLOAT)
-    q_coeff = tf.Variable(**cfg['coeff_kwargs'],
-                          name=names['q_coeff'],
-                          dtype=TF_FLOAT)
+    s_coeff = tf.Variable(**cfg['coeff_kwargs'], name=names['s_coeff'])
+    q_coeff = tf.Variable(**cfg['coeff_kwargs'], name=names['q_coeff'])
 
-    if conv_config is not None:
+    if conv_config is None:
+        x = Flatten()(x_input)
+
+    else:
         if len(xshape) == 3:
             nt, nx, d = xshape
         elif len(xshape) == 4:
@@ -255,28 +215,24 @@ def get_network(
         else:
             raise ValueError(f'Invalid value for `xshape`: {xshape}')
 
-        n1 = conv_config.filters[0]
-        n2 = conv_config.filters[1]
-        f1 = conv_config.sizes[0]
-        f2 = conv_config.sizes[1]
-        p1 = conv_config.pool[0]
+        try:
+            x = Reshape((-1, nt, nx, d + 2))(x_input)
+        except ValueError:
+            x = Reshape((-1, nt, nx, d))(x_input)
 
-        if 'xnet' in name.lower():
-            x = tf.reshape(x_input, shape=(-1, nt, nx, d + 2))
-        else:
-            x = tf.reshape(x_input, shape=(-1, nt, nx, d))
+        iterable = zip(conv_config.filters, conv_config.sizes)
+        for idx, (f, n) in enumerate(iterable):
+            x = PeriodicPadding(n - 1)(x)
+            # Pass network_config.activation_fn (str) to Conv2D
+            x = Conv2D(f, n, name=f'{name}/xConv{idx}',
+                       activation=network_config.activation_fn)(x)
+            if (idx + 1) % 2 == 0:
+                p = conv_config.pool[idx]
+                x = MaxPooling2D((p, p), name=f'{name}/xPool{idx}')(x)
 
-        x = PeriodicPadding(f1 - 1)(x)
-        x = Conv2D(n1, f1, activation='relu', name=f'{name}/xConv1')(x)
-        x = Conv2D(n2, f2, activation='relu', name=f'{name}/xConv2')(x)
-        x = MaxPooling2D(p1, name=f'{name}/xPool')(x)
-        x = Conv2D(n2, f2, activation='relu', name=f'{name}/xConv3')(x)
-        x = Conv2D(n1, f1, activation='relu', name=f'{name}/xConv4')(x)
         x = Flatten()(x)
         if network_config.use_batch_norm:
-            x = BatchNormalization(-1, name=f'{name}/batch_norm')(x)
-    else:
-        x = Flatten()(x_input)
+            x = BatchNormalization(-1)(x)
 
     x = Dense(**args['x'], dtype=TF_FLOAT)(x)
     v = Dense(**args['v'], dtype=TF_FLOAT)(v_input)
@@ -285,28 +241,31 @@ def get_network(
         z = Dense(units,
                   activation=act_fn,
                   dtype=TF_FLOAT,
-                  name=f'{name}/hLayer{idx}')(z)
+                  name=f'{name}_hLayer{idx}')(z)
 
     if network_config.dropout_prob > 0:
         z = Dropout(network_config.dropout_prob)(z)
 
     if network_config.use_batch_norm:
-        z = BatchNormalization(-1, name=f'{name}/BatchNorm')(z)
+        z = BatchNormalization(-1, name=f'{name}_batchnorm')(z)
 
-    s_layer = Dense(**args['scale'])
-    t_layer = Dense(**args['transl'])
-    q_layer = Dense(**args['transf'])
+    # Scaling
+    s = Multiply()([
+        net_weight.s * tf.math.exp(s_coeff),
+        tf.math.tanh(Dense(**args['scale'])(z))
+    ])
 
-    s = tf.math.exp(s_coeff) * tf.math.tanh(s_layer(z))
-    t = t_layer(z)
-    q = tf.math.exp(q_coeff) * tf.math.tanh(q_layer(z))
+    # Translation
+    t = Dense(**args['transl'])(z)
 
-    scale = net_weight.s * s
-    transl = net_weight.t * t
-    transf = net_weight.q * q
+    # Transformation
+    q = Multiply()([
+        net_weight.q * tf.math.exp(q_coeff),
+        tf.math.tanh(Dense(**args['transf'])(z))
+    ])
 
     model = Model(name=name,
                   inputs=[x_input, v_input],
-                  outputs=[scale, transl, transf])
+                  outputs=[s, t, q])
 
     return model
