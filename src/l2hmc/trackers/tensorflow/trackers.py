@@ -29,13 +29,11 @@ def log_item(
 ):
     if (
             'dt' in tag
-            or 'beta' in tag
             or 'era' in tag
             or 'epoch' in tag
-            or isinstance(val, (float, int, bool))
+            or isinstance(val, (int, float, bool))
     ):
         tf.summary.scalar(tag, val, step=step)
-
     else:
         tf.summary.histogram(tag, val, step=step)
         tf.summary.scalar(f'{tag}/avg', tf.reduce_mean(val), step=step)
@@ -47,8 +45,6 @@ def log_dict(d: dict, step: int, prefix: str = None):
         pre = key if prefix is None else f'{prefix}/{key}'
         if isinstance(val, dict):
             log_dict(val, step=step, prefix=pre)
-            # for k, v in val.items():
-            #     log_item(f'{pre}/{k}', v, step=step)
         else:
             log_item(pre, val, step=step)
 
@@ -69,11 +65,9 @@ def update_summaries(
 ):
     """"Create summary objects."""
     if metrics is not None:
-        # pre = 'metrics' if prefix is None else '/'.join([prefix, 'metrics'])
         log_dict(metrics, step, prefix=prefix)
 
     if model is not None:
-        # mpre = 'model' if prefix is None else '/'.join(['model', prefix])
         log_list(model.variables, step=step, prefix='model')
 
     if optimizer is not None:
