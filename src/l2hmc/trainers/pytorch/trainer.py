@@ -19,7 +19,6 @@ from rich.live import Live
 from rich.table import Table
 import torch
 from torch import optim
-from torch.utils.tensorboard.writer import SummaryWriter
 
 from l2hmc.configs import (
     AnnealingSchedule, DynamicsConfig, LearningRateConfig, Steps
@@ -233,11 +232,14 @@ class Trainer:
         summaries = []
         tables = {}
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
-        nlog = max(10, int(self.steps.test // 500))
-        nprint = max(10, int(self.steps.test // 20))
+        # nlog = max(10, int(self.steps.test // 500))
+        # nprint = max(10, int(self.steps.test // 20))
+        nprint = self.steps.test // 20
+        nlog = 10 if self.steps.test < 1000 else 20
         assert job_type in ['eval', 'hmc']
         timer = self.timers[job_type]
         history = self.histories[job_type]
+        assert isinstance(beta, float)
 
         with Live(table, console=console, screen=False) as live:
             if width is not None and width > 0:
@@ -344,25 +346,23 @@ class Trainer:
             **kwargs,
         }, ckpt_file)
 
-    def setup_SummaryWriter(self, outdir: os.PathLike = None):
-        """Setup SummaryWriter for TensorBoard summaries."""
-        if self.accelerator.is_local_main_process:
-            return SummaryWriter(
-                Path(outdir).as_posix() if outdir is not None else None
-            )
-        return None
-
     def train(
             self,
             x: Tensor = None,
             skip: str | list[str] = None,
-            width: int = 80,
+            width: int = None,
             train_dir: os.PathLike = None,
             run: Any = None,
             writer: Any = None,
             # keep: str | list[str] = None,
     ) -> dict:
         skip = [skip] if isinstance(skip, str) else skip
+        if width is None:
+            width = max((150, int(os.environ.get('COLUMNS', 150))))
+
+        if isinstance(skip, str):
+            skip = [skip]
+
         if x is None:
             x = random_angle(self.xshape, requires_grad=True)
             x = x.reshape(x.shape[0], -1)
@@ -386,6 +386,7 @@ class Trainer:
             if self.accelerator.is_local_main_process:
                 console.width = width
                 console.rule(f'ERA: {era}, BETA: {beta}')
+
             with Live(
                     table,
                     screen=False,

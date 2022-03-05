@@ -19,9 +19,6 @@ from rich.table import Table
 from rich import box
 import tensorflow as tf
 
-# import wandb
-# from rich.panel import Panel
-# from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from tensorflow.python.keras import backend as K
 
 from l2hmc.configs import (
@@ -33,9 +30,13 @@ from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.utils.console import console
 from l2hmc.utils.history import summarize_dict
 from l2hmc.trackers.tensorflow.trackers import update_summaries
-# from l2hmc.utils.hvd_init import IS_CHIEF, RANK
 from l2hmc.utils.step_timer import StepTimer
 from l2hmc.utils.tensorflow.history import History
+
+# import wandb
+# from rich.panel import Panel
+# from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+
 tf.autograph.set_verbosity(0)
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 
@@ -166,23 +167,6 @@ class Trainer:
         }
         # self.eval_history = History()
         # evals_per_step = self.dynamics.config.nleapfrog * steps.log
-
-    def setup_FileWriter(self, outdir: os.PathLike):
-        """Setup file writer for saving TensorBoard summaries."""
-        writer = None
-        if self.rank == 0:
-            sumdir = Path(outdir).joinpath('summaries')
-            figdir = Path(outdir).joinpath('networks', 'figures')
-
-            figdir.mkdir(exist_ok=True, parents=True)
-            sumdir.mkdir(exist_ok=True, parents=True)
-
-            plot_models(self.dynamics, figdir)
-            writer = tf.summary.create_file_writer(  # type:ignore
-                sumdir.as_posix()
-            )
-
-        return writer
 
     def setup_CheckpointManager(self, outdir: os.PathLike):
         ckptdir = Path(outdir).joinpath('checkpoints')
@@ -319,11 +303,8 @@ class Trainer:
             x: Tensor = None,
             skip: str | list[str] = None,
             width: int = 150,
-            compile: bool = True,
             run: Any = None,
             writer: Any = None,
-            jit_compile: bool = False,
-            # eval_dir: os.PathLike = None,
             job_type: Optional[str] = 'eval',
     ) -> dict:
         """Evaluate model."""
@@ -334,9 +315,6 @@ class Trainer:
             beta = self.schedule.beta_final
 
         assert job_type in ['eval', 'hmc']
-
-        # if eval_dir is None:
-        #     eval_dir = Path(os.getcwd()).joinpath('eval')
 
         if x is None:
             unif = tf.random.uniform(self.dynamics.xshape,
@@ -355,19 +333,12 @@ class Trainer:
 
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
 
-        # if compile:
-        #     self.dynamics.compile(
-        #         optimizer=self.optimizer,
-        #         loss=self.loss_fn,
-        #         # experimental_run_tf_function=False,
-        #     )
-        #     # eval_step = tf.function(eval_fn, jit_compile=jit_compile)
-
         tables = {}
         summaries = []
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
-        nlog = max(10, int(self.steps.test) // 500)
-        nprint = max(10, int(self.steps.test) // 20)
+        nprint = self.steps.test // 20
+        nlog = 10 if self.steps.test < 1000 else 20
+        assert job_type in ['eval', 'hmc']
         timer = self.timers[job_type]
         history = self.histories[job_type]
         with Live(
@@ -465,17 +436,18 @@ class Trainer:
             self,
             xinit: Tensor = None,
             skip: str | list[str] = None,
-            compile: bool = True,
-            jit_compile: bool = False,
-            # save_x: bool = False,
             width: int = None,
             train_dir: os.PathLike = None,
             run: Any = None,
             writer: Any = None,
+            # compile: bool = True,
+            # jit_compile: bool = False,
+            # save_x: bool = False,
     ) -> dict:
         """Train l2hmc Dynamics."""
         if width is None:
             width = max((150, int(os.environ.get('COLUMNS', 150))))
+
         if isinstance(skip, str):
             skip = [skip]
 
