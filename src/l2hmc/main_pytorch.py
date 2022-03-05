@@ -149,6 +149,15 @@ def update_wandb_config(
     if wbdir is not None:
         cfg.wandb.setup.update({'dir': Path(wbdir).as_posix()})
 
+    cfg.wandb.setup.update({
+        'tags': [
+            f'{cfg.framework}',
+            f'nlf-{cfg.dynamics.nleapfrog}',
+            f'beta_final-{cfg.annealing_schedule.beta_final}',
+            f'{cfg.dynamics.xshape[1]}x{cfg.dynamics.xshape[2]}',
+        ]
+    })
+
     return cfg
 
 
@@ -225,30 +234,34 @@ def train(
 ) -> dict:
     jobdir = get_jobdir(cfg, job_type='train')
     writer = get_summary_writer(cfg, trainer, job_type='train')
-    train_output = trainer.train(run=run,
-                                 writer=writer,
-                                 train_dir=jobdir,
-                                 width=cfg.get('width', None))
+    width = int(cfg.get('width', os.environ.get('COLUMNS', 150)))
+    output = trainer.train(run=run,
+                           writer=writer,
+                           train_dir=jobdir,
+                           width=width)
+
     if trainer.accelerator.is_local_main_process:
-        train_dset = train_output['history'].get_dataset()
-        _ = analyze_dataset(train_dset,
+        dset = output['history'].get_dataset()
+        _ = analyze_dataset(dset,
                             outdir=jobdir,
                             job_type='train',
                             title='Training: PyTorch',
-                            nchains=cfg.get('nchains', None))
+                            nchains=cfg.get('nchains', -1))
 
         if not is_interactive():
             tdir = jobdir.joinpath('logs')
             tdir.mkdir(exist_ok=True, parents=True)
             log.info(f'Saving train logs to: {tdir.as_posix()}')
             save_logs(logdir=tdir,
-                      tables=train_output['tables'],
-                      summaries=train_output['summaries'])
+                      run=run,
+                      job_type='train',
+                      tables=output['tables'],
+                      summaries=output['summaries'])
 
     if writer is not None:
         writer.close()
 
-    return train_output
+    return output
 
 
 # @record
