@@ -177,11 +177,27 @@ class LearningRateConfig(BaseConfig):
 @dataclass
 class AnnealingSchedule(BaseConfig):
     beta_init: float
-    beta_final: float
+    beta_final: Optional[float] = 1.0
     # steps: Steps
     # TODO: Add methods for specifying different annealing schedules
 
+    def __post_init__(self):
+        if self.beta_final is None or self.beta_final < self.beta_init:
+            log.warning(
+                f'AnnealingSchedule.beta_final must be >= {self.beta_init},'
+                f' but received: {self.beta_final}.\n'
+                f'Setting self.beta_final to {self.beta_init}'
+            )
+            self.beta_final = float(self.beta_init)
+        assert (
+            isinstance(self.beta_final, float)
+            and self.beta_final >= self.beta_init
+        )
+
     def setup(self, steps: Steps) -> None:
+        if self.beta_final is None:
+            self.beta_final = self.beta_init
+
         betas = np.linspace(self.beta_init, self.beta_final, steps.nera)
         self.betas = {
             str(era): betas[era] for era in range(steps.nera)
