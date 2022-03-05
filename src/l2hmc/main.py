@@ -5,6 +5,7 @@ Contains entry point for training Dynamics.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
+import os
 
 import hydra
 from omegaconf import DictConfig
@@ -40,6 +41,8 @@ def main(cfg: DictConfig) -> None:
     # log.info(OmegaConf.create(cfg).pretty())
     # rich.print(OmegaConf.to_container(cfg, resolve=True))
     framework = cfg.get('framework', None)
+    width = max((150, int(cfg.get('width', os.environ.get('COLUMNS', 150)))))
+    cfg.update({'width': width})
     assert framework is not None, (
         'Framework must be specified, one of: [pytorch, tensorflow]'
     )
