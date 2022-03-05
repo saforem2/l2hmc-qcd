@@ -1,6 +1,7 @@
 ## --------------------------------
 ## USER-DEFINED .gitignore below
 ## --------------------------------
+src/l2hmc/outputs/*
 *.output
 *.error
 *.cobaltlog
