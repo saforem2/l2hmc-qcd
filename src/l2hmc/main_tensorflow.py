@@ -93,13 +93,26 @@ def update_wandb_config(
         # wbdir: Optional[os.PathLike] = None,
 ) -> DictConfig:
     """Updates config using runtime information for W&B."""
-    group = ['tensorflow', 'horovod' if SIZE > 1 else 'local']
+    group = [
+        'tensorflow',
+        'gpu' if len(tf.config.list_physical_devices('GPU')) > 0 else 'cpu'
+        'horovod' if SIZE > 1 else 'local'
+    ]
     if debug:
         group.append('debug')
 
     cfg.wandb.setup.update({'group': '/'.join(group)})
     if id is not None:
         cfg.wandb.setup.update({'id': id})
+
+    cfg.wandb.setup.update({
+        'tags': [
+            f'{cfg.framework}',
+            f'nlf-{cfg.dynamics.nleapfrog}',
+            f'beta_final-{cfg.annealing_schedule.beta_final}',
+            f'{cfg.dynamics.xshape[1]}x{cfg.dynamics.xshape[2]}',
+        ]
+    })
 
     return cfg
 
@@ -171,16 +184,17 @@ def train(
 ) -> dict:
     jobdir = get_jobdir(cfg, job_type='train')
     writer = get_summary_writer(cfg, job_type='train')
+    width = int(cfg.get('width', os.environ.get('COLUMNS', 150)))
     if writer is not None:
         writer.set_as_default()
 
-    train_output = trainer.train(run=run,
-                                 writer=writer,
-                                 train_dir=jobdir,
-                                 width=cfg.get('width', None),
-                                 **kwargs)
+    output = trainer.train(run=run,
+                           writer=writer,
+                           train_dir=jobdir,
+                           width=width,
+                           **kwargs)
     if RANK == 0:
-        dset = train_output['history'].get_dataset()
+        dset = output['history'].get_dataset()
         _ = analyze_dataset(dset,
                             outdir=jobdir,
                             job_type='train',
@@ -193,13 +207,13 @@ def train(
             save_logs(logdir=tdir,
                       run=run,
                       job_type='train',
-                      tables=train_output['tables'],
-                      summaries=train_output['summaries'])
+                      tables=output['tables'],
+                      summaries=output['summaries'])
 
     if writer is not None:
         writer.close()  # type: ignore
 
-    return train_output
+    return output
 
 
 def main(cfg: DictConfig) -> dict:
@@ -228,11 +242,7 @@ def main(cfg: DictConfig) -> dict:
     # 2. Evaluate trained model
     # 3. Run generic HMC as baseline w/ same trajectory length
     # ----------------------------------------------------------
-    outputs['train'] = train(cfg,                        # [1.]
-                             trainer,
-                             run=run,
-                             compile=cfg.get('compile', True),
-                             jit_compile=cfg.get('jit_compile', False))
+    outputs['train'] = train(cfg, trainer, run=run)      # [1.]
 
     if RANK == 0:
         if run is not None:
