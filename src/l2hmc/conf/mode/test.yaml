@@ -36,4 +36,4 @@ hydra:
   #   subdir: ${hydra.job.num}
 
 # disable rich config printing, since it will be already printed by hydra when `verbose: True`
-print_config: False
+print_config: True
