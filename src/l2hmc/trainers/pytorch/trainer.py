@@ -32,6 +32,8 @@ from l2hmc.utils.step_timer import StepTimer
 # from torchinfo import summary as model_summary
 
 
+WIDTH = int(os.environ.get('COLUMNS', 150))
+
 log = logging.getLogger(__name__)
 
 
@@ -83,10 +85,10 @@ class Trainer:
             schedule: AnnealingSchedule,
             lr_config: LearningRateConfig,
             loss_fn: Callable = LatticeLoss,
-            keep: str | list[str] = None,
-            skip: str | list[str] = None,
+            keep: Optional[str | list[str]] = None,
+            skip: Optional[str | list[str]] = None,
             aux_weight: float = 0.0,
-            dynamics_config: DynamicsConfig = None,
+            dynamics_config: Optional[DynamicsConfig] = None,
     ) -> None:
         self.steps = steps
         self.dynamics = dynamics
@@ -202,10 +204,10 @@ class Trainer:
 
     def eval(
             self,
-            beta: float = None,
-            x: Tensor = None,
-            skip: str | list[str] = None,
-            width: int = 150,
+            beta: Optional[float] = None,
+            x: Optional[Tensor] = None,
+            skip: Optional[str | list[str]] = None,
+            # width: int = 150,
             # eval_dir: os.PathLike = None,
             run: Optional[Any] = None,
             writer: Optional[Any] = None,
@@ -242,8 +244,8 @@ class Trainer:
         assert isinstance(beta, float)
 
         with Live(table, console=console, screen=False) as live:
-            if width is not None and width > 0:
-                live.console.width = width
+            if WIDTH is not None and WIDTH > 0:
+                live.console.width = WIDTH
 
             for step in range(self.steps.test):
                 timer.start()
@@ -348,17 +350,14 @@ class Trainer:
 
     def train(
             self,
-            x: Tensor = None,
-            skip: str | list[str] = None,
-            width: int = None,
-            train_dir: os.PathLike = None,
-            run: Any = None,
-            writer: Any = None,
+            x: Optional[Tensor] = None,
+            skip: Optional[str | list[str]] = None,
+            train_dir: Optional[os.PathLike] = None,
+            run: Optional[Any] = None,
+            writer: Optional[Any] = None,
             # keep: str | list[str] = None,
     ) -> dict:
         skip = [skip] if isinstance(skip, str) else skip
-        if width is None:
-            width = max((150, int(os.environ.get('COLUMNS', 150))))
 
         if isinstance(skip, str):
             skip = [skip]
@@ -372,6 +371,7 @@ class Trainer:
         epoch = 0
         tables = {}
         metrics = {}
+        rows = {}
         summaries = []
         timer = self.timers['train']
         history = self.histories['train']
@@ -384,7 +384,7 @@ class Trainer:
             table = Table(**tkwargs)
             beta = self.schedule.betas[str(era)]
             if self.accelerator.is_local_main_process:
-                console.width = width
+                console.width = WIDTH
                 console.rule(f'ERA: {era}, BETA: {beta}')
 
             with Live(
@@ -397,8 +397,8 @@ class Trainer:
                 for epoch in range(self.steps.nepoch):
                     timer.start()
                     x, metrics = self.train_step((x, beta))
-                    gstep += 1
                     dt = timer.stop()
+                    gstep += 1
                     if self.should_print(epoch) or self.should_log(epoch):
                         record = {
                             'era': era, 'epoch': epoch,
@@ -411,7 +411,6 @@ class Trainer:
                         record.update(self.metrics_to_numpy(metrics))
                         if writer is not None:
                             update_summaries(writer=writer,
-                                             # model=dynamics,  # type:ignore
                                              step=gstep,
                                              metrics=record,
                                              prefix='train')
@@ -419,6 +418,7 @@ class Trainer:
 
                         avgs = history.update(record)
                         summary = summarize_dict(avgs)
+                        rows[gstep] = avgs
                         summaries.append(summary)
                         if run is not None:
                             run.log({'wandb/train': record}, commit=False)
