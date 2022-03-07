@@ -93,11 +93,13 @@ def update_wandb_config(
         # wbdir: Optional[os.PathLike] = None,
 ) -> DictConfig:
     """Updates config using runtime information for W&B."""
-    group = [
-        'tensorflow',
-        'gpu' if len(tf.config.list_physical_devices('GPU')) > 0 else 'cpu'
-        'horovod' if SIZE > 1 else 'local'
-    ]
+    framework = 'tensorflow'
+    size = 'horovod' if SIZE > 1 else 'local'
+    device = (
+        'gpu' if len(tf.config.list_physical_devices('GPU')) > 0
+        else 'cpu'
+    )
+    group = [framework, device, size]
     if debug:
         group.append('debug')
 
@@ -153,8 +155,7 @@ def eval(
 
     eval_output = trainer.eval(run=run,
                                writer=writer,
-                               job_type=job_type,
-                               width=cfg.get('width', None))
+                               job_type=job_type)
     eval_dset = eval_output['history'].get_dataset(therm_frac=therm_frac)
     _ = analyze_dataset(eval_dset,
                         outdir=jobdir,
@@ -184,14 +185,12 @@ def train(
 ) -> dict:
     jobdir = get_jobdir(cfg, job_type='train')
     writer = get_summary_writer(cfg, job_type='train')
-    width = int(cfg.get('width', os.environ.get('COLUMNS', 150)))
     if writer is not None:
         writer.set_as_default()
 
     output = trainer.train(run=run,
                            writer=writer,
                            train_dir=jobdir,
-                           width=width,
                            **kwargs)
     if RANK == 0:
         dset = output['history'].get_dataset()
@@ -207,6 +206,7 @@ def train(
             save_logs(logdir=tdir,
                       run=run,
                       job_type='train',
+                      rows=output['rows'],
                       tables=output['tables'],
                       summaries=output['summaries'])
 
@@ -222,8 +222,7 @@ def main(cfg: DictConfig) -> dict:
     trainer = objs['trainer']  # type: Trainer
 
     nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
-    width = max((150, int(cfg.get('width', os.environ.get('COLUMNS', 150)))))
-    cfg.update({'width': width, 'nchains': nchains})
+    cfg.update({'nchains': nchains})
 
     id = generate_id() if trainer.rank == 0 else None
     outdir = Path(cfg.get('outdir', os.getcwd()))
@@ -233,7 +232,8 @@ def main(cfg: DictConfig) -> dict:
     run = None
     if RANK == 0:
         run = wandb.init(**cfg.wandb.setup)
-        run.log_code(HERE)
+        assert run is not None and run is wandb.run
+        run.log_code(HERE.as_posix())
         run.config.update(OmegaConf.to_container(cfg,
                                                  resolve=True,
                                                  throw_on_missing=True))

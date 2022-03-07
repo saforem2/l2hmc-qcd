@@ -36,6 +36,7 @@ import torch
 from torch.utils.tensorboard.writer import SummaryWriter
 import wandb
 from wandb.util import generate_id
+from l2hmc import utils
 
 
 log = logging.getLogger(__name__)
@@ -200,8 +201,7 @@ def eval(
     writer = get_summary_writer(cfg, trainer, job_type=job_type)
     eval_output = trainer.eval(run=run,
                                writer=writer,
-                               job_type=job_type,
-                               width=cfg.get('width', None))
+                               job_type=job_type)
     eval_dset = eval_output['history'].get_dataset(therm_frac=therm_frac)
     if trainer.accelerator.is_local_main_process:
         _ = analyze_dataset(eval_dset,
@@ -234,11 +234,9 @@ def train(
 ) -> dict:
     jobdir = get_jobdir(cfg, job_type='train')
     writer = get_summary_writer(cfg, trainer, job_type='train')
-    width = int(cfg.get('width', os.environ.get('COLUMNS', 150)))
     output = trainer.train(run=run,
                            writer=writer,
-                           train_dir=jobdir,
-                           width=width)
+                           train_dir=jobdir)
 
     if trainer.accelerator.is_local_main_process:
         dset = output['history'].get_dataset()
@@ -271,9 +269,7 @@ def main(cfg: DictConfig) -> dict:
     trainer = objs['trainer']  # type: Trainer
 
     nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
-    env_width = int(os.environ.get('COLUMNS', 150))
-    width = max((150, env_width))
-    cfg.update({'width': width, 'nchains': nchains})
+    cfg.update({'nchains': nchains})
 
     id = generate_id() if trainer.accelerator.is_local_main_process else None
     outdir = Path(cfg.get('outdir', os.getcwd()))
@@ -287,6 +283,7 @@ def main(cfg: DictConfig) -> dict:
         run.config.update(OmegaConf.to_container(cfg,
                                                  resolve=True,
                                                  throw_on_missing=True))
+        utils.print_config(cfg, resolve=True)
 
     # ----------------------------------------------------------
     # 1. Train model
@@ -310,8 +307,8 @@ def main(cfg: DictConfig) -> dict:
 
 @hydra.main(config_path='./conf', config_name='config')
 def launch(cfg: DictConfig) -> None:
-    log.info(f'Working directory: {os.getcwd()}')
-    log.info(OmegaConf.to_yaml(cfg, resolve=True))
+    # log.info(f'Working directory: {os.getcwd()}')
+    # log.info(OmegaConf.to_yaml(cfg, resolve=True))
     _ = main(cfg)
 
 
