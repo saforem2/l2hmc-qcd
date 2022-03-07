@@ -37,6 +37,8 @@ from l2hmc.utils.tensorflow.history import History
 # from rich.panel import Panel
 # from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 
+WIDTH = int(os.environ.get('COLUMNS', 150))
+
 tf.autograph.set_verbosity(0)
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 
@@ -123,11 +125,11 @@ class Trainer:
             rank: int = 0,
             loss_fn: Callable = LatticeLoss,
             aux_weight: float = 0.0,
-            keep: str | list[str] = None,
-            skip: str | list[str] = None,
+            keep: Optional[str | list[str]] = None,
+            skip: Optional[str | list[str]] = None,
             compression: bool = True,
             evals_per_step: int = 1,
-            dynamics_config: DynamicsConfig = None,
+            dynamics_config: Optional[DynamicsConfig] = None,
     ) -> None:
         self.rank = rank
         self.steps = steps
@@ -299,12 +301,11 @@ class Trainer:
 
     def eval(
             self,
-            beta: float = None,
-            x: Tensor = None,
-            skip: str | list[str] = None,
-            width: int = 150,
-            run: Any = None,
-            writer: Any = None,
+            beta: Optional[float] = None,
+            x: Optional[Tensor] = None,
+            skip: Optional[str | list[str]] = None,
+            run: Optional[Any] = None,
+            writer: Optional[Any] = None,
             job_type: Optional[str] = 'eval',
     ) -> dict:
         """Evaluate model."""
@@ -348,8 +349,8 @@ class Trainer:
             # refresh_per_second=4,
             # auto_refresh=False,
         ) as live:
-            if width is not None and width > 0:
-                live.console.width = width
+            if WIDTH is not None and WIDTH > 0:
+                live.console.width = WIDTH
 
             for step in range(self.steps.test):
                 timer.start()
@@ -434,20 +435,16 @@ class Trainer:
 
     def train(
             self,
-            xinit: Tensor = None,
-            skip: str | list[str] = None,
-            width: int = None,
-            train_dir: os.PathLike = None,
-            run: Any = None,
-            writer: Any = None,
+            xinit: Optional[Tensor] = None,
+            skip: Optional[str | list[str]] = None,
+            train_dir: Optional[os.PathLike] = None,
+            run: Optional[Any] = None,
+            writer: Optional[Any] = None,
             # compile: bool = True,
             # jit_compile: bool = False,
             # save_x: bool = False,
     ) -> dict:
         """Train l2hmc Dynamics."""
-        if width is None:
-            width = max((150, int(os.environ.get('COLUMNS', 150))))
-
         if isinstance(skip, str):
             skip = [skip]
 
@@ -480,8 +477,9 @@ class Trainer:
             table = Table(**tkwargs)
             beta = tf.constant(self.schedule.betas[str(era)])
             if self.rank == 0:
-                console.width = width
+                console.width = WIDTH
                 console.rule(f'ERA: {era}, BETA: {beta.numpy()}')
+
             with Live(
                 table,
                 screen=False,
@@ -536,7 +534,7 @@ class Trainer:
                                      optimizer=self.optimizer)
                 live.console.log(
                     f'Era {era} took: {time.time() - estart:<5g}s\n',
-                    f'Avgs over last era:\n {self.history.era_summary(era)}',
+                    f'Avgs over last era:\n {self.history.era_summary(era)}\n',
                     f'Saving checkpoint to: {manager.latest_checkpoint}'
                 )
                 manager.save()
