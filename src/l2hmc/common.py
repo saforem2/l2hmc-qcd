@@ -8,7 +8,7 @@ import datetime
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 import joblib
 # import pandas as pd
 
@@ -73,12 +73,16 @@ def save_dataset(
     dataset.to_netcdf(datafile.as_posix(), mode=mode)
 
 
+# def rows_to_dataframe(rows: dict):
+#     df = pd.DataFrame.from_dict(rows, orient='index', )
+
 def save_logs(
         tables: dict[str, Table],
-        summaries: list[str] = None,
+        summaries: Optional[list[str]] = None,
+        rows: Optional[dict] = None,
         logdir: os.PathLike = None,
         job_type: str = None,
-        run: Any = None,
+        run: Optional[Any] = None,
 ) -> None:
     job_type = 'job' if job_type is None else job_type
     if logdir is None:
@@ -101,6 +105,7 @@ def save_logs(
     tfile = tdir.joinpath('table.txt')
     tfile.parent.mkdir(exist_ok=True, parents=True)
 
+
     for _, table in tables.items():
         console.print(table)
         html = console.export_html(clear=False)
@@ -109,12 +114,6 @@ def save_logs(
             f.write(html)
         with open(tfile, 'a') as f:
             f.write(text)
-
-        if run is not None:
-            try:
-                run.log({f'tables/{job_type}': text})
-            except Exception:
-                continue
 
     if summaries is not None:
         sfile = logdir.joinpath('summaries.txt').as_posix()
