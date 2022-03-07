@@ -8,7 +8,12 @@ import logging
 import os
 
 import hydra
+import warnings
 from omegaconf import DictConfig
+
+
+
+
 
 log = logging.getLogger(__name__)
 
@@ -38,14 +43,20 @@ def train_pytorch(cfg: DictConfig) -> dict:
 
 @hydra.main(config_path='./conf', config_name='config')
 def main(cfg: DictConfig) -> None:
+    from l2hmc import utils
     # log.info(OmegaConf.create(cfg).pretty())
     # rich.print(OmegaConf.to_container(cfg, resolve=True))
     framework = cfg.get('framework', None)
     width = max((150, int(cfg.get('width', os.environ.get('COLUMNS', 150)))))
+    os.environ['COLUMNS'] = str(width)
     cfg.update({'width': width})
     assert framework is not None, (
         'Framework must be specified, one of: [pytorch, tensorflow]'
     )
+
+    if cfg.get('ignore_warnings'):
+        warnings.filterwarnings('ignore')
+
     if framework in ['tf', 'tensorflow']:
         _ = train_tensorflow(cfg)
     elif framework in ['pt', 'pytorch']:
