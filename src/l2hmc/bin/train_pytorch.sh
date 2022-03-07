@@ -14,14 +14,20 @@ export KMP_AFFINITY='granularity=fine,verbose,compact,1,0'
 export OMP_NUM_THREADS=16
 # export NUMEXPR_MAX_THREADS=256
 
-SRC="/lus/grand/projects/DLHMC/projects/l2hmc-qcd/src/l2hmc"
-LOGDIR=/lus/grand/projects/DLHMC/projects/l2hmc-qcd/src/l2hmc/logs/pytorch
+TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
+
+SRC="../"
+LOGDIR="${SRC}/logs/pytorch"
+LOGFILE="$LOGDIR/train_pytorch_ngpu${NGPU}_$TSTAMP.log"
+if [ ! -d "${LOGDIR}" ]; then
+  mkdir ${LOGDIR}
+
+# SRC="/lus/grand/projects/DLHMC/projects/l2hmc-qcd/src/l2hmc"
+# LOGDIR=/lus/grand/projects/DLHMC/projects/l2hmc-qcd/src/l2hmc/logs/pytorch
 
 EXEC="${SRC}/main.py"
 
-TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
 NGPU=$(echo "${CUDA_VISIBLE_DEVICES}" | awk -F "," '{print NF}')
-LOGFILE="$LOGDIR/train_pytorch_ngpu${NGPU}_$TSTAMP.log"
 
 echo "************************************"
 echo "STARTING A NEW RUN ON ${NGPU} GPUs"

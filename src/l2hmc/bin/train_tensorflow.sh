@@ -14,13 +14,17 @@ export TF_XLA_FLAGS="--tf_xla_auto_jit=2 --tf_xla_enable_xla_devices"
 
 # export NUMEXPR_MAX_THREADS=256
 
-SRC="/lus/grand/projects/DLHMC/projects/l2hmc-qcd/src/l2hmc"
+# SRC="/lus/grand/projects/DLHMC/projects/l2hmc-qcd/src/l2hmc"
+SRC="../"
+TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
+# LOGDIR=/lus/grand/projects/DLHMC/projects/l2hmc-qcd/src/l2hmc/logs/tensorflow
+LOGDIR="${SRC}/logs/pytorch"
+LOGFILE="$LOGDIR/train_tf_ngpu${NGPU}_$TSTAMP.log"
+if [ ! -d "${LOGDIR}" ]; then
+  mkdir ${LOGDIR}
+
 EXEC="${SRC}/main.py"
 NGPU=$(echo "${CUDA_VISIBLE_DEVICES}" | awk -F "," '{print NF}')
-
-TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
-LOGDIR=/lus/grand/projects/DLHMC/projects/l2hmc-qcd/src/l2hmc/logs/tensorflow
-LOGFILE="$LOGDIR/train_tf_ngpu${NGPU}_$TSTAMP.log"
 
 echo "*************************************************************"
 echo "STARTING A NEW RUN ON ${NGPU} GPUs"
