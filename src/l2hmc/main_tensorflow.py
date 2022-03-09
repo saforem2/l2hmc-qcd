@@ -27,12 +27,21 @@ from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.network.tensorflow.network import NetworkFactory
 from l2hmc.trainers.tensorflow.trainer import Trainer
 from l2hmc.utils.console import is_interactive
+from l2hmc import utils
 
 
 RANK = hvd.rank()
 SIZE = hvd.size()
 
 log = logging.getLogger(__name__)
+
+
+def load_from_ckpt(
+        dynamics: Dynamics,
+        # optimizer: Optimizer,
+        cfg: DictConfig,
+):
+    pass
 
 
 def setup(cfg: DictConfig) -> dict:
@@ -237,6 +246,7 @@ def main(cfg: DictConfig) -> dict:
         run.config.update(OmegaConf.to_container(cfg,
                                                  resolve=True,
                                                  throw_on_missing=True))
+        utils.print_config(cfg, resolve=True)
     # ----------------------------------------------------------
     # 1. Train model
     # 2. Evaluate trained model
