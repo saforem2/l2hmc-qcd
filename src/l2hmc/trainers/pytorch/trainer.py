@@ -88,6 +88,7 @@ class Trainer:
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
             aux_weight: float = 0.0,
+            ckpt_dir: Optional[os.PathLike] = None,
             dynamics_config: Optional[DynamicsConfig] = None,
     ) -> None:
         self.steps = steps
@@ -243,7 +244,7 @@ class Trainer:
         history = self.histories[job_type]
         assert isinstance(beta, float)
 
-        with Live(table, console=console, screen=False) as live:
+        with Live(table, screen=False) as live:
             if WIDTH is not None and WIDTH > 0:
                 live.console.width = WIDTH
 
@@ -390,9 +391,12 @@ class Trainer:
             with Live(
                     table,
                     screen=False,
-                    console=console,
+                    # console=console,
                     # refresh_per_second=1,
             ) as live:
+                if WIDTH is not None and WIDTH > 0:
+                    live.console.width = WIDTH
+
                 estart = time.time()
                 for epoch in range(self.steps.nepoch):
                     timer.start()
@@ -437,8 +441,10 @@ class Trainer:
                     update_summaries(writer=writer, step=gstep, model=model)
 
                 self.save_ckpt(era, epoch, train_dir, loss=metrics['loss'])
-                live.console.log(
-                    f'Era {era} took: {time.time() - estart:<5g}s\n',
+                log.info(
+                    f'Era {era} took: {time.time() - estart:<5g}s',
+                )
+                log.info(
                     f'Avgs over last era:\n {self.history.era_summary(era)}',
                 )
 
