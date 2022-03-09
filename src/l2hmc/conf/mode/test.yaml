@@ -20,10 +20,22 @@ hydra:
   # verbose: True
   verbose: ['l2hmc']
   run:
-    dir: outputs/debug/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: "outputs/debug/runs\
+      /${dynamics.xshape[1]}x${dynamics.xshape[2]}\
+      /nlf-${dynamics.nleapfrog}\
+      /beta-${annealing_schedule.beta_final}\
+      /merge_directions-${dynamics.merge_directions}\
+      /${framework}\
+      /${now:%Y-%m-%d}\
+      /${now:%H-%M-%S}"
   sweep:
-    dir: outputs/debug/multiruns
-    subdir: ${hydra.job.num}
+    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+    subdir: ${hydra.job.override_dirname}
+  # run:
+  #   dir: outputs/debug/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  # sweep:
+  #   dir: outputs/debug/multiruns
+  #   subdir: ${hydra.job.num}
 
   # https://hydra.cc/docs/tutorials/basic/running_your_app/logging/
   # use this to set level of only chosen command line loggers to 'DEBUG'
