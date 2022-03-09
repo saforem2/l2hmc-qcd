@@ -344,7 +344,7 @@ class Trainer:
         history = self.histories[job_type]
         with Live(
             table,
-            console=console,
+            # console=console,
             screen=False,
             # refresh_per_second=4,
             # auto_refresh=False,
@@ -486,6 +486,8 @@ class Trainer:
                 console=console,
                 # refresh_per_second=1,
             ) as live:
+                if WIDTH is not None and WIDTH > 0:
+                    live.console.width = WIDTH
                 estart = time.time()
                 for epoch in range(self.steps.nepoch):
                     timer.start()
@@ -532,9 +534,13 @@ class Trainer:
                     update_summaries(step=gstep,
                                      model=self.dynamics,
                                      optimizer=self.optimizer)
-                live.console.log(
-                    f'Era {era} took: {time.time() - estart:<5g}s\n',
-                    f'Avgs over last era:\n {self.history.era_summary(era)}\n',
+                log.info(
+                    f'Era {era} took: {time.time() - estart:<5g}s'
+                )
+                log.info(
+                    f'Avgs over last era:\n {self.history.era_summary(era)}',
+                )
+                log.info(
                     f'Saving checkpoint to: {manager.latest_checkpoint}'
                 )
                 manager.save()
