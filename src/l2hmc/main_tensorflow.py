@@ -37,9 +37,9 @@ log = logging.getLogger(__name__)
 
 
 def load_from_ckpt(
-        dynamics: Dynamics,
+        # dynamics: Dynamics,
         # optimizer: Optimizer,
-        cfg: DictConfig,
+        # cfg: DictConfig,
 ):
     pass
 
@@ -154,22 +154,27 @@ def eval(
         trainer: Trainer,
         job_type: str,
         run: Optional[Any] = None,
+        nchains: Optional[int] = -1,
 ) -> dict:
-    nchains = cfg.get('nchains', -1)
+    assert isinstance(nchains, int)
     therm_frac = cfg.get('therm_frac', 0.2)
     jobdir = get_jobdir(cfg, job_type=job_type)
     writer = get_summary_writer(cfg, job_type=job_type)
     if writer is not None:
         writer.set_as_default()
 
-    eval_output = trainer.eval(run=run,
-                               writer=writer,
-                               job_type=job_type)
-    eval_dset = eval_output['history'].get_dataset(therm_frac=therm_frac)
-    _ = analyze_dataset(eval_dset,
+    output = trainer.eval(run=run,
+                          writer=writer,
+                          nchains=nchains,
+                          job_type=job_type)
+    dataset = output['history'].get_dataset(therm_frac=therm_frac)
+    _ = analyze_dataset(dataset,
+                        run=run,
+                        save=True,
                         outdir=jobdir,
                         nchains=nchains,
-                        title=f'{job_type}: PyTorch')
+                        job_type=job_type,
+                        title=f'{job_type}: TensorFlow')
     if not is_interactive():
         edir = jobdir.joinpath('logs')
         edir.mkdir(exist_ok=True, parents=True)
@@ -177,21 +182,23 @@ def eval(
         save_logs(logdir=edir,
                   run=run,
                   job_type=job_type,
-                  tables=eval_output['tables'],
-                  summaries=eval_output['summaries'])
+                  tables=output['tables'],
+                  summaries=output['summaries'])
 
     if writer is not None:
         writer.close()  # type: ignore
 
-    return eval_output
+    return output
 
 
 def train(
         cfg: DictConfig,
         trainer: Trainer,
         run: Optional[Any] = None,
+        nchains: Optional[int] = None,
         **kwargs,
 ) -> dict:
+    nchains = -1 if nchains is None else nchains
     jobdir = get_jobdir(cfg, job_type='train')
     writer = get_summary_writer(cfg, job_type='train')
     if writer is not None:
@@ -204,10 +211,12 @@ def train(
     if RANK == 0:
         dset = output['history'].get_dataset()
         _ = analyze_dataset(dset,
+                            run=run,
+                            save=True,
                             outdir=jobdir,
+                            nchains=nchains,
                             job_type='train',
-                            title='Training: TensorFlow',
-                            nchains=cfg.get('nchains', -1))
+                            title='Training: TensorFlow')
         if not is_interactive():
             tdir = jobdir.joinpath('logs')
             tdir.mkdir(exist_ok=True, parents=True)
@@ -243,9 +252,10 @@ def main(cfg: DictConfig) -> dict:
         run = wandb.init(**cfg.wandb.setup)
         assert run is not None and run is wandb.run
         run.log_code(HERE.as_posix())
-        run.config.update(OmegaConf.to_container(cfg,
-                                                 resolve=True,
-                                                 throw_on_missing=True))
+        cfg_dict = OmegaConf.to_container(cfg,
+                                          resolve=True,
+                                          throw_on_missing=True)
+        run.config.update(cfg_dict)
         utils.print_config(cfg, resolve=True)
     # ----------------------------------------------------------
     # 1. Train model
@@ -255,16 +265,18 @@ def main(cfg: DictConfig) -> dict:
     outputs['train'] = train(cfg, trainer, run=run)      # [1.]
 
     if RANK == 0:
-        if run is not None:
-            run.config.update({'eval_beta': cfg.annealing_schedule.beta_final})
         for job in ['eval', 'hmc']:                      # [2.], [3.]
             log.warning(f'Running {job}')
+            batch_size = cfg.dynamics.xshape[0]
+            nchains = max((1, batch_size // 8))
             outputs[job] = eval(cfg=cfg,
                                 run=run,
                                 job_type=job,
+                                nchains=nchains,
                                 trainer=trainer)
     if run is not None:
-        run.save()
+        run.finish()
+        # run.save()
 
     return outputs
 

@@ -271,6 +271,39 @@ class Trainer:
             and self.rank == 0
         )
 
+    def record_metrics(
+            self,
+            metrics: dict,
+            job_type: str,
+            step: Optional[int] = None,
+            record: Optional[dict] = None,
+            run: Optional[Any] = None,
+            writer: Optional[Any] = None,
+            history: Optional[History] = None,
+    ):
+        record = {} if record is None else record
+        record.update({
+            'loss': metrics.get('loss', None),
+            'dQint': metrics.get('dQint', None),
+            'dQsin': metrics.get('dQsin', None),
+        })
+        record.update(self.metrics_to_numpy(metrics))
+        if history is not None:
+            avgs = history.update(record)
+        else:
+            avgs = {k: v.mean() for k, v in record.items()}
+
+        summary = summarize_dict(avgs)
+        if writer is not None:
+            assert step is not None
+            update_summaries(step=step, prefix=job_type, metrics=record)
+            writer.flush()
+        if run is not None:
+            run.log({f'wandb/{job_type}': record}, commit=False)
+            run.log({f'avgs/wandb.{job_type}': avgs})
+
+        return avgs, summary
+
     @tf.function(experimental_follow_type_hints=True)
     def hmc_step(self, inputs: tuple[Tensor, Tensor]) -> tuple[Tensor, dict]:
         xi, beta = inputs
@@ -307,6 +340,7 @@ class Trainer:
             run: Optional[Any] = None,
             writer: Optional[Any] = None,
             job_type: Optional[str] = 'eval',
+            nchains: Optional[int] = None,
     ) -> dict:
         """Evaluate model."""
         if isinstance(skip, str):
@@ -337,18 +371,24 @@ class Trainer:
         tables = {}
         summaries = []
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
-        nprint = self.steps.test // 20
-        nlog = 10 if self.steps.test < 1000 else 20
+        nprint = max((20, self.steps.test // 20))
+        nlog = max((1, min((10, self.steps.test))))
         assert job_type in ['eval', 'hmc']
         timer = self.timers[job_type]
         history = self.histories[job_type]
-        with Live(
-            table,
-            # console=console,
-            screen=False,
-            # refresh_per_second=4,
-            # auto_refresh=False,
-        ) as live:
+
+        log.warning(f'x.shape (original): {x.shape}')
+        if nchains is not None:
+            if isinstance(nchains, int) and nchains > 0:
+                x = x[:nchains]
+
+        assert isinstance(x, Tensor)
+        log.warning(f'x[:nchains].shape: {x.shape}')
+
+        if run is not None:
+            run.config.update({job_type: {'beta': beta, 'xshape': x.shape}})
+
+        with Live(table, screen=False, auto_refresh=False) as live:
             if WIDTH is not None and WIDTH > 0:
                 live.console.width = WIDTH
 
@@ -358,28 +398,22 @@ class Trainer:
                 dt = timer.stop()
                 if step % nprint == 0 or step % nlog == 0:
                     record = {
-                        'step': step, 'dt': dt, 'loss': metrics['loss'],
-                        'dQint': metrics['dQint'], 'dQsin': metrics['dQsin'],
+                        'step': step, 'beta': beta, 'dt': dt,
                     }
-                    record.update(self.metrics_to_numpy(metrics))
-                    avgs = history.update(record)
-                    summary = summarize_dict(avgs)
+                    avgs, summary = self.record_metrics(run=run,
+                                                        step=step,
+                                                        record=record,
+                                                        writer=writer,
+                                                        metrics=metrics,
+                                                        history=history,
+                                                        job_type=job_type)
                     summaries.append(summary)
-                    if writer is not None:
-                        update_summaries(step=step,
-                                         prefix=job_type,
-                                         metrics=record)
-                        writer.flush()
-
-                    if run is not None:
-                        run.log({f'wandb/{job_type}': record}, commit=False)
-                        run.log({f'avgs/wandb.{job_type}': avgs})
-
                     if step == 0:
                         table = add_columns(avgs, table)
 
                     if step % nprint == 0:
                         table.add_row(*[f'{v:5}' for _, v in avgs.items()])
+                        live.refresh()
 
             tables[str(0)] = table
 
@@ -448,17 +482,20 @@ class Trainer:
         if isinstance(skip, str):
             skip = [skip]
 
+        if writer is not None:
+            writer.set_as_default()
+
         if train_dir is None:
             train_dir = Path(os.getcwd()).joinpath('train')
 
-        x = self.draw_x() if xinit is None else tf.constant(xinit, TF_FLOAT)
-        inputs = (x, tf.constant(1.))
-        assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
         manager = self.setup_CheckpointManager(train_dir)
-        # self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
+        gstep = K.get_value(self.optimizer.iterations)
+
+        x = self.draw_x() if xinit is None else tf.constant(xinit, TF_FLOAT)
+        assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
+
+        inputs = (x, tf.constant(1.))
         _ = self.train_step(inputs, first_step=True)  # type: ignore
-        if writer is not None:
-            writer.set_as_default()
 
         era = 0
         epoch = 0
@@ -472,7 +509,6 @@ class Trainer:
             'box': box.SIMPLE,
             'row_styles': ['dim', 'none'],
         }
-        gstep = K.get_value(self.optimizer.iterations)
         for era in range(self.steps.nera):
             table = Table(**tkwargs)
             beta = tf.constant(self.schedule.betas[str(era)])
@@ -499,27 +535,17 @@ class Trainer:
                     gstep += 1
                     if self.should_print(epoch) or self.should_log(epoch):
                         record = {
-                            'era': era, 'epoch': epoch,
-                            'beta': beta, 'dt': dt,
-                            'loss': metrics['loss'],
-                            'dQint': metrics['dQint'],
-                            'dQsin': metrics['dQsin'],
+                            'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
                         }
-                        record.update(self.metrics_to_numpy(metrics))
-                        if writer is not None:
-                            update_summaries(step=gstep,
-                                             prefix='train',
-                                             metrics=record)
-                            writer.flush()
-
-                        avgs = history.update(record)
+                        avgs, summary = self.record_metrics(run=run,
+                                                            step=gstep,
+                                                            writer=writer,
+                                                            record=record,
+                                                            metrics=metrics,
+                                                            job_type='train',
+                                                            history=history)
                         rows[gstep] = avgs
-                        summary = summarize_dict(avgs)
                         summaries.append(summary)
-                        if run is not None:
-                            run.log({'wandb/train': record}, commit=False)
-                            run.log({'avgs/wandb.train': avgs})
-
                         if epoch == 0:
                             table = add_columns(avgs, table)
                         if self.should_print(epoch):

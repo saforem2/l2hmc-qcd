@@ -620,8 +620,9 @@ def plot_dataset(
 def make_ridgeplots(
         dataset: xr.Dataset,
         num_chains: int = None,
-        out_dir: os.PathLike = None,
+        outdir: os.PathLike = None,
         drop_zeros: bool = False,
+        drop_nans: bool = True,
         cmap: str = 'viridis_r',
         # default_style: dict = None,
 ):
@@ -649,6 +650,9 @@ def make_ridgeplots(
                 if drop_zeros:
                     x = x[x != 0]
                 #  x = val[{'leapfrog': lf}].values.flatten()
+                if drop_nans:
+                    x = x[np.isfinite(x)]
+
                 lf_arr = np.array(len(x) * [f'{lf}'])
                 lf_data[key].extend(x)
                 lf_data['lf'].extend(lf_arr)
@@ -686,13 +690,15 @@ def make_ridgeplots(
             _ = g.set(yticks=[])
             _ = g.set(yticklabels=[])
             _ = g.despine(bottom=True, left=True)
-            if out_dir is not None:
+            if outdir is not None:
                 # io.check_else_make_dir(out_dir)
                 # out_file = os.path.join(out_dir, f'{key}_ridgeplot.svg')
-                outfile = Path(out_dir).joinpath(f'{key}_ridgeplot.svg')
+                outfile = Path(outdir).joinpath(f'{key}_ridgeplot.svg')
                 outfile.parent.mkdir(exist_ok=True, parents=True)
-                #  logger.log(f'Saving figure to: {out_file}.')
+                log.info(f'Saving figure to: {outfile.as_posix()}')
                 plt.savefig(outfile.as_posix(), dpi=400, bbox_inches='tight')
+                pngfile = Path(outdir).joinpath(f'{key}_ridgeplot.png')
+                plt.savefig(pngfile.as_posix(), dpi=500, bbox_inches='tight')
 
         # plt.close('all')
 
