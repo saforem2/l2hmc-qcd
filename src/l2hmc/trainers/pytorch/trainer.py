@@ -269,6 +269,11 @@ class Trainer:
                                                         metrics=metrics,
                                                         history=history,
                                                         job_type=job_type)
+                    if avgs.get('acc', 1.0) < 1e-5:
+                        log.warning('Chains are stuck! Re-drawing x !')
+                        x = random_angle(self.xshape)
+                        x = x.reshape(x.shape[0], -1)
+
                     summaries.append(summary)
                     if step == 0:
                         table = add_columns(avgs, table)
@@ -452,8 +457,15 @@ class Trainer:
                                                             history=history)
                         rows[gstep] = avgs
                         summaries.append(summary)
+
+                        if avgs.get('acc', 1.0) < 1e-5:
+                            log.warning('Chains are stuck! Re-drawing x !')
+                            x = random_angle(self.xshape)
+                            x = x.reshape(x.shape[0], -1)
+
                         if epoch == 0:
                             table = add_columns(avgs, table)
+
                         if self.should_print(epoch):
                             table.add_row(*[f'{v}' for _, v in avgs.items()])
 
