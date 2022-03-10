@@ -88,7 +88,7 @@ class Trainer:
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
             aux_weight: float = 0.0,
-            ckpt_dir: Optional[os.PathLike] = None,
+            # ckpt_dir: Optional[os.PathLike] = None,
             dynamics_config: Optional[DynamicsConfig] = None,
     ) -> None:
         self.steps = steps
@@ -198,7 +198,6 @@ class Trainer:
         lmetrics = self.loss_fn.lattice_metrics(xinit=to_u1(xinit),
                                                 xout=to_u1(xout))
         metrics.update(lmetrics)
-        # metrics.update(lattice_metrics)
         metrics.update({'loss': loss.detach().cpu().numpy()})
 
         return to_u1(xout).detach(), metrics
@@ -208,12 +207,10 @@ class Trainer:
             beta: Optional[float] = None,
             x: Optional[Tensor] = None,
             skip: Optional[str | list[str]] = None,
-            # width: int = 150,
-            # eval_dir: os.PathLike = None,
             run: Optional[Any] = None,
             writer: Optional[Any] = None,
             job_type: Optional[str] = 'eval',
-            # hmc: bool = False,
+            nchains: Optional[int] = -1,
     ) -> dict:
         summaries = []
         self.dynamics.eval()
@@ -235,16 +232,25 @@ class Trainer:
         summaries = []
         tables = {}
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
-        # nlog = max(10, int(self.steps.test // 500))
-        # nprint = max(10, int(self.steps.test // 20))
-        nprint = self.steps.test // 20
-        nlog = 10 if self.steps.test < 1000 else 20
+        nprint = max((20, self.steps.test // 20))
+        nlog = max((1, min((10, self.steps.test))))
         assert job_type in ['eval', 'hmc']
         timer = self.timers[job_type]
         history = self.histories[job_type]
-        assert isinstance(beta, float)
 
-        with Live(table, screen=False) as live:
+        log.warning(f'x.shape (original): {x.shape}')
+        if nchains is not None:
+            if isinstance(nchains, int) and nchains > 0:
+                x = x[:nchains]
+
+        assert isinstance(x, Tensor)
+        assert isinstance(beta, float)
+        log.warning(f'x[:nchains].shape: {x.shape}')
+
+        if run is not None:
+            run.config.update({job_type: {'beta': beta, 'xshape': x.shape}})
+
+        with Live(table, screen=False, auto_refresh=False) as live:
             if WIDTH is not None and WIDTH > 0:
                 live.console.width = WIDTH
 
@@ -254,29 +260,22 @@ class Trainer:
                 dt = timer.stop()
                 if step % nlog == 0 or step % nprint == 0:
                     record = {
-                        'step': step, 'dt': dt, 'loss': metrics['loss'],
-                        'dQint': metrics['dQint'], 'dQsin': metrics['dQsin'],
+                        'step': step, 'beta': beta, 'dt': dt,
                     }
-                    record.update(self.metrics_to_numpy(metrics))
-                    avgs = history.update(record)
-                    summary = summarize_dict(avgs)
+                    avgs, summary = self.record_metrics(run=run,
+                                                        step=step,
+                                                        record=record,
+                                                        writer=writer,
+                                                        metrics=metrics,
+                                                        history=history,
+                                                        job_type=job_type)
                     summaries.append(summary)
-                    if writer is not None:
-                        update_summaries(step=step,
-                                         prefix=job_type,
-                                         metrics=record,
-                                         writer=writer)
-                        writer.flush()
-
-                    if run is not None:
-                        run.log({f'wandb/{job_type}': record}, commit=False)
-                        run.log({f'avgs/wandb.{job_type}': avgs})
-
                     if step == 0:
                         table = add_columns(avgs, table)
 
                     if step % nprint == 0:
                         table.add_row(*[f'{v:5}' for _, v in avgs.items()])
+                        live.refresh()
 
             tables[str(0)] = table
 
@@ -298,6 +297,43 @@ class Trainer:
             epoch % self.steps.print == 0
             and self.accelerator.is_local_main_process
         )
+
+    def record_metrics(
+            self,
+            metrics: dict,
+            job_type: str,
+            step: Optional[int] = None,
+            record: Optional[dict] = None,
+            run: Optional[Any] = None,
+            writer: Optional[Any] = None,
+            history: Optional[BaseHistory] = None,
+    ):
+        record = {} if record is None else record
+        record.update({
+            'loss': metrics.get('loss', None),
+            'dQint': metrics.get('dQint', None),
+            'dQsin': metrics.get('dQsin', None),
+        })
+
+        record.update(self.metrics_to_numpy(metrics))
+        if history is not None:
+            avgs = history.update(record)
+        else:
+            avgs = {k: v.mean() for k, v in record.items()}
+
+        summary = summarize_dict(avgs)
+        if writer is not None:
+            update_summaries(step=step,
+                             prefix=job_type,
+                             metrics=record,
+                             writer=writer)
+            writer.flush()
+
+        if run is not None:
+            run.log({f'wandb/{job_type}': record}, commit=False)
+            run.log({f'avgs/wandb.{job_type}': avgs})
+
+        return avgs, summary
 
     def train_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
         xinit, beta = inputs
@@ -405,29 +441,17 @@ class Trainer:
                     gstep += 1
                     if self.should_print(epoch) or self.should_log(epoch):
                         record = {
-                            'era': era, 'epoch': epoch,
-                            'beta': beta, 'dt': dt,
-                            'loss': metrics['loss'],
-                            'dQint': metrics['dQint'],
-                            'dQsin': metrics['dQsin'],
+                            'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
                         }
-                        # Update metrics with train step metrics, tmetrics
-                        record.update(self.metrics_to_numpy(metrics))
-                        if writer is not None:
-                            update_summaries(writer=writer,
-                                             step=gstep,
-                                             metrics=record,
-                                             prefix='train')
-                            writer.flush()
-
-                        avgs = history.update(record)
-                        summary = summarize_dict(avgs)
+                        avgs, summary = self.record_metrics(run=run,
+                                                            step=gstep,
+                                                            writer=writer,
+                                                            record=record,
+                                                            metrics=metrics,
+                                                            job_type='train',
+                                                            history=history)
                         rows[gstep] = avgs
                         summaries.append(summary)
-                        if run is not None:
-                            run.log({'wandb/train': record}, commit=False)
-                            run.log({'avgs/wandb.train': avgs})
-
                         if epoch == 0:
                             table = add_columns(avgs, table)
                         if self.should_print(epoch):
@@ -449,8 +473,9 @@ class Trainer:
                 )
 
         return {
-            # 'xarr': xarr,
+            'timer': timer,
+            'rows': rows,
             'summaries': summaries,
-            'history': self.history,
+            'history': history,
             'tables': tables,
         }

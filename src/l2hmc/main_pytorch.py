@@ -192,23 +192,26 @@ def eval(
         trainer: Trainer,
         job_type: str,
         run: Optional[Any] = None,
+        nchains: Optional[int] = None,
 ) -> dict:
     """Evaluate model (nested as `trainer.model`)"""
-    nchains = cfg.get('nchains', -1)
+    nchains = -1 if nchains is None else nchains
     therm_frac = cfg.get('therm_frac', 0.2)
 
     jobdir = get_jobdir(cfg, job_type=job_type)
     writer = get_summary_writer(cfg, trainer, job_type=job_type)
-    eval_output = trainer.eval(run=run,
-                               writer=writer,
-                               job_type=job_type)
-    eval_dset = eval_output['history'].get_dataset(therm_frac=therm_frac)
+    output = trainer.eval(run=run,
+                          writer=writer,
+                          nchains=nchains,
+                          job_type=job_type)
+    dataset = output['history'].get_dataset(therm_frac=therm_frac)
     if trainer.accelerator.is_local_main_process:
-        _ = analyze_dataset(eval_dset,
+        _ = analyze_dataset(dataset,
+                            run=run,
+                            save=True,
                             outdir=jobdir,
                             nchains=nchains,
                             job_type=job_type,
-                            save=True,
                             title=f'{job_type}: PyTorch')
 
         if not is_interactive():
@@ -218,20 +221,22 @@ def eval(
             save_logs(logdir=edir,
                       run=run,
                       job_type=job_type,
-                      tables=eval_output['tables'],
-                      summaries=eval_output['summaries'])
+                      tables=output['tables'],
+                      summaries=output['summaries'])
 
     if writer is not None:
         writer.close()
 
-    return eval_output
+    return output
 
 
 def train(
         cfg: DictConfig,
         trainer: Trainer,
         run: Optional[Any] = None,
+        nchains: Optional[int] = None,
 ) -> dict:
+    nchains = -1 if nchains is None else nchains
     jobdir = get_jobdir(cfg, job_type='train')
     writer = get_summary_writer(cfg, trainer, job_type='train')
     output = trainer.train(run=run,
@@ -241,10 +246,12 @@ def train(
     if trainer.accelerator.is_local_main_process:
         dset = output['history'].get_dataset()
         _ = analyze_dataset(dset,
+                            run=run,
+                            save=True,
                             outdir=jobdir,
+                            nchains=nchains,
                             job_type='train',
-                            title='Training: PyTorch',
-                            nchains=cfg.get('nchains', -1))
+                            title='Training: PyTorch')
 
         if not is_interactive():
             tdir = jobdir.joinpath('logs')
@@ -253,6 +260,7 @@ def train(
             save_logs(logdir=tdir,
                       run=run,
                       job_type='train',
+                      rows=output['rows'],
                       tables=output['tables'],
                       summaries=output['summaries'])
 
@@ -268,7 +276,8 @@ def main(cfg: DictConfig) -> dict:
     objs = setup(cfg)
     trainer = objs['trainer']  # type: Trainer
 
-    nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
+    batch_size = cfg.dynamics.xshape[0]
+    nchains = max((1, batch_size // 4))
     cfg.update({'nchains': nchains})
 
     id = generate_id() if trainer.accelerator.is_local_main_process else None
@@ -280,9 +289,11 @@ def main(cfg: DictConfig) -> dict:
     if trainer.accelerator.is_local_main_process:
         run = wandb.init(**cfg.wandb.setup)
         run.log_code(HERE)
-        run.config.update(OmegaConf.to_container(cfg,
-                                                 resolve=True,
-                                                 throw_on_missing=True))
+        cfg_dict = OmegaConf.to_container(cfg,
+                                          resolve=True,
+                                          throw_on_missing=True)
+        run.config.update(cfg_dict)
+        run.config.update({'outdir': outdir.as_posix()})
         utils.print_config(cfg, resolve=True)
 
     # ----------------------------------------------------------
@@ -292,15 +303,16 @@ def main(cfg: DictConfig) -> dict:
     # ----------------------------------------------------------
     outputs['train'] = train(cfg, trainer, run=run)     # [1.]
     if trainer.accelerator.is_local_main_process:
-        if run is not None:
-            run.config.update({'eval_beta': cfg.annealing_schedule.beta_final})
-
         for job in ['eval', 'hmc']:                     # [2.], [3.]
             log.warning(f'Running {job}')
+            nchains = max((1, batch_size // 8))
             outputs[job] = eval(cfg=cfg,
                                 run=run,
                                 job_type=job,
+                                nchains=nchains,
                                 trainer=trainer)
+    if run is not None:
+        run.finish()
 
     return outputs
 
