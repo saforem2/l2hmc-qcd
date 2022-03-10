@@ -307,8 +307,8 @@ class Trainer:
     @tf.function(experimental_follow_type_hints=True)
     def hmc_step(self, inputs: tuple[Tensor, Tensor]) -> tuple[Tensor, dict]:
         xi, beta = inputs
-        xi = to_u1(xi)
-        xo, metrics = self.dynamics.apply_transition_hmc((xi, beta))
+        inputs = (to_u1(xi), tf.constant(beta))
+        xo, metrics = self.dynamics.apply_transition_hmc(inputs)
         xo = to_u1(xo)
         xp = to_u1(metrics.pop('mc_states').proposed.x)
         loss = self.loss_fn(x_init=xi, x_prop=xp, acc=metrics['acc'])
@@ -320,17 +320,17 @@ class Trainer:
 
     @tf.function(experimental_follow_type_hints=True)
     def eval_step(self, inputs: tuple[Tensor, Tensor]) -> tuple[Tensor, dict]:
-        xinit, beta = inputs
-        xout, metrics = self.dynamics((to_u1(xinit), tf.constant(beta)),
-                                      training=False)
-        xprop = to_u1(metrics.pop('mc_states').proposed.x)
-        loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
-        lmetrics = self.loss_fn.lattice_metrics(xinit=to_u1(xinit),
-                                                xout=to_u1(xout))
+        xi, beta = inputs
+        inputs = (to_u1(xi), tf.constant(beta))
+        xo, metrics = self.dynamics(inputs, training=False)
+        xo = to_u1(xo)
+        xp = to_u1(metrics.pop('mc_states').proposed.x)
+        loss = self.loss_fn(x_init=xi, x_prop=xp, acc=metrics['acc'])
+        lmetrics = self.loss_fn.lattice_metrics(xinit=xi, xout=xo)
         metrics.update(lmetrics)
         metrics.update({'loss': loss})
 
-        return to_u1(xout), metrics
+        return xo, metrics
 
     def eval(
             self,
@@ -369,6 +369,7 @@ class Trainer:
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
 
         tables = {}
+        rows = {}
         summaries = []
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
         nprint = max((20, self.steps.test // 20))
@@ -380,7 +381,7 @@ class Trainer:
         log.warning(f'x.shape (original): {x.shape}')
         if nchains is not None:
             if isinstance(nchains, int) and nchains > 0:
-                x = x[:nchains]
+                x = x[:nchains]  # type: ignore
 
         assert isinstance(x, Tensor)
         log.warning(f'x[:nchains].shape: {x.shape}')
@@ -407,7 +408,12 @@ class Trainer:
                                                         metrics=metrics,
                                                         history=history,
                                                         job_type=job_type)
+                    rows[step] = avgs
                     summaries.append(summary)
+                    if avgs.get('acc', 1.0) <= 1e-5:
+                        log.warning('Chains are stuck! Re-drawing x !')
+                        x = self.draw_x()
+
                     if step == 0:
                         table = add_columns(avgs, table)
 
@@ -420,6 +426,7 @@ class Trainer:
         return {
             'timer': timer,
             'history': history,
+            'rows': rows,
             'summaries': summaries,
             'tables': tables,
         }
@@ -546,8 +553,14 @@ class Trainer:
                                                             history=history)
                         rows[gstep] = avgs
                         summaries.append(summary)
+
+                        if avgs.get('acc', 1.0) <= 1e-5:
+                            log.warning('Chains are stuck! Re-drawing x !')
+                            x = self.draw_x()
+
                         if epoch == 0:
                             table = add_columns(avgs, table)
+
                         if self.should_print(epoch):
                             table.add_row(*[f'{v}' for _, v in avgs.items()])
 
