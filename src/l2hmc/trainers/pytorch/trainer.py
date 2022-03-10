@@ -427,7 +427,12 @@ class Trainer:
             beta = self.schedule.betas[str(era)]
             if self.accelerator.is_local_main_process:
                 console.width = WIDTH
-                console.rule(f'ERA: {era}, BETA: {beta}')
+                title = f' ERA: {era} / {self.steps.nera}, BETA: {beta} '
+                console.print('\n')
+                console.rule(
+                    f'ERA: {era} / {self.steps.nera}, BETA: {beta}',
+                    style='black on white'
+                )
 
             with Live(
                     table,

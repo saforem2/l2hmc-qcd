@@ -387,7 +387,9 @@ class Trainer:
         log.warning(f'x[:nchains].shape: {x.shape}')
 
         if run is not None:
-            run.config.update({job_type: {'beta': beta, 'xshape': x.shape}})
+            run.config.update({
+                job_type: {'beta': beta, 'xshape': x.shape.as_list()}
+            })
 
         with Live(table, screen=False, auto_refresh=False) as live:
             if WIDTH is not None and WIDTH > 0:
@@ -521,7 +523,10 @@ class Trainer:
             beta = tf.constant(self.schedule.betas[str(era)])
             if self.rank == 0:
                 console.width = WIDTH
-                console.rule(f'ERA: {era}, BETA: {beta.numpy()}')
+                console.rule(
+                    f'ERA: {era} / {self.steps.nera}, BETA: {beta}',
+                    style='black on white'
+                )
 
             with Live(
                 table,
