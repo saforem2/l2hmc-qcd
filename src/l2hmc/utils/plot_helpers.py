@@ -197,8 +197,6 @@ def plot_combined(
         val: xr.DataArray,
         key: str = None,
         num_chains: int = 10,
-        # title: str = None,
-        # outdir: str = None,
         subplots_kwargs: dict[str, Any] = None,
         plot_kwargs: dict[str, Any] = None,
 ) -> tuple:
@@ -691,8 +689,6 @@ def make_ridgeplots(
             _ = g.set(yticklabels=[])
             _ = g.despine(bottom=True, left=True)
             if outdir is not None:
-                # io.check_else_make_dir(out_dir)
-                # out_file = os.path.join(out_dir, f'{key}_ridgeplot.svg')
                 outfile = Path(outdir).joinpath(f'{key}_ridgeplot.svg')
                 outfile.parent.mkdir(exist_ok=True, parents=True)
                 log.info(f'Saving figure to: {outfile.as_posix()}')
