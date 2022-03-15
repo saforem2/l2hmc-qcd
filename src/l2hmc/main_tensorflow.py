@@ -30,6 +30,7 @@ from l2hmc.utils.console import is_interactive
 from l2hmc import utils
 
 
+Tensor = tf.Tensor
 RANK = hvd.rank()
 SIZE = hvd.size()
 
@@ -155,6 +156,7 @@ def eval(
         job_type: str,
         run: Optional[Any] = None,
         nchains: Optional[int] = -1,
+        eps: Tensor = None,
 ) -> dict:
     assert isinstance(nchains, int)
     therm_frac = cfg.get('therm_frac', 0.2)
@@ -166,7 +168,8 @@ def eval(
     output = trainer.eval(run=run,
                           writer=writer,
                           nchains=nchains,
-                          job_type=job_type)
+                          job_type=job_type,
+                          eps=eps)
     dataset = output['history'].get_dataset(therm_frac=therm_frac)
     _ = analyze_dataset(dataset,
                         run=run,
@@ -187,6 +190,11 @@ def eval(
 
     if writer is not None:
         writer.close()  # type: ignore
+
+    if run is not None:
+        dQint = dataset.data_vars.get('dQint').values
+        run.summary['dQint_eval'] = dQint
+        run.summary['dQint_eval.mean'] = dQint.mean()
 
     return output
 
@@ -250,6 +258,7 @@ def main(cfg: DictConfig) -> dict:
     run = None
     if RANK == 0:
         run = wandb.init(**cfg.wandb.setup)
+        wandb.define_metric('dQint_eval', summary='mean')
         assert run is not None and run is wandb.run
         run.log_code(HERE.as_posix())
         cfg_dict = OmegaConf.to_container(cfg,
@@ -265,15 +274,24 @@ def main(cfg: DictConfig) -> dict:
     outputs['train'] = train(cfg, trainer, run=run)      # [1.]
 
     if RANK == 0:
+        eps = tf.constant(0.05)
         for job in ['eval', 'hmc']:                      # [2.], [3.]
             log.warning(f'Running {job}')
             batch_size = cfg.dynamics.xshape[0]
             nchains = max((1, batch_size // 8))
-            outputs[job] = eval(cfg=cfg,
-                                run=run,
-                                job_type=job,
-                                nchains=nchains,
-                                trainer=trainer)
+            if job == 'hmc':
+                outputs[job] = eval(cfg,
+                                    run=run,
+                                    eps=eps,              # Use fixed step size
+                                    job_type=job,
+                                    nchains=nchains,
+                                    trainer=trainer)
+            else:
+                outputs[job] = eval(cfg=cfg,
+                                    run=run,
+                                    job_type=job,
+                                    nchains=nchains,
+                                    trainer=trainer)
     if run is not None:
         run.finish()
         # run.save()

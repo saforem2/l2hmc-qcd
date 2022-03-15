@@ -8,6 +8,7 @@ import logging
 from math import pi as PI
 import os
 from pathlib import Path
+import wandb
 import time
 from typing import Callable, Any, Optional
 
@@ -277,11 +278,14 @@ class Trainer:
             job_type: str,
             step: Optional[int] = None,
             record: Optional[dict] = None,
-            run: Optional[Any] = None,
+            run: Optional[wandb.run] = None,
             writer: Optional[Any] = None,
             history: Optional[History] = None,
     ):
         record = {} if record is None else record
+        if step is not None:
+            record.update({f'{job_type}_step': step})
+
         record.update({
             'loss': metrics.get('loss', None),
             'dQint': metrics.get('dQint', None),
@@ -298,17 +302,33 @@ class Trainer:
             assert step is not None
             update_summaries(step=step, prefix=job_type, metrics=record)
             writer.flush()
+
         if run is not None:
+            dQint = record.get('dQint', None)
+            if dQint is not None:
+                dQdict = {
+                    f'dQint/{job_type}': {
+                        'val': dQint,
+                        'step': step,
+                        'avg': dQint.mean()
+                    }
+                }
+                run.log(dQdict, commit=False)
+
             run.log({f'wandb/{job_type}': record}, commit=False)
             run.log({f'avgs/wandb.{job_type}': avgs})
 
         return avgs, summary
 
     @tf.function(experimental_follow_type_hints=True)
-    def hmc_step(self, inputs: tuple[Tensor, Tensor]) -> tuple[Tensor, dict]:
+    def hmc_step(
+            self,
+            inputs: tuple[Tensor, Tensor],
+            eps: Optional[Tensor] = None,
+    ) -> tuple[Tensor, dict]:
         xi, beta = inputs
         inputs = (to_u1(xi), tf.constant(beta))
-        xo, metrics = self.dynamics.apply_transition_hmc(inputs)
+        xo, metrics = self.dynamics.apply_transition_hmc(inputs, eps=eps)
         xo = to_u1(xo)
         xp = to_u1(metrics.pop('mc_states').proposed.x)
         loss = self.loss_fn(x_init=xi, x_prop=xp, acc=metrics['acc'])
@@ -319,7 +339,10 @@ class Trainer:
         return xo, metrics
 
     @tf.function(experimental_follow_type_hints=True)
-    def eval_step(self, inputs: tuple[Tensor, Tensor]) -> tuple[Tensor, dict]:
+    def eval_step(
+            self,
+            inputs: tuple[Tensor, Tensor],
+    ) -> tuple[Tensor, dict]:
         xi, beta = inputs
         inputs = (to_u1(xi), tf.constant(beta))
         xo, metrics = self.dynamics(inputs, training=False)
@@ -341,6 +364,7 @@ class Trainer:
             writer: Optional[Any] = None,
             job_type: Optional[str] = 'eval',
             nchains: Optional[int] = None,
+            eps: Optional[Tensor] = None,
     ) -> dict:
         """Evaluate model."""
         if isinstance(skip, str):
@@ -361,19 +385,28 @@ class Trainer:
         if writer is not None:
             writer.set_as_default()
 
-        if job_type == 'hmc':
-            eval_fn = self.hmc_step
-        else:
-            eval_fn = self.eval_step
+        def eval_fn(z):
+            if job_type == 'eval':
+                return self.eval_step(z)      # type: ignore
+            return self.hmc_step(z, eps=eps)  # type: ignore
+
+        # if job_type == 'hmc':
+        #     def eval_fn(z):
+        #         return self.hmc_step(z, eps=eps)
+        # else:
+        #     eval_fn = self.eval_step
 
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
 
         tables = {}
         rows = {}
         summaries = []
-        table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
+        table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
         nprint = max((20, self.steps.test // 20))
         nlog = max((1, min((10, self.steps.test))))
+        if nlog <= self.steps.test:
+            nlog = min(10, max(1, self.steps.test // 100))
+
         assert job_type in ['eval', 'hmc']
         timer = self.timers[job_type]
         history = self.histories[job_type]
@@ -515,7 +548,7 @@ class Trainer:
         timer = self.timers['train']
         history = self.histories['train']
         tkwargs = {
-            'box': box.SIMPLE,
+            'box': box.HORIZONTALS,
             'row_styles': ['dim', 'none'],
         }
         for era in range(self.steps.nera):
@@ -523,10 +556,11 @@ class Trainer:
             beta = tf.constant(self.schedule.betas[str(era)])
             if self.rank == 0:
                 console.width = WIDTH
+                console.print('\n')
                 console.rule(
-                    f'ERA: {era} / {self.steps.nera}, BETA: {beta}',
-                    style='black on white'
+                    f'[red]ERA: {era} / {self.steps.nera}, BETA: {beta}[/]',
                 )
+                console.print('\n')
 
             with Live(
                 table,
@@ -588,7 +622,8 @@ class Trainer:
                     f'Saving checkpoint to: {manager.latest_checkpoint}'
                 )
                 manager.save()
-                self.dynamics.save_networks(train_dir)
+                if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
+                    self.dynamics.save_networks(train_dir)
 
         return {
             'timer': timer,

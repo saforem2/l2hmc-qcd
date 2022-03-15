@@ -8,6 +8,7 @@ from dataclasses import asdict
 import logging
 import os
 from pathlib import Path
+import wandb
 import time
 from typing import Callable, Any, Optional
 
@@ -172,22 +173,26 @@ class Trainer:
 
         return m
 
-    def hmc_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
-        xinit, beta = inputs
-        xinit = to_u1(xinit).to(self.accelerator.device)
-        beta = torch.tensor(beta)
+    def hmc_step(
+            self,
+            inputs: tuple[Tensor, float],
+            eps: Optional[Tensor] = None,
+    ) -> tuple[Tensor, dict]:
+        xi, beta = inputs
+        xi = to_u1(xi).to(self.accelerator.device)
+        beta = torch.tensor(beta).to(self.accelerator.device)
         # beta = torch.tensor(beta).to(self.accelerator.device)
-        xout, metrics = self._dynamics.apply_transition_hmc(  # type: ignore
-            (xinit, beta)
+        xo, metrics = self._dynamics.apply_transition_hmc(  # type: ignore
+            (xi, beta), eps=eps
         )
-        xprop = to_u1(metrics.pop('mc_states').proposed.x)
-        loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
-        lmetrics = self.loss_fn.lattice_metrics(xinit=to_u1(xinit),
-                                                xout=to_u1(xout))
+        xo = to_u1(xo)
+        xp = to_u1(metrics.pop('mc_states').proposed.x)
+        loss = self.loss_fn(x_init=xi, x_prop=xp, acc=metrics['acc'])
+        lmetrics = self.loss_fn.lattice_metrics(xinit=xi, xout=xo)
         metrics.update(lmetrics)
         metrics.update({'loss': loss.detach().cpu().numpy()})
 
-        return to_u1(xout).detach(), metrics
+        return xo.detach(), metrics
 
     def eval_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
         xinit, beta = inputs
@@ -211,6 +216,7 @@ class Trainer:
             writer: Optional[Any] = None,
             job_type: Optional[str] = 'eval',
             nchains: Optional[int] = -1,
+            eps: Optional[Tensor] = None,
     ) -> dict:
         summaries = []
         self.dynamics.eval()
@@ -224,16 +230,23 @@ class Trainer:
             x = random_angle(self.xshape)
             x = x.reshape(x.shape[0], -1)
 
-        if job_type == 'hmc':
-            eval_fn = self.hmc_step
-        else:
-            eval_fn = self.eval_step
+        # if job_type == 'hmc':
+        #     eval_fn = self.hmc_step
+        # else:
+        #     eval_fn = self.eval_step
+        def eval_fn(z):
+            if job_type == 'eval':
+                return self.eval_step(z)
+            return self.hmc_step(z, eps)
 
         summaries = []
         tables = {}
-        table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
+        table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
         nprint = max((20, self.steps.test // 20))
         nlog = max((1, min((10, self.steps.test))))
+        if nlog <= self.steps.test:
+            nlog = min(10, max(1, self.steps.test // 100))
+
         assert job_type in ['eval', 'hmc']
         timer = self.timers[job_type]
         history = self.histories[job_type]
@@ -309,11 +322,15 @@ class Trainer:
             job_type: str,
             step: Optional[int] = None,
             record: Optional[dict] = None,
-            run: Optional[Any] = None,
+            run: Optional[wandb.run] = None,
             writer: Optional[Any] = None,
             history: Optional[BaseHistory] = None,
     ):
         record = {} if record is None else record
+
+        if step is not None:
+            record.update({f'{job_type}_step': step})
+
         record.update({
             'loss': metrics.get('loss', None),
             'dQint': metrics.get('dQint', None),
@@ -335,6 +352,17 @@ class Trainer:
             writer.flush()
 
         if run is not None:
+            dQint = record.get('dQint', None)
+            if dQint is not None:
+                dQdict = {
+                    f'dQint/{job_type}': {
+                        'val': dQint,
+                        'step': step,
+                        'avg': dQint.mean()
+                    }
+                }
+                run.log(dQdict, commit=False)
+
             run.log({f'wandb/{job_type}': record}, commit=False)
             run.log({f'avgs/wandb.{job_type}': avgs})
 
@@ -343,13 +371,14 @@ class Trainer:
     def train_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
         xinit, beta = inputs
         xinit = to_u1(xinit).to(self.accelerator.device)
+        beta = torch.tensor(beta).to(self.accelerator.device)
         xout, metrics = self.dynamics((xinit, beta))
         xout = to_u1(xout)
         xprop = to_u1(metrics.pop('mc_states').proposed.x)
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
 
         if self.aux_weight > 0:
-            yinit = to_u1(self.draw_x())
+            yinit = to_u1(self.draw_x()).to(self.accelerator.device)
             _, metrics_ = self.dynamics((yinit, beta))
             yprop = to_u1(metrics_.pop('mc_states').proposed.x)
             aux_loss = self.aux_weight * self.loss_fn(x_init=yinit,
@@ -418,7 +447,7 @@ class Trainer:
         timer = self.timers['train']
         history = self.histories['train']
         tkwargs = {
-            'box': box.SIMPLE,
+            'box': box.HORIZONTALS,
             'row_styles': ['dim', 'none'],
         }
         self.dynamics.train()
@@ -427,12 +456,11 @@ class Trainer:
             beta = self.schedule.betas[str(era)]
             if self.accelerator.is_local_main_process:
                 console.width = WIDTH
-                title = f' ERA: {era} / {self.steps.nera}, BETA: {beta} '
                 console.print('\n')
                 console.rule(
-                    f'ERA: {era} / {self.steps.nera}, BETA: {beta}',
-                    style='black on white'
+                    f'[red]ERA: {era} / {self.steps.nera}, BETA: {beta}[/]',
                 )
+                console.print('\n')
 
             with Live(
                     table,

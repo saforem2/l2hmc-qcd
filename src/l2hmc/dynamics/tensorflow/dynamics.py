@@ -136,8 +136,9 @@ class Dynamics(Model):
     def apply_transition_hmc(
             self,
             inputs: tuple[Tensor, Tensor],
+            eps: Tensor,
     ) -> tuple[Tensor, dict]:
-        data = self.generate_proposal_hmc(inputs)
+        data = self.generate_proposal_hmc(inputs, eps)
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
         ma = ma_[:, None]
         mr = mr_[:, None]
@@ -236,11 +237,12 @@ class Dynamics(Model):
     def generate_proposal_hmc(
             self,
             inputs: tuple[Tensor, Tensor],
+            eps: Tensor,
     ) -> dict:
         x, beta = inputs
         v = tf.random.normal(x.shape, dtype=x.dtype)
         init = State(x, v, beta)
-        proposed, metrics = self.transition_kernel_hmc(init)
+        proposed, metrics = self.transition_kernel_hmc(init, eps=eps)
 
         return {'init': init, 'proposed': proposed, 'metrics': metrics}
 
@@ -322,22 +324,20 @@ class Dynamics(Model):
     def leapfrog_hmc(
             self,
             state: State,
-            step: int,
+            eps: Tensor,
     ) -> State:
         """Perform standard HMC leapfrog update."""
-        force1 = self.grad_potential(state.x, state.beta)
-        v1 = state.v - 0.5 * self.veps[step] * force1
-
-        xp = state.x + self.xeps[step] * v1
-
-        force2 = self.grad_potential(xp, state.beta)
-        v2 = v1 - 0.5 * self.veps[step] * force2
-
-        return State(x=xp, v=v2, beta=state.beta)
+        force1 = self.grad_potential(state.x, state.beta)  # f = dU / dx
+        v1 = state.v - 0.5 * tf.multiply(eps, force1)     # v -= ½ veps * f
+        xp = state.x + eps * v1                           # x += xeps * v
+        force2 = self.grad_potential(xp, state.beta)       # calc force, again
+        v2 = v1 - 0.5 * tf.multiply(eps, force2)          # v -= ½ veps * f
+        return State(x=xp, v=v2, beta=state.beta)          # output: (x', v')
 
     def transition_kernel_hmc(
             self,
             state: State,
+            eps: Tensor,
     ) -> tuple[State, dict]:
         """Run the generic HMC transition kernel."""
         state_ = State(x=state.x, v=state.v, beta=state.beta)
@@ -345,7 +345,7 @@ class Dynamics(Model):
         metrics = self.get_metrics(state_, sumlogdet)
         history = self.update_history(metrics, history={})
         for step in range(self.config.nleapfrog):
-            state_ = self.leapfrog_hmc(state_, step)
+            state_ = self.leapfrog_hmc(state_, eps=eps)
             if self.config.verbose:
                 metrics = self.get_metrics(state_, sumlogdet, step=step)
                 history = self.update_history(metrics, history=history)
