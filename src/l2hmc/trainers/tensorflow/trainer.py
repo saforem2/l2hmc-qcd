@@ -324,7 +324,7 @@ class Trainer:
     def hmc_step(
             self,
             inputs: tuple[Tensor, Tensor],
-            eps: Optional[Tensor] = None,
+            eps: Tensor,
     ) -> tuple[Tensor, dict]:
         xi, beta = inputs
         inputs = (to_u1(xi), tf.constant(beta))
@@ -373,6 +373,12 @@ class Trainer:
         if beta is None:
             beta = self.schedule.beta_final
 
+        if eps is None and str(job_type).lower() == 'hmc':
+            eps = tf.constant(0.1)
+            log.warn(
+                'Step size `eps` not specified for HMC! Using default: 0.1'
+            )
+
         assert job_type in ['eval', 'hmc']
 
         if x is None:
@@ -386,15 +392,9 @@ class Trainer:
             writer.set_as_default()
 
         def eval_fn(z):
-            if job_type == 'eval':
-                return self.eval_step(z)      # type: ignore
-            return self.hmc_step(z, eps=eps)  # type: ignore
-
-        # if job_type == 'hmc':
-        #     def eval_fn(z):
-        #         return self.hmc_step(z, eps=eps)
-        # else:
-        #     eval_fn = self.eval_step
+            if job_type == 'hmc':
+                return self.hmc_step(z, eps=eps)  # type: ignore
+            return self.eval_step(z)              # type: ignore
 
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
 

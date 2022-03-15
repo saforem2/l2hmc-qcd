@@ -176,11 +176,12 @@ class Trainer:
     def hmc_step(
             self,
             inputs: tuple[Tensor, float],
-            eps: Optional[Tensor] = None,
+            eps: Tensor,
     ) -> tuple[Tensor, dict]:
         xi, beta = inputs
         xi = to_u1(xi).to(self.accelerator.device)
         beta = torch.tensor(beta).to(self.accelerator.device)
+        eps = eps.to(self.accelerator.device)
         # beta = torch.tensor(beta).to(self.accelerator.device)
         xo, metrics = self._dynamics.apply_transition_hmc(  # type: ignore
             (xi, beta), eps=eps
@@ -230,14 +231,19 @@ class Trainer:
             x = random_angle(self.xshape)
             x = x.reshape(x.shape[0], -1)
 
-        # if job_type == 'hmc':
-        #     eval_fn = self.hmc_step
-        # else:
-        #     eval_fn = self.eval_step
+        if eps is None and str(job_type).lower() == 'hmc':
+            eps = torch.tensor(0.1)
+            log.warn(
+                'Step size `eps` not specified for HMC! Using default: 0.1'
+            )
+
+        assert job_type in ['eval', 'hmc']
+
         def eval_fn(z):
-            if job_type == 'eval':
-                return self.eval_step(z)
-            return self.hmc_step(z, eps)
+            if job_type == 'hmc':
+                assert eps is not None
+                return self.hmc_step(z, eps)
+            return self.eval_step(z)
 
         summaries = []
         tables = {}
