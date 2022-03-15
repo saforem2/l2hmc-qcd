@@ -193,8 +193,10 @@ def eval(
 
     if run is not None:
         dQint = dataset.data_vars.get('dQint').values
-        run.summary['dQint_eval'] = dQint
-        run.summary['dQint_eval.mean'] = dQint.mean()
+        drop = int(0.1 * len(dQint))
+        dQint = dQint[drop:]
+        run.summary[f'dQint_{job_type}'] = dQint
+        run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
 
     return output
 
