@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from accelerate import Accelerator
+# from accelerate.utils import extract_model_from_parallel
 import hydra
 from hydra.utils import instantiate
 from l2hmc.common import analyze_dataset, save_logs
@@ -40,6 +41,9 @@ from l2hmc import utils
 
 
 log = logging.getLogger(__name__)
+
+
+Tensor = torch.Tensor
 
 
 def load_from_ckpt(
@@ -193,6 +197,7 @@ def eval(
         job_type: str,
         run: Optional[Any] = None,
         nchains: Optional[int] = None,
+        eps: Tensor = None,
 ) -> dict:
     """Evaluate model (nested as `trainer.model`)"""
     nchains = -1 if nchains is None else nchains
@@ -203,7 +208,8 @@ def eval(
     output = trainer.eval(run=run,
                           writer=writer,
                           nchains=nchains,
-                          job_type=job_type)
+                          job_type=job_type,
+                          eps=eps)
     dataset = output['history'].get_dataset(therm_frac=therm_frac)
     if trainer.accelerator.is_local_main_process:
         _ = analyze_dataset(dataset,
@@ -226,6 +232,11 @@ def eval(
 
     if writer is not None:
         writer.close()
+
+    if run is not None:
+        dQint = dataset.data_vars.get('dQint').values
+        run.summary[f'dQint.{job_type}'] = dQint
+        run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
 
     return output
 
@@ -288,6 +299,7 @@ def main(cfg: DictConfig) -> dict:
     run = None
     if trainer.accelerator.is_local_main_process:
         run = wandb.init(**cfg.wandb.setup)
+        wandb.define_metric('dQint_eval', summary='mean')
         run.log_code(HERE)
         cfg_dict = OmegaConf.to_container(cfg,
                                           resolve=True,
@@ -303,14 +315,23 @@ def main(cfg: DictConfig) -> dict:
     # ----------------------------------------------------------
     outputs['train'] = train(cfg, trainer, run=run)     # [1.]
     if trainer.accelerator.is_local_main_process:
+        eps = torch.tensor(0.05)
         for job in ['eval', 'hmc']:                     # [2.], [3.]
             log.warning(f'Running {job}')
             nchains = max((1, batch_size // 8))
-            outputs[job] = eval(cfg=cfg,
-                                run=run,
-                                job_type=job,
-                                nchains=nchains,
-                                trainer=trainer)
+            if job == 'hmc':
+                outputs[job] = eval(cfg=cfg,
+                                    run=run,
+                                    eps=eps,            # Use fixed step size
+                                    job_type=job,
+                                    nchains=nchains,
+                                    trainer=trainer)
+            else:
+                outputs[job] = eval(cfg=cfg,
+                                    run=run,
+                                    job_type=job,
+                                    nchains=nchains,
+                                    trainer=trainer)
     if run is not None:
         run.finish()
 
