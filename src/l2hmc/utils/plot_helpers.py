@@ -40,9 +40,18 @@ colors = {
 
 plt.style.use('default')
 plt.rcParams.update({
-    'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
-    'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
     'image.cmap': 'viridis',
+    'savefig.transparent': True,
+    'text.color': '#666666',
+    'axes.labelcolor': '#666666',
+    'xtick.color': '#66666604',
+    'ytick.color': '#66666604',
+    'ytick.labelcolor': '#666666',
+    'xtick.labelcolor': '#666666',
+    'axes.edgecolor': '#66666600',
+    'grid.color': (0.4, 0.4, 0.4, 0.4),  # #66666602
+    'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
+    'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
 })
 # sns.set_palette(list(colors.values()))
 # sns.set_context('notebook', font_scale=0.8)
@@ -214,21 +223,23 @@ def plot_combined(
     vmin = np.min(val)
     vmax = np.max(val)
     if vmin < 0 < vmax:
-        color = '#FF5252' if val.mean() > 0 else '#007DFF'
+        color = '#FF5252' if val.mean() > 0 else '#2979FF'
     elif 0 < vmin < vmax:
         color = '#3FB5AD'
     else:
         color = plot_kwargs.get('color', f'C{np.random.randint(5)}')
 
     (ax1, ax2) = subfigs[1].subplots(1, 2, sharey=True, gridspec_kw=gs_kw)
-    ax1.grid(alpha=0.2)
+    ax1.grid(alpha=0.4)
     ax2.grid(False)
     sns.kdeplot(y=val.values.flatten(), ax=ax2, color=color, shade=True)
     axes = (ax1, ax2)
     ax0 = subfigs[0].subplots(1, 1)
     val = val.dropna('chain')
-    _ = xplt.pcolormesh(val, 'draw', 'chain', ax=ax0,
-                        robust=True, add_colorbar=True)
+    # _ = xplt.pcolormesh(val, 'draw', 'chain', ax=ax0,
+    #                     robust=True, add_colorbar=True)
+    _ = xplt.imshow(val, 'draw', 'chain', ax=ax0,
+                    robust=True, add_colorbar=True)
     nchains = min((num_chains, len(val.coords['chain'])))
     label = f'{key}_avg'
     # label = r'$\langle$' + f'{key} ' + r'$\rangle$'
@@ -282,8 +293,8 @@ def plot_dataArray(
     if therm_frac > 0:
         drop = int(therm_frac * arr.shape[0])
         arr = arr[drop:]
-
         steps = steps[drop:]
+
     if len(arr.shape) == 2:
         fig, axes = plot_combined(val, key=key,
                                   num_chains=num_chains,
@@ -464,7 +475,7 @@ def plot_metric(
         gs_kw = {'width_ratios': [1.33, 0.33]}
         (ax, ax1) = subfigs[1].subplots(1, 2, sharey=True,
                                         gridspec_kw=gs_kw)
-        ax.grid(alpha=0.2)
+        ax.grid(alpha=0.4)
         ax1.grid(False)
         color = plot_kwargs.get('color', 'C0')
         label = plot_kwargs.pop('label', None)
@@ -689,12 +700,17 @@ def make_ridgeplots(
             _ = g.set(yticklabels=[])
             _ = g.despine(bottom=True, left=True)
             if outdir is not None:
-                outfile = Path(outdir).joinpath(f'{key}_ridgeplot.svg')
-                outfile.parent.mkdir(exist_ok=True, parents=True)
-                log.info(f'Saving figure to: {outfile.as_posix()}')
-                plt.savefig(outfile.as_posix(), dpi=400, bbox_inches='tight')
-                pngfile = Path(outdir).joinpath(f'{key}_ridgeplot.png')
-                plt.savefig(pngfile.as_posix(), dpi=500, bbox_inches='tight')
+                outdir = Path(outdir)
+                pngdir = outdir.joinpath('pngs')
+                fsvg = Path(outdir).joinpath(f'{key}_ridgeplot.svg')
+                fpng = Path(pngdir).joinpath(f'{key}_ridgeplot.png')
+
+                outdir.mkdir(exist_ok=True, parents=True)
+                pngdir.mkdir(exist_ok=True, parents=True)
+
+                log.info(f'Saving figure to: {fsvg.as_posix()}')
+                plt.savefig(fsvg.as_posix(), dpi=500, bbox_inches='tight')
+                plt.savefig(fpng.as_posix(), dpi=500, bbox_inches='tight')
 
         # plt.close('all')
 

@@ -133,13 +133,19 @@ def make_subdirs(basedir: os.PathLike):
     return dirs
 
 
+# def savefig(fig: plt.Figure, fout: os.PathLike):
+#     fname = Path(fout).stem
+#     parent = Path(fout).parent.mkdir(exist_ok=True, parents=True)
+#     pass
+
+
 def plot_dataset(
         dataset: xr.Dataset,
         nchains: int = 10,
         outdir: os.PathLike = None,
         title: str = None,
         job_type: str = None,
-        run: Any = None,
+        # run: Any = None,
 ) -> None:
     outdir = Path(outdir) if outdir is not None else Path(os.getcwd())
     # outdir = outdir.joinpath('plots')
@@ -157,34 +163,25 @@ def plot_dataset(
         except TypeError:
             log.error(f'Unable to `plot_dataArray` for {key}')
             continue
-        # try:
-        #     wandb.log({f'chart/{name}': fig})
-        # except AttributeError:
-        #     # log.error(err.name)
-        #     log.error(
-        #         f'Error logging `chart/{name}` with `wandb.log`, skipping!',
-        #     )
-        # chart_name = '/'.join([*name, f'{key}_chart'])
-        # wandb.log({key_: fig})
-        outfile = outdir.joinpath(f'{key}.svg')
-        outfile.parent.mkdir(exist_ok=True, parents=True)
-        log.info(f'Saving figure to: {outfile.as_posix()}')
-        fig.savefig(outfile.as_posix(), dpi=500, bbox_inches='tight')
+
         pngdir = outdir.joinpath('pngs')
+        outdir.mkdir(exist_ok=True, parents=True)
         pngdir.mkdir(exist_ok=True, parents=True)
-        outpng = pngdir.joinpath(f'{key}.png')
-        # if run is not None:
-        #     try:
-        #         run.log({f'plots/{job_type}.{key}': fig})
-        #     except Exception:
-        #         log.error(f'Unable to create plot for {key}, skipping!')
-        #         pass
-        fig.savefig(outpng.as_posix(), dpi=500, bbox_inches='tight')
+
+        fsvg = outdir.joinpath(f'{key}.svg')
+        fpng = pngdir.joinpath(f'{key}.png')
+        if fsvg.is_file():
+            fsvg = outdir.joinpath(f'xarray-{key}.svg')
+        if fpng.is_file():
+            fpng = pngdir.joinpath(f'xarray-{key}.svg')
+
+        fig.savefig(fsvg.as_posix(), dpi=500, bbox_inches='tight')
+        fig.savefig(fpng.as_posix(), dpi=500, bbox_inches='tight')
 
     _ = make_ridgeplots(dataset,
-                        num_chains=nchains,
+                        outdir=outdir,
                         drop_nans=True,
-                        outdir=outdir)
+                        num_chains=nchains)
 
 
 def analyze_dataset(
@@ -199,7 +196,6 @@ def analyze_dataset(
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
     dirs = make_subdirs(outdir)
     plot_dataset(dataset,
-                 run=run,
                  nchains=nchains,
                  title=title,
                  job_type=job_type,
