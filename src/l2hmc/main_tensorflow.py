@@ -155,7 +155,7 @@ def eval(
         trainer: Trainer,
         job_type: str,
         run: Optional[Any] = None,
-        nchains: Optional[int] = -1,
+        nchains: Optional[int] = 10,
         eps: Tensor = None,
 ) -> dict:
     assert isinstance(nchains, int)
@@ -171,6 +171,14 @@ def eval(
                           job_type=job_type,
                           eps=eps)
     dataset = output['history'].get_dataset(therm_frac=therm_frac)
+
+    if run is not None:
+        dQint = dataset.data_vars.get('dQint').values
+        drop = int(0.1 * len(dQint))
+        dQint = dQint[drop:]
+        run.summary[f'dQint_{job_type}'] = dQint
+        run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
+
     _ = analyze_dataset(dataset,
                         run=run,
                         save=True,
@@ -191,12 +199,6 @@ def eval(
     if writer is not None:
         writer.close()  # type: ignore
 
-    if run is not None:
-        dQint = dataset.data_vars.get('dQint').values
-        drop = int(0.1 * len(dQint))
-        dQint = dQint[drop:]
-        run.summary[f'dQint_{job_type}'] = dQint
-        run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
 
     return output
 
@@ -208,7 +210,7 @@ def train(
         nchains: Optional[int] = None,
         **kwargs,
 ) -> dict:
-    nchains = -1 if nchains is None else nchains
+    nchains = 16 if nchains is None else nchains
     jobdir = get_jobdir(cfg, job_type='train')
     writer = get_summary_writer(cfg, job_type='train')
     if writer is not None:
@@ -280,7 +282,7 @@ def main(cfg: DictConfig) -> dict:
         for job in ['eval', 'hmc']:                      # [2.], [3.]
             log.warning(f'Running {job}')
             batch_size = cfg.dynamics.xshape[0]
-            nchains = max((1, batch_size // 8))
+            nchains = max((4, batch_size // 8))
             if job == 'hmc':
                 outputs[job] = eval(cfg,
                                     run=run,
