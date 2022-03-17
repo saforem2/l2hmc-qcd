@@ -402,7 +402,14 @@ class Trainer:
 
         return xout.detach(), metrics
 
-    def save_ckpt(self, era, epoch, train_dir, **kwargs) -> None:
+    def save_ckpt(
+            self,
+            era: int,
+            epoch: int,
+            train_dir: os.PathLike,
+            metrics: Optional[dict] = None,
+            run: Optional[wandb.run] = None,
+    ) -> None:
         dynamics = extract_model_from_parallel(self.dynamics)
         ckpt_dir = Path(train_dir).joinpath('checkpoints')
         ckpt_dir.mkdir(exist_ok=True, parents=True)
@@ -415,15 +422,26 @@ class Trainer:
         veps = {
             k: grab(v) for k, v in dynamics.veps.items()  # type:ignore
         }
-        torch.save({
+        ckpt = {
             'era': era,
             'epoch': epoch,
             'xeps': xeps,
             'veps': veps,
             'model_state_dict': dynamics.state_dict(),  # type: ignore
             'optimizer_state_dict': self.optimizer.state_dict(),
-            **kwargs,
-        }, ckpt_file)
+        }
+        if metrics is not None:
+            ckpt.update(metrics)
+
+        torch.save(ckpt, ckpt_file)
+        if run is not None:
+            assert run is wandb.run
+            outfile = Path(train_dir).joinpath('model.pth')
+            torch.save(dynamics.state_dict(), outfile.as_posix())
+            artifact = wandb.Artifact('model', type='model')
+            artifact.add_file(outfile.as_posix())
+            run.log_artifact(artifact)
+            run.join()
 
     def train(
             self,
@@ -435,6 +453,13 @@ class Trainer:
             # keep: str | list[str] = None,
     ) -> dict:
         skip = [skip] if isinstance(skip, str) else skip
+
+        if train_dir is None:
+            train_dir = Path(os.getcwd()).joinpath('train')
+        else:
+            train_dir = Path(train_dir)
+
+        train_dir.mkdir(exist_ok=True, parents=True)
 
         if isinstance(skip, str):
             skip = [skip]
@@ -515,7 +540,9 @@ class Trainer:
                     model = model if isinstance(model, Module) else None
                     update_summaries(writer=writer, step=gstep, model=model)
 
-                self.save_ckpt(era, epoch, train_dir, loss=metrics['loss'])
+                ckpt_metrics = {'loss': metrics['loss']}
+                self.save_ckpt(era, epoch, train_dir,
+                               metrics=ckpt_metrics, run=run)
                 log.info(
                     f'Era {era} took: {time.time() - estart:<5g}s',
                 )
