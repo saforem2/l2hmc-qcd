@@ -199,7 +199,6 @@ def eval(
     if writer is not None:
         writer.close()  # type: ignore
 
-
     return output
 
 
@@ -260,7 +259,8 @@ def main(cfg: DictConfig) -> dict:
     cfg = update_wandb_config(cfg, id=id, debug=debug)
 
     run = None
-    if RANK == 0:
+    use_wandb = (not os.environ.get('NO_WANDB', False))
+    if use_wandb and RANK == 0:
         run = wandb.init(**cfg.wandb.setup)
         wandb.define_metric('dQint_eval', summary='mean')
         assert run is not None and run is wandb.run
@@ -275,27 +275,30 @@ def main(cfg: DictConfig) -> dict:
     # 2. Evaluate trained model
     # 3. Run generic HMC as baseline w/ same trajectory length
     # ----------------------------------------------------------
-    outputs['train'] = train(cfg, trainer, run=run)      # [1.]
+    should_train = (cfg.steps.nera > 0 and cfg.steps.nepoch > 0)
+    if should_train:
+        outputs['train'] = train(cfg, trainer, run=run)      # [1.]
 
     if RANK == 0:
-        eps = tf.constant(0.05)
-        for job in ['eval', 'hmc']:                      # [2.], [3.]
-            log.warning(f'Running {job}')
-            batch_size = cfg.dynamics.xshape[0]
-            nchains = max((4, batch_size // 8))
-            if job == 'hmc':
-                outputs[job] = eval(cfg,
-                                    run=run,
-                                    eps=eps,              # Use fixed step size
-                                    job_type=job,
-                                    nchains=nchains,
-                                    trainer=trainer)
-            else:
-                outputs[job] = eval(cfg=cfg,
-                                    run=run,
-                                    job_type=job,
-                                    nchains=nchains,
-                                    trainer=trainer)
+        batch_size = cfg.dynamics.xshape[0]
+        nchains = max((4, batch_size // 8))
+        if should_train and cfg.steps.test > 0:
+            log.warning('Evaluating trained model')
+            outputs['eval'] = eval(cfg,
+                                   run=run,
+                                   eps=None,
+                                   job_type='eval',
+                                   nchains=nchains,
+                                   trainer=trainer)
+        if cfg.steps.test > 0:
+            log.warning('Running generic HMC')
+            eps = tf.constant(float(cfg.get('eps_hmc', 0.01)))
+            outputs['hmc'] = eval(cfg=cfg,
+                                  run=run,
+                                  eps=eps,
+                                  job_type='hmc',
+                                  nchains=nchains,
+                                  trainer=trainer)
     if run is not None:
         run.finish()
         # run.save()
