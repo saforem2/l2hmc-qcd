@@ -49,7 +49,8 @@ defaults:
   # verbose: [src.train, src.utils]
 
 framework: ???
-width: null
+width: 235
+eps_hmc: null
 nchains: ${dynamics.nleapfrog}
 # pretty print config at the start of the run using Rich library
 # print_config: True
