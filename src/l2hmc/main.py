@@ -26,27 +26,31 @@ def train_tensorflow(cfg: DictConfig) -> dict:
         gpu = gpus[hvd.local_rank()]
         tf.config.experimental.set_visible_devices(gpu, 'GPU')
 
-    from l2hmc.main_tensorflow import main as main_tf
+    from l2hmc.scripts.tensorflow.main import main as main_tf
     output = main_tf(cfg)
 
     return output
 
 
 def train_pytorch(cfg: DictConfig) -> dict:
-    from l2hmc.main_pytorch import main as main_pt
+    from l2hmc.scripts.pytorch.main import main as main_pt
     output = main_pt(cfg)
     return output
 
 
 @hydra.main(config_path='./conf', config_name='config')
 def main(cfg: DictConfig) -> None:
-    width = max(
-        (int(cfg.get('width', 200)),
-         int(os.environ.get('COLUMNS', 200)))
-    )
-
-    os.environ['COLUMNS'] = str(width)
-    cfg.update({'width': width})
+    # cfg_width = cfg.get('width', 235)
+    # env_width = os.environ.get('COLUMNS', 235)
+    # width = max(
+    #     (int(cfg.get('width', 200)),
+    #      int(os.environ.get('COLUMNS', 200)))
+    # )
+    width = cfg.get('width', None)
+    if width is not None and os.environ.get('COLUMNS', None) is None:
+        os.environ['COLUMNS'] = str(width)
+    elif os.environ.get('COLUMNS', None) is not None:
+        cfg.update({'width': int(os.environ.get('COLUMNS', 235))})
 
     framework = cfg.get('framework', None)
     assert framework is not None, (
@@ -63,4 +67,5 @@ def main(cfg: DictConfig) -> None:
 
 
 if __name__ == '__main__':
+    import pudb; pudb.set_trace()
     main()
