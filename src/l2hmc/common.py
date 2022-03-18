@@ -12,6 +12,7 @@ from typing import Any, Optional
 
 import joblib
 from omegaconf import DictConfig
+import pandas as pd
 from rich.table import Table
 import wandb
 import xarray as xr
@@ -69,14 +70,32 @@ def save_dataset(
 
     return datafile
 
-# def rows_to_dataframe(rows: dict):
-#     df = pd.DataFrame.from_dict(rows, orient='index', )
+
+def table_to_dict(table: Table, data: dict = None) -> dict:
+    if data is None:
+        return {
+            column.header: [
+                float(i) for i in list(column.cells)  # type:ignore
+            ]
+            for column in table.columns
+        }
+    for column in table.columns:
+        try:
+            data[column.header].extend([
+                float(i) for i in list(column.cells)  # type:ignore
+            ])
+        except KeyError:
+            data[column.header] = [
+                float(i) for i in list(column.cells)  # type:ignore
+            ]
+
+    return data
 
 
 def save_logs(
         tables: dict[str, Table],
         summaries: Optional[list[str]] = None,
-        rows: Optional[dict] = None,
+        rows: Optional[dict] = None,  # type:ignore
         logdir: os.PathLike = None,
         job_type: str = None,
         run: Optional[Any] = None,
@@ -102,7 +121,14 @@ def save_logs(
     tfile = tdir.joinpath('table.txt')
     tfile.parent.mkdir(exist_ok=True, parents=True)
 
-    for _, table in tables.items():
+    # data = {}
+    data = {}
+    for idx, table in tables.items():
+        if idx == 0:
+            data = table_to_dict(table)
+        else:
+            data = table_to_dict(table, data)
+
         console.print(table)
         html = console.export_html(clear=False)
         text = console.export_text()
@@ -111,11 +137,18 @@ def save_logs(
         with open(tfile, 'a') as f:
             f.write(text)
 
+    df = pd.DataFrame.from_dict(data)
+    dfile = Path(logdir).joinpath('table.csv')
+    df.to_csv(dfile.as_posix())
+
     if run is not None:
         with open(hfile.as_posix(), 'r') as f:
             html = f.read()
 
         run.log({f'Media/{job_type}': wandb.Html(html)})
+        run.log({
+            f'DataFrames/{job_type}': wandb.Table(data=df)
+        })
 
     if summaries is not None:
         sfile = logdir.joinpath('summaries.txt').as_posix()
