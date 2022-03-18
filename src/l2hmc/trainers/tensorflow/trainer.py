@@ -8,7 +8,7 @@ import logging
 from math import pi as PI
 import os
 from pathlib import Path
-import wandb
+# import wandb
 import time
 from typing import Callable, Any, Optional
 
@@ -278,7 +278,7 @@ class Trainer:
             job_type: str,
             step: Optional[int] = None,
             record: Optional[dict] = None,
-            run: Optional[wandb.run] = None,
+            run: Optional[Any] = None,
             writer: Optional[Any] = None,
             history: Optional[History] = None,
     ):

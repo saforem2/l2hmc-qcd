@@ -408,26 +408,26 @@ class Trainer:
             epoch: int,
             train_dir: os.PathLike,
             metrics: Optional[dict] = None,
-            run: Optional[wandb.run] = None,
+            run: Optional[Any] = None,
     ) -> None:
-        dynamics = extract_model_from_parallel(self.dynamics)
+        # dynamics = extract_model_from_parallel(self.dynamics)
         ckpt_dir = Path(train_dir).joinpath('checkpoints')
         ckpt_dir.mkdir(exist_ok=True, parents=True)
         ckpt_file = ckpt_dir.joinpath(f'ckpt-{era}-{epoch}.tar')
         log.info(f'Saving checkpoint to: {ckpt_file.as_posix()}')
-        dynamics.save(train_dir)  # type: ignore
+        self.dynamics.save(train_dir)  # type: ignore
         xeps = {
-            k: grab(v) for k, v in dynamics.xeps.items()  # type:ignore
+            k: grab(v) for k, v in self.dynamics.xeps.items()  # type:ignore
         }
         veps = {
-            k: grab(v) for k, v in dynamics.veps.items()  # type:ignore
+            k: grab(v) for k, v in self.dynamics.veps.items()  # type:ignore
         }
         ckpt = {
             'era': era,
             'epoch': epoch,
             'xeps': xeps,
             'veps': veps,
-            'model_state_dict': dynamics.state_dict(),  # type: ignore
+            'model_state_dict': self.dynamics.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
         }
         if metrics is not None:
@@ -437,7 +437,8 @@ class Trainer:
         if run is not None:
             assert run is wandb.run
             outfile = Path(train_dir).joinpath('model.pth')
-            torch.save(dynamics.state_dict(), outfile.as_posix())
+            torch.save(self.dynamics.state_dict(), outfile.as_posix())
+            # torch.save(dynamics.state_dict(), outfile.as_posix())
             artifact = wandb.Artifact('model', type='model')
             artifact.add_file(outfile.as_posix())
             run.log_artifact(artifact)
