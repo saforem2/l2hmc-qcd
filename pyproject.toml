@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "l2hmc"
-version = "0.1.0"
+version = "0.1.1"
 description = "L2HMC algorithm for sampling in Lattice QCD"
 authors = ["Sam Foreman <saforem2@gmail.com>"]
 
