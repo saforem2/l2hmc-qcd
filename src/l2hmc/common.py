@@ -95,9 +95,9 @@ def table_to_dict(table: Table, data: dict = None) -> dict:
 def save_logs(
         tables: dict[str, Table],
         summaries: Optional[list[str]] = None,
-        rows: Optional[dict] = None,  # type:ignore
-        logdir: os.PathLike = None,
         job_type: str = None,
+        # rows: Optional[dict] = None,  # type:ignore
+        logdir: os.PathLike = None,
         run: Optional[Any] = None,
 ) -> None:
     job_type = 'job' if job_type is None else job_type
@@ -138,7 +138,7 @@ def save_logs(
             f.write(text)
 
     df = pd.DataFrame.from_dict(data)
-    dfile = Path(logdir).joinpath('table.csv')
+    dfile = Path(logdir).joinpath(f'{job_type}_table.csv')
     df.to_csv(dfile.as_posix())
 
     if run is not None:
@@ -164,12 +164,6 @@ def make_subdirs(basedir: os.PathLike):
         dirs[key] = d
 
     return dirs
-
-
-# def savefig(fig: plt.Figure, fout: os.PathLike):
-#     fname = Path(fout).stem
-#     parent = Path(fout).parent.mkdir(exist_ok=True, parents=True)
-#     pass
 
 
 def plot_dataset(

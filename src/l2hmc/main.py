@@ -67,5 +67,4 @@ def main(cfg: DictConfig) -> None:
 
 
 if __name__ == '__main__':
-    import pudb; pudb.set_trace()
     main()

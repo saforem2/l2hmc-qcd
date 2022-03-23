@@ -100,7 +100,6 @@ def update_wandb_config(
         id: Optional[str] = None,
         debug: Optional[bool] = None,
         # job_type: Optional[str] = None,
-        # wbdir: Optional[os.PathLike] = None,
 ) -> DictConfig:
     """Updates config using runtime information for W&B."""
     framework = 'tensorflow'
@@ -159,6 +158,7 @@ def eval(
         eps: Tensor = None,
 ) -> dict:
     assert isinstance(nchains, int)
+    assert job_type in ['eval', 'hmc']
     therm_frac = cfg.get('therm_frac', 0.2)
     jobdir = get_jobdir(cfg, job_type=job_type)
     writer = get_summary_writer(cfg, job_type=job_type)
@@ -190,14 +190,14 @@ def eval(
         edir = jobdir.joinpath('logs')
         edir.mkdir(exist_ok=True, parents=True)
         log.info(f'Saving {job_type} logs to: {edir.as_posix()}')
-        save_logs(logdir=edir,
-                  run=run,
+        save_logs(run=run,
+                  logdir=edir,
                   job_type=job_type,
                   tables=output['tables'],
                   summaries=output['summaries'])
 
     if writer is not None:
-        writer.close()  # type: ignore
+        writer.close()
 
     return output
 
@@ -232,10 +232,9 @@ def train(
             tdir = jobdir.joinpath('logs')
             tdir.mkdir(exist_ok=True, parents=True)
             log.info(f'Saving train logs to: {tdir.as_posix()}')
-            save_logs(logdir=tdir,
-                      run=run,
+            save_logs(run=run,
+                      logdir=tdir,
                       job_type='train',
-                      rows=output['rows'],
                       tables=output['tables'],
                       summaries=output['summaries'])
 
@@ -259,8 +258,7 @@ def main(cfg: DictConfig) -> dict:
     cfg = update_wandb_config(cfg, id=id, debug=debug)
 
     run = None
-    use_wandb = (not os.environ.get('NO_WANDB', False))
-    if use_wandb and RANK == 0:
+    if RANK == 0:
         run = wandb.init(**cfg.wandb.setup)
         wandb.define_metric('dQint_eval', summary='mean')
         assert run is not None and run is wandb.run
@@ -301,14 +299,12 @@ def main(cfg: DictConfig) -> dict:
                                   trainer=trainer)
     if run is not None:
         run.finish()
-        # run.save()
 
     return outputs
 
 
 @hydra.main(config_path='./conf', config_name='config')
 def launch(cfg: DictConfig) -> None:
-    # log.info(f'Working directory: {os.getcwd()}')
     _ = main(cfg)
 
 
