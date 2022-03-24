@@ -75,7 +75,8 @@ def setup(cfg: DictConfig) -> dict:
                         potential_fn=lattice.action,
                         network_factory=net_factory)
     loss_fn = LatticeLoss(lattice=lattice, loss_config=loss_cfg)
-    optimizer = tf.keras.optimizers.Adam(cfg.learning_rate.lr_init)
+    # optimizer = tf.keras.optimizers.Adam(cfg.learning_rate.lr_init)
+    optimizer = tf.keras.optimizers.SGD(cfg.learning_rate.lr_init)
     trainer = Trainer(steps=steps,
                       rank=RANK,
                       loss_fn=loss_fn,
