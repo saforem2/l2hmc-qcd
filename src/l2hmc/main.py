@@ -8,6 +8,7 @@ import logging
 import os
 import warnings
 
+from pathlib import Path
 import hydra
 from omegaconf import DictConfig
 
@@ -33,19 +34,35 @@ def train_tensorflow(cfg: DictConfig) -> dict:
 
 
 def train_pytorch(cfg: DictConfig) -> dict:
+    import torch
+    if cfg.precision == 'float64':
+        torch.set_default_dtype(torch.float64)
+    else:
+        torch.set_default_dtype(torch.float32)
+
     from l2hmc.scripts.pytorch.main import main as main_pt
-    output = main_pt(cfg)
+
+    # -----------------------------------
+    # NOTE: Profiling is off by default
+    # -----------------------------------
+    if not cfg.profile:
+        return main_pt(cfg)
+
+    # Otherwise, run with profiler and generate chromeTrace.json
+    from torch.profiler import profile, ProfilerActivity  # type: ignore
+    activities = [ProfilerActivity.CUDA, ProfilerActivity.CPU]
+    with profile(record_shapes=True, activities=activities) as prof:
+        output = main_pt(cfg)
+
+    log.info(prof.key_averages().table(sort_by="cpu_time_total"))
+    tracefile = Path(os.getcwd()).joinpath('trace.json').as_posix()
+    prof.export_chrome_trace(tracefile)
+
     return output
 
 
 @hydra.main(config_path='./conf', config_name='config')
 def main(cfg: DictConfig) -> None:
-    # cfg_width = cfg.get('width', 235)
-    # env_width = os.environ.get('COLUMNS', 235)
-    # width = max(
-    #     (int(cfg.get('width', 200)),
-    #      int(os.environ.get('COLUMNS', 200)))
-    # )
     width = cfg.get('width', None)
     if width is not None and os.environ.get('COLUMNS', None) is None:
         os.environ['COLUMNS'] = str(width)

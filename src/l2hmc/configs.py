@@ -164,6 +164,7 @@ class LearningRateConfig(BaseConfig):
     min_lr: float = 1e-6
     factor: float = 0.98
     min_delta: float = 1e-4
+    clip_norm: float = 2.0
     # decay_steps: int = -1
     # decay_rate: float = 1.0
     # warmup_steps: int = 100
