@@ -1,22 +1,15 @@
 ---
-hydra:
-  # launcher:
-  #   # override the number of jobs from joblib
-  #   n_jobs = 10
-  run:
-    # Default output paths for all file logs
-    dir: "outputs/runs/\
-      /${dynamics.xshape[1]}x${dynamics.xshape[2]}\
-      /nlf-${dynamics.nleapfrog}\
-      /beta-${annealing_schedule.beta_final}\
-      /merge_directions-${dynamics.merge_directions}\
-      /${framework}\
-      /${now:%Y-%m-%d}\
-      /${now:%H-%M-%S}"
-  sweep:
-    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}"
-    subdir: ${hydra.job.override_dirname}
-    # subdir: ${hydra.job.num}
+framework: ???
+profile: false
+precision: 'float32'
+width: 235
+eps_hmc: 0.1
+nchains: ${dynamics.nleapfrog}
+# pretty print config at the start of the run using Rich library
+# print_config: True
+# disable python warnings if they annoy you
+ignore_warnings: True
+
 defaults:
   - _self_
   - steps: default.yaml
@@ -48,14 +41,24 @@ defaults:
   # use this to set level of only chosen command line loggers to 'DEBUG'
   # verbose: [src.train, src.utils]
 
-framework: ???
-width: 235
-eps_hmc: 0.1
-nchains: ${dynamics.nleapfrog}
-# pretty print config at the start of the run using Rich library
-# print_config: True
-# disable python warnings if they annoy you
-ignore_warnings: True
+hydra:
+  # launcher:
+  #   # override the number of jobs from joblib
+  #   n_jobs = 10
+  run:
+    # Default output paths for all file logs
+    dir: "outputs/runs/\
+      /${dynamics.xshape[1]}x${dynamics.xshape[2]}\
+      /nlf-${dynamics.nleapfrog}\
+      /beta-${annealing_schedule.beta_final}\
+      /merge_directions-${dynamics.merge_directions}\
+      /${framework}\
+      /${now:%Y-%m-%d}\
+      /${now:%H-%M-%S}"
+  sweep:
+    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+    subdir: ${hydra.job.override_dirname}
+    # subdir: ${hydra.job.num}
 
 # seed for random number generators in pytorch, numpy and python.random
 # seed: null
