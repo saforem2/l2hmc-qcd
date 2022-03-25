@@ -5,7 +5,6 @@ Implements methods for training L2HMC sampler
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
-from math import pi as PI
 import os
 from pathlib import Path
 # import wandb
@@ -115,6 +114,12 @@ def plot_models(dynamics: Dynamics, logdir: os.PathLike):
             pass
 
 
+HVD_FP_MAP = {
+    'fp16': hvd.Compression.fp16,
+    'none': hvd.Compression.none,
+}
+
+
 class Trainer:
     def __init__(
             self,
@@ -128,24 +133,23 @@ class Trainer:
             aux_weight: float = 0.0,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
-            compression: bool = True,
+            compression: Optional[str] = 'none',
             evals_per_step: int = 1,
             dynamics_config: Optional[DynamicsConfig] = None,
     ) -> None:
         self.rank = rank
         self.steps = steps
-        self.dynamics = dynamics
-        self.optimizer = optimizer
         self.loss_fn = loss_fn
+        self.dynamics = dynamics
         self.schedule = schedule
+        self.lr_config = lr_config
+        self.optimizer = optimizer
         self.aux_weight = aux_weight
+        self.clip_norm = lr_config.clip_norm
         self.keep = [keep] if isinstance(keep, str) else keep
         self.skip = [skip] if isinstance(skip, str) else skip
-        if compression:
-            self.compression = hvd.Compression.fp16
-        else:
-            self.compression = hvd.Compression.none
-
+        assert compression in ['none', 'fp16']
+        self.compression = HVD_FP_MAP.get(compression, hvd.Compression.none)
         self.reduce_lr = ReduceLROnPlateau(lr_config)
         self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
         self.reduce_lr.set_model(self.dynamics)
@@ -157,7 +161,6 @@ class Trainer:
         self.history = History(steps=steps)
         evals_per_step = self.dynamics.config.nleapfrog
         self.timer = StepTimer(evals_per_step=evals_per_step)
-        self.eval_timer = StepTimer(evals_per_step=evals_per_step)
         self.histories = {
             'train': self.history,
             'eval': History(),
@@ -168,8 +171,14 @@ class Trainer:
             'eval': StepTimer(evals_per_step=evals_per_step),
             'hmc': StepTimer(evals_per_step=evals_per_step),
         }
-        # self.eval_history = History()
-        # evals_per_step = self.dynamics.config.nleapfrog * steps.log
+
+    def draw_x(self) -> Tensor:
+        """Draw `x` """
+        x = tf.random.uniform(self.dynamics.xshape,
+                              *(-4, 4), dtype=TF_FLOAT)
+        x = tf.reshape(x, (x.shape[0], -1))
+
+        return to_u1(x)
 
     def setup_CheckpointManager(self, outdir: os.PathLike):
         ckptdir = Path(outdir).joinpath('checkpoints')
@@ -194,15 +203,6 @@ class Trainer:
 
         return manager
 
-    def draw_x(self) -> Tensor:
-        """Draw `x` """
-        x = tf.random.uniform(self.dynamics.xshape,
-                              *(-PI, PI), dtype=TF_FLOAT)
-        x = tf.reshape(x, (x.shape[0], -1))
-
-        return x
-
-    # type: ignore
     def metric_to_numpy(
             self,
             metric: Tensor | list | np.ndarray,
@@ -382,8 +382,8 @@ class Trainer:
         assert job_type in ['eval', 'hmc']
 
         if x is None:
-            unif = tf.random.uniform(self.dynamics.xshape,
-                                     *(-PI, PI), dtype=TF_FLOAT)
+            unif = to_u1(tf.random.uniform(self.dynamics.xshape,
+                                           *(-4, 4), dtype=TF_FLOAT))
             x = tf.reshape(unif, (unif.shape[0], -1))
         else:
             x = tf.Variable(x, dtype=TF_FLOAT)
@@ -481,6 +481,7 @@ class Trainer:
             xout, metrics = self.dynamics((xinit, beta), training=True)
             xprop = to_u1(metrics.pop('mc_states').proposed.x)
             loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
+            xout = to_u1(xout)
 
             if self.aux_weight > 0:
                 yinit = to_u1(self.draw_x())
@@ -491,23 +492,23 @@ class Trainer:
                                                           acc=metrics_['acc'])
                 loss = (loss + aux_loss) / (1. + self.aux_weight)
 
-            record['loss'] = loss
-            record.update(metrics)
-
         tape = hvd.DistributedGradientTape(tape, compression=self.compression)
-        grads = tape.gradient(loss, self.dynamics.trainable_variables)
-        updates = zip(grads, self.dynamics.trainable_variables)
-        self.optimizer.apply_gradients(updates)
+        grads = [
+            tf.clip_by_norm(grad, clip_norm=self.clip_norm)
+            for grad in tape.gradient(loss, self.dynamics.trainable_variables)
+        ]
+        self.optimizer.apply_gradients(
+            zip(grads, self.dynamics.trainable_variables)
+        )
         if first_step:
             hvd.broadcast_variables(self.dynamics.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
-        # bconst = tf.cast(beta, dtype=TF_FLOAT)
-        xout = to_u1(xout)
+        metrics['loss'] = loss
         lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
-        record.update(lmetrics)
+        metrics.update(lmetrics)
 
-        return to_u1(xout), record
+        return to_u1(xout), metrics
 
     def train(
             self,
