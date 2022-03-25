@@ -86,10 +86,9 @@ class Trainer:
             schedule: AnnealingSchedule,
             lr_config: LearningRateConfig,
             loss_fn: Callable = LatticeLoss,
+            aux_weight: float = 0.0,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
-            aux_weight: float = 0.0,
-            # ckpt_dir: Optional[os.PathLike] = None,
             dynamics_config: Optional[DynamicsConfig] = None,
     ) -> None:
         self.steps = steps
@@ -98,6 +97,7 @@ class Trainer:
         self.schedule = schedule
         self.loss_fn = loss_fn
         self.aux_weight = aux_weight
+        self.clip_norm = lr_config.clip_norm
         self._with_cuda = torch.cuda.is_available()
         self.accelerator = accelerator
         self.lr_config = lr_config
@@ -328,7 +328,7 @@ class Trainer:
             job_type: str,
             step: Optional[int] = None,
             record: Optional[dict] = None,
-            run: Optional[wandb.run] = None,
+            run: Optional[Any] = None,
             writer: Optional[Any] = None,
             history: Optional[BaseHistory] = None,
     ):
@@ -351,6 +351,7 @@ class Trainer:
 
         summary = summarize_dict(avgs)
         if writer is not None:
+            assert step is not None
             update_summaries(step=step,
                              prefix=job_type,
                              metrics=record,
@@ -364,7 +365,7 @@ class Trainer:
                     f'dQint/{job_type}': {
                         'val': dQint,
                         'step': step,
-                        'avg': dQint.mean()
+                        'avg': dQint.mean(),
                     }
                 }
                 run.log(dQdict, commit=False)
@@ -379,9 +380,9 @@ class Trainer:
         xinit = to_u1(xinit).to(self.accelerator.device)
         beta = torch.tensor(beta).to(self.accelerator.device)
         xout, metrics = self.dynamics((xinit, beta))
-        xout = to_u1(xout)
         xprop = to_u1(metrics.pop('mc_states').proposed.x)
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
+        xout = to_u1(xout)
 
         if self.aux_weight > 0:
             yinit = to_u1(self.draw_x()).to(self.accelerator.device)
@@ -394,11 +395,17 @@ class Trainer:
 
         self.optimizer.zero_grad()
         self.accelerator.backward(loss)
+        self.accelerator.backward
+        # extract_model_from_parallel(self.dynamics).parameters(),
+        self.accelerator.clip_grad_norm_(
+            self.dynamics.parameters(),
+            max_norm=self.clip_norm,
+        )
         self.optimizer.step()
-        metrics.update(self.loss_fn.lattice_metrics(xinit=xinit, xout=xout))
-        # lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
-        # metrics.update(lmetrics)
-        metrics.update({'loss': loss.detach().cpu().numpy()})
+
+        metrics['loss'] = loss
+        lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
+        metrics.update(lmetrics)
 
         return xout.detach(), metrics
 
@@ -433,16 +440,16 @@ class Trainer:
         if metrics is not None:
             ckpt.update(metrics)
 
-        torch.save(ckpt, ckpt_file)
+        # torch.save(ckpt, ckpt_file)
+        self.accelerator.save(ckpt, ckpt_file)
         if run is not None:
             assert run is wandb.run
-            outfile = Path(train_dir).joinpath('model.pth')
-            torch.save(self.dynamics.state_dict(), outfile.as_posix())
-            # torch.save(dynamics.state_dict(), outfile.as_posix())
+            outfile = Path(train_dir).joinpath('model.pth').as_posix()
+            # torch.save(self.dynamics.state_dict(), outfile.as_posix())
+            self.accelerator.save(self.dynamics.state_dict(), outfile)
             artifact = wandb.Artifact('model', type='model')
-            artifact.add_file(outfile.as_posix())
+            artifact.add_file(outfile)
             run.log_artifact(artifact)
-            run.join()
 
     def train(
             self,
@@ -483,6 +490,7 @@ class Trainer:
             'row_styles': ['dim', 'none'],
         }
         self.dynamics.train()
+        log.warning(f'x.dtype: {x.dtype}')
         for era in range(self.steps.nera):
             table = Table(**tkwargs)
             beta = self.schedule.betas[str(era)]
@@ -539,7 +547,9 @@ class Trainer:
                 if writer is not None:
                     model = extract_model_from_parallel(self.dynamics)
                     model = model if isinstance(model, Module) else None
-                    update_summaries(writer=writer, step=gstep, model=model)
+                    update_summaries(step=gstep,
+                                     writer=writer,
+                                     model=self.dynamics)
 
                 ckpt_metrics = {'loss': metrics['loss']}
                 self.save_ckpt(era, epoch, train_dir,

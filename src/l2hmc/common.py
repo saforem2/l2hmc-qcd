@@ -175,6 +175,7 @@ def plot_dataset(
         # run: Any = None,
 ) -> None:
     outdir = Path(outdir) if outdir is not None else Path(os.getcwd())
+    outdir.mkdir(exist_ok=True, parents=True)
     # outdir = outdir.joinpath('plots')
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
     for key, val in dataset.data_vars.items():
@@ -246,6 +247,7 @@ def analyze_dataset(
             name = f'{job_type}-{run.id}'
             artifact = wandb.Artifact(name=name, type='result')
             pngdir = Path(dirs['plots']).joinpath('pngs').as_posix()
+
             artifact.add_dir(pngdir, name=f'{job_type}/plots')
             if datafile is not None:
                 artifact.add_file(datafile.as_posix(), name=f'{job_type}/data')

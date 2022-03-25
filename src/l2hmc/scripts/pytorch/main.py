@@ -137,7 +137,6 @@ def update_wandb_config(
         cfg: DictConfig,
         id: Optional[str] = None,
         debug: Optional[bool] = None,
-        wbdir: Optional[os.PathLike] = None,
 ) -> DictConfig:
     group = [
         'pytorch',
@@ -150,9 +149,6 @@ def update_wandb_config(
     cfg.wandb.setup.update({'group': '/'.join(group)})
     if id is not None:
         cfg.wandb.setup.update({'id': id})
-
-    if wbdir is not None:
-        cfg.wandb.setup.update({'dir': Path(wbdir).as_posix()})
 
     cfg.wandb.setup.update({
         'tags': [
@@ -211,34 +207,33 @@ def eval(
                           job_type=job_type,
                           eps=eps)
     dataset = output['history'].get_dataset(therm_frac=therm_frac)
-    if trainer.accelerator.is_local_main_process:
-        _ = analyze_dataset(dataset,
-                            run=run,
-                            save=True,
-                            outdir=jobdir,
-                            nchains=nchains,
-                            job_type=job_type,
-                            title=f'{job_type}: PyTorch')
-
-        if not is_interactive():
-            edir = jobdir.joinpath('logs')
-            edir.mkdir(exist_ok=True, parents=True)
-            log.info(f'Saving {job_type} logs to: {edir.as_posix()}')
-            save_logs(logdir=edir,
-                      run=run,
-                      job_type=job_type,
-                      tables=output['tables'],
-                      summaries=output['summaries'])
-
-    if writer is not None:
-        writer.close()
-
     if run is not None:
         dQint = dataset.data_vars.get('dQint').values
         drop = int(0.1 * len(dQint))
         dQint = dQint[drop:]
-        run.summary[f'dQint.{job_type}'] = dQint
+        run.summary[f'dQint_{job_type}'] = dQint
         run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
+
+    _ = analyze_dataset(dataset,
+                        run=run,
+                        save=True,
+                        outdir=jobdir,
+                        nchains=nchains,
+                        job_type=job_type,
+                        title=f'{job_type}: PyTorch')
+
+    if not is_interactive():
+        edir = jobdir.joinpath('logs')
+        edir.mkdir(exist_ok=True, parents=True)
+        log.info(f'Saving {job_type} logs to: {edir.as_posix()}')
+        save_logs(run=run,
+                  logdir=edir,
+                  job_type=job_type,
+                  tables=output['tables'],
+                  summaries=output['summaries'])
+
+    if writer is not None:
+        writer.close()
 
     return output
 
@@ -249,7 +244,7 @@ def train(
         run: Optional[Any] = None,
         nchains: Optional[int] = None,
 ) -> dict:
-    nchains = -1 if nchains is None else nchains
+    nchains = 16 if nchains is None else nchains
     jobdir = get_jobdir(cfg, job_type='train')
     writer = get_summary_writer(cfg, trainer, job_type='train')
     output = trainer.train(run=run,
@@ -258,6 +253,7 @@ def train(
 
     if trainer.accelerator.is_local_main_process:
         dset = output['history'].get_dataset()
+        jobdir.mkdir(exist_ok=True, parents=True)
         _ = analyze_dataset(dset,
                             run=run,
                             save=True,
@@ -270,10 +266,9 @@ def train(
             tdir = jobdir.joinpath('logs')
             tdir.mkdir(exist_ok=True, parents=True)
             log.info(f'Saving train logs to: {tdir.as_posix()}')
-            save_logs(logdir=tdir,
-                      run=run,
+            save_logs(run=run,
+                      logdir=tdir,
                       job_type='train',
-                      rows=output['rows'],
                       tables=output['tables'],
                       summaries=output['summaries'])
 
@@ -302,12 +297,13 @@ def main(cfg: DictConfig) -> dict:
     if trainer.accelerator.is_local_main_process:
         run = wandb.init(**cfg.wandb.setup)
         wandb.define_metric('dQint_eval', summary='mean')
-        run.log_code(HERE)
+        assert run is not None and run is wandb.run
+        run.log_code(HERE.as_posix())
         cfg_dict = OmegaConf.to_container(cfg,
                                           resolve=True,
                                           throw_on_missing=True)
         run.config.update(cfg_dict)
-        run.config.update({'outdir': outdir.as_posix()})
+        # run.config.update({'outdir': outdir.as_posix()})
         utils.print_config(cfg, resolve=True)
 
     # ----------------------------------------------------------
@@ -315,25 +311,30 @@ def main(cfg: DictConfig) -> dict:
     # 2. Evaluate trained model
     # 3. Run generic HMC as baseline w/ same trajectory length
     # ----------------------------------------------------------
-    outputs['train'] = train(cfg, trainer, run=run)     # [1.]
+    should_train = (cfg.steps.nera > 0 and cfg.steps.nepoch > 0)
+    if should_train:
+        outputs['train'] = train(cfg, trainer, run=run)  # [1.]
+
     if trainer.accelerator.is_local_main_process:
-        eps = torch.tensor(0.05)
-        for job in ['eval', 'hmc']:                     # [2.], [3.]
-            log.warning(f'Running {job}')
-            nchains = max((1, batch_size // 8))
-            if job == 'hmc':
-                outputs[job] = eval(cfg=cfg,
-                                    run=run,
-                                    eps=eps,            # Use fixed step size
-                                    job_type=job,
-                                    nchains=nchains,
-                                    trainer=trainer)
-            else:
-                outputs[job] = eval(cfg=cfg,
-                                    run=run,
-                                    job_type=job,
-                                    nchains=nchains,
-                                    trainer=trainer)
+        batch_size = cfg.dynamics.xshape[0]
+        nchains = max((4, batch_size // 8))
+        if should_train and cfg.steps.test > 0:
+            log.warning('Evaluating trained model')
+            outputs['eval'] = eval(cfg,
+                                   run=run,
+                                   eps=None,
+                                   job_type='eval',
+                                   nchains=nchains,
+                                   trainer=trainer)
+        if cfg.steps.test > 0:
+            log.warning('Running generic HMC')
+            eps = torch.tensor(0.05)
+            outputs['hmc'] = eval(cfg=cfg,
+                                  run=run,
+                                  eps=eps,
+                                  job_type='hmc',
+                                  nchains=nchains,
+                                  trainer=trainer)
     if run is not None:
         run.finish()
 
