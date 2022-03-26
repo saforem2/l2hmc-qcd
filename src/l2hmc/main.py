@@ -8,7 +8,6 @@ import logging
 import os
 import warnings
 
-from pathlib import Path
 import hydra
 from omegaconf import DictConfig
 
@@ -19,6 +18,8 @@ log = logging.getLogger(__name__)
 def train_tensorflow(cfg: DictConfig) -> dict:
     import tensorflow as tf
     import horovod.tensorflow as hvd
+    tf.keras.backend.set_floatx('float32')  # or 'float64 for double precision
+    assert tf.keras.backend.floatx() == tf.float32
     hvd.init()
     gpus = tf.config.experimental.list_physical_devices('GPU')
     for gpu in gpus:
@@ -41,24 +42,7 @@ def train_pytorch(cfg: DictConfig) -> dict:
         torch.set_default_dtype(torch.float32)
 
     from l2hmc.scripts.pytorch.main import main as main_pt
-
-    # -----------------------------------
-    # NOTE: Profiling is off by default
-    # -----------------------------------
-    if not cfg.profile:
-        return main_pt(cfg)
-
-    # Otherwise, run with profiler and generate chromeTrace.json
-    from torch.profiler import profile, ProfilerActivity  # type: ignore
-    activities = [ProfilerActivity.CUDA, ProfilerActivity.CPU]
-    with profile(record_shapes=True, activities=activities) as prof:
-        output = main_pt(cfg)
-
-    log.info(prof.key_averages().table(sort_by="cpu_time_total"))
-    tracefile = Path(os.getcwd()).joinpath('trace.json').as_posix()
-    prof.export_chrome_trace(tracefile)
-
-    return output
+    return main_pt(cfg)
 
 
 @hydra.main(config_path='./conf', config_name='config')
