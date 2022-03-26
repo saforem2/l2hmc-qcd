@@ -20,7 +20,7 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 
 from l2hmc.common import analyze_dataset, save_logs
-from l2hmc.configs import InputSpec, HERE
+from l2hmc.configs import InputSpec, HERE, get_jobdir
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.lattice.tensorflow.lattice import Lattice
 from l2hmc.loss.tensorflow.loss import LatticeLoss
@@ -141,13 +141,6 @@ def get_summary_writer(cfg: DictConfig, job_type: str):
         writer = tf.summary.create_file_writer(sdir.as_posix())  # type: ignore
 
     return writer
-
-
-def get_jobdir(cfg: DictConfig, job_type: str) -> Path:
-    jobdir = Path(cfg.get('outdir', os.getcwd())).joinpath(job_type)
-    jobdir.mkdir(exist_ok=True, parents=True)
-    assert jobdir is not None
-    return jobdir
 
 
 def eval(

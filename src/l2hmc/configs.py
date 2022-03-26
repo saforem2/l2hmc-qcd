@@ -12,6 +12,7 @@ import os
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from omegaconf import DictConfig, OmegaConf
 
 from hydra.core.config_store import ConfigStore
 import numpy as np
@@ -25,11 +26,30 @@ HERE = Path(os.path.abspath(__file__)).parent
 PROJECT_DIR = HERE.parent.parent
 CONF_DIR = HERE.joinpath('conf')
 LOGS_DIR = PROJECT_DIR.joinpath('logs')
+OUTPUTS_DIR = HERE.joinpath('outputs')
+
+CONF_DIR.mkdir(exist_ok=True, parents=True)
+LOGS_DIR.mkdir(exist_ok=True, parents=True)
+OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
+OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 
 
 State = namedtuple('State', ['x', 'v', 'beta'])
 
 MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
+
+
+def add_to_outdirs_file(outdir: os.PathLike):
+    with open(OUTDIRS_FILE, 'a') as f:
+        f.write(Path(outdir).resolve().as_posix())
+
+
+def get_jobdir(cfg: DictConfig, job_type: str) -> Path:
+    jobdir = Path(cfg.get('outdir', os.getcwd())).joinpath(job_type)
+    jobdir.mkdir(exist_ok=True, parents=True)
+    assert jobdir is not None
+    add_to_outdirs_file(jobdir)
+    return jobdir
 
 
 def list_to_str(x: list) -> str:

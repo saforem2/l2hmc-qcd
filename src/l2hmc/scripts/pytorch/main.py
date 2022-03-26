@@ -15,16 +15,17 @@ import hydra
 from hydra.utils import instantiate
 from l2hmc.common import analyze_dataset, save_logs
 from l2hmc.configs import (
-    AnnealingSchedule,
-    ConvolutionConfig,
-    DynamicsConfig,
     HERE,
+    Steps,
     InputSpec,
-    LearningRateConfig,
+    get_jobdir,
     LossConfig,
     NetWeights,
     NetworkConfig,
-    Steps,
+    DynamicsConfig,
+    AnnealingSchedule,
+    ConvolutionConfig,
+    LearningRateConfig,
 )
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.lattice.pytorch.lattice import Lattice
@@ -180,11 +181,9 @@ def get_summary_writer(
     return writer
 
 
-def get_jobdir(cfg: DictConfig, job_type: str) -> Path:
-    jobdir = Path(cfg.get('outdir', os.getcwd())).joinpath(job_type)
-    jobdir.mkdir(exist_ok=True, parents=True)
-    assert jobdir is not None
-    return jobdir
+# -------------------------------------------------------------
+# TODO: Gather and separate duplicate file I/O related methods
+# -------------------------------------------------------------
 
 
 def eval(
@@ -247,9 +246,25 @@ def train(
     nchains = 16 if nchains is None else nchains
     jobdir = get_jobdir(cfg, job_type='train')
     writer = get_summary_writer(cfg, trainer, job_type='train')
-    output = trainer.train(run=run,
-                           writer=writer,
-                           train_dir=jobdir)
+
+    # ------------------------------------------
+    # NOTE: cfg.profile will be False by default
+    # ------------------------------------------
+    if cfg.profile:
+        from torch.profiler import profile, ProfilerActivity  # type: ignore
+        activities = [ProfilerActivity.CUDA, ProfilerActivity.CPU]
+        with profile(record_shapes=True, activities=activities) as prof:
+            assert cfg.steps.nepoch * cfg.steps.nera < 100
+            output = trainer.train(run=run, writer=writer, train_dir=jobdir)
+
+        log.info(prof.key_averages().table(sort_by="cpu_time_total"))
+        tracefile = Path(os.getcwd()).joinpath('trace.json').as_posix()
+        prof.export_chrome_trace(tracefile)
+
+    else:
+        output = trainer.train(run=run,
+                               writer=writer,
+                               train_dir=jobdir)
 
     if trainer.accelerator.is_local_main_process:
         dset = output['history'].get_dataset()
