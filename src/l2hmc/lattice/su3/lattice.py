@@ -7,7 +7,7 @@ from __future__ import absolute_import, print_function, division, annotations
 from typing import Generator
 
 import numpy as np
-from src.l2hmc.lattice.gauge.generators import generate_SU3
+from l2hmc.lattice.generators import generate_SU3
 
 Array = np.ndarray
 PI = np.pi
