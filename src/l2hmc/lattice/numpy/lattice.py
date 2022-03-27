@@ -1,19 +1,12 @@
 """
 lattice.py
 
-Implements BaseLattice class from which
-
-  ``lattice/pytorch/lattice.py``
-
-and
-
- ``lattice/tensorflow/lattice.py``
-
-inherit.
+Implements U1BaseLattice class in numpy
 """
 from __future__ import absolute_import, division, print_function, annotations
 from dataclasses import dataclass
 from math import pi as PI
+from typing import Optional
 from scipy.special import i1, i0
 
 import numpy as np
@@ -58,7 +51,7 @@ def project_angle(x: Array) -> Array:
     return x - TWO_PI * np.floor((x + PI) / TWO_PI)
 
 
-class BaseLattice:
+class U1BaseLattice:
     def __init__(self, shape: tuple):
         self._shape = shape
         self.batch_size, self.xshape = shape[0], shape[1:]
@@ -74,7 +67,11 @@ class BaseLattice:
     def unnormalized_log_prob(self, x: Array) -> Array:
         return self.action(x=x)
 
-    def action(self, x: Array = None, wloops: Array = None) -> Array:
+    def action(
+            self,
+            x: Optional[Array] = None,
+            wloops: Optional[Array] = None
+    ) -> Array:
         """Calculate the Wilson gauge action for a batch of lattices."""
         wloops = self._get_wloops(x) if wloops is None else wloops
         return (1. - np.cos(wloops)).sum((1, 2))
@@ -133,8 +130,8 @@ class BaseLattice:
 
     def plaqs(
             self,
-            x: Array = None,
-            wloops: Array = None,
+            x: Optional[Array] = None,
+            wloops: Optional[Array] = None,
             # beta: float = None
     ) -> Array:
         """Calculate the average plaquettes for a batch of lattices."""
@@ -148,7 +145,11 @@ class BaseLattice:
     def _plaqs4x4(self, wloops4x4: Array) -> Array:
         return np.cos(wloops4x4).mean((1, 2))
 
-    def plaqs4x4(self, x: Array = None, wloops4x4: Array = None) -> Array:
+    def plaqs4x4(
+            self,
+            x: Optional[Array] = None,
+            wloops4x4: Optional[Array] = None
+    ) -> Array:
         """Calculate the 4x4 Wilson loops for a batch of lattices."""
         if wloops4x4 is None:
             if x is None:
@@ -165,22 +166,34 @@ class BaseLattice:
         """Calculate intQ from Wilson loops."""
         return project_angle(wloops).sum((1, 2)) / TWO_PI
 
-    def _get_wloops(self, x: Array = None) -> Array:
+    def _get_wloops(self, x: Optional[Array] = None) -> Array:
         if x is None:
             raise ValueError('One of `x` or `wloops` must be specified.')
         return self.wilson_loops(x)
 
-    def sin_charges(self, x: Array = None, wloops: Array = None) -> Array:
+    def sin_charges(
+            self,
+            x: Optional[Array] = None,
+            wloops: Optional[Array] = None
+    ) -> Array:
         """Calculate the real-valued charge approximation, sin(Q)."""
         wloops = self._get_wloops(x) if wloops is None else wloops
         return self._sin_charges(wloops)
 
-    def int_charges(self, x: Array = None, wloops: Array = None) -> Array:
+    def int_charges(
+            self,
+            x: Optional[Array] = None,
+            wloops: Optional[Array] = None
+    ) -> Array:
         """Calculate the integer valued topological charge, int(Q)."""
         wloops = self._get_wloops(x) if wloops is None else wloops
         return self._int_charges(wloops)
 
-    def charges(self, x: Array = None, wloops: Array = None) -> Charges:
+    def charges(
+            self,
+            x: Optional[Array] = None,
+            wloops: Optional[Array] = None
+    ) -> Charges:
         """Calculate both charge representations and return as single object"""
         wloops = self._get_wloops(x) if wloops is None else wloops
         sinQ = self._sin_charges(wloops)

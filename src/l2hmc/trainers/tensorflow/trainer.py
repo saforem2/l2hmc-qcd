@@ -33,9 +33,6 @@ from l2hmc.trackers.tensorflow.trackers import update_summaries
 from l2hmc.utils.step_timer import StepTimer
 from l2hmc.utils.tensorflow.history import History
 
-# import wandb
-# from rich.panel import Panel
-# from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 
 WIDTH = int(os.environ.get('COLUMNS', 150))
 
@@ -474,8 +471,6 @@ class Trainer:
     ) -> tuple[Tensor, dict]:
         xinit, beta = inputs
         xinit = to_u1(xinit)
-        # beta = tf.constant(beta)
-        record = {'loss': None}
         with tf.GradientTape() as tape:
             tape.watch(xinit)
             xout, metrics = self.dynamics((xinit, beta), training=True)
