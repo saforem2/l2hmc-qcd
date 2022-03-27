@@ -8,12 +8,13 @@ Date: 06/02/2021
 """
 from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass
+from typing import Optional
 from math import pi as PI
 
 from scipy.special import i0, i1
 import torch
 
-from l2hmc.lattice.lattice import BaseLattice
+from l2hmc.lattice.numpy.lattice import U1BaseLattice as BaseLattice
 
 TWO_PI = 2. * PI
 Tensor = torch.Tensor
@@ -57,7 +58,11 @@ class Lattice(BaseLattice):
     def unnormalized_log_prob(self, x: Tensor) -> Tensor:
         return self.action(x=x)
 
-    def action(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
+    def action(
+            self,
+            x: Optional[Tensor] = None,
+            wloops: Optional[Tensor] = None
+    ) -> Tensor:
         """Calculate the Wilson gauge action for a batch of lattices."""
         wloops = self._get_wloops(x) if wloops is None else wloops
         return (1. - torch.cos(wloops)).sum((1, 2))
@@ -65,8 +70,8 @@ class Lattice(BaseLattice):
     def plaqs_diff(
             self,
             beta: float,
-            x: Tensor = None,
-            wloops: Tensor = None,
+            x: Optional[Tensor] = None,
+            wloops: Optional[Tensor] = None,
     ) -> Tensor:
         """Calculate the difference between plaquettes and expected value"""
         wloops = self._get_wloops(x) if wloops is None else wloops
@@ -74,7 +79,11 @@ class Lattice(BaseLattice):
         pexact = plaq_exact(beta) * torch.ones_like(plaqs)
         return pexact - self.plaqs(wloops=wloops)
 
-    def calc_metrics(self, x: Tensor, beta: float = None) -> dict[str, Tensor]:
+    def calc_metrics(
+            self,
+            x: Tensor,
+            beta: Optional[float] = None
+    ) -> dict[str, Tensor]:
         """Calculate various metrics and return as dict"""
         wloops = self.wilson_loops(x)
         plaqs = self.plaqs(wloops=wloops)
@@ -139,8 +148,8 @@ class Lattice(BaseLattice):
 
     def plaqs(
             self,
-            x: Tensor = None,
-            wloops: Tensor = None,
+            x: Optional[Tensor] = None,
+            wloops: Optional[Tensor] = None,
             # beta: float = None
     ) -> Tensor:
         """Calculate the average plaquettes for a batch of lattices."""
@@ -154,7 +163,11 @@ class Lattice(BaseLattice):
     def _plaqs4x4(self, wloops4x4: Tensor) -> Tensor:
         return torch.cos(wloops4x4).mean((1, 2))
 
-    def plaqs4x4(self, x: Tensor = None, wloops4x4: Tensor = None) -> Tensor:
+    def plaqs4x4(
+            self,
+            x: Optional[Tensor] = None,
+            wloops4x4: Optional[Tensor] = None
+    ) -> Tensor:
         """Calculate the 4x4 Wilson loops for a batch of lattices."""
         if wloops4x4 is None:
             if x is None:
@@ -171,22 +184,37 @@ class Lattice(BaseLattice):
         """Calculate intQ from Wilson loops."""
         return project_angle(wloops).sum((1, 2)) / TWO_PI
 
-    def _get_wloops(self, x: Tensor = None) -> Tensor:
+    def _get_wloops(
+            self,
+            x: Optional[Tensor] = None
+    ) -> Tensor:
         if x is None:
             raise ValueError('One of `x` or `wloops` must be specified.')
         return self.wilson_loops(x)
 
-    def sin_charges(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
+    def sin_charges(
+            self,
+            x: Optional[Tensor] = None,
+            wloops: Optional[Tensor] = None
+    ) -> Tensor:
         """Calculate the real-valued charge approximation, sin(Q)."""
         wloops = self._get_wloops(x) if wloops is None else wloops
         return self._sin_charges(wloops)
 
-    def int_charges(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
+    def int_charges(
+            self,
+            x: Optional[Tensor] = None,
+            wloops: Optional[Tensor] = None
+    ) -> Tensor:
         """Calculate the integer valued topological charge, int(Q)."""
         wloops = self._get_wloops(x) if wloops is None else wloops
         return self._int_charges(wloops)
 
-    def charges(self, x: Tensor = None, wloops: Tensor = None) -> Charges:
+    def charges(
+            self,
+            x: Optional[Tensor] = None,
+            wloops: Optional[Tensor] = None
+    ) -> Charges:
         """Calculate both charge representations and return as single object"""
         wloops = self._get_wloops(x) if wloops is None else wloops
         sinQ = self._sin_charges(wloops)

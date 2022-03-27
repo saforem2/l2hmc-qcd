@@ -8,8 +8,9 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 import tensorflow as tf
+from typing import Optional
 
-from l2hmc.lattice.lattice import BaseLattice
+from l2hmc.lattice.numpy.lattice import U1BaseLattice as BaseLattice
 
 TF_FLOAT = tf.keras.backend.floatx()
 PI = tf.constant(np.pi)
@@ -70,7 +71,11 @@ class Lattice(BaseLattice):
     def unnormalized_log_prob(self, x: Tensor) -> Tensor:
         return self.action(x)
 
-    def action(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
+    def action(
+            self,
+            x: Optional[Tensor] = None,
+            wloops: Optional[Tensor] = None
+    ) -> Tensor:
         """Calculate the Wilson gauge action for a batch of lattices."""
         wloops = self._get_wloops(x) if wloops is None else wloops
         local_action = tf.ones_like(wloops) - tf.math.cos(wloops)
@@ -79,7 +84,7 @@ class Lattice(BaseLattice):
     def calc_metrics(
             self,
             x: Tensor,
-            beta: Tensor = None,
+            beta: Optional[Tensor] = None,
     ) -> dict[str, Tensor]:
         wloops = self.wilson_loops(x)
         plaqs = self.plaqs(wloops=wloops)
@@ -151,15 +156,19 @@ class Lattice(BaseLattice):
     def plaqs_diff(
             self,
             beta: float,
-            x: Tensor = None,
-            wloops: Tensor = None,
+            x: Optional[Tensor] = None,
+            wloops: Optional[Tensor] = None,
     ) -> Tensor:
         wloops = self._get_wloops(x) if wloops is None else wloops
         plaqs = self.plaqs(wloops=wloops)
         pexact = plaq_exact(beta) * tf.ones_like(plaqs)
         return pexact - self.plaqs(wloops=wloops)
 
-    def plaqs(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
+    def plaqs(
+            self,
+            x: Optional[Tensor] = None,
+            wloops: Optional[Tensor] = None
+    ) -> Tensor:
         """Calculate the avg plaq for each of the lattices in x."""
         wloops = self._get_wloops(x) if wloops is None else wloops
         return tf.reduce_mean(tf.math.cos(wloops), (1, 2))
@@ -167,7 +176,11 @@ class Lattice(BaseLattice):
     def _plaqs4x4(self, wloops4x4: Tensor) -> Tensor:
         return tf.reduce_mean(tf.math.cos(wloops4x4), (1, 2))
 
-    def plaqs4x4(self, x: Tensor = None, wloops4x4: Tensor = None) -> Tensor:
+    def plaqs4x4(
+            self,
+            x: Optional[Tensor] = None,
+            wloops4x4: Optional[Tensor] = None
+    ) -> Tensor:
         """Calculate 4x4 wilson loops."""
         if wloops4x4 is None:
             if x is None:
@@ -183,22 +196,34 @@ class Lattice(BaseLattice):
     def _int_charges(self, wloops: Tensor) -> Tensor:
         return tf.reduce_sum(project_angle(wloops), (1, 2)) / TWO_PI
 
-    def _get_wloops(self, x: Tensor = None) -> Tensor:
+    def _get_wloops(self, x: Optional[Tensor] = None) -> Tensor:
         if x is None:
             raise ValueError('Expected input `x`')
         return self.wilson_loops(x)
 
-    def sin_charges(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
+    def sin_charges(
+            self,
+            x: Optional[Tensor] = None,
+            wloops: Optional[Tensor] = None
+    ) -> Tensor:
         """Calculate the real-valued charge approximation, sin(Q)"""
         wloops = self._get_wloops(x) if wloops is None else wloops
         return self._sin_charges(wloops)
 
-    def int_charges(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
+    def int_charges(
+            self,
+            x: Optional[Tensor] = None,
+            wloops: Optional[Tensor] = None
+    ) -> Tensor:
         """Calculate the integer valued charges."""
         wloops = self._get_wloops(x) if wloops is None else wloops
         return self._int_charges(wloops)
 
-    def charges(self, x: Tensor = None, wloops: Tensor = None) -> Charges:
+    def charges(
+            self,
+            x: Optional[Tensor] = None,
+            wloops: Optional[Tensor] = None
+    ) -> Charges:
         """Calculate both charge representations and return as single object"""
         wloops = self._get_wloops(x) if wloops is None else wloops
         sinQ = self._sin_charges(wloops)
