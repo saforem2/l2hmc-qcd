@@ -117,6 +117,21 @@ HVD_FP_MAP = {
 }
 
 
+def reset_optimizer(optimizer: Optimizer):
+    """Reset optimizer states when changing beta during training."""
+    # --------------------------------------------------------------
+    # NOTE: We don't want to reset iteration counter. From tf docs:
+    # > The first value is always the iterations count of the optimizer,
+    # > followed by the optimizer's state variables in the order they are
+    # > created.
+    # --------------------------------------------------------------
+    weight_shapes = [x.shape for x in optimizer.get_weights()[1:]]
+    optimizer.set_weights([
+        tf.zeros_like(x) for x in weight_shapes
+    ])
+    return optimizer
+
+
 class Trainer:
     def __init__(
             self,
