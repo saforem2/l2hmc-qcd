@@ -8,8 +8,11 @@ from __future__ import absolute_import, print_function, division, annotations
 import numpy as np
 import tensorflow as tf
 
-from lgt.group.tensorflow import group as g
-from lgt.lattice.su3.lattice import BaseLatticeSU3
+from l2hmc.group.tensorflow import group as g
+# from l2hmc.lattice.su3.lattice.
+
+# from lgt.group.tensorflow import group as g
+# from lgt.lattice.su3.lattice import BaseLatticeSU3
 # from typing import Generator
 # from l2hmc.lattice.generators import generate_SU3
 
@@ -33,7 +36,14 @@ Link = tuple[int, int, int, int, int]           # t, x, y, z, dim
 Buffer = tuple[int, int, int, int, int, int]    # b, t, x, y, z, dim
 
 
-class LatticeSU3(BaseLatticeSU3):
+# ---------------------------------------------------------------
+# TODO: 
+# - Finish implementation of BaseLatticeSU3
+# - Write tensorflow and torch implementations as subclasses
+#
+# class LatticeSU3(BaseLatticeSU3):
+# ---------------------------------------------------------------
+class LatticeSU3:
     """4D Lattice with SU(3) links."""
     dim = 4
 
@@ -89,17 +99,15 @@ class LatticeSU3(BaseLatticeSU3):
             self,
             x: Tensor,
             needs_rect: bool = False
-    ) -> tuple[list[Tensor], list[Tensor]]:
-        # x.shape = [nb, nt, nx, nx, nx, d, 3, 3]
+    ) -> tuple[Tensor, Tensor]:
         # y.shape = [nb, d, nt, nx, nx, nx, 3, 3]
         x = tf.reshape(x, self._shape)
         assert len(x.shape) == 8
-        # plaqs = []
-        # rects = []
-        plaqs = tf.TensorArray(x.dtype, size=0, dynamic_size=True)
-        rects = tf.TensorArray(x.dtype, size=0, dynamic_size=True)
+        assert isinstance(x, Tensor)
         pcount = 0
         rcount = 0
+        plaqs = tf.TensorArray(x.dtype, size=0, dynamic_size=True)
+        rects = tf.TensorArray(x.dtype, size=0, dynamic_size=True)
         for u in range(1, 4):
             for v in range(0, u):
                 yuv = self.g.mul(x[:, u], tf.roll(x[:, v], shift=-1, axis=u+1))

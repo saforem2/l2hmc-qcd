@@ -8,7 +8,8 @@ from __future__ import absolute_import, print_function, division, annotations
 # import jax.numpy as jnp
 import numpy as np
 
-from lgt.group import group as g
+from l2hmc.group.tensorflow import group as g
+# from lgt.group import group as g
 # from typing import Generator
 # from l2hmc.lattice.generators import generate_SU3
 

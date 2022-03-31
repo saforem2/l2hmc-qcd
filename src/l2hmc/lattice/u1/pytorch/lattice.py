@@ -14,7 +14,7 @@ from math import pi as PI
 from scipy.special import i0, i1
 import torch
 
-from lgt.lattice.u1.numpy.lattice import BaseLatticeU1
+from l2hmc.lattice.u1.numpy.lattice import BaseLatticeU1
 
 TWO_PI = 2. * PI
 Tensor = torch.Tensor

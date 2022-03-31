@@ -10,7 +10,7 @@ import numpy as np
 import tensorflow as tf
 from typing import Optional
 
-from lgt.lattice.u1.numpy.lattice import BaseLatticeU1
+from l2hmc.lattice.u1.numpy.lattice import BaseLatticeU1
 
 TF_FLOAT = tf.keras.backend.floatx()
 PI = tf.constant(np.pi)
