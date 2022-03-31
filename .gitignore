@@ -2,6 +2,7 @@
 ## USER-DEFINED .gitignore below
 ## --------------------------------
 src/l2hmc/outputs/*
+src/l2hmc/wandb/**
 *.output
 *.error
 *.cobaltlog
