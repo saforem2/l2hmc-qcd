@@ -4,17 +4,18 @@ loss.py
 Contains pytorch implementation of loss function for training L2HMC sampler.
 """
 from __future__ import absolute_import, annotations, division, print_function
+from typing import Optional
 
 import torch
 
 from l2hmc.configs import LossConfig
-from l2hmc.lattice.pytorch.lattice import Lattice
+from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
 
 Tensor = torch.Tensor
 
 
 class LatticeLoss:
-    def __init__(self, lattice: Lattice, loss_config: LossConfig):
+    def __init__(self, lattice: LatticeU1, loss_config: LossConfig):
         self.lattice = lattice
         self.config = loss_config
 
@@ -43,8 +44,8 @@ class LatticeLoss:
     def lattice_metrics(
             self,
             xinit: Tensor,
-            xout: Tensor = None,
-            beta: float = None,
+            xout: Optional[Tensor] = None,
+            beta: Optional[float] = None,
     ) -> dict[str, Tensor]:
         metrics = self.lattice.calc_metrics(x=xinit, beta=beta)
         if xout is not None:
