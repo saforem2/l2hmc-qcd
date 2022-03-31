@@ -10,6 +10,7 @@ import tensorflow as tf
 
 from l2hmc.configs import LossConfig
 from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
+from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
 # from l2hmc.lattice.tensorflow.lattice import Lattice
 
 TF_FLOAT = tf.keras.backend.floatx()
@@ -17,7 +18,11 @@ Tensor = tf.Tensor
 
 
 class LatticeLoss:
-    def __init__(self, lattice: LatticeU1, loss_config: LossConfig):
+    def __init__(
+            self,
+            lattice: LatticeU1 | LatticeSU3,
+            loss_config: LossConfig
+    ):
         self.lattice = lattice
         self.config = loss_config
         self.plaq_weight = tf.constant(self.config.plaq_weight,
