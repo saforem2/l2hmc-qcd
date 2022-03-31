@@ -8,7 +8,7 @@ from __future__ import absolute_import, print_function, division, annotations
 # import jax.numpy as jnp
 import numpy as np
 
-from lgt.group.tensorflow import group as g
+from lgt.group import group as g
 # from typing import Generator
 # from l2hmc.lattice.generators import generate_SU3
 
@@ -52,17 +52,19 @@ class BaseLatticeSU3:
          - dim (int): Number of dimensions, 4 by default (t, x, y, z)
         """
         self.dim = 4
-        self.c1 = c1
         self.g = g.SU3()
-        self.link_shape = self.g.shape
         assert len(shape) == 4  # (nb, nt, nx, dim)
+        self.c1 = c1
+        self.link_shape = self.g.shape
         self.nt, self.nx, self.ny, self.nz = shape
         self._shape = (nb, 4, *shape, *self.g.shape)
         self.volume = self.nt * self.nx * self.ny * self.nz
         # ----------------------------------------------------------------
         # NOTE:
         #   - self.link_shape:             [*e] = [3, 3]
-        #   - self.shape:       [nb, d, *n, *e] = [nb, 4, t, x, y, z, 3, 3]
+        #   - self.site_idxs:          [nb, *n] = [nb, t, x, y, z]
+        #   - self.link_idxs:       [nb, *n, d] = [nb, t, x, y, z, d]
+        #   - self.shape:       [nb, *n, d, *e] = [nb, t, x, y, z, d, 3, 3]
         #
         #   - where:                        t  in [0, 1, ..., (nt - 1)]
         #                            (x, y, z) in [0, 1, ..., (nx - 1)]

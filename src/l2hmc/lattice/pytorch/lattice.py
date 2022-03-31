@@ -14,7 +14,7 @@ from math import pi as PI
 from scipy.special import i0, i1
 import torch
 
-from l2hmc.lattice.numpy.lattice import U1BaseLattice as BaseLattice
+from lgt.lattice.u1.numpy.lattice import BaseLatticeU1
 
 TWO_PI = 2. * PI
 Tensor = torch.Tensor
@@ -46,9 +46,9 @@ def project_angle(x: Tensor) -> Tensor:
     return x - TWO_PI * torch.floor((x + PI) / TWO_PI)
 
 
-class Lattice(BaseLattice):
-    def __init__(self, shape: tuple):
-        super().__init__(shape=shape)
+class LatticeU1(BaseLatticeU1):
+    def __init__(self, nb: int, shape: tuple[int, int]):
+        super().__init__(nb, shape=shape)
 
     def draw_uniform_batch(self, requires_grad=True) -> Tensor:
         """Draw batch of samples, uniformly from [-pi, pi)."""
@@ -111,7 +111,7 @@ class Lattice(BaseLattice):
         # --------------------------
         # NOTE: Watch your shapes!
         # --------------------------
-        # * First, x.shape = [-1, Lt, Lx, 2], so
+        # * First, x.shape = [-1, 2, Lt, Lx], so
         #       (x_reshaped).T.shape = [2, Lx, Lt, -1]
         #   and,
         #       x0.shape = x1.shape = [Lx, Lt, -1]
@@ -121,12 +121,17 @@ class Lattice(BaseLattice):
         #       wloop = U0(x, y) +  U1(x+1, y) - U0(x, y+1) - U(1)(x, y)
         #   and so output = wloop.T, with output.shape = [-1, Lt, Lx]
         # --------------------------
-        x0, x1 = x.reshape(-1, *self.xshape).T
+        x0, x1 = x.reshape(-1, *self.xshape).transpose(0, 1)
+        x0 = x0.T
+        x1 = x1.T
+
         return (x0 + x1.roll(-1, dims=0) - x0.roll(-1, dims=1) - x1).T
 
     def wilson_loops4x4(self, x: Tensor) -> Tensor:
         """Calculate the 4x4 Wilson loops"""
-        x0, x1 = x.reshape(-1, *self.xshape).T
+        x0, x1 = x.reshape(-1, *self.xshape).transpose(0, 1)
+        x0 = x0.T
+        x1 = x1.T
         return (
             x0                                  # Ux  [x, y]
             + x0.roll(-1, dims=2)               # Ux  [x+1, y]
@@ -220,3 +225,34 @@ class Lattice(BaseLattice):
         sinQ = self._sin_charges(wloops)
         intQ = self._int_charges(wloops)
         return Charges(intQ=intQ, sinQ=sinQ)
+
+    def plaq_loss(
+            self,
+            acc: Tensor,
+            x1: Optional[Tensor] = None,
+            x2: Optional[Tensor] = None,
+            wl1: Optional[Tensor] = None,
+            wl2: Optional[Tensor] = None,
+    ) -> float:
+        wloops1 = self._get_wloops(x1) if wl1 is None else wl1
+        wloops2 = self._get_wloops(x2) if wl2 is None else wl2
+        dwloops = 2. * (1. - torch.cos(wloops2 - wloops1))
+        ploss = acc * dwloops.sum((1, 2)) + 1e-4
+
+        return -ploss.mean(0)
+
+    def charge_loss(
+            self,
+            acc: Tensor,
+            x1: Optional[Tensor] = None,
+            x2: Optional[Tensor] = None,
+            wl1: Optional[Tensor] = None,
+            wl2: Optional[Tensor] = None,
+    ):
+        wloops1 = self._get_wloops(x1) if wl1 is None else wl1
+        wloops2 = self._get_wloops(x2) if wl2 is None else wl2
+        q1 = self._sin_charges(wloops=wloops1)
+        q2 = self._sin_charges(wloops=wloops2)
+        dq = (q2 - q1) ** 2
+        qloss = acc * dq + 1e-4
+        return -qloss.mean(0)
