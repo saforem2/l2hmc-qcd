@@ -375,7 +375,25 @@ class Trainer:
 
         return avgs, summary
 
-    def train_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
+    def profile_step(
+            self,
+            inputs: tuple[Tensor, Tensor]
+    ) -> tuple[Tensor, dict]:
+        xinit, beta = inputs
+        xinit = to_u1(xinit).to(self.accelerator.device)
+        beta = beta.to(self.accelerator.device)
+        xout, metrics = self.dynamics((xinit, beta))
+        xprop = to_u1(metrics.pop('mc_states').proposed.x)
+        loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
+        self.optimizer.zero_grad
+        self.accelerator.backward(loss)
+        self.accelerator.clip_grad_norm_(self.dynamics.parameters(),
+                                         max_norm=self.clip_norm,)
+        self.optimizer.step()
+
+        return to_u1(xout).detach(), metrics
+
+    def train_step(self, inputs: tuple[Tensor, Tensor]) -> tuple[Tensor, dict]:
         xinit, beta = inputs
         xinit = to_u1(xinit).to(self.accelerator.device)
         beta = torch.tensor(beta).to(self.accelerator.device)
@@ -395,7 +413,6 @@ class Trainer:
 
         self.optimizer.zero_grad()
         self.accelerator.backward(loss)
-        self.accelerator.backward
         # extract_model_from_parallel(self.dynamics).parameters(),
         self.accelerator.clip_grad_norm_(
             self.dynamics.parameters(),
@@ -417,12 +434,12 @@ class Trainer:
             metrics: Optional[dict] = None,
             run: Optional[Any] = None,
     ) -> None:
-        # dynamics = extract_model_from_parallel(self.dynamics)
+        dynamics = extract_model_from_parallel(self.dynamics)
         ckpt_dir = Path(train_dir).joinpath('checkpoints')
         ckpt_dir.mkdir(exist_ok=True, parents=True)
         ckpt_file = ckpt_dir.joinpath(f'ckpt-{era}-{epoch}.tar')
         log.info(f'Saving checkpoint to: {ckpt_file.as_posix()}')
-        self.dynamics.save(train_dir)  # type: ignore
+        # self.dynamics.save(train_dir)  # type: ignore
         xeps = {
             k: grab(v) for k, v in self.dynamics.xeps.items()  # type:ignore
         }
@@ -450,6 +467,16 @@ class Trainer:
             artifact = wandb.Artifact('model', type='model')
             artifact.add_file(outfile)
             run.log_artifact(artifact)
+
+    def profile(self, nsteps: int = 5) -> dict:
+        self.dynamics.train()
+        x = self.draw_x()
+        beta = torch.tensor(1.0)
+        for _ in range(nsteps):
+            x, metrics = self.profile_step((x, beta))
+
+        return metrics
+
 
     def train(
             self,
