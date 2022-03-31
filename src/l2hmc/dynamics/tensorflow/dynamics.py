@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from math import pi as PI
 import os
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 from typing import Tuple
 import logging
 
@@ -75,6 +75,7 @@ class Dynamics(Model):
         super(Dynamics, self).__init__()
         # TODO: Implement reversibility check
         self.config = config
+        self.group = config.group
         self.xdim = self.config.xdim
         self.xshape = tuple(network_factory.input_spec.xshape)
         self.potential_fn = potential_fn
@@ -289,7 +290,7 @@ class Dynamics(Model):
             self,
             state: State,
             logdet: Tensor,
-            step: int = None,
+            step: Optional[int] = None,
     ) -> dict:
         """Returns dict of various metrics about input State."""
         energy = self.hamiltonian(state)
