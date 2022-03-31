@@ -4,18 +4,20 @@ loss.py
 Contains tensorflow implementation of loss function for training L2HMC sampler.
 """
 from __future__ import absolute_import, annotations, division, print_function
+from typing import Optional
 
 import tensorflow as tf
 
 from l2hmc.configs import LossConfig
-from l2hmc.lattice.tensorflow.lattice import Lattice
+from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
+# from l2hmc.lattice.tensorflow.lattice import Lattice
 
 TF_FLOAT = tf.keras.backend.floatx()
 Tensor = tf.Tensor
 
 
 class LatticeLoss:
-    def __init__(self, lattice: Lattice, loss_config: LossConfig):
+    def __init__(self, lattice: LatticeU1, loss_config: LossConfig):
         self.lattice = lattice
         self.config = loss_config
         self.plaq_weight = tf.constant(self.config.plaq_weight,
@@ -53,9 +55,10 @@ class LatticeLoss:
     def lattice_metrics(
             self,
             xinit: Tensor,
-            xout: Tensor = None,
+            xout: Optional[Tensor] = None,
+            beta: Optional[Tensor] = None,
     ) -> dict[str, Tensor]:
-        metrics = self.lattice.calc_metrics(x=xinit)
+        metrics = self.lattice.calc_metrics(x=xinit, beta=beta)
         if xout is not None:
             wl_out = self.lattice.wilson_loops(x=xout)
             qint_out = self.lattice._int_charges(wloops=wl_out)
