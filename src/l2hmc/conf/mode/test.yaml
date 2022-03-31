@@ -21,7 +21,7 @@ hydra:
   verbose: ['l2hmc']
   run:
     dir: "outputs/debug/runs\
-      /${dynamics.xshape[1]}x${dynamics.xshape[2]}\
+      /${dynamics.latvolume[0]}x${dynamics.latvolume[1]}\
       /nlf-${dynamics.nleapfrog}\
       /beta-${annealing_schedule.beta_final}\
       /merge_directions-${dynamics.merge_directions}\
