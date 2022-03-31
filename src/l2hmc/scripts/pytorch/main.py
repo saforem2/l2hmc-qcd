@@ -28,7 +28,8 @@ from l2hmc.configs import (
     LearningRateConfig,
 )
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
-from l2hmc.lattice.pytorch.lattice import Lattice
+# from l2hmc.lattice.pytorch.lattice import Lattice
+from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
 from l2hmc.loss.pytorch.loss import LatticeLoss
 from l2hmc.network.pytorch.network import NetworkFactory
 from l2hmc.trainers.pytorch.trainer import Trainer
