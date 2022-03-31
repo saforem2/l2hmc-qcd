@@ -91,10 +91,25 @@ def setup(cfg: DictConfig) -> dict:
     except TypeError:
         ccfg = None  # type: ignore
 
+    lattice = None
     xdim = dynamics_cfg.xdim
+    group = dynamics_cfg.group
     xshape = dynamics_cfg.xshape
-    lattice = Lattice(tuple(xshape))
-    input_spec = InputSpec(xshape=xshape,
+    latvolume = dynamics_cfg.latvolume
+    log.warning(f'xdim: {dynamics_cfg.xdim}')
+    log.warning(f'group: {dynamics_cfg.group}')
+    log.warning(f'xshape: {dynamics_cfg.xshape}')
+    log.warning(f'latvolume: {dynamics_cfg.latvolume}')
+    if group == 'U1':
+        lattice = LatticeU1(dynamics_cfg.nchains, tuple(latvolume))
+    elif group == 'SU3':
+        log.error(f'LatticeSU3 not implemented for pytorch!! (yet)')
+        # lattice = LatticeSU3(dynamics_cfg.nchains, tuple(latvolume), c1=c1)
+    else:
+        log.info(dynamics_cfg)
+        raise ValueError('Unexpected value encountered in `dynamics.group`')
+    assert lattice is not None
+    input_spec = InputSpec(xshape=list(xshape),
                            vnet={'v': [xdim, ], 'x': [xdim, ]},
                            xnet={'v': [xdim, ], 'x': [xdim, 2]})
     net_factory = NetworkFactory(input_spec=input_spec,
@@ -104,8 +119,8 @@ def setup(cfg: DictConfig) -> dict:
     dynamics = Dynamics(config=dynamics_cfg,
                         potential_fn=lattice.action,
                         network_factory=net_factory)
-    loss_fn = LatticeLoss(lattice=lattice, loss_config=loss_cfg)
     optimizer = torch.optim.Adam(dynamics.parameters())
+    loss_fn = LatticeLoss(lattice=lattice, loss_config=loss_cfg)
     try:
         dynamics, optimizer, _ = load_from_ckpt(dynamics, optimizer, cfg)
     except FileNotFoundError:
@@ -157,7 +172,7 @@ def update_wandb_config(
             f'{cfg.framework}',
             f'nlf-{cfg.dynamics.nleapfrog}',
             f'beta_final-{cfg.annealing_schedule.beta_final}',
-            f'{cfg.dynamics.xshape[1]}x{cfg.dynamics.xshape[2]}',
+            f'{cfg.dynamics.latvolume[0]}x{cfg.dynamics.latvolume[1]}',
         ]
     })
 
@@ -193,7 +208,7 @@ def eval(
         job_type: str,
         run: Optional[Any] = None,
         nchains: Optional[int] = None,
-        eps: Tensor = None,
+        eps: Optional[Tensor] = None,
 ) -> dict:
     """Evaluate model (nested as `trainer.model`)"""
     nchains = -1 if nchains is None else nchains
@@ -300,8 +315,7 @@ def main(cfg: DictConfig) -> dict:
     objs = setup(cfg)
     trainer = objs['trainer']  # type: Trainer
 
-    batch_size = cfg.dynamics.xshape[0]
-    nchains = max((1, batch_size // 4))
+    nchains = max((1, cfg.dynamics.nchains // 4))
     cfg.update({'nchains': nchains})
 
     id = generate_id() if trainer.accelerator.is_local_main_process else None
@@ -332,13 +346,12 @@ def main(cfg: DictConfig) -> dict:
         outputs['train'] = train(cfg, trainer, run=run)  # [1.]
 
     if trainer.accelerator.is_local_main_process:
-        batch_size = cfg.dynamics.xshape[0]
-        nchains = max((4, batch_size // 8))
+        # batch_size = cfg.dynamics.xshape[0]
+        nchains = max((4, cfg.dynamics.nchains // 8))
         if should_train and cfg.steps.test > 0:
             log.warning('Evaluating trained model')
             outputs['eval'] = eval(cfg,
                                    run=run,
-                                   eps=None,
                                    job_type='eval',
                                    nchains=nchains,
                                    trainer=trainer)

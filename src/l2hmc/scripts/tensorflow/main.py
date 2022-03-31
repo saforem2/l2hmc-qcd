@@ -22,11 +22,6 @@ from omegaconf import DictConfig, OmegaConf
 from l2hmc.common import analyze_dataset, save_logs
 from l2hmc.configs import InputSpec, HERE, get_jobdir
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
-# from l2hmc.lattice.tensorflow.lattice import LatticeU1
-# from lgt.lattice.u1.tensorflow.lattice import LatticeU1
-# from lgt.lattice.su3.tensorflow.lattice import LatticeSU3
-# from l2hmc.lattice.tensorflow.lattice import Lattice
-# from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
 from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.network.tensorflow.network import NetworkFactory
 from l2hmc.trainers.tensorflow.trainer import Trainer
@@ -35,6 +30,11 @@ from l2hmc import utils
 
 from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
 from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
+# from l2hmc.lattice.tensorflow.lattice import LatticeU1
+# from lgt.lattice.u1.tensorflow.lattice import LatticeU1
+# from lgt.lattice.su3.tensorflow.lattice import LatticeSU3
+# from l2hmc.lattice.tensorflow.lattice import Lattice
+# from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
 # from lgt.lattice.u1.tensorflow.lattice import LatticeU1
 # from lgt.lattice.su3.tensorflow.lattice import LatticeSU3
 
@@ -70,6 +70,7 @@ def setup(cfg: DictConfig, c1: float = 0.) -> dict:
     except TypeError:
         conv_cfg = None
 
+    lattice = None
     xdim = dynamics_cfg.xdim
     group = dynamics_cfg.group
     xshape = dynamics_cfg.xshape
@@ -86,11 +87,7 @@ def setup(cfg: DictConfig, c1: float = 0.) -> dict:
         log.info(dynamics_cfg)
         raise ValueError('Unexpected value encountered in `dynamics.group`')
 
-    log.warning(f'xdim: {dynamics_cfg.xdim}')
-    log.warning(f'group: {dynamics_cfg.group}')
-    log.warning(f'xshape: {dynamics_cfg.xshape}')
-    log.warning(f'latvolume: {dynamics_cfg.latvolume}')
-
+    assert lattice is not None
     input_spec = InputSpec(xshape=xshape,
                            vnet={'v': [xdim, ], 'x': [xdim, ]},
                            xnet={'v': [xdim, ], 'x': [xdim, 2]})
@@ -98,7 +95,6 @@ def setup(cfg: DictConfig, c1: float = 0.) -> dict:
                                  net_weights=net_weights,
                                  network_config=network_cfg,
                                  conv_config=conv_cfg)
-    optimizer = tf.keras.optimizers.Adam(cfg.learning_rate.lr_init)
     dynamics = Dynamics(config=dynamics_cfg,
                         potential_fn=lattice.action,
                         network_factory=net_factory)
