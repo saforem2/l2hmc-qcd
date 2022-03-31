@@ -1,6 +1,9 @@
 _target_: l2hmc.configs.DynamicsConfig
 
-xshape: [4, 8, 8, 2]
+group: 'U1'
+nchains: 4
+latvolume: [8, 8]
+# xshape: [4, 8, 8]
 eps: 0.01
 nleapfrog: 3
 eps_fixed: false
