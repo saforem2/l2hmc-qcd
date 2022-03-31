@@ -270,7 +270,10 @@ class NetworkConfig(BaseConfig):
 
 @dataclass
 class DynamicsConfig(BaseConfig):
-    xshape: List[int]
+    nchains: int
+    group: str
+    latvolume: List[int]
+    # xshape: List[int]
     nleapfrog: int
     eps: float = 0.01
     use_ncp: bool = True
@@ -281,9 +284,28 @@ class DynamicsConfig(BaseConfig):
     merge_directions: bool = False
 
     def __post_init__(self):
-        assert len(self.xshape) == 4
-        self.nchains, self.nt, self.nx, self.dim = self.xshape
-        self.xdim = int(np.cumprod(self.xshape[1:])[-1])
+        if self.group.upper() == 'U1':
+            self.dim = 2
+            assert len(self.latvolume) == 2
+            self.nt, self.nx = self.latvolume
+            self.xshape = (self.nchains, self.dim, *self.latvolume)
+            assert len(self.xshape) == 4
+            self.xdim = int(np.cumprod(self.xshape[1:])[-1])
+        elif self.group.upper() == 'SU3':
+            self.dim = 4
+            self.link_shape = (3, 3)
+            assert len(self.latvolume) == 4
+            self.nt, self.nt, self.ny, self.nz = self.latvolume
+            self.xshape = (
+                self.nchains,
+                self.dim,
+                *self.latvolume,
+                *self.link_shape
+            )
+            assert len(self.xshape) == 8
+            self.xdim = int(np.cumprod(self.xshape[1:])[-1])
+        else:
+            raise ValueError('Expected `group` to be one of `"U1", "SU3"`')
 
 
 # @dataclass
