@@ -10,7 +10,7 @@ import numpy as np
 import tensorflow as tf
 from typing import Optional
 
-from l2hmc.lattice.numpy.lattice import U1BaseLattice as BaseLattice
+from lgt.lattice.u1.numpy.lattice import BaseLatticeU1
 
 TF_FLOAT = tf.keras.backend.floatx()
 PI = tf.constant(np.pi)
@@ -60,9 +60,9 @@ def project_angle(x):
     return x - TWO_PI * tf.math.floor((x + PI) / TWO_PI)
 
 
-class Lattice(BaseLattice):
-    def __init__(self, shape: tuple):
-        super().__init__(shape=shape)
+class LatticeU1(BaseLatticeU1):
+    def __init__(self, nb: int, shape: tuple[int, int]):
+        super().__init__(nb, shape=shape)
 
     def draw_uniform_batch(self) -> Tensor:
         """Draw batch of samples, uniformly from [-pi, pi)."""
@@ -113,27 +113,28 @@ class Lattice(BaseLattice):
         # --------------------------
         # NOTE: Watch your shapes!
         # --------------------------
-        # * First, x.shape = [-1, Lt, Lx, 2], so
+        # * First, x.shape = [-1, 2, Lt, Lx], so
         #       (x_reshaped).T.shape = [2, Lx, Lt, -1]
         #   and,
         #       x0.shape = x1.shape = [Lx, Lt, -1]
         #   where x0 and x1 are the links along the 2 (t, x) dimensions.
         #
         # * The Wilson loop is then:
-        #       wloop = U0(x, y) +  U1(x+1, y) - U0(x, y+1) - U(1)(x, y)
+        #       wloop = U0(x, y) +  U1(x+1, y) - U0(x, y+1) - U1(x, y)
         #   and so output = wloop.T, with output.shape = [-1, Lt, Lx]
         # --------------------------
-        xt = tf.transpose(tf.reshape(x, (-1, *self.xshape)))
-        x0 = xt[0]
-        x1 = xt[1]
-        wl = x0 + tf.roll(x1, -1, axis=0) - tf.roll(x0, -1, axis=1) - x1
-        return tf.transpose(wl)
+        x = tf.transpose(tf.reshape(x, self._shape), (1, 2, 3, 0))
+        x0 = x[0]  # type:ignore  NOTE: x0 = t links
+        x1 = x[1]  # type:ignore  NOTE: x1 = x links
+        return tf.transpose(
+            x0 + tf.roll(x1, -1, axis=0) - tf.roll(x0, -1, axis=1) - x1
+        )
 
     def wilson_loops4x4(self, x: Tensor) -> Tensor:
         """Calculate the 4x4 Wilson loops"""
-        xt = tf.transpose(tf.reshape(x, (-1, *self.xshape)))
-        x0 = xt[0]
-        x1 = xt[1]
+        x = tf.transpose(tf.reshape(x, (-1, *self.xshape)), (1, 2, 3, 0))
+        x0 = x[0]  # type:ignore
+        x1 = x[1]  # type:ignore
         return tf.transpose(
             x0                                      # Ux [x, y]
             + tf.roll(x0, -1, 2)                    # Ux [x+1, y]
@@ -229,3 +230,34 @@ class Lattice(BaseLattice):
         sinQ = self._sin_charges(wloops)
         intQ = self._int_charges(wloops)
         return Charges(intQ=intQ, sinQ=sinQ)
+
+    def plaq_loss(
+            self,
+            acc: Tensor,
+            x1: Optional[Tensor] = None,
+            x2: Optional[Tensor] = None,
+            wl1: Optional[Tensor] = None,
+            wl2: Optional[Tensor] = None,
+    ) -> float:
+        wloops1 = self._get_wloops(x1) if wl1 is None else wl1
+        wloops2 = self._get_wloops(x2) if wl2 is None else wl2
+        dwl = tf.subtract(wloops2, wloops1)
+        dwloops = 2. * (tf.ones_like(wl1) - tf.math.cos(dwl))
+        ploss = acc * tf.reduce_sum(dwloops, axis=(1, 2)) + 1e-4
+
+        return tf.reduce_mean(-ploss, axis=0)
+
+    def charge_loss(
+            self,
+            acc: Tensor,
+            x1: Optional[Tensor] = None,
+            x2: Optional[Tensor] = None,
+            wl1: Optional[Tensor] = None,
+            wl2: Optional[Tensor] = None,
+    ) -> float:
+        wloops1 = self._get_wloops(x1) if wl1 is None else wl1
+        wloops2 = self._get_wloops(x2) if wl2 is None else wl2
+        q1 = self._sin_charges(wloops=wloops1)
+        q2 = self._sin_charges(wloops=wloops2)
+        qloss = (acc * tf.math.subtract(q2, q1) ** 2) + 1e-4
+        return tf.reduce_mean(-qloss, axis=0)

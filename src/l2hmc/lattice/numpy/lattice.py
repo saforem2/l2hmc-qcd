@@ -1,7 +1,7 @@
 """
 lattice.py
 
-Implements U1BaseLattice class in numpy
+Implements BaseLatticeU1 class in numpy
 """
 from __future__ import absolute_import, division, print_function, annotations
 from dataclasses import dataclass
@@ -51,17 +51,20 @@ def project_angle(x: Array) -> Array:
     return x - TWO_PI * np.floor((x + PI) / TWO_PI)
 
 
-class U1BaseLattice:
-    def __init__(self, shape: tuple):
-        self._shape = shape
-        self.batch_size, self.xshape = shape[0], shape[1:]
-        self.nt, self.nx, self._dim = self.xshape
+class BaseLatticeU1:
+    def __init__(self, nb: int, shape: tuple[int, int]):
+        self.nb = nb
+        self._dim = 2
+        assert len(shape) == 2
+        self.nt, self.nx = shape
+        self.xshape = (self._dim, *shape)
+        self._shape = (nb, *self.xshape)
 
         self.nplaqs = self.nt * self.nx
         self.nlinks = self.nplaqs * self._dim
 
     def draw_uniform_batch(self):
-        unif = np.random.uniform(self._shape)
+        unif = np.random.uniform(self.xshape)
         return TWO_PI * unif - PI
 
     def unnormalized_log_prob(self, x: Array) -> Array:
@@ -93,7 +96,7 @@ class U1BaseLattice:
         # --------------------------
         # NOTE: Watch your shapes!
         # --------------------------
-        # * First, x.shape = [-1, Lt, Lx, 2], so
+        # * First, x.shape = [-1, 2, Lt, Lx], so
         #       (x_reshaped).T.shape = [2, Lx, Lt, -1]
         #   and,
         #       x0.shape = x1.shape = [Lx, Lt, -1]
@@ -103,12 +106,12 @@ class U1BaseLattice:
         #       wloop = U0(x, y) +  U1(x+1, y) - U0(x, y+1) - U(1)(x, y)
         #   and so output = wloop.T, with output.shape = [-1, Lt, Lx]
         # --------------------------
-        x0, x1 = x.reshape(-1, *self.xshape).T
-        return (x0 + x1.roll(-1, dims=0) - x0.roll(-1, dims=1) - x1).T
+        x0, x1 = x.reshape(-1, *self.xshape).transpose(1, 2, 3, 0)
+        return (x0 + np.roll(x1, -1, axis=0) - np.roll(x0, -1, axis=1) - x1).T
 
     def wilson_loops4x4(self, x: Array) -> Array:
         """Calculate the 4x4 Wilson loops"""
-        x0, x1 = x.reshape(-1, *self.xshape).T
+        x0, x1 = x.reshape(-1, *self.xshape).transpose(1, 0, 2, 3)
         return (
             x0                                  # Ux  [x, y]
             + x0.roll(-1, dims=2)               # Ux  [x+1, y]
