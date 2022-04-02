@@ -726,7 +726,8 @@ class Dynamics(Model):
 
     def potential_energy(self, x: Tensor, beta: Tensor) -> Tensor:
         """Returns the potential energy, PE = beta * action(x)."""
-        return tf.multiply(beta, self.potential_fn(x))
+        # return tf.multiply(beta, self.potential_fn(x))
+        return self.potential_fn(x=x, beta=beta)
 
     def grad_potential(self, x: Tensor, beta: Tensor) -> Tensor:
         """Compute the gradient of the potential function."""
