@@ -127,7 +127,7 @@ def setup(cfg: DictConfig) -> dict:
         pass
 
     dynamics = dynamics.to(accelerator.device)
-    dynamics, optimizer = accelerator.prepare(dynamics, optimizer)
+    dynamics, optimizer = accelerator.prepare(dynamics, optimizer)  # type:ignore
     trainer = Trainer(steps=steps,
                       loss_fn=loss_fn,
                       lr_config=lr_cfg,
@@ -152,7 +152,7 @@ def setup(cfg: DictConfig) -> dict:
 
 def update_wandb_config(
         cfg: DictConfig,
-        id: Optional[str] = None,
+        tag: Optional[str] = None,
         debug: Optional[bool] = None,
 ) -> DictConfig:
     group = [
@@ -164,8 +164,8 @@ def update_wandb_config(
         group.append('debug')
 
     cfg.wandb.setup.update({'group': '/'.join(group)})
-    if id is not None:
-        cfg.wandb.setup.update({'id': id})
+    if tag is not None:
+        cfg.wandb.setup.update({'id': tag})
 
     cfg.wandb.setup.update({
         'tags': [
@@ -202,7 +202,7 @@ def get_summary_writer(
 # -------------------------------------------------------------
 
 
-def eval(
+def evaluate(
         cfg: DictConfig,
         trainer: Trainer,
         job_type: str,
@@ -318,10 +318,10 @@ def main(cfg: DictConfig) -> dict:
     nchains = max((1, cfg.dynamics.nchains // 4))
     cfg.update({'nchains': nchains})
 
-    id = generate_id() if trainer.accelerator.is_local_main_process else None
+    tag = generate_id() if trainer.accelerator.is_local_main_process else None
     outdir = Path(cfg.get('outdir', os.getcwd()))
     debug = any([s in outdir.as_posix() for s in ['debug', 'test']])
-    cfg = update_wandb_config(cfg, id=id, debug=debug)
+    cfg = update_wandb_config(cfg, tag=tag, debug=debug)
 
     run = None
     if trainer.accelerator.is_local_main_process:
@@ -350,7 +350,7 @@ def main(cfg: DictConfig) -> dict:
         nchains = max((4, cfg.dynamics.nchains // 8))
         if should_train and cfg.steps.test > 0:
             log.warning('Evaluating trained model')
-            outputs['eval'] = eval(cfg,
+            outputs['eval'] = evaluate(cfg,
                                    run=run,
                                    job_type='eval',
                                    nchains=nchains,
@@ -358,7 +358,7 @@ def main(cfg: DictConfig) -> dict:
         if cfg.steps.test > 0:
             log.warning('Running generic HMC')
             eps = torch.tensor(0.05)
-            outputs['hmc'] = eval(cfg=cfg,
+            outputs['hmc'] = evaluate(cfg=cfg,
                                   run=run,
                                   eps=eps,
                                   job_type='hmc',
