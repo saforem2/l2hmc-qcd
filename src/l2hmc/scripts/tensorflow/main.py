@@ -121,7 +121,7 @@ def setup(cfg: DictConfig, c1: float = 0.) -> dict:
 
 def update_wandb_config(
         cfg: DictConfig,
-        id: Optional[str] = None,
+        tag: Optional[str] = None,
         debug: Optional[bool] = None,
         # job_type: Optional[str] = None,
 ) -> DictConfig:
@@ -137,8 +137,8 @@ def update_wandb_config(
         group.append('debug')
 
     cfg.wandb.setup.update({'group': '/'.join(group)})
-    if id is not None:
-        cfg.wandb.setup.update({'id': id})
+    if tag is not None:
+        cfg.wandb.setup.update({'id': tag})
 
     cfg.wandb.setup.update({
         'tags': [
@@ -166,7 +166,7 @@ def get_summary_writer(cfg: DictConfig, job_type: str):
     return writer
 
 
-def eval(
+def evaluate(
         cfg: DictConfig,
         trainer: Trainer,
         job_type: str,
@@ -269,10 +269,10 @@ def main(cfg: DictConfig) -> dict:
     # nchains = min((cfg.dynamics.nchains, cfg.dynamics.nleapfrog))
     # cfg.update({'nchains': nchains})
 
-    id = generate_id() if trainer.rank == 0 else None
+    tag = generate_id() if trainer.rank == 0 else None
     outdir = Path(cfg.get('outdir', os.getcwd()))
     debug = any([s in outdir.as_posix() for s in ['debug', 'test']])
-    cfg = update_wandb_config(cfg, id=id, debug=debug)
+    cfg = update_wandb_config(cfg, tag=tag, debug=debug)
 
     run = None
     if RANK == 0:
@@ -295,11 +295,10 @@ def main(cfg: DictConfig) -> dict:
         outputs['train'] = train(cfg, trainer, run=run)      # [1.]
 
     if RANK == 0:
-        batch_size = cfg.dynamics.xshape[0]
-        nchains = max((4, batch_size // 8))
+        nchains = max((4, cfg.dynamics.nchains // 8))
         if should_train and cfg.steps.test > 0:
             log.warning('Evaluating trained model')
-            outputs['eval'] = eval(cfg,
+            outputs['eval'] = evaluate(cfg,
                                    run=run,
                                    eps=None,
                                    job_type='eval',
@@ -308,7 +307,7 @@ def main(cfg: DictConfig) -> dict:
         if cfg.steps.test > 0:
             log.warning('Running generic HMC')
             eps = tf.constant(float(cfg.get('eps_hmc', 0.01)))
-            outputs['hmc'] = eval(cfg=cfg,
+            outputs['hmc'] = evaluate(cfg=cfg,
                                   run=run,
                                   eps=eps,
                                   job_type='hmc',
