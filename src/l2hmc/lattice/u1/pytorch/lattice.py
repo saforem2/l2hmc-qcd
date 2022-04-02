@@ -55,17 +55,13 @@ class LatticeU1(BaseLatticeU1):
         unif = torch.rand(self._shape, requires_grad=requires_grad)
         return TWO_PI * unif - PI
 
-    def unnormalized_log_prob(self, x: Tensor) -> Tensor:
-        return self.action(x=x)
+    def unnormalized_log_prob(self, x: Tensor, beta: Tensor) -> Tensor:
+        return self.action(x=x, beta=beta)
 
-    def action(
-            self,
-            x: Optional[Tensor] = None,
-            wloops: Optional[Tensor] = None
-    ) -> Tensor:
+    def action(self, x: Tensor, beta: Tensor) -> Tensor:
         """Calculate the Wilson gauge action for a batch of lattices."""
-        wloops = self._get_wloops(x) if wloops is None else wloops
-        return (1. - torch.cos(wloops)).sum((1, 2))
+        wloops = self._get_wloops(x)
+        return beta * (1. - torch.cos(wloops)).sum((1, 2))
 
     def plaqs_diff(
             self,

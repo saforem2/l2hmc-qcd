@@ -68,18 +68,20 @@ class LatticeU1(BaseLatticeU1):
         """Draw batch of samples, uniformly from [-pi, pi)."""
         return tf.random.uniform(self._shape, *(-PI, PI), dtype=TF_FLOAT)
 
-    def unnormalized_log_prob(self, x: Tensor) -> Tensor:
-        return self.action(x)
-
-    def action(
+    def unnormalized_log_prob(
             self,
-            x: Optional[Tensor] = None,
-            wloops: Optional[Tensor] = None
+            x: Tensor,
+            beta: Optional[Tensor] = None,
     ) -> Tensor:
+        beta = tf.constant(1.) if beta is None else beta
+        assert isinstance(beta, Tensor)
+        return self.action(x, beta)
+
+    def action(self, x: Tensor, beta: Tensor) -> Tensor:
         """Calculate the Wilson gauge action for a batch of lattices."""
-        wloops = self._get_wloops(x) if wloops is None else wloops
+        wloops = self._get_wloops(x)
         local_action = tf.ones_like(wloops) - tf.math.cos(wloops)
-        return tf.reduce_sum(local_action, (1, 2))
+        return beta * tf.reduce_sum(local_action, (1, 2))
 
     def calc_metrics(
             self,
