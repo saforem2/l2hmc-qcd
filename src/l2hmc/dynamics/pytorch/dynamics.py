@@ -757,7 +757,8 @@ class Dynamics(nn.Module):
 
     def potential_energy(self, x: Tensor, beta: Tensor):
         """Returns the potential energy, PE = beta * action(x)."""
-        return beta * self.potential_fn(x)
+        # return beta * self.potential_fn(x)
+        return self.potential_fn(x, beta)
 
     def grad_potential(
             self,
