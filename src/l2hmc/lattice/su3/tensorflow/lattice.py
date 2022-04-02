@@ -4,11 +4,15 @@ lattice.py
 Contains implementation of generic GaugeLattice object.
 """
 from __future__ import absolute_import, print_function, division, annotations
+from typing import Optional
 
 import numpy as np
 import tensorflow as tf
+import logging
 
 from l2hmc.group.tensorflow import group as g
+
+log = logging.getLogger(__name__)
 # from l2hmc.lattice.su3.lattice.
 
 # from lgt.group.tensorflow import group as g
@@ -139,14 +143,41 @@ class LatticeSU3:
 
     def _plaquettes(self, x: Tensor) -> Tensor:
         ps, _ = self._wilson_loops(x)
-        psum = tf.constant(0.0)
+        # psum = tf.constant(0.0)
+        psum = tf.zeros_like(tf.math.real(ps[0]))  # type: ignore
         for p in ps:  # NOTE: len(ps) == 6
             psum += tf.reduce_sum(tf.math.real(p), axis=range(1, len(p.shape)))
 
         # NOTE: return psum / (len(ps) * dim(link) * volume)
         return psum / (6 * 3 * self.volume)
 
-    def action(self, x: Tensor, beta: Tensor):
+    def plaqs(self, wloops: Tensor) -> Tensor:
+        psum = tf.zeros_like(tf.math.real(wloops[0]))  # type:ignore
+        for p in wloops:
+            psum += tf.reduce_sum(tf.math.real(p), axis=range(1, len(p.shape)))
+
+        return psum / (6 * 3 * self.volume)
+
+    def _int_charges(self, wloops: Tensor) -> Tensor:
+        return tf.zeros_like(tf.math.imag(wloops[0]))
+
+    def _sin_charges(self, wloops: Tensor) -> Tensor:
+        # qsum = tf.constant(0.0)
+        qsum = tf.zeros_like(tf.math.imag(wloops[0]))  # type:ignore
+        for p in wloops:
+            qsum += tf.reduce_sum(tf.math.imag(p), axis=range(1, len(p.shape)))
+
+        return qsum / (6 * 3 * self.volume)
+
+    def wilson_loops(self, x: Tensor) -> Tensor:
+        ps, _ = self._wilson_loops(x=x, needs_rect=False)
+        return ps
+
+    def action(
+            self,
+            x: Tensor,
+            beta: Tensor,
+    ):
         """Returns the action"""
         coeffs = self.coeffs(beta)
         ps, rs = self._wilson_loops(x, needs_rect=self.c1 != 0)
@@ -185,3 +216,29 @@ class LatticeSU3:
             g = tf.gradients(self.action(x, beta), [x])[0]
 
         return self.g.projectTAH(self.g.mul(g, x, adjoint_b=True))
+
+    def calc_metrics(
+            self,
+            x: Tensor,
+            beta: Optional[Tensor] = None,
+    ) -> dict[str, Tensor]:
+        wloops = self.wilson_loops(x)
+        # ps, rs = self._wilson_loops(x, needs_rect=(self.c1 != 0))
+        # plaqs = self.plaqs(wloops=wloops)
+
+        # charges = self.charges(wloops=wloops)
+        plaqs = self.plaqs(wloops)
+        qsin = self._sin_charges(wloops)
+        # TODO: FIX ME
+        metrics = {'plaqs': plaqs,  'sinQ': qsin}
+        # qsin = self._sin_charges(wloops=ps)
+        # if beta is not None:
+        #     pexact = plaq_exact(beta) * tf.ones_like(plaqs)
+        #     metrics.update({
+        #        'plaqs_err': pexact - plaqs
+        #     })
+
+        # metrics.update({
+        #     'intQ': charges.intQ, 'sinQ': charges.sinQ
+        # })
+        return metrics
