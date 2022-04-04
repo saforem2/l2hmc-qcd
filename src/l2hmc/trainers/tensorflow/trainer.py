@@ -11,7 +11,8 @@ from pathlib import Path
 import time
 from typing import Callable, Any, Optional
 
-import horovod.tensorflow as hvd
+import horovod.tensorflow as hvd  # type: ignore
+
 import numpy as np
 from rich.layout import Layout
 from rich.live import Live
@@ -38,11 +39,13 @@ WIDTH = int(os.environ.get('COLUMNS', 150))
 
 tf.autograph.set_verbosity(0)
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
+JIT_COMPILE = (len(os.environ.get('JIT_COMPILE', '')) > 0)
 
 log = logging.getLogger(__name__)
 
 Tensor = tf.Tensor
 TF_FLOAT = tf.keras.backend.floatx()
+Model = tf.keras.Model
 Optimizer = tf.keras.optimizers.Optimizer
 
 
@@ -113,7 +116,7 @@ def plot_models(dynamics: Dynamics, logdir: os.PathLike):
 
 HVD_FP_MAP = {
     'fp16': hvd.Compression.fp16,
-    'none': hvd.Compression.none,
+    'none': hvd.Compression.none
 }
 
 
@@ -161,7 +164,7 @@ class Trainer:
         self.keep = [keep] if isinstance(keep, str) else keep
         self.skip = [skip] if isinstance(skip, str) else skip
         assert compression in ['none', 'fp16']
-        self.compression = HVD_FP_MAP.get(compression, hvd.Compression.none)
+        self.compression = HVD_FP_MAP.get(compression, 'none')
         self.reduce_lr = ReduceLROnPlateau(lr_config)
         self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
         self.reduce_lr.set_model(self.dynamics)
@@ -293,6 +296,8 @@ class Trainer:
             run: Optional[Any] = None,
             writer: Optional[Any] = None,
             history: Optional[History] = None,
+            model: Optional[Model] = None,
+            optimizer: Optional[Optimizer] = None,
     ):
         record = {} if record is None else record
         if step is not None:
@@ -300,8 +305,7 @@ class Trainer:
 
         record.update({
             'loss': metrics.get('loss', None),
-            'dQint': metrics.get('dQint', None),
-            'dQsin': metrics.get('dQsin', None),
+            'dQint': metrics.get('dQint', tf.constant(0.)),
         })
         record.update(self.metrics_to_numpy(metrics))
         if history is not None:
@@ -312,7 +316,11 @@ class Trainer:
         summary = summarize_dict(avgs)
         if writer is not None:
             assert step is not None
-            update_summaries(step=step, prefix=job_type, metrics=record)
+            update_summaries(step=step,
+                             prefix=job_type,
+                             model=model,
+                             metrics=record,
+                             optimizer=optimizer)
             writer.flush()
 
         if run is not None:
@@ -332,7 +340,7 @@ class Trainer:
 
         return avgs, summary
 
-    @tf.function(experimental_follow_type_hints=True)
+    @tf.function(experimental_follow_type_hints=True, jit_compile=JIT_COMPILE)
     def hmc_step(
             self,
             inputs: tuple[Tensor, Tensor],
@@ -350,7 +358,7 @@ class Trainer:
 
         return xo, metrics
 
-    @tf.function(experimental_follow_type_hints=True)
+    @tf.function(experimental_follow_type_hints=True, jit_compile=JIT_COMPILE)
     def eval_step(
             self,
             inputs: tuple[Tensor, Tensor],
@@ -548,7 +556,8 @@ class Trainer:
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
 
         inputs = (x, tf.constant(1.))
-        _ = self.train_step(inputs, first_step=True)  # type: ignore
+        assert callable(self.train_step)
+        _ = self.train_step(inputs, first_step=True)
 
         era = 0
         epoch = 0
@@ -558,6 +567,7 @@ class Trainer:
         summaries = []
         timer = self.timers['train']
         history = self.histories['train']
+        record = {'era': 0, 'epoch': 0, 'beta': 0.0, 'dt': 0.0}
         tkwargs = {
             'box': box.HORIZONTALS,
             'row_styles': ['dim', 'none'],
@@ -569,7 +579,7 @@ class Trainer:
                 console.width = WIDTH
                 console.print('\n')
                 console.rule(
-                    f'[red]ERA: {era} / {self.steps.nera}, BETA: {beta}[/]',
+                    f'ERA: {era} / {self.steps.nera}, BETA: {beta}',
                 )
                 console.print('\n')
 
@@ -594,13 +604,17 @@ class Trainer:
                         record = {
                             'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
                         }
-                        avgs, summary = self.record_metrics(run=run,
-                                                            step=gstep,
-                                                            writer=writer,
-                                                            record=record,
-                                                            metrics=metrics,
-                                                            job_type='train',
-                                                            history=history)
+                        avgs, summary = self.record_metrics(
+                            run=run,
+                            step=gstep,
+                            writer=writer,
+                            record=record,
+                            metrics=metrics,
+                            job_type='train',
+                            history=history,
+                            model=self.dynamics,
+                            optimizer=self.optimizer,
+                        )
                         rows[gstep] = avgs
                         summaries.append(summary)
 
@@ -623,18 +637,16 @@ class Trainer:
                     update_summaries(step=gstep,
                                      model=self.dynamics,
                                      optimizer=self.optimizer)
-                log.info(
-                    f'Era {era} took: {time.time() - estart:<5g}s'
-                )
-                log.info(
-                    f'Avgs over last era:\n {self.history.era_summary(era)}',
-                )
-                log.info(
-                    f'Saving checkpoint to: {manager.latest_checkpoint}'
-                )
+                log.info(f'Era {era} took: {time.time() - estart:<5g}s')
+                log.info('\n'.join([
+                    'Avgs over last era:', f'{self.history.era_summary(era)}'
+                ]))
+                log.info(f'Saving checkpoint to: {manager.latest_checkpoint}')
+                st0 = time.time()
                 manager.save()
                 if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
                     self.dynamics.save_networks(train_dir)
+                log.info(f'Saving took: {time.time() - st0:<5g}s')
 
         return {
             'timer': timer,
