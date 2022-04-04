@@ -38,7 +38,6 @@ State = namedtuple('State', ['x', 'v', 'beta'])
 
 MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
 
-
 def add_to_outdirs_file(outdir: os.PathLike):
     with open(OUTDIRS_FILE, 'a') as f:
         f.write(Path(outdir).resolve().as_posix())
@@ -122,7 +121,7 @@ class U1Config(BaseConfig):
         self.xshape = self.dynamics.xshape
         xdim = self.dynamics.xdim
         self.input_spec = InputSpec(
-            xshape=self.dynamics.xshape,
+            xshape=self.dynamics.xshape,  # type:ignore
             xnet={'x': [xdim, int(2)], 'v': [xdim, ]},
             vnet={'x': [xdim, ], 'v': [xdim, ]}
         )
