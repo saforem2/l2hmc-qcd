@@ -12,6 +12,7 @@ from typing import Any, Optional
 import tensorflow as tf
 import horovod.tensorflow as hvd
 
+
 import wandb
 from wandb.util import generate_id
 
@@ -38,12 +39,12 @@ from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
 # from lgt.lattice.u1.tensorflow.lattice import LatticeU1
 # from lgt.lattice.su3.tensorflow.lattice import LatticeSU3
 
+log = logging.getLogger(__name__)
 
-Tensor = tf.Tensor
 RANK = hvd.rank()
 SIZE = hvd.size()
 
-log = logging.getLogger(__name__)
+Tensor = tf.Tensor
 
 
 def load_from_ckpt(
@@ -299,20 +300,20 @@ def main(cfg: DictConfig) -> dict:
         if should_train and cfg.steps.test > 0:
             log.warning('Evaluating trained model')
             outputs['eval'] = evaluate(cfg,
-                                   run=run,
-                                   eps=None,
-                                   job_type='eval',
-                                   nchains=nchains,
-                                   trainer=trainer)
+                                       run=run,
+                                       eps=None,
+                                       job_type='eval',
+                                       nchains=nchains,
+                                       trainer=trainer)
         if cfg.steps.test > 0:
             log.warning('Running generic HMC')
             eps = tf.constant(float(cfg.get('eps_hmc', 0.01)))
             outputs['hmc'] = evaluate(cfg=cfg,
-                                  run=run,
-                                  eps=eps,
-                                  job_type='hmc',
-                                  nchains=nchains,
-                                  trainer=trainer)
+                                      run=run,
+                                      eps=eps,
+                                      job_type='hmc',
+                                      nchains=nchains,
+                                      trainer=trainer)
     if run is not None:
         run.finish()
 
