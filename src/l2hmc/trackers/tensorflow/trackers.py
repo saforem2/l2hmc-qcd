@@ -3,12 +3,12 @@ l2hmc/trackers/tensorflow/trackers.py
 
 Contains various utilities for tracking / logging metrics in TensorBoard
 """
-from __future__ import absolute_import, print_function, division, annotations
-from typing import Union
-
-import tensorflow as tf
-import numpy as np
+from __future__ import absolute_import, annotations, division, print_function
 import logging
+from typing import Optional, Union
+
+import numpy as np
+import tensorflow as tf
 from tensorflow.python.keras import backend as K
 
 
@@ -25,7 +25,7 @@ ArrayLike = Union[Tensor, Array, Scalar]
 def log_item(
         tag: str,
         val: ArrayLike,
-        step: int = None,
+        step: Optional[int] = None,
 ):
     if (
             'dt' in tag
@@ -39,7 +39,7 @@ def log_item(
         tf.summary.scalar(f'{tag}/avg', tf.reduce_mean(val), step=step)
 
 
-def log_dict(d: dict, step: int, prefix: str = None):
+def log_dict(d: dict, step: int, prefix: Optional[str] = None):
     """Create tensorboard summaries for all items in `d`"""
     for key, val in d.items():
         pre = key if prefix is None else f'{prefix}/{key}'
@@ -58,10 +58,10 @@ def log_list(x, step, prefix=None):
 
 def update_summaries(
         step: int,
-        metrics: dict = None,
-        model: Model = None,
-        optimizer: Optimizer = None,
-        prefix: str = None,
+        metrics: Optional[dict] = None,
+        model: Optional[Model] = None,
+        optimizer: Optional[Optimizer] = None,
+        prefix: Optional[str] = None,
 ):
     """"Create summary objects."""
     if metrics is not None:
