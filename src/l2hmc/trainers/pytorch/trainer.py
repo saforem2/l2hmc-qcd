@@ -331,6 +331,8 @@ class Trainer:
             run: Optional[Any] = None,
             writer: Optional[Any] = None,
             history: Optional[BaseHistory] = None,
+            model: Optional[Module] = None,
+            optimizer: Optional[optim.Optimizer] = None,
     ):
         record = {} if record is None else record
 
@@ -353,9 +355,11 @@ class Trainer:
         if writer is not None:
             assert step is not None
             update_summaries(step=step,
-                             prefix=job_type,
+                             model=model,
+                             writer=writer,
                              metrics=record,
-                             writer=writer)
+                             prefix=job_type,
+                             optimizer=optimizer)
             writer.flush()
 
         if run is not None:
@@ -525,7 +529,7 @@ class Trainer:
                 console.width = WIDTH
                 console.print('\n')
                 console.rule(
-                    f'[red]ERA: {era} / {self.steps.nera}, BETA: {beta}[/]',
+                    f'ERA: {era} / {self.steps.nera}, BETA: {beta}',
                 )
                 console.print('\n')
 
@@ -576,11 +580,20 @@ class Trainer:
                     model = model if isinstance(model, Module) else None
                     update_summaries(step=gstep,
                                      writer=writer,
-                                     model=self.dynamics)
+                                     model=self.dynamics,
+                                     optimizer=self.optimizer)
 
+                log.info(f'Era {era} took: {time.time() - estart:<5g}s')
+                log.info('\n'.join([
+                    'Avgs over last era:', f'{self.history.era_summary(era)}'
+                ]))
+                log.info(f'Saving checkpoint to: {train_dir}')
                 ckpt_metrics = {'loss': metrics['loss']}
+                st0 = time.time()
                 self.save_ckpt(era, epoch, train_dir,
                                metrics=ckpt_metrics, run=run)
+                log.info(f'Saving took: {time.time() - st0:<5g}s')
+
                 log.info(
                     f'Era {era} took: {time.time() - estart:<5g}s',
                 )
