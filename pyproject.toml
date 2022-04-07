@@ -1,10 +1,10 @@
 [tool.poetry]
 name = "l2hmc"
-version = "0.3.0"
+version = "0.4.0"
 description = "L2HMC algorithm for sampling in Lattice QCD"
 authors = ["Sam Foreman <saforem2@gmail.com>"]
 packages = [{include = "l2hmc", from = "src"}]
-exclude = ["src/l2hmc/outputs/", "src/l2hmc/wandb/", "**/old/**/*", "**/outputs/**/*", "**/__pycache__/**/*", "**/.DS_Store/**/*"]
+exclude = ["wandb", "outputs", "old", "src/l2hmc/outputs/", "src/l2hmc/wandb/", "**/old/**/*", "**/wandb/**/*", "**/outputs/**/*", "**/__pycache__/**/*", "**/.DS_Store/**/*"]
 
 [tool.poetry.dependencies]
 python = "^3.10,<3.11"
