@@ -328,7 +328,7 @@ class Dynamics(nn.Module):
 
     def random_state(self, beta: float) -> State:
         x = torch.rand(tuple(self.xshape)).reshape(self.xshape[0], -1)
-        v = torch.randn_like(x)
+        v = torch.randn_like(x).to(x.device)
         return State(x=x, v=v, beta=torch.tensor(beta))
 
     def test_reversibility(self) -> dict[str, Tensor]:
@@ -345,7 +345,7 @@ class Dynamics(nn.Module):
             eps: Tensor,
     ) -> dict:
         x, beta = inputs
-        v = torch.randn_like(x)
+        v = torch.randn_like(x).to(x.device)
         init = State(x=x, v=v, beta=beta)
         proposed, metrics = self.transition_kernel_hmc(init, eps=eps)
 
@@ -356,7 +356,7 @@ class Dynamics(nn.Module):
             inputs: tuple[Tensor, Tensor],
     ) -> dict:
         x, beta = inputs
-        v = torch.randn_like(x)
+        v = torch.randn_like(x).to(x.device)
         init = State(x=x, v=v, beta=beta)
         proposed, metrics = self.transition_kernel_fb(init)
 
@@ -368,7 +368,7 @@ class Dynamics(nn.Module):
             forward: bool,
     ) -> dict:
         x, beta = inputs
-        v = torch.randn_like(x)
+        v = torch.randn_like(x).to(x.device)
         state_init = State(x=x, v=v, beta=beta)
         state_prop, metrics = self.transition_kernel(state_init, forward)
 
@@ -528,14 +528,14 @@ class Dynamics(nn.Module):
 
     @staticmethod
     def _get_accept_masks(px: Tensor) -> tuple[Tensor, Tensor]:
-        acc = (px > torch.rand_like(px).to(DEVICE)).to(torch.float)
+        acc = (px > torch.rand_like(px).to(px.device)).to(torch.float)
         rej = torch.ones_like(acc) - acc
         return acc, rej
 
     @staticmethod
     def _get_direction_masks(batch_size: int) -> tuple[Tensor, Tensor]:
         """Returns (forward_mask, backward_mask)."""
-        fwd = (torch.rand(batch_size).to(DEVICE) > 0.5).to(torch.float)
+        fwd = (torch.rand(batch_size).to(px.device) > 0.5).to(torch.float)
         bwd = torch.ones_like(fwd) - fwd
 
         return fwd, bwd
