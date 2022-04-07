@@ -4,7 +4,7 @@ lattice.py
 Contains implementation of generic GaugeLattice object.
 """
 from __future__ import absolute_import, print_function, division, annotations
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 import tensorflow as tf
@@ -35,9 +35,9 @@ def mat_adj(mat: Array) -> Array:
     return mat.conj().T
 
 
-Site = tuple[int, int, int, int]                # t, x, y, z
-Link = tuple[int, int, int, int, int]           # t, x, y, z, dim
-Buffer = tuple[int, int, int, int, int, int]    # b, t, x, y, z, dim
+Site: Tuple[int, int, int, int]                # t, x, y, z
+Link: Tuple[int, int, int, int, int]           # t, x, y, z, dim
+Buffer: Tuple[int, int, int, int, int, int]    # b, t, x, y, z, dim
 
 
 # ---------------------------------------------------------------
