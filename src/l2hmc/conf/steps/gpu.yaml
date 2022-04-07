@@ -2,6 +2,6 @@ _target_: l2hmc.configs.Steps
 
 nera: 10
 nepoch: 5000
-test: 5000
-log: 100
+test: 1000
+log: 50
 print: 500
