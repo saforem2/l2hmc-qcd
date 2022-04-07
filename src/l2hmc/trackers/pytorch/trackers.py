@@ -26,7 +26,7 @@ def log_item(
         step: Optional[int],
 ):
     if isinstance(val, Tensor):
-        val = val.detach().numpy()
+        val = val.detach().cpu().numpy()
 
     if (
             'dt' in tag
