@@ -8,22 +8,18 @@ import datetime
 import logging
 import os
 from pathlib import Path
-from typing import Any
-import joblib
-# import pandas as pd
+from typing import Any, Optional
 
+import joblib
 from omegaconf import DictConfig
+import pandas as pd
 from rich.table import Table
+import wandb
 import xarray as xr
 
-from l2hmc.configs import (
-    AnnealingSchedule,
-    Steps,
-)
+from l2hmc.configs import AnnealingSchedule, Steps
 from l2hmc.utils.console import console
-from l2hmc.utils.plot_helpers import (
-    plot_dataArray, make_ridgeplots
-)
+from l2hmc.utils.plot_helpers import make_ridgeplots, plot_dataArray
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 log = logging.getLogger(__name__)
@@ -64,7 +60,7 @@ def save_dataset(
         dataset: xr.Dataset,
         outdir: os.PathLike,
         job_type: str = None,
-) -> None:
+) -> Path:
     fname = 'dataset.nc' if job_type is None else f'{job_type}_dataset.nc'
     datafile = Path(outdir).joinpath(fname)
     mode = 'a' if datafile.is_file() else 'w'
@@ -72,13 +68,37 @@ def save_dataset(
     datafile.parent.mkdir(exist_ok=True, parents=True)
     dataset.to_netcdf(datafile.as_posix(), mode=mode)
 
+    return datafile
+
+
+def table_to_dict(table: Table, data: dict = None) -> dict:
+    if data is None:
+        return {
+            column.header: [
+                float(i) for i in list(column.cells)  # type:ignore
+            ]
+            for column in table.columns
+        }
+    for column in table.columns:
+        try:
+            data[column.header].extend([
+                float(i) for i in list(column.cells)  # type:ignore
+            ])
+        except KeyError:
+            data[column.header] = [
+                float(i) for i in list(column.cells)  # type:ignore
+            ]
+
+    return data
+
 
 def save_logs(
         tables: dict[str, Table],
-        summaries: list[str] = None,
-        logdir: os.PathLike = None,
+        summaries: Optional[list[str]] = None,
         job_type: str = None,
-        run: Any = None,
+        # rows: Optional[dict] = None,  # type:ignore
+        logdir: os.PathLike = None,
+        run: Optional[Any] = None,
 ) -> None:
     job_type = 'job' if job_type is None else job_type
     if logdir is None:
@@ -101,7 +121,14 @@ def save_logs(
     tfile = tdir.joinpath('table.txt')
     tfile.parent.mkdir(exist_ok=True, parents=True)
 
-    for _, table in tables.items():
+    # data = {}
+    data = {}
+    for idx, table in tables.items():
+        if idx == 0:
+            data = table_to_dict(table)
+        else:
+            data = table_to_dict(table, data)
+
         console.print(table)
         html = console.export_html(clear=False)
         text = console.export_text()
@@ -110,11 +137,18 @@ def save_logs(
         with open(tfile, 'a') as f:
             f.write(text)
 
-        if run is not None:
-            try:
-                run.log({f'tables/{job_type}': text})
-            except Exception:
-                continue
+    df = pd.DataFrame.from_dict(data)
+    dfile = Path(logdir).joinpath(f'{job_type}_table.csv')
+    df.to_csv(dfile.as_posix())
+
+    if run is not None:
+        with open(hfile.as_posix(), 'r') as f:
+            html = f.read()
+
+        run.log({f'Media/{job_type}': wandb.Html(html)})
+        run.log({
+            f'DataFrames/{job_type}': wandb.Table(data=df)
+        })
 
     if summaries is not None:
         sfile = logdir.joinpath('summaries.txt').as_posix()
@@ -138,10 +172,11 @@ def plot_dataset(
         outdir: os.PathLike = None,
         title: str = None,
         job_type: str = None,
-        run: Any = None,
+        # run: Any = None,
 ) -> None:
     outdir = Path(outdir) if outdir is not None else Path(os.getcwd())
-    outdir = outdir.joinpath('plots')
+    outdir.mkdir(exist_ok=True, parents=True)
+    # outdir = outdir.joinpath('plots')
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
     for key, val in dataset.data_vars.items():
         if key == 'x':
@@ -156,32 +191,25 @@ def plot_dataset(
         except TypeError:
             log.error(f'Unable to `plot_dataArray` for {key}')
             continue
-        # try:
-        #     wandb.log({f'chart/{name}': fig})
-        # except AttributeError:
-        #     # log.error(err.name)
-        #     log.error(
-        #         f'Error logging `chart/{name}` with `wandb.log`, skipping!',
-        #     )
-        # chart_name = '/'.join([*name, f'{key}_chart'])
-        # wandb.log({key_: fig})
-        outfile = outdir.joinpath(f'{key}.svg')
-        outfile.parent.mkdir(exist_ok=True, parents=True)
-        log.info(f'Saving figure to: {outfile.as_posix()}')
-        fig.savefig(outfile.as_posix(), dpi=500, bbox_inches='tight')
+
         pngdir = outdir.joinpath('pngs')
+        outdir.mkdir(exist_ok=True, parents=True)
         pngdir.mkdir(exist_ok=True, parents=True)
-        outpng = pngdir.joinpath(f'{key}.png')
-        if run is not None:
-            try:
-                run.log({f'plots/{job_type}.{key}': fig})
-            except Exception:
-                log.error(f'Unable to create plot for {key}, skipping!')
-                pass
 
-        fig.savefig(outpng.as_posix(), dpi=500, bbox_inches='tight')
+        fsvg = outdir.joinpath(f'{key}.svg')
+        fpng = pngdir.joinpath(f'{key}.png')
+        if fsvg.is_file():
+            fsvg = outdir.joinpath(f'xarray-{key}.svg')
+        if fpng.is_file():
+            fpng = pngdir.joinpath(f'xarray-{key}.svg')
 
-    _ = make_ridgeplots(dataset, num_chains=nchains, out_dir=outdir)
+        fig.savefig(fsvg.as_posix(), dpi=500, bbox_inches='tight')
+        fig.savefig(fpng.as_posix(), dpi=500, bbox_inches='tight')
+
+    _ = make_ridgeplots(dataset,
+                        outdir=outdir,
+                        drop_nans=True,
+                        num_chains=nchains)
 
 
 def analyze_dataset(
@@ -196,20 +224,34 @@ def analyze_dataset(
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
     dirs = make_subdirs(outdir)
     plot_dataset(dataset,
-                 run=run,
                  nchains=nchains,
                  title=title,
                  job_type=job_type,
                  outdir=dirs['plots'])
     if save:
         try:
-            save_dataset(dataset, outdir=dirs['data'], job_type=job_type)
+            datafile = save_dataset(dataset,
+                                    outdir=dirs['data'],
+                                    job_type=job_type)
         except ValueError:
+            datafile = None
             for key, val in dataset.data_vars.items():
                 fout = Path(dirs['data']).joinpath(f'{key}.z')
                 try:
                     joblib.dump(val.values, fout)
                 except Exception:
                     log.error(f'Unable to `joblib.dump` {key}, skipping!')
+
+        artifact = None
+        if job_type is not None and run is not None:
+            name = f'{job_type}-{run.id}'
+            artifact = wandb.Artifact(name=name, type='result')
+            pngdir = Path(dirs['plots']).joinpath('pngs').as_posix()
+
+            artifact.add_dir(pngdir, name=f'{job_type}/plots')
+            if datafile is not None:
+                artifact.add_file(datafile.as_posix(), name=f'{job_type}/data')
+
+            run.log_artifact(artifact)
 
     return dataset

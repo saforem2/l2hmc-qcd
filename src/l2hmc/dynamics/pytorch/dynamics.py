@@ -221,8 +221,9 @@ class Dynamics(nn.Module):
     def apply_transition_hmc(
             self,
             inputs: tuple[Tensor, Tensor],
+            eps: Tensor,
     ) -> tuple[Tensor, dict]:
-        data = self.generate_proposal_hmc(inputs)
+        data = self.generate_proposal_hmc(inputs, eps=eps)
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
         ma = ma_.unsqueeze(-1)
         mr = mr_.unsqueeze(-1)
@@ -341,11 +342,12 @@ class Dynamics(nn.Module):
     def generate_proposal_hmc(
             self,
             inputs: tuple[Tensor, Tensor],
+            eps: Tensor,
     ) -> dict:
         x, beta = inputs
         v = torch.randn_like(x)
         init = State(x=x, v=v, beta=beta)
-        proposed, metrics = self.transition_kernel_hmc(init)
+        proposed, metrics = self.transition_kernel_hmc(init, eps=eps)
 
         return {'init': init, 'proposed': proposed, 'metrics': metrics}
 
@@ -409,28 +411,26 @@ class Dynamics(nn.Module):
     def leapfrog_hmc(
             self,
             state: State,
-            step: int,
+            eps: Tensor,
     ) -> State:
-        force1 = self.grad_potential(state.x, state.beta)
-        v1 = state.v - 0.5 * self.veps[str(step)] * force1
-
-        xp = state.x + self.xeps[str(step)] * v1
-
-        force2 = self.grad_potential(xp, state.beta)
-        v2 = v1 - 0.5 * self.veps[str(step)] * force2
-
-        return State(x=xp, v=v2, beta=state.beta)
+        force1 = self.grad_potential(state.x, state.beta)  # f = dU / dx
+        v1 = state.v - 0.5 * eps * force1                  # v -= ½ veps * f
+        xp = state.x + eps * v1                            # x += xeps * v
+        force2 = self.grad_potential(xp, state.beta)       # calc force, again
+        v2 = v1 - 0.5 * eps * force2                       # v -= ½ veps * f
+        return State(x=xp, v=v2, beta=state.beta)          # output: (x', v')
 
     def transition_kernel_hmc(
             self,
             state: State,
+            eps: Tensor,
     ) -> tuple[State, dict]:
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device)
         metrics = self.get_metrics(state_, sumlogdet)
         history = self.update_history(metrics, history={})
         for step in range(self.config.nleapfrog):
-            state_ = self.leapfrog_hmc(state_, step)
+            state_ = self.leapfrog_hmc(state_, eps=eps)
             if self.config.verbose:
                 metrics = self.get_metrics(state_, sumlogdet, step=step)
                 history = self.update_history(metrics, history=history)
@@ -757,7 +757,8 @@ class Dynamics(nn.Module):
 
     def potential_energy(self, x: Tensor, beta: Tensor):
         """Returns the potential energy, PE = beta * action(x)."""
-        return beta * self.potential_fn(x)
+        # return beta * self.potential_fn(x)
+        return self.potential_fn(x, beta)
 
     def grad_potential(
             self,

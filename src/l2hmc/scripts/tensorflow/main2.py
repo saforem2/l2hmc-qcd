@@ -10,7 +10,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 import tensorflow as tf
-import horovod.tensorflow as hvd
+try:
+    import horovod.tensorflow as hvd
+    HAS_HOROVOD = True
+
+except (ImportError, ModuleNotFoundError):
+    HAS_HOROVOD = False
 
 import wandb
 from wandb.util import generate_id
@@ -20,22 +25,41 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 
 from l2hmc.common import analyze_dataset, save_logs
-from l2hmc.configs import InputSpec, HERE
+from l2hmc.configs import InputSpec, HERE, get_jobdir
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
-from l2hmc.lattice.tensorflow.lattice import Lattice
 from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.network.tensorflow.network import NetworkFactory
 from l2hmc.trainers.tensorflow.trainer import Trainer
 from l2hmc.utils.console import is_interactive
+from l2hmc import utils
 
-
-RANK = hvd.rank()
-SIZE = hvd.size()
+from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
+from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
+# from l2hmc.lattice.tensorflow.lattice import LatticeU1
+# from lgt.lattice.u1.tensorflow.lattice import LatticeU1
+# from lgt.lattice.su3.tensorflow.lattice import LatticeSU3
+# from l2hmc.lattice.tensorflow.lattice import Lattice
+# from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
+# from lgt.lattice.u1.tensorflow.lattice import LatticeU1
+# from lgt.lattice.su3.tensorflow.lattice import LatticeSU3
 
 log = logging.getLogger(__name__)
 
+RANK = hvd.rank() if HAS_HOROVOD else 0
+SIZE = hvd.size() if HAS_HOROVOD else 1
 
-def setup(cfg: DictConfig) -> dict:
+Tensor = tf.Tensor
+
+
+def load_from_ckpt(
+        # dynamics: Dynamics,
+        # optimizer: Optimizer,
+        # cfg: DictConfig,
+):
+    pass
+
+
+def setup(cfg: DictConfig, c1: float = 0.) -> dict:
     steps = instantiate(cfg.steps)
     loss_cfg = instantiate(cfg.loss)
     network_cfg = instantiate(cfg.network)
@@ -51,9 +75,24 @@ def setup(cfg: DictConfig) -> dict:
     except TypeError:
         conv_cfg = None
 
+    lattice = None
     xdim = dynamics_cfg.xdim
+    group = dynamics_cfg.group
     xshape = dynamics_cfg.xshape
-    lattice = Lattice(tuple(xshape))
+    latvolume = dynamics_cfg.latvolume
+    log.warning(f'xdim: {dynamics_cfg.xdim}')
+    log.warning(f'group: {dynamics_cfg.group}')
+    log.warning(f'xshape: {dynamics_cfg.xshape}')
+    log.warning(f'latvolume: {dynamics_cfg.latvolume}')
+    if group == 'U1':
+        lattice = LatticeU1(dynamics_cfg.nchains, tuple(latvolume))
+    elif group == 'SU3':
+        lattice = LatticeSU3(dynamics_cfg.nchains, tuple(latvolume), c1=c1)
+    else:
+        log.info(dynamics_cfg)
+        raise ValueError('Unexpected value encountered in `dynamics.group`')
+
+    assert lattice is not None
     input_spec = InputSpec(xshape=xshape,
                            vnet={'v': [xdim, ], 'x': [xdim, ]},
                            xnet={'v': [xdim, ], 'x': [xdim, 2]})
@@ -87,30 +126,31 @@ def setup(cfg: DictConfig) -> dict:
 
 def update_wandb_config(
         cfg: DictConfig,
-        id: Optional[str] = None,
+        tag: Optional[str] = None,
         debug: Optional[bool] = None,
         # job_type: Optional[str] = None,
-        # wbdir: Optional[os.PathLike] = None,
 ) -> DictConfig:
     """Updates config using runtime information for W&B."""
-    group = [
-        'tensorflow',
-        'gpu' if len(tf.config.list_physical_devices('GPU')) > 0 else 'cpu'
-        'horovod' if SIZE > 1 else 'local'
-    ]
+    framework = 'tensorflow'
+    size = 'horovod' if SIZE > 1 else 'local'
+    device = (
+        'gpu' if len(tf.config.list_physical_devices('GPU')) > 0
+        else 'cpu'
+    )
+    group = [framework, device, size]
     if debug:
         group.append('debug')
 
     cfg.wandb.setup.update({'group': '/'.join(group)})
-    if id is not None:
-        cfg.wandb.setup.update({'id': id})
+    if tag is not None:
+        cfg.wandb.setup.update({'id': tag})
 
     cfg.wandb.setup.update({
         'tags': [
             f'{cfg.framework}',
             f'nlf-{cfg.dynamics.nleapfrog}',
             f'beta_final-{cfg.annealing_schedule.beta_final}',
-            f'{cfg.dynamics.xshape[1]}x{cfg.dynamics.xshape[2]}',
+            f'{cfg.dynamics.latvolume[0]}x{cfg.dynamics.latvolume[1]}',
         ]
     })
 
@@ -131,81 +171,91 @@ def get_summary_writer(cfg: DictConfig, job_type: str):
     return writer
 
 
-def get_jobdir(cfg: DictConfig, job_type: str) -> Path:
-    jobdir = Path(cfg.get('outdir', os.getcwd())).joinpath(job_type)
-    jobdir.mkdir(exist_ok=True, parents=True)
-    assert jobdir is not None
-    return jobdir
-
-
-def eval(
+def evaluate(
         cfg: DictConfig,
         trainer: Trainer,
         job_type: str,
         run: Optional[Any] = None,
+        nchains: Optional[int] = 10,
+        eps: Optional[Tensor] = None,
 ) -> dict:
-    nchains = cfg.get('nchains', -1)
+    assert isinstance(nchains, int)
+    assert job_type in ['eval', 'hmc']
     therm_frac = cfg.get('therm_frac', 0.2)
     jobdir = get_jobdir(cfg, job_type=job_type)
     writer = get_summary_writer(cfg, job_type=job_type)
     if writer is not None:
         writer.set_as_default()
 
-    eval_output = trainer.eval(run=run,
-                               writer=writer,
-                               job_type=job_type,
-                               width=cfg.get('width', None))
-    eval_dset = eval_output['history'].get_dataset(therm_frac=therm_frac)
-    _ = analyze_dataset(eval_dset,
+    output = trainer.eval(run=run,
+                          writer=writer,
+                          nchains=nchains,
+                          job_type=job_type,
+                          eps=eps)
+    dataset = output['history'].get_dataset(therm_frac=therm_frac)
+
+    if run is not None:
+        dQint = dataset.data_vars.get('dQint').values
+        drop = int(0.1 * len(dQint))
+        dQint = dQint[drop:]
+        run.summary[f'dQint_{job_type}'] = dQint
+        run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
+
+    _ = analyze_dataset(dataset,
+                        run=run,
+                        save=True,
                         outdir=jobdir,
                         nchains=nchains,
-                        title=f'{job_type}: PyTorch')
+                        job_type=job_type,
+                        title=f'{job_type}: TensorFlow')
     if not is_interactive():
         edir = jobdir.joinpath('logs')
         edir.mkdir(exist_ok=True, parents=True)
         log.info(f'Saving {job_type} logs to: {edir.as_posix()}')
-        save_logs(logdir=edir,
-                  run=run,
+        save_logs(run=run,
+                  logdir=edir,
                   job_type=job_type,
-                  tables=eval_output['tables'],
-                  summaries=eval_output['summaries'])
+                  tables=output['tables'],
+                  summaries=output['summaries'])
 
     if writer is not None:
-        writer.close()  # type: ignore
+        writer.close()
 
-    return eval_output
+    return output
 
 
 def train(
         cfg: DictConfig,
         trainer: Trainer,
         run: Optional[Any] = None,
+        nchains: Optional[int] = None,
         **kwargs,
 ) -> dict:
+    nchains = 16 if nchains is None else nchains
     jobdir = get_jobdir(cfg, job_type='train')
     writer = get_summary_writer(cfg, job_type='train')
-    width = int(cfg.get('width', os.environ.get('COLUMNS', 150)))
     if writer is not None:
         writer.set_as_default()
 
     output = trainer.train(run=run,
                            writer=writer,
                            train_dir=jobdir,
-                           width=width,
                            **kwargs)
     if RANK == 0:
         dset = output['history'].get_dataset()
         _ = analyze_dataset(dset,
+                            run=run,
+                            save=True,
                             outdir=jobdir,
+                            nchains=nchains,
                             job_type='train',
-                            title='Training: TensorFlow',
-                            nchains=cfg.get('nchains', -1))
+                            title='Training: TensorFlow')
         if not is_interactive():
             tdir = jobdir.joinpath('logs')
             tdir.mkdir(exist_ok=True, parents=True)
             log.info(f'Saving train logs to: {tdir.as_posix()}')
-            save_logs(logdir=tdir,
-                      run=run,
+            save_logs(run=run,
+                      logdir=tdir,
                       job_type='train',
                       tables=output['tables'],
                       summaries=output['summaries'])
@@ -221,47 +271,61 @@ def main(cfg: DictConfig) -> dict:
     objs = setup(cfg)
     trainer = objs['trainer']  # type: Trainer
 
-    nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
-    width = max((150, int(cfg.get('width', os.environ.get('COLUMNS', 150)))))
-    cfg.update({'width': width, 'nchains': nchains})
+    # nchains = min((cfg.dynamics.nchains, cfg.dynamics.nleapfrog))
+    # cfg.update({'nchains': nchains})
 
-    id = generate_id() if trainer.rank == 0 else None
+    tag = generate_id() if trainer.rank == 0 else None
     outdir = Path(cfg.get('outdir', os.getcwd()))
     debug = any([s in outdir.as_posix() for s in ['debug', 'test']])
-    cfg = update_wandb_config(cfg, id=id, debug=debug)
+    cfg = update_wandb_config(cfg, tag=tag, debug=debug)
 
     run = None
     if RANK == 0:
         run = wandb.init(**cfg.wandb.setup)
-        run.log_code(HERE)
-        run.config.update(OmegaConf.to_container(cfg,
-                                                 resolve=True,
-                                                 throw_on_missing=True))
+        wandb.define_metric('dQint_eval', summary='mean')
+        assert run is not None and run is wandb.run
+        run.log_code(HERE.as_posix())
+        cfg_dict = OmegaConf.to_container(cfg,
+                                          resolve=True,
+                                          throw_on_missing=True)
+        run.config.update(cfg_dict)
+        utils.print_config(cfg, resolve=True)
     # ----------------------------------------------------------
     # 1. Train model
     # 2. Evaluate trained model
     # 3. Run generic HMC as baseline w/ same trajectory length
     # ----------------------------------------------------------
-    outputs['train'] = train(cfg, trainer, run=run)      # [1.]
+    should_train = (cfg.steps.nera > 0 and cfg.steps.nepoch > 0)
+    if should_train:
+        outputs['train'] = train(cfg, trainer, run=run)      # [1.]
 
     if RANK == 0:
-        if run is not None:
-            run.config.update({'eval_beta': cfg.annealing_schedule.beta_final})
-        for job in ['eval', 'hmc']:                      # [2.], [3.]
-            log.warning(f'Running {job}')
-            outputs[job] = eval(cfg=cfg,
-                                run=run,
-                                job_type=job,
-                                trainer=trainer)
+        nchains = max((4, cfg.dynamics.nchains // 8))
+        if should_train and cfg.steps.test > 0:
+            log.warning('Evaluating trained model')
+            outputs['eval'] = evaluate(cfg,
+                                   run=run,
+                                   eps=None,
+                                   job_type='eval',
+                                   nchains=nchains,
+                                   trainer=trainer)
+        if cfg.steps.test > 0:
+            log.warning('Running generic HMC')
+            eps = tf.constant(float(cfg.get('eps_hmc', 0.01)))
+            outputs['hmc'] = evaluate(cfg=cfg,
+                                  run=run,
+                                  eps=eps,
+                                  job_type='hmc',
+                                  nchains=nchains,
+                                  trainer=trainer)
     if run is not None:
-        run.save()
+        run.finish()
 
     return outputs
 
 
 @hydra.main(config_path='./conf', config_name='config')
 def launch(cfg: DictConfig) -> None:
-    # log.info(f'Working directory: {os.getcwd()}')
     _ = main(cfg)
 
 

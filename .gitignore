@@ -1,7 +1,10 @@
 ## --------------------------------
 ## USER-DEFINED .gitignore below
 ## --------------------------------
+.venv/**
+old/**
 src/l2hmc/outputs/*
+src/l2hmc/wandb/**
 *.output
 *.error
 *.cobaltlog
