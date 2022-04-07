@@ -125,7 +125,8 @@ class LatticeU1(BaseLatticeU1):
         #       wloop = U0(x, y) +  U1(x+1, y) - U0(x, y+1) - U1(x, y)
         #   and so output = wloop.T, with output.shape = [-1, Lt, Lx]
         # --------------------------
-        x = tf.transpose(tf.reshape(x, self._shape), (1, 2, 3, 0))
+        x = tf.transpose(tf.reshape(x, (-1, *self.xshape)), (1, 2, 3, 0))
+        # x = tf.transpose(tf.reshape(x, self._shape), (1, 2, 3, 0))
         x0 = x[0]  # type:ignore  NOTE: x0 = t links
         x1 = x[1]  # type:ignore  NOTE: x1 = x links
         return tf.transpose(
