@@ -10,23 +10,26 @@ from pathlib import Path
 from typing import Any, Optional
 
 from accelerate import Accelerator
+# from accelerate.utils import extract_model_from_parallel
 import hydra
 from hydra.utils import instantiate
 from l2hmc.common import analyze_dataset, save_logs
 from l2hmc.configs import (
-    AnnealingSchedule,
-    ConvolutionConfig,
-    DynamicsConfig,
     HERE,
+    Steps,
     InputSpec,
-    LearningRateConfig,
+    get_jobdir,
     LossConfig,
     NetWeights,
     NetworkConfig,
-    Steps,
+    DynamicsConfig,
+    AnnealingSchedule,
+    ConvolutionConfig,
+    LearningRateConfig,
 )
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
-from l2hmc.lattice.pytorch.lattice import Lattice
+# from l2hmc.lattice.pytorch.lattice import Lattice
+from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
 from l2hmc.loss.pytorch.loss import LatticeLoss
 from l2hmc.network.pytorch.network import NetworkFactory
 from l2hmc.trainers.pytorch.trainer import Trainer
@@ -36,9 +39,13 @@ import torch
 from torch.utils.tensorboard.writer import SummaryWriter
 import wandb
 from wandb.util import generate_id
+from l2hmc import utils
 
 
 log = logging.getLogger(__name__)
+
+
+Tensor = torch.Tensor
 
 
 def load_from_ckpt(
@@ -84,10 +91,25 @@ def setup(cfg: DictConfig) -> dict:
     except TypeError:
         ccfg = None  # type: ignore
 
+    lattice = None
     xdim = dynamics_cfg.xdim
+    group = dynamics_cfg.group
     xshape = dynamics_cfg.xshape
-    lattice = Lattice(tuple(xshape))
-    input_spec = InputSpec(xshape=xshape,
+    latvolume = dynamics_cfg.latvolume
+    log.warning(f'xdim: {dynamics_cfg.xdim}')
+    log.warning(f'group: {dynamics_cfg.group}')
+    log.warning(f'xshape: {dynamics_cfg.xshape}')
+    log.warning(f'latvolume: {dynamics_cfg.latvolume}')
+    if group == 'U1':
+        lattice = LatticeU1(dynamics_cfg.nchains, tuple(latvolume))
+    elif group == 'SU3':
+        log.error('LatticeSU3 not implemented for pytorch!! (yet)')
+        # lattice = LatticeSU3(dynamics_cfg.nchains, tuple(latvolume), c1=c1)
+    else:
+        log.info(dynamics_cfg)
+        raise ValueError('Unexpected value encountered in `dynamics.group`')
+    assert lattice is not None
+    input_spec = InputSpec(xshape=list(xshape),
                            vnet={'v': [xdim, ], 'x': [xdim, ]},
                            xnet={'v': [xdim, ], 'x': [xdim, 2]})
     net_factory = NetworkFactory(input_spec=input_spec,
@@ -97,8 +119,8 @@ def setup(cfg: DictConfig) -> dict:
     dynamics = Dynamics(config=dynamics_cfg,
                         potential_fn=lattice.action,
                         network_factory=net_factory)
-    loss_fn = LatticeLoss(lattice=lattice, loss_config=loss_cfg)
     optimizer = torch.optim.Adam(dynamics.parameters())
+    loss_fn = LatticeLoss(lattice=lattice, loss_config=loss_cfg)
     try:
         dynamics, optimizer, _ = load_from_ckpt(dynamics, optimizer, cfg)
     except FileNotFoundError:
@@ -130,9 +152,8 @@ def setup(cfg: DictConfig) -> dict:
 
 def update_wandb_config(
         cfg: DictConfig,
-        id: Optional[str] = None,
+        tag: Optional[str] = None,
         debug: Optional[bool] = None,
-        wbdir: Optional[os.PathLike] = None,
 ) -> DictConfig:
     group = [
         'pytorch',
@@ -143,18 +164,15 @@ def update_wandb_config(
         group.append('debug')
 
     cfg.wandb.setup.update({'group': '/'.join(group)})
-    if id is not None:
-        cfg.wandb.setup.update({'id': id})
-
-    if wbdir is not None:
-        cfg.wandb.setup.update({'dir': Path(wbdir).as_posix()})
+    if tag is not None:
+        cfg.wandb.setup.update({'id': tag})
 
     cfg.wandb.setup.update({
         'tags': [
             f'{cfg.framework}',
             f'nlf-{cfg.dynamics.nleapfrog}',
             f'beta_final-{cfg.annealing_schedule.beta_final}',
-            f'{cfg.dynamics.xshape[1]}x{cfg.dynamics.xshape[2]}',
+            f'{cfg.dynamics.latvolume[0]}x{cfg.dynamics.latvolume[1]}',
         ]
     })
 
@@ -179,81 +197,108 @@ def get_summary_writer(
     return writer
 
 
-def get_jobdir(cfg: DictConfig, job_type: str) -> Path:
-    jobdir = Path(cfg.get('outdir', os.getcwd())).joinpath(job_type)
-    jobdir.mkdir(exist_ok=True, parents=True)
-    assert jobdir is not None
-    return jobdir
+# -------------------------------------------------------------
+# TODO: Gather and separate duplicate file I/O related methods
+# -------------------------------------------------------------
 
 
-def eval(
+def evaluate(
         cfg: DictConfig,
         trainer: Trainer,
         job_type: str,
         run: Optional[Any] = None,
+        nchains: Optional[int] = None,
+        eps: Optional[Tensor] = None,
 ) -> dict:
     """Evaluate model (nested as `trainer.model`)"""
-    nchains = cfg.get('nchains', -1)
+    nchains = -1 if nchains is None else nchains
     therm_frac = cfg.get('therm_frac', 0.2)
 
     jobdir = get_jobdir(cfg, job_type=job_type)
     writer = get_summary_writer(cfg, trainer, job_type=job_type)
-    eval_output = trainer.eval(run=run,
-                               writer=writer,
-                               job_type=job_type,
-                               width=cfg.get('width', None))
-    eval_dset = eval_output['history'].get_dataset(therm_frac=therm_frac)
-    if trainer.accelerator.is_local_main_process:
-        _ = analyze_dataset(eval_dset,
-                            outdir=jobdir,
-                            nchains=nchains,
-                            job_type=job_type,
-                            save=True,
-                            title=f'{job_type}: PyTorch')
+    output = trainer.eval(run=run,
+                          writer=writer,
+                          nchains=nchains,
+                          job_type=job_type,
+                          eps=eps)
+    dataset = output['history'].get_dataset(therm_frac=therm_frac)
+    if run is not None:
+        dQint = dataset.data_vars.get('dQint').values
+        drop = int(0.1 * len(dQint))
+        dQint = dQint[drop:]
+        run.summary[f'dQint_{job_type}'] = dQint
+        run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
 
-        if not is_interactive():
-            edir = jobdir.joinpath('logs')
-            edir.mkdir(exist_ok=True, parents=True)
-            log.info(f'Saving {job_type} logs to: {edir.as_posix()}')
-            save_logs(logdir=edir,
-                      run=run,
-                      job_type=job_type,
-                      tables=eval_output['tables'],
-                      summaries=eval_output['summaries'])
+    _ = analyze_dataset(dataset,
+                        run=run,
+                        save=True,
+                        outdir=jobdir,
+                        nchains=nchains,
+                        job_type=job_type,
+                        title=f'{job_type}: PyTorch')
+
+    if not is_interactive():
+        edir = jobdir.joinpath('logs')
+        edir.mkdir(exist_ok=True, parents=True)
+        log.info(f'Saving {job_type} logs to: {edir.as_posix()}')
+        save_logs(run=run,
+                  logdir=edir,
+                  job_type=job_type,
+                  tables=output['tables'],
+                  summaries=output['summaries'])
 
     if writer is not None:
         writer.close()
 
-    return eval_output
+    return output
 
 
 def train(
         cfg: DictConfig,
         trainer: Trainer,
         run: Optional[Any] = None,
+        nchains: Optional[int] = None,
 ) -> dict:
+    nchains = 16 if nchains is None else nchains
     jobdir = get_jobdir(cfg, job_type='train')
     writer = get_summary_writer(cfg, trainer, job_type='train')
-    width = int(cfg.get('width', os.environ.get('COLUMNS', 150)))
-    output = trainer.train(run=run,
-                           writer=writer,
-                           train_dir=jobdir,
-                           width=width)
+
+    # ------------------------------------------
+    # NOTE: cfg.profile will be False by default
+    # ------------------------------------------
+    if cfg.profile:
+        from torch.profiler import profile, ProfilerActivity  # type: ignore
+        activities = [ProfilerActivity.CUDA, ProfilerActivity.CPU]
+        with profile(record_shapes=True, activities=activities) as prof:
+            assert cfg.steps.nepoch * cfg.steps.nera < 100
+            output = trainer.train(run=run, writer=writer, train_dir=jobdir)
+
+        log.info(prof.key_averages().table(sort_by="cpu_time_total"))
+        tracefile = Path(os.getcwd()).joinpath('trace.json').as_posix()
+        prof.export_chrome_trace(tracefile)
+
+    else:
+        output = trainer.train(run=run,
+                               writer=writer,
+                               train_dir=jobdir)
 
     if trainer.accelerator.is_local_main_process:
         dset = output['history'].get_dataset()
+        jobdir.mkdir(exist_ok=True, parents=True)
         _ = analyze_dataset(dset,
+                            run=run,
+                            save=True,
                             outdir=jobdir,
+                            nchains=nchains,
                             job_type='train',
-                            title='Training: PyTorch',
-                            nchains=cfg.get('nchains', -1))
+                            title='Training: PyTorch')
 
         if not is_interactive():
             tdir = jobdir.joinpath('logs')
             tdir.mkdir(exist_ok=True, parents=True)
             log.info(f'Saving train logs to: {tdir.as_posix()}')
-            save_logs(logdir=tdir,
-                      run=run,
+            save_logs(run=run,
+                      logdir=tdir,
                       job_type='train',
                       tables=output['tables'],
                       summaries=output['summaries'])
@@ -270,48 +315,65 @@ def main(cfg: DictConfig) -> dict:
     objs = setup(cfg)
     trainer = objs['trainer']  # type: Trainer
 
-    nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
-    env_width = int(os.environ.get('COLUMNS', 150))
-    width = max((150, env_width))
-    cfg.update({'width': width, 'nchains': nchains})
+    nchains = max((1, cfg.dynamics.nchains // 4))
+    cfg.update({'nchains': nchains})
 
-    id = generate_id() if trainer.accelerator.is_local_main_process else None
+    tag = generate_id() if trainer.accelerator.is_local_main_process else None
     outdir = Path(cfg.get('outdir', os.getcwd()))
     debug = any([s in outdir.as_posix() for s in ['debug', 'test']])
-    cfg = update_wandb_config(cfg, id=id, debug=debug)
+    cfg = update_wandb_config(cfg, tag=tag, debug=debug)
 
     run = None
     if trainer.accelerator.is_local_main_process:
         run = wandb.init(**cfg.wandb.setup)
-        run.log_code(HERE)
-        run.config.update(OmegaConf.to_container(cfg,
-                                                 resolve=True,
-                                                 throw_on_missing=True))
+        wandb.define_metric('dQint_eval', summary='mean')
+        assert run is not None and run is wandb.run
+        run.log_code(HERE.as_posix())
+        cfg_dict = OmegaConf.to_container(cfg,
+                                          resolve=True,
+                                          throw_on_missing=True)
+        run.config.update(cfg_dict)
+        # run.config.update({'outdir': outdir.as_posix()})
+        utils.print_config(cfg, resolve=True)
 
     # ----------------------------------------------------------
     # 1. Train model
     # 2. Evaluate trained model
     # 3. Run generic HMC as baseline w/ same trajectory length
     # ----------------------------------------------------------
-    outputs['train'] = train(cfg, trainer, run=run)     # [1.]
-    if trainer.accelerator.is_local_main_process:
-        if run is not None:
-            run.config.update({'eval_beta': cfg.annealing_schedule.beta_final})
+    should_train = (cfg.steps.nera > 0 and cfg.steps.nepoch > 0)
+    if should_train:
+        outputs['train'] = train(cfg, trainer, run=run)  # [1.]
 
-        for job in ['eval', 'hmc']:                     # [2.], [3.]
-            log.warning(f'Running {job}')
-            outputs[job] = eval(cfg=cfg,
-                                run=run,
-                                job_type=job,
-                                trainer=trainer)
+    if trainer.accelerator.is_local_main_process:
+        # batch_size = cfg.dynamics.xshape[0]
+        nchains = max((4, cfg.dynamics.nchains // 8))
+        if should_train and cfg.steps.test > 0:
+            log.warning('Evaluating trained model')
+            outputs['eval'] = evaluate(cfg,
+                                       run=run,
+                                       job_type='eval',
+                                       nchains=nchains,
+                                       trainer=trainer)
+        if cfg.steps.test > 0:
+            log.warning('Running generic HMC')
+            eps = torch.tensor(0.05)
+            outputs['hmc'] = evaluate(cfg=cfg,
+                                      run=run,
+                                      eps=eps,
+                                      job_type='hmc',
+                                      nchains=nchains,
+                                      trainer=trainer)
+    if run is not None:
+        run.finish()
 
     return outputs
 
 
 @hydra.main(config_path='./conf', config_name='config')
 def launch(cfg: DictConfig) -> None:
-    log.info(f'Working directory: {os.getcwd()}')
-    log.info(OmegaConf.to_yaml(cfg, resolve=True))
+    # log.info(f'Working directory: {os.getcwd()}')
+    # log.info(OmegaConf.to_yaml(cfg, resolve=True))
     _ = main(cfg)
 
 

@@ -1,0 +1,34 @@
+program: main.py
+method: bayes
+metric:
+  name: dQint_eval.mean
+  goal: maximize
+parameters:
+  net_weights.x.s:
+    values: [0.0, 1.0]
+  network.units:
+    values:
+      - [64, 64, 64]
+      - [32, 16, 16, 32]
+      - [16, 16, 16, 16, 16]
+  network.dropout_prob:
+    values: [0.0, 0.10, 0.5]
+  network.use_batch_norm:
+    values: [true, false]
+  network.activation_fn:
+    values: ["relu", "leaky_relu", "swish"]
+  annealing_schedule.beta_init:
+    values: [1.0, 2.0, 3.0, 4.0]
+
+command:
+  - ${env}
+  - ${interpreter}
+  - ${program}
+  - dynamics.xshape=[1024,16,16,2]
+  - steps.nera=10
+  - steps.nepoch=5000
+  - steps.test=1000
+  - width=${env:COLUMNS}
+  - framework=tensorflow
+  - annealing_schedule.beta_final=4.0
+  - ${args_no_hyphens}

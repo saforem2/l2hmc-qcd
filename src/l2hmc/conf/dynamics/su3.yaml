@@ -1,0 +1,15 @@
+_target_: l2hmc.configs.DynamicsConfig
+
+group: 'SU3'
+nchains: 4
+latvolume: [4, 4, 4, 4]
+# xshape: [256, 16, 16, 2]
+# xshape: [2, 4, 4, 4, 4]
+eps: 0.01
+nleapfrog: 8
+eps_fixed: false
+use_ncp: true
+use_split_xnets: true
+use_separate_networks: true
+merge_directions: true
+verbose: true

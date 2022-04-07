@@ -12,6 +12,7 @@ import os
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from omegaconf import DictConfig, OmegaConf
 
 from hydra.core.config_store import ConfigStore
 import numpy as np
@@ -25,11 +26,29 @@ HERE = Path(os.path.abspath(__file__)).parent
 PROJECT_DIR = HERE.parent.parent
 CONF_DIR = HERE.joinpath('conf')
 LOGS_DIR = PROJECT_DIR.joinpath('logs')
+OUTPUTS_DIR = HERE.joinpath('outputs')
+
+CONF_DIR.mkdir(exist_ok=True, parents=True)
+LOGS_DIR.mkdir(exist_ok=True, parents=True)
+OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
+OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 
 
 State = namedtuple('State', ['x', 'v', 'beta'])
 
 MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
+
+def add_to_outdirs_file(outdir: os.PathLike):
+    with open(OUTDIRS_FILE, 'a') as f:
+        f.write(Path(outdir).resolve().as_posix())
+
+
+def get_jobdir(cfg: DictConfig, job_type: str) -> Path:
+    jobdir = Path(cfg.get('outdir', os.getcwd())).joinpath(job_type)
+    jobdir.mkdir(exist_ok=True, parents=True)
+    assert jobdir is not None
+    add_to_outdirs_file(jobdir)
+    return jobdir
 
 
 def list_to_str(x: list) -> str:
@@ -102,7 +121,7 @@ class U1Config(BaseConfig):
         self.xshape = self.dynamics.xshape
         xdim = self.dynamics.xdim
         self.input_spec = InputSpec(
-            xshape=self.dynamics.xshape,
+            xshape=self.dynamics.xshape,  # type:ignore
             xnet={'x': [xdim, int(2)], 'v': [xdim, ]},
             vnet={'x': [xdim, ], 'v': [xdim, ]}
         )
@@ -164,6 +183,7 @@ class LearningRateConfig(BaseConfig):
     min_lr: float = 1e-6
     factor: float = 0.98
     min_delta: float = 1e-4
+    clip_norm: float = 2.0
     # decay_steps: int = -1
     # decay_rate: float = 1.0
     # warmup_steps: int = 100
@@ -249,7 +269,10 @@ class NetworkConfig(BaseConfig):
 
 @dataclass
 class DynamicsConfig(BaseConfig):
-    xshape: List[int]
+    nchains: int
+    group: str
+    latvolume: List[int]
+    # xshape: List[int]
     nleapfrog: int
     eps: float = 0.01
     use_ncp: bool = True
@@ -260,9 +283,28 @@ class DynamicsConfig(BaseConfig):
     merge_directions: bool = False
 
     def __post_init__(self):
-        assert len(self.xshape) == 4
-        self.nchains, self.nt, self.nx, self.dim = self.xshape
-        self.xdim = int(np.cumprod(self.xshape[1:])[-1])
+        if self.group.upper() == 'U1':
+            self.dim = 2
+            assert len(self.latvolume) == 2
+            self.nt, self.nx = self.latvolume
+            self.xshape = (self.nchains, self.dim, *self.latvolume)
+            assert len(self.xshape) == 4
+            self.xdim = int(np.cumprod(self.xshape[1:])[-1])
+        elif self.group.upper() == 'SU3':
+            self.dim = 4
+            self.link_shape = (3, 3)
+            assert len(self.latvolume) == 4
+            self.nt, self.nt, self.ny, self.nz = self.latvolume
+            self.xshape = (
+                self.nchains,
+                self.dim,
+                *self.latvolume,
+                *self.link_shape
+            )
+            assert len(self.xshape) == 8
+            self.xdim = int(np.cumprod(self.xshape[1:])[-1])
+        else:
+            raise ValueError('Expected `group` to be one of `"U1", "SU3"`')
 
 
 # @dataclass

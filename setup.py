@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+# -*- encoding: utf-8 -*-
 """
 A setuptools based setup module.
 
@@ -14,17 +16,22 @@ import re
 import os
 from glob import glob
 
+from setuptools import find_packages
+# from setuptools import setup
+
 here = pathlib.Path(__file__).parent.resolve()
 
 # Get the long description from the README file
 long_description = (here / 'README.md').read_text(encoding='utf-8')
 
-# def read(*names, **kwargs):
-#     with io.open(
-#         join(dirname(__file__), *names),
-#         encoding=kwargs.get('encoding', 'utf8')
-#     ) as fh:
-#         return fh.read()
+
+def read(*names, **kwargs):
+    with io.open(
+            os.path.join(os.path.dirname(__file__), *names),
+            encoding=kwargs.get('encoding', 'utf8')
+    ) as fh:
+        return fh.read()
+
 
 # Arguments marked as "Required" below must be included for upload to PyPI.
 # Fields marked as "Optional" may be commented out.
@@ -50,12 +57,12 @@ setuptools.setup(
     # For a discussion on single-sourcing the version across setup.py and the
     # project code, see
     # https://packaging.python.org/guides/single-sourcing-package-version/
-    version='1.0.0',  # Required
+    version='0.3.0',  # Required
 
     # This is a one-line description or tagline of what your project does. This
     # corresponds to the "Summary" metadata field:
     # https://packaging.python.org/specifications/core-metadata/#summary
-    description='Application of the L2HMC algorithm to Lattice QCD',  # Optional
+    description='Application of the L2HMC algorithm to Lattice QCD',
 
     # This is an optional longer description of your project that represents
     # the body of text which users will see when they visit PyPI.
@@ -114,9 +121,9 @@ setuptools.setup(
         # that you indicate you support Python 3. These classifiers are *not*
         # checked by 'pip install'. See instead 'python_requires' below.
         'Programming Language :: Python :: 3',
-        # 'Programming Language :: Python :: 3.9',
-        # 'Programming Language :: Python :: 3.8',
-        # "Programming Language :: Python :: 3.10",
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.8',
+        "Programming Language :: Python :: 3.10",
         # 'Programming Language :: Python :: 3 :: Only',
     ],
 
@@ -141,7 +148,15 @@ setuptools.setup(
     #
     #   py_modules=["my_module"],
     #
-    packages=setuptools.find_packages(where='src'),  # Required
+    packages=find_packages('src'),  # Required
+
+    py_modules=[
+        os.path.splitext(os.path.basename(path))[0]
+        for path in glob('src/*.py')
+    ],
+
+    include_package_data=True,
+    zip_safe=False,
 
     # Specify which Python versions you support. In contrast to the
     # 'Programming Language' classifiers above, 'pip install' will check this
@@ -210,5 +225,11 @@ setuptools.setup(
     #     'Funding': 'https://donate.pypi.org',
     #     'Say Thanks!': 'http://saythanks.io/to/example',
     #     'Source': 'https://github.com/pypa/sampleproject/',
-    # },
+    # },python-nameless
+    project_urls={
+        'Changelog': (
+            'https://github.com/saforem2/l2hmc-qcd/blob/master/CHANGELOG.rst'
+        ),
+        'Issue Tracker': 'https://github.com/saforem2/l2hmc-qcd/issues',
+    },
 )
