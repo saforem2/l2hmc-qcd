@@ -1,5 +1,5 @@
-program: main.py
 method: bayes
+program: main.py
 metric:
   name: dQint_eval.mean
   goal: maximize
@@ -24,7 +24,7 @@ command:
   - ${env}
   - ${interpreter}
   - ${program}
-  - dynamics.xshape=[1024,16,16,2]
+  - dynamics.xshape=[1024,32,32,2]
   - steps.nera=10
   - steps.nepoch=5000
   - steps.test=1000
