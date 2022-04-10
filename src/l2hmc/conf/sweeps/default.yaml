@@ -20,15 +20,19 @@ parameters:
   annealing_schedule.beta_init:
     values: [1.0, 2.0, 3.0, 4.0]
 
+
 command:
   - ${env}
   - ${interpreter}
   - ${program}
-  - dynamics.xshape=[1024,32,32,2]
-  - steps.nera=10
-  - steps.nepoch=5000
-  - steps.test=1000
   - width=${env:COLUMNS}
   - framework=tensorflow
+  - steps.nera=10
+  - steps.nepoch=5000
+  - steps.test=2500
+  - dynamics.group=U1
+  - dynamics.nchains=1024
+  - dynamics.latvolume=[16, 16]
+  - dynamics.nleapfrog=8
   - annealing_schedule.beta_final=4.0
   - ${args_no_hyphens}
