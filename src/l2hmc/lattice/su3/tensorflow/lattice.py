@@ -15,8 +15,6 @@ from l2hmc.group.tensorflow import group as g
 log = logging.getLogger(__name__)
 # from l2hmc.lattice.su3.lattice.
 
-# from lgt.group.tensorflow import group as g
-# from lgt.lattice.su3.lattice import BaseLatticeSU3
 # from typing import Generator
 # from l2hmc.lattice.generators import generate_SU3
 
@@ -41,7 +39,7 @@ Buffer: Tuple[int, int, int, int, int, int]    # b, t, x, y, z, dim
 
 
 # ---------------------------------------------------------------
-# TODO: 
+# TODO:
 # - Finish implementation of BaseLatticeSU3
 # - Write tensorflow and torch implementations as subclasses
 #
@@ -95,6 +93,7 @@ class LatticeSU3:
         return self.g.mul(link, staple)
 
     def _plaquette(self, x: Tensor, u: int, v: int):
+        """U[μ](x) * U[ν](x+μ) * U†[μ](x+ν) * U†[ν](x)"""
         xuv = self.g.mul(x[:, u], tf.roll(x[:, v], shift=-1, axis=u + 1))
         xvu = self.g.mul(x[:, v], tf.roll(x[:, u], shift=-1, axis=v + 1))
         return self.g.trace(self.g.mul(xuv, xvu, adjoint_b=True))
@@ -143,7 +142,6 @@ class LatticeSU3:
 
     def _plaquettes(self, x: Tensor) -> Tensor:
         ps, _ = self._wilson_loops(x)
-        # psum = tf.constant(0.0)
         psum = tf.zeros_like(tf.math.real(ps[0]))  # type: ignore
         for p in ps:  # NOTE: len(ps) == 6
             psum += tf.reduce_sum(tf.math.real(p), axis=range(1, len(p.shape)))
@@ -159,10 +157,10 @@ class LatticeSU3:
         return psum / (6 * 3 * self.volume)
 
     def _int_charges(self, wloops: Tensor) -> Tensor:
+        # TODO: IMPLEMENT
         return tf.zeros_like(tf.math.imag(wloops[0]))
 
     def _sin_charges(self, wloops: Tensor) -> Tensor:
-        # qsum = tf.constant(0.0)
         qsum = tf.zeros_like(tf.math.imag(wloops[0]))  # type:ignore
         for p in wloops:
             qsum += tf.reduce_sum(tf.math.imag(p), axis=range(1, len(p.shape)))
@@ -229,8 +227,9 @@ class LatticeSU3:
         # charges = self.charges(wloops=wloops)
         plaqs = self.plaqs(wloops)
         qsin = self._sin_charges(wloops)
+        qint = tf.zeros_like(qsin)
         # TODO: FIX ME
-        metrics = {'plaqs': plaqs,  'sinQ': qsin}
+        metrics = {'plaqs': plaqs,  'sinQ': qsin, 'intQ': qint}
         # qsin = self._sin_charges(wloops=ps)
         # if beta is not None:
         #     pexact = plaq_exact(beta) * tf.ones_like(plaqs)
