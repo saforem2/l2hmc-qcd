@@ -55,71 +55,6 @@ def load_from_ckpt(
     pass
 
 
-def setup(cfg: DictConfig, c1: float = 0.) -> dict:
-    steps = instantiate(cfg.steps)
-    loss_cfg = instantiate(cfg.loss)
-    network_cfg = instantiate(cfg.network)
-    lr_cfg = instantiate(cfg.learning_rate)
-    dynamics_cfg = instantiate(cfg.dynamics)
-    net_weights = instantiate(cfg.net_weights)
-    schedule = instantiate(cfg.annealing_schedule)
-    schedule.setup(steps)
-    # clipnorm = cfg.get('clipnorm', 10.0)
-
-    try:
-        conv_cfg = instantiate(cfg.get('conv', None))
-    except TypeError:
-        conv_cfg = None
-
-    lattice = None
-    xdim = dynamics_cfg.xdim
-    group = dynamics_cfg.group
-    xshape = dynamics_cfg.xshape
-    latvolume = dynamics_cfg.latvolume
-    log.warning(f'xdim: {dynamics_cfg.xdim}')
-    log.warning(f'group: {dynamics_cfg.group}')
-    log.warning(f'xshape: {dynamics_cfg.xshape}')
-    log.warning(f'latvolume: {dynamics_cfg.latvolume}')
-    if group == 'U1':
-        lattice = LatticeU1(dynamics_cfg.nchains, tuple(latvolume))
-    elif group == 'SU3':
-        lattice = LatticeSU3(dynamics_cfg.nchains, tuple(latvolume), c1=c1)
-    else:
-        log.info(dynamics_cfg)
-        raise ValueError('Unexpected value encountered in `dynamics.group`')
-
-    assert lattice is not None
-    input_spec = InputSpec(xshape=xshape,
-                           vnet={'v': [xdim, ], 'x': [xdim, ]},
-                           xnet={'v': [xdim, ], 'x': [xdim, 2]})
-    net_factory = NetworkFactory(input_spec=input_spec,
-                                 net_weights=net_weights,
-                                 network_config=network_cfg,
-                                 conv_config=conv_cfg)
-    dynamics = Dynamics(config=dynamics_cfg,
-                        potential_fn=lattice.action,
-                        network_factory=net_factory)
-    loss_fn = LatticeLoss(lattice=lattice, loss_config=loss_cfg)
-    optimizer = tf.keras.optimizers.Adam(cfg.learning_rate.lr_init)
-    trainer = Trainer(steps=steps,
-                      rank=RANK,
-                      loss_fn=loss_fn,
-                      lr_config=lr_cfg,
-                      schedule=schedule,
-                      dynamics=dynamics,
-                      optimizer=optimizer,
-                      aux_weight=loss_cfg.aux_weight)
-    return {
-        'lattice': lattice,
-        'loss_fn': loss_fn,
-        'schedule': schedule,
-        'dynamics': dynamics,
-        'trainer': trainer,
-        'optimizer': optimizer,
-        'rank': RANK,
-    }
-
-
 def update_wandb_config(
         cfg: DictConfig,
         tag: Optional[str] = None,
@@ -147,6 +82,7 @@ def update_wandb_config(
             f'nlf-{cfg.dynamics.nleapfrog}',
             f'beta_final-{cfg.annealing_schedule.beta_final}',
             f'{cfg.dynamics.latvolume[0]}x{cfg.dynamics.latvolume[1]}',
+            f'{cfg.dynamics.group}'
         ]
     })
 
@@ -262,6 +198,71 @@ def train(
     return output
 
 
+def setup(cfg: DictConfig, c1: float = 0.) -> dict:
+    steps = instantiate(cfg.steps)
+    loss_cfg = instantiate(cfg.loss)
+    network_cfg = instantiate(cfg.network)
+    lr_cfg = instantiate(cfg.learning_rate)
+    dynamics_cfg = instantiate(cfg.dynamics)
+    net_weights = instantiate(cfg.net_weights)
+    schedule = instantiate(cfg.annealing_schedule)
+    schedule.setup(steps)
+    # clipnorm = cfg.get('clipnorm', 10.0)
+
+    try:
+        conv_cfg = instantiate(cfg.get('conv', None))
+    except TypeError:
+        conv_cfg = None
+
+    lattice = None
+    xdim = dynamics_cfg.xdim
+    group = dynamics_cfg.group
+    xshape = dynamics_cfg.xshape
+    latvolume = dynamics_cfg.latvolume
+    log.warning(f'xdim: {dynamics_cfg.xdim}')
+    log.warning(f'group: {dynamics_cfg.group}')
+    log.warning(f'xshape: {dynamics_cfg.xshape}')
+    log.warning(f'latvolume: {dynamics_cfg.latvolume}')
+    if group == 'U1':
+        lattice = LatticeU1(dynamics_cfg.nchains, tuple(latvolume))
+    elif group == 'SU3':
+        lattice = LatticeSU3(dynamics_cfg.nchains, tuple(latvolume), c1=c1)
+    else:
+        log.info(dynamics_cfg)
+        raise ValueError('Unexpected value encountered in `dynamics.group`')
+
+    assert lattice is not None
+    input_spec = InputSpec(xshape=xshape,
+                           vnet={'v': [xdim, ], 'x': [xdim, ]},
+                           xnet={'v': [xdim, ], 'x': [xdim, 2]})
+    net_factory = NetworkFactory(input_spec=input_spec,
+                                 net_weights=net_weights,
+                                 network_config=network_cfg,
+                                 conv_config=conv_cfg)
+    dynamics = Dynamics(config=dynamics_cfg,
+                        potential_fn=lattice.action,
+                        network_factory=net_factory)
+    loss_fn = LatticeLoss(lattice=lattice, loss_config=loss_cfg)
+    optimizer = tf.keras.optimizers.Adam(cfg.learning_rate.lr_init)
+    trainer = Trainer(steps=steps,
+                      rank=RANK,
+                      loss_fn=loss_fn,
+                      lr_config=lr_cfg,
+                      schedule=schedule,
+                      dynamics=dynamics,
+                      optimizer=optimizer,
+                      aux_weight=loss_cfg.aux_weight)
+    return {
+        'lattice': lattice,
+        'loss_fn': loss_fn,
+        'schedule': schedule,
+        'dynamics': dynamics,
+        'trainer': trainer,
+        'optimizer': optimizer,
+        'rank': RANK,
+    }
+
+
 def main(cfg: DictConfig) -> dict:
     outputs = {}
     objs = setup(cfg)
@@ -278,6 +279,13 @@ def main(cfg: DictConfig) -> dict:
     run = None
     if RANK == 0:
         run = wandb.init(**cfg.wandb.setup)
+        # run.watch(
+        #     objs['dynamics'],
+        #     log="all",
+        #     criterion=objs['loss_fn'],
+        #     log_graph=True,
+        #     log_freq=objs['steps'].log,
+        # )
         wandb.define_metric('dQint_eval', summary='mean')
         assert run is not None and run is wandb.run
         run.log_code(HERE.as_posix())
