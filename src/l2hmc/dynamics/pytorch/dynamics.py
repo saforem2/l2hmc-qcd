@@ -278,8 +278,8 @@ class Dynamics(nn.Module):
         bwd = self.generate_proposal(inputs, forward=False)
 
         mf_, mb_ = self._get_direction_masks(batch_size=x.shape[0])
-        mf = mf_.unsqueeze(-1)  # mf = mf_[:, None]
-        mb = mb_.unsqueeze(-1)  # mb = mb_[:, None]
+        mf = mf_.unsqueeze(-1).to(x.device)  # mf = mf_[:, None]
+        mb = mb_.unsqueeze(-1).to(x.device)  # mb = mb_[:, None]
 
         v_init = mf * fwd['init'].v + mb * bwd['init'].v
 
@@ -378,7 +378,7 @@ class Dynamics(nn.Module):
             self,
             state: State,
             logdet: Tensor,
-            step: int = None
+            step: Optional[int] = None
     ) -> dict:
         energy = self.hamiltonian(state)
         logprob = energy - logdet
@@ -535,7 +535,7 @@ class Dynamics(nn.Module):
     @staticmethod
     def _get_direction_masks(batch_size: int) -> tuple[Tensor, Tensor]:
         """Returns (forward_mask, backward_mask)."""
-        fwd = (torch.rand(batch_size).to(px.device) > 0.5).to(torch.float)
+        fwd = (torch.rand(batch_size) > 0.5).to(torch.float)
         bwd = torch.ones_like(fwd) - fwd
 
         return fwd, bwd
@@ -772,5 +772,6 @@ class Dynamics(nn.Module):
         id = torch.ones(x.shape[0], device=x.device)
         dsdx, = torch.autograd.grad(s, x,
                                     create_graph=create_graph,
+                                    retain_graph=True,
                                     grad_outputs=id)
         return dsdx
