@@ -7,7 +7,7 @@ from __future__ import absolute_import, annotations, division, print_function
 import datetime
 import os
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Any, Tuple, Optional
 import warnings
 
 import matplotlib.pyplot as plt
@@ -87,12 +87,12 @@ def savefig(fig: plt.Figure, outfile: os.PathLike):
 
 def plot_scalar(
         y: np.ndarray,
-        x: np.ndarray = None,
-        label: str = None,
-        xlabel: str = None,
-        ylabel: str = None,
-        fig_axes: FigAxes = None,
-        outfile: os.PathLike = None,
+        x: Optional[np.ndarray] = None,
+        label: Optional[str] = None,
+        xlabel: Optional[str] = None,
+        ylabel: Optional[str] = None,
+        fig_axes: Optional[FigAxes] = None,
+        outfile: Optional[os.PathLike] = None,
         **kwargs,
 ) -> FigAxes:
     assert len(y.shape) == 1
@@ -120,18 +120,19 @@ def plot_scalar(
 
 def plot_chains(
         y: np.ndarray,
-        x: np.ndarray = None,
-        num_chains: int = 10,
-        fig_axes: FigAxes = None,
-        label: str = None,
-        xlabel: str = None,
-        ylabel: str = None,
-        outfile: os.PathLike = None,
+        x: Optional[np.ndarray] = None,
+        num_chains: Optional[int] = 8,
+        fig_axes: Optional[FigAxes] = None,
+        label: Optional[str] = None,
+        xlabel: Optional[str] = None,
+        ylabel: Optional[str] = None,
+        outfile: Optional[os.PathLike] = None,
         **kwargs,
 ) -> FigAxes:
     assert len(y.shape) == 2
     # y.shape = [ndraws, nchains]
-    nchains = min((num_chains, y.shape[1]))
+    num_chains = 8 if num_chains is None else num_chains
+    nchains = min(num_chains, y.shape[1])
     if x is None:
         x = np.arange(y.shape[0])
 
@@ -165,11 +166,11 @@ def plot_chains(
 
 def plot_leapfrogs(
         y: np.ndarray,
-        x: np.ndarray = None,
-        fig_axes: FigAxes = None,
-        xlabel: str = None,
-        ylabel: str = None,
-        outfile: os.PathLike = None,
+        x: Optional[np.ndarray] = None,
+        fig_axes: Optional[FigAxes] = None,
+        xlabel: Optional[str] = None,
+        ylabel: Optional[str] = None,
+        outfile: Optional[os.PathLike] = None,
 ) -> FigAxes:
     assert len(y.shape) == 3
 
@@ -204,16 +205,17 @@ def plot_leapfrogs(
 
 def plot_combined(
         val: xr.DataArray,
-        key: str = None,
-        num_chains: int = 10,
-        subplots_kwargs: dict[str, Any] = None,
-        plot_kwargs: dict[str, Any] = None,
+        key: Optional[str] = None,
+        num_chains: Optional[int] = 10,
+        subplots_kwargs: Optional[dict[str, Any]] = None,
+        plot_kwargs: Optional[dict[str, Any]] = None,
 ) -> tuple:
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
     figsize = subplots_kwargs.get('figsize', set_size())
     subplots_kwargs.update({'figsize': figsize})
     subfigs = None
+    num_chains = 10 if num_chains is None else num_chains
 
     _ = subplots_kwargs.pop('constrained_layout', True)
     figsize = (3 * figsize[0], 1.5 * figsize[1])
@@ -240,7 +242,7 @@ def plot_combined(
     #                     robust=True, add_colorbar=True)
     _ = xplt.imshow(val, 'draw', 'chain', ax=ax0,
                     robust=True, add_colorbar=True)
-    nchains = min((num_chains, len(val.coords['chain'])))
+    nchains = min(num_chains, len(val.coords['chain']))
     label = f'{key}_avg'
     # label = r'$\langle$' + f'{key} ' + r'$\rangle$'
     steps = np.arange(len(val.coords['draw']))
@@ -268,14 +270,14 @@ def plot_combined(
 
 def plot_dataArray(
         val: xr.DataArray,
-        key: str = None,
-        therm_frac: float = 0.,
-        num_chains: int = 10,
-        title: str = None,
-        outdir: str = None,
-        subplots_kwargs: dict[str, Any] = None,
-        plot_kwargs: dict[str, Any] = None,
-        line_labels: bool = True,
+        key: Optional[str] = None,
+        therm_frac: Optional[float] = 0.,
+        num_chains: Optional[int] = 10,
+        title: Optional[str] = None,
+        outdir: Optional[str] = None,
+        subplots_kwargs: Optional[dict[str, Any]] = None,
+        plot_kwargs: Optional[dict[str, Any]] = None,
+        line_labels: Optional[bool] = True,
 ) -> tuple:
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
@@ -286,11 +288,10 @@ def plot_dataArray(
     if key == 'dt':
         therm_frac = 0.2
 
-    # tmp = val[0]
     arr = val.values  # shape: [nchains, ndraws]
     steps = np.arange(len(val.coords['draw']))
 
-    if therm_frac > 0:
+    if therm_frac is not None and therm_frac > 0.0:
         drop = int(therm_frac * arr.shape[0])
         arr = arr[drop:]
         steps = steps[drop:]
@@ -355,14 +356,16 @@ def plot_dataArray(
 
 def plot_array(
     val: list | np.ndarray,
-    key: str = None,
-    xlabel: str = None,
-    title: str = None,
-    num_chains: int = 0,
+    key: Optional[str] = None,
+    xlabel: Optional[str] = None,
+    title: Optional[str] = None,
+    num_chains: Optional[int] = 10,
     **kwargs,
 ) -> tuple[plt.Figure, plt.Axes]:
     fig, ax = plt.subplots(constrained_layout=True)
     arr = np.array(val)
+    if num_chains is None:
+        num_chains = 10
 
     # arr.shape = [ndraws, nleapfrog, nchains]
     if len(arr.shape) == 3:
@@ -412,9 +415,9 @@ def plot_array(
 
 
 def set_size(
-        width: float = None,
-        fraction: float = 1,
-        subplots: tuple = (1, 1)
+        width: Optional[str] = None,
+        fraction: Optional[float] = None,
+        subplots: Optional[tuple] = None,
 ) -> tuple[float, float]:
     """Set figure dimensions to avoid scaling in LaTeX."""
     width_pt = 345.0
@@ -422,6 +425,9 @@ def set_size(
         width_pt = 426.79135
     elif width == 'beamer':
         width_pt = 307.28987
+
+    fraction = 1.0 if fraction is None else fraction
+    subplots = (1, 1) if subplots is None else subplots
 
     # Width of figure (in pts)
     fig_width_pt = width_pt * fraction
@@ -440,19 +446,21 @@ def set_size(
 
 def plot_metric(
         val: np.ndarray | xr.DataArray,
-        key: str = None,
-        therm_frac: float = 0.,
-        num_chains: int = 0,
-        title: str = None,
-        outdir: os.PathLike = None,
-        subplots_kwargs: dict[str, Any] = None,
-        plot_kwargs: dict[str, Any] = None,
-        ext: str = 'png',
+        key: Optional[str] = None,
+        therm_frac: Optional[float] = 0.,
+        num_chains: Optional[int] = 0,
+        title: Optional[str] = None,
+        outdir: Optional[os.PathLike] = None,
+        subplots_kwargs: Optional[dict[str, Any]] = None,
+        plot_kwargs: Optional[dict[str, Any]] = None,
+        ext: Optional[str] = 'png',
 ) -> tuple:
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
     figsize = subplots_kwargs.get('figsize', set_size())
     subplots_kwargs.update({'figsize': figsize})
+    therm_frac = 0.0 if therm_frac is None else therm_frac
+    num_chains = 16 if num_chains is None else num_chains
 
     # tmp = val[0]
     arr = np.array(val)
@@ -547,11 +555,11 @@ def plot_metric(
 
 def plot_history(
     data: dict[str, np.ndarray],
-    num_chains: int = 0,
-    therm_frac: float = 0.,
-    title: str = None,
-    outdir: os.PathLike = None,
-    plot_kwargs: dict[str, Any] = None,
+    num_chains: Optional[int] = 0,
+    therm_frac: Optional[float] = 0.,
+    title: Optional[str] = None,
+    outdir: Optional[os.PathLike] = None,
+    plot_kwargs: Optional[dict[str, Any]] = None,
 ):
     for key, val in data.items():
         _ = plot_metric(
@@ -567,13 +575,13 @@ def plot_history(
 
 def plot_dataset(
         dataset: xr.Dataset,
-        num_chains: int = 8,
-        therm_frac: float = 0.,
-        title: str = None,
-        outdir: os.PathLike = None,
-        subplots_kwargs: dict[str, Any] = None,
-        plot_kwargs: dict[str, Any] = None,
-        ext: str = 'png',
+        num_chains: Optional[int] = 8,
+        therm_frac: Optional[float] = 0.,
+        title: Optional[str] = None,
+        outdir: Optional[os.PathLike] = None,
+        subplots_kwargs: Optional[dict[str, Any]] = None,
+        plot_kwargs: Optional[dict[str, Any]] = None,
+        ext: Optional[str] = 'png',
 ):
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
@@ -612,9 +620,9 @@ def plot_dataset(
                 # 'location': 'top',
                 # 'orientation': 'horizontal',
             }
-            im = val.plot(ax=ax, cbar_kwargs=cbar_kwargs)
+            im = val.plot(ax=ax, cbar_kwargs=cbar_kwargs)  # type:ignore
             # ax.set_ylim(0, )
-            im.colorbar.set_label(f'{key}')  # , labelpad=1.25)
+            im.colorbar.set_label(f'{key}')                # type:ignore
             sns.despine(subfigs[0], top=True, right=True,
                         left=True, bottom=True)
             if outdir is not None:
@@ -628,11 +636,11 @@ def plot_dataset(
 
 def make_ridgeplots(
         dataset: xr.Dataset,
-        num_chains: int = None,
-        outdir: os.PathLike = None,
-        drop_zeros: bool = False,
-        drop_nans: bool = True,
-        cmap: str = 'viridis_r',
+        num_chains: Optional[int] = None,
+        outdir: Optional[os.PathLike] = None,
+        drop_zeros: Optional[bool] = False,
+        drop_nans: Optional[bool] = True,
+        cmap: Optional[str] = 'viridis_r',
         # default_style: dict = None,
 ):
     """Make ridgeplots."""
@@ -682,7 +690,7 @@ def make_ridgeplots(
 
             # Define and use a simple function to
             # label the plot in axes coords:
-            def label(x, color, label):
+            def label(x, color, label):  # type:ignore #noqa
                 ax = plt.gca()
                 ax.set_ylabel('')
                 ax.set_yticks([])
@@ -723,8 +731,8 @@ def make_ridgeplots(
 
 def plot_plaqs(
         plaqs: np.ndarray,
-        nchains: int = 10,
-        outdir: os.PathLike = None,
+        nchains: Optional[int] = 10,
+        outdir: Optional[os.PathLike] = None,
 ):
     assert len(plaqs.shape) == 2
     ndraws, nchains = plaqs.shape

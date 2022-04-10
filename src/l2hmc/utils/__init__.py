@@ -1,6 +1,9 @@
 import logging
 import warnings
 
+import os
+from pathlib import Path
+import rich
 import rich.syntax
 import rich.tree
 from omegaconf import DictConfig, OmegaConf
@@ -46,24 +49,23 @@ def print_config(
 
     Args:
         config (DictConfig): Configuration composed by Hydra.
-        print_order (Sequence[str], optional): Determines in what order config components are printed.
-        resolve (bool, optional): Whether to resolve reference fields of DictConfig.
+        print_order (Sequence[str], optional): Determines in what order config
+            components are printed.
+        resolve (bool, optional): Whether to resolve reference fields of
+            DictConfig.
     """
 
-    style = "dim"
-    tree = rich.tree.Tree("CONFIG", style=style, guide_style=style)
+    # style = "dim"
+    tree = rich.tree.Tree("CONFIG")  # , style=style, guide_style=style)
 
     quee = []
-
-    # for field in print_order:
-    #     quee.append(field) if field in config else log.info(f"Field '{field}' not found in config")
 
     for field in config:
         if field not in quee:
             quee.append(field)
 
     for field in quee:
-        branch = tree.add(field, style=style, guide_style=style)
+        branch = tree.add(field)  # , style=style, guide_style=style)
 
         config_group = config[field]
         if isinstance(config_group, DictConfig):
@@ -75,6 +77,6 @@ def print_config(
 
     rich.print(tree)
 
-    with open("config_tree.log", "w") as file:
-        rich.print(tree, file=file)
-
+    outfile = Path(os.getcwd()).joinpath('config_tree.log')
+    with outfile.open('w') as f:
+        rich.print(tree, file=f)

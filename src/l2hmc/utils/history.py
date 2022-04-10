@@ -377,6 +377,7 @@ class BaseHistory:
             return xr.DataArray(arr, dims=dims, coords=coords)
 
         else:
+            print(f'arr.shape: {arr.shape}')
             raise ValueError('Invalid shape encountered')
 
     def get_dataset(
