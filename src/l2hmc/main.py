@@ -17,8 +17,9 @@ log = logging.getLogger(__name__)
 
 def train_tensorflow(cfg: DictConfig) -> dict:
     import tensorflow as tf
-    tf.keras.backend.set_floatx('float32')  # or 'float64 for double precision
-    assert tf.keras.backend.floatx() == tf.float32
+    tf.keras.backend.set_floatx(cfg.precision)
+    # tf.keras.backend.set_floatx('float32') # or 'float64 for double precision
+    # assert tf.keras.backend.floatx() == tf.float32
     import horovod.tensorflow as hvd
     hvd.init()
     gpus = tf.config.experimental.list_physical_devices('GPU')
