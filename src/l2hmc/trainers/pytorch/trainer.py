@@ -284,7 +284,7 @@ class Trainer:
                     avgs, summary = self.record_metrics(run=run,
                                                         step=step,
                                                         record=record,
-                                                        writer=writer,
+                                                        # writer=writer,
                                                         metrics=metrics,
                                                         history=history,
                                                         job_type=job_type)
@@ -320,7 +320,7 @@ class Trainer:
         return (
             epoch % self.steps.print == 0
             and self.accelerator.is_local_main_process
-        )
+        )#1971C2
 
     def record_metrics(
             self,
@@ -329,7 +329,7 @@ class Trainer:
             step: Optional[int] = None,
             record: Optional[dict] = None,
             run: Optional[Any] = None,
-            writer: Optional[Any] = None,
+            # writer: Optional[Any] = None,
             history: Optional[BaseHistory] = None,
             model: Optional[Module] = None,
             optimizer: Optional[optim.Optimizer] = None,
@@ -352,15 +352,6 @@ class Trainer:
             avgs = {k: v.mean() for k, v in record.items()}
 
         summary = summarize_dict(avgs)
-        if writer is not None:
-            assert step is not None
-            update_summaries(step=step,
-                             model=model,
-                             writer=writer,
-                             metrics=record,
-                             prefix=job_type,
-                             optimizer=optimizer)
-            writer.flush()
 
         if run is not None:
             dQint = record.get('dQint', None)
@@ -375,8 +366,18 @@ class Trainer:
                 run.log(dQdict, commit=False)
 
             run.log({f'wandb/{job_type}': record}, commit=False)
-            run.log({f'avgs/wandb.{job_type}': avgs})
+            run.log({f'avgs/wandb.{job_type}': avgs}, commit=False)
 
+        # if writer is not None:
+        if step is not None:
+            update_summaries(step=step,
+                             model=model,
+                             # writer=writer,
+                             run=run,
+                             metrics=record,
+                             prefix=job_type,
+                             optimizer=optimizer)
+            # writer.flush()
         return avgs, summary
 
     def profile_step(
@@ -438,7 +439,7 @@ class Trainer:
             metrics: Optional[dict] = None,
             run: Optional[Any] = None,
     ) -> None:
-        dynamics = extract_model_from_parallel(self.dynamics)
+        # dynamics = extract_model_from_parallel(self.dynamics)
         ckpt_dir = Path(train_dir).joinpath('checkpoints')
         ckpt_dir.mkdir(exist_ok=True, parents=True)
         ckpt_file = ckpt_dir.joinpath(f'ckpt-{era}-{epoch}.tar')
@@ -476,11 +477,11 @@ class Trainer:
         self.dynamics.train()
         x = self.draw_x()
         beta = torch.tensor(1.0)
+        metrics = {}
         for _ in range(nsteps):
             x, metrics = self.profile_step((x, beta))
 
         return metrics
-
 
     def train(
             self,
@@ -554,7 +555,7 @@ class Trainer:
                         }
                         avgs, summary = self.record_metrics(run=run,
                                                             step=gstep,
-                                                            writer=writer,
+                                                            # writer=writer,
                                                             record=record,
                                                             metrics=metrics,
                                                             job_type='train',
@@ -575,13 +576,14 @@ class Trainer:
 
             tables[str(era)] = table
             if self.accelerator.is_local_main_process:
-                if writer is not None:
-                    model = extract_model_from_parallel(self.dynamics)
-                    model = model if isinstance(model, Module) else None
-                    update_summaries(step=gstep,
-                                     writer=writer,
-                                     model=self.dynamics,
-                                     optimizer=self.optimizer)
+                # if writer is not None:
+                #     # model = extract_model_from_parallel(self.dynamics)
+                #     # model = model if isinstance(model, Module) else None
+                #     # update_summaries(step=gstep,
+                #     #                  run=run,
+                #     #                  writer=writer,
+                #     #                  model=self.dynamics,
+                #     #                  optimizer=self.optimizer)
 
                 log.info(f'Era {era} took: {time.time() - estart:<5g}s')
                 log.info('\n'.join([
