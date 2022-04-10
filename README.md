@@ -9,6 +9,7 @@
   <br>
 </div>
 
+<!---![](assets/image.svg)--->
 
 <!--- # l2hmc-qcd  [![CodeFactor](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge)](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd)--->
 
