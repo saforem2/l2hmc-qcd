@@ -10,11 +10,21 @@ nchains: ${dynamics.nleapfrog}
 # disable python warnings if they annoy you
 ignore_warnings: True
 
+# seed for random number generators in pytorch, numpy and python.random
+# seed: null
+
+compile: True
+
+# name of the run, should be used along with experiment mode
+name: null
+
+
 defaults:
   - _self_
   - steps: default.yaml
   - dynamics: default.yaml
   - wandb: default.yaml             # Weights & Biases config
+  - logdir: default.yaml
   - loss: default.yaml
   - network: default.yaml
   - conv: none.yaml
@@ -40,33 +50,6 @@ defaults:
   # https://hydra.cc/docs/tutorials/basic/running_your_app/logging/
   # use this to set level of only chosen command line loggers to 'DEBUG'
   # verbose: [src.train, src.utils]
-
-hydra:
-  # launcher:
-  #   # override the number of jobs from joblib
-  #   n_jobs = 10
-  run:
-    # Default output paths for all file logs
-    dir: "outputs/runs/\
-      /${dynamics.latvolume[0]}x${dynamics.latvolume[1]}\
-      /nlf-${dynamics.nleapfrog}\
-      /beta-${annealing_schedule.beta_final}\
-      /merge_directions-${dynamics.merge_directions}\
-      /${framework}\
-      /${now:%Y-%m-%d}\
-      /${now:%H-%M-%S}"
-  sweep:
-    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}"
-    subdir: ${hydra.job.override_dirname}
-    # subdir: ${hydra.job.num}
-
-# seed for random number generators in pytorch, numpy and python.random
-# seed: null
-
-compile: True
-
-# name of the run, should be used along with experiment mode
-name: null
 
 # path to original working directory
 # hydra hijacks working directory by changing it to the new log directory
