@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
+import h5py
 import joblib
 from omegaconf import DictConfig
 import pandas as pd
@@ -59,7 +60,7 @@ def setup_annealing_schedule(cfg: DictConfig) -> AnnealingSchedule:
 def save_dataset(
         dataset: xr.Dataset,
         outdir: os.PathLike,
-        job_type: str = None,
+        job_type: Optional[str] = None,
 ) -> Path:
     fname = 'dataset.nc' if job_type is None else f'{job_type}_dataset.nc'
     datafile = Path(outdir).joinpath(fname)
@@ -71,7 +72,33 @@ def save_dataset(
     return datafile
 
 
-def table_to_dict(table: Table, data: dict = None) -> dict:
+def dataset_to_h5pyfile(hfile: os.PathLike, dataset: xr.Dataset, **kwargs):
+    f = h5py.File(hfile, 'a')
+    for key, val in dataset.data_vars.items():
+        arr = val.values
+        if len(arr) == 0:
+            continue
+        if key in list(f.keys()):
+            shape = (f[key].shape[0] + arr.shape[0])  # type: ignore
+            f[key].resize(shape, axis=0)              # type: ignore
+            f[key][-arr.shape[0]:] = arr              # type: ignore
+        else:
+            maxshape = (None,)
+            if len(arr.shape) > 1:
+                maxshape = (None, *arr.shape[1:])
+            f.create_dataset(key, data=arr, maxshape=maxshape, **kwargs)
+
+    f.close()
+
+
+def dataset_from_h5pyfile(hfile: os.PathLike) -> dict:
+    f = h5py.File(hfile, 'r')
+    data = {key: f[key] for key in list(f.keys())}
+    f.close()
+    return data
+
+
+def table_to_dict(table: Table, data: Optional[dict] = None) -> dict:
     if data is None:
         return {
             column.header: [
@@ -95,9 +122,9 @@ def table_to_dict(table: Table, data: dict = None) -> dict:
 def save_logs(
         tables: dict[str, Table],
         summaries: Optional[list[str]] = None,
-        job_type: str = None,
+        job_type: Optional[str] = None,
         # rows: Optional[dict] = None,  # type:ignore
-        logdir: os.PathLike = None,
+        logdir: Optional[os.PathLike] = None,
         run: Optional[Any] = None,
 ) -> None:
     job_type = 'job' if job_type is None else job_type
@@ -168,10 +195,10 @@ def make_subdirs(basedir: os.PathLike):
 
 def plot_dataset(
         dataset: xr.Dataset,
-        nchains: int = 10,
-        outdir: os.PathLike = None,
-        title: str = None,
-        job_type: str = None,
+        nchains: Optional[int] = 10,
+        outdir: Optional[os.PathLike] = None,
+        title: Optional[str] = None,
+        job_type: Optional[str] = None,
         # run: Any = None,
 ) -> None:
     outdir = Path(outdir) if outdir is not None else Path(os.getcwd())
@@ -209,17 +236,18 @@ def plot_dataset(
     _ = make_ridgeplots(dataset,
                         outdir=outdir,
                         drop_nans=True,
+                        drop_zeros=False,
                         num_chains=nchains)
 
 
 def analyze_dataset(
         dataset: xr.Dataset,
         outdir: os.PathLike,
-        nchains: int = 16,
-        title: str = None,
-        job_type: str = None,
-        save: bool = True,
-        run: Any = None,
+        nchains: Optional[int] = 16,
+        title: Optional[str] = None,
+        job_type: Optional[str] = None,
+        save: Optional[bool] = True,
+        run: Optional[Any] = None,
 ):
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
     dirs = make_subdirs(outdir)
