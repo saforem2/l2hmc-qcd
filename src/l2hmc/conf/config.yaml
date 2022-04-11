@@ -3,7 +3,7 @@ framework: ???
 profile: false
 precision: 'float32'
 width: 235
-eps_hmc: 0.1
+eps_hmc: 0.1181  # determined from sweep
 nchains: ${dynamics.nleapfrog}
 # pretty print config at the start of the run using Rich library
 # print_config: True
