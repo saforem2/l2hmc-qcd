@@ -1,6 +1,5 @@
 """
 trainer.py
-
 Implements methods for training L2HMC sampler
 """
 from __future__ import absolute_import, annotations, division, print_function
@@ -314,6 +313,15 @@ class Trainer:
             avgs = {k: v.mean() for k, v in record.items()}
 
         summary = summarize_dict(avgs)
+        if writer is not None:
+            assert step is not None
+            update_summaries(step=step,
+                             prefix=job_type,
+                             model=model,
+                             metrics=record,
+                             optimizer=optimizer)
+            writer.flush()
+
         if run is not None:
             dQint = record.get('dQint', None)
             if dQint is not None:
@@ -327,17 +335,7 @@ class Trainer:
                 run.log(dQdict, commit=False)
 
             run.log({f'wandb/{job_type}': record}, commit=False)
-            run.log({f'avgs/wandb.{job_type}': avgs}, commit=False)
-
-        if writer is not None:
-            assert step is not None
-            update_summaries(step=step,
-                             run=run,
-                             prefix=job_type,
-                             model=model,
-                             metrics=record,
-                             optimizer=optimizer)
-            writer.flush()
+            run.log({f'avgs/wandb.{job_type}': avgs})
 
         return avgs, summary
 
@@ -412,14 +410,10 @@ class Trainer:
         if writer is not None:
             writer.set_as_default()
 
-        # def eval_fn(z):
-        #     if job_type == 'eval':
-        #         return self.eval_step(z)
-        #     assert eps is not None
-        #     return self.hmc_step(z, eps=eps)
-        #     # if job_type == 'hmc':
-        #     #     return self.hmc_step(z, eps=eps)  # type: ignore
-        #     # return self.eval_step(z)              # type: ignore
+        def eval_fn(z):
+            if job_type == 'hmc':
+                return self.hmc_step(z, eps=eps)  # type: ignore
+            return self.eval_step(z)              # type: ignore
 
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
 
@@ -448,11 +442,6 @@ class Trainer:
             run.config.update({
                 job_type: {'beta': beta, 'xshape': x.shape.as_list()}
             })
-
-        def eval_fn(inputs):
-            if job_type == 'eval':
-                return self.eval_step(inputs)        # type: ignore
-            return self.hmc_step(inputs, eps=eps)    # type: ignore
 
         with Live(table, screen=False, auto_refresh=False) as live:
             if WIDTH is not None and WIDTH > 0:
@@ -501,7 +490,6 @@ class Trainer:
             self,
             inputs: tuple[Tensor, Tensor],
             first_step: Optional[bool] = None,
-            clip_grads: Optional[bool] = True,
     ) -> tuple[Tensor, dict]:
         xinit, beta = inputs
         xinit = to_u1(xinit)
@@ -523,12 +511,9 @@ class Trainer:
 
         tape = hvd.DistributedGradientTape(tape, compression=self.compression)
         grads = [
-            g for g in tape.gradient(loss, self.dynamics.trainable_variables)
+            tf.clip_by_norm(grad, clip_norm=self.clip_norm)
+            for grad in tape.gradient(loss, self.dynamics.trainable_variables)
         ]
-        if clip_grads:
-            grads = [
-                tf.clip_by_norm(g, clip_norm=self.clip_norm) for g in grads
-            ]
         self.optimizer.apply_gradients(
             zip(grads, self.dynamics.trainable_variables)
         )
@@ -649,8 +634,6 @@ class Trainer:
             if self.rank == 0:
                 if writer is not None:
                     update_summaries(step=gstep,
-                                     run=run,
-                                     # job_type='train',
                                      model=self.dynamics,
                                      optimizer=self.optimizer)
                 log.info(f'Era {era} took: {time.time() - estart:<5g}s')
@@ -687,21 +670,17 @@ class Trainer:
             x = tf.reshape(x, (x.shape[0], -1))
         else:
             x = tf.constant(xinit, dtype=TF_FLOAT)
-
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
-
         if compile:
             self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
             train_step = tf.function(self.train_step, jit_compile=jit_compile)
         else:
             train_step = self.train_step
-
         era = 0
         nera = self.steps.nera
         nepoch = self.steps.nepoch
         should_log = lambda epoch: (epoch % self.steps.log == 0)  # noqa
         should_print = lambda epoch: (epoch % self.steps.print == 0)  # noqa
-
         xarr = []
         table = None
         tables = {}
@@ -745,28 +724,21 @@ class Trainer:
                                 table.add_column(str(key).upper(),
                                                  style=colors[idx],
                                                  justify='center')
-
                         if should_print(epoch):
                             table.add_row(*[f'{v:5}' for _, v in avgs.items()])
                         # if should_print(epoch):
                         #     layout['base'].update(row)
-
                         # row = list(map(str, avgs.values()))
                         # table.add_row(*row)
                         # data_table.add_row(*list(avgs.values()))
-
                     job_progress.advance(epoch_task)
-
                 job_progress.advance(era_task)
-
                 # live.console.rule()
                 log.info(f'Era {era} took: {time.time() - estart:<3.2g}s')
                 esumm = self.history.era_summary(era)
                 log.info(f'Avgs over last era: {esumm}')
                 # live.refresh()
-
             tables[str(era)] = table
-
         return {
             'xdict': xarr,
             'summaries': summaries,
