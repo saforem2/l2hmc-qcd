@@ -224,14 +224,23 @@ class Dynamics(Model):
 
         mc_states = MonteCarloStates(init=init, proposed=prop, out=out)
 
-        metrics = {
+        metrics = {}
+        for (key, vf), (_, vb) in zip(mfwd.items(), mbwd.items()):
+            try:
+                vfb = ma_ * (mf_ * vf + mb_ * vb)  # + mr_ * v0
+            except ValueError:
+                vfb = ma * (mf * vf + mb * vb)  # + mr * v0
+
+            metrics[key] = vfb
+
+        metrics.update({
             'acc': acc,
             'acc_mask': ma_,
             'sumlogdet': sumlogdet,
             'mc_states': mc_states,
-        }
-        metrics.update({f'fwd/{k}': v for k, v in mfwd.items()})
-        metrics.update({f'bwd/{k}': v for k, v in mbwd.items()})
+        })
+        # metrics.update({f'fwd/{k}': v for k, v in mfwd.items()})
+        # metrics.update({f'bwd/{k}': v for k, v in mbwd.items()})
 
         return x_out, metrics
 
