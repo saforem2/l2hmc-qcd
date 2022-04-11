@@ -5,7 +5,7 @@ setup:
     config: null
     # job_type: null
     save_code: true
-    sync_tensorboard: false
+    sync_tensorboard: true
     mode: online
     resume: allow
     entity: l2hmc-qcd
