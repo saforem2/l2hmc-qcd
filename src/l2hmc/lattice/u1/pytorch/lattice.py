@@ -63,6 +63,22 @@ class LatticeU1(BaseLatticeU1):
         wloops = self._get_wloops(x)
         return beta * (1. - torch.cos(wloops)).sum((1, 2))
 
+    def grad_action(
+            self,
+            x: Tensor,
+            beta: Tensor,
+            create_graph: bool = True,
+    ) -> Tensor:
+        """Compute the gradient of the potential function."""
+        x.requires_grad_(True)
+        s = self.action(x, beta)
+        id = torch.ones(x.shape[0], device=x.device)
+        dsdx, = torch.autograd.grad(s, x,
+                                    create_graph=create_graph,
+                                    retain_graph=True,
+                                    grad_outputs=id)
+        return dsdx
+
     def plaqs_diff(
             self,
             beta: float,
