@@ -12,7 +12,7 @@ from __future__ import absolute_import, print_function, division, annotations
 import torch
 
 from torch import matrix_exp as expm
-from l2hmc.group.pytorch.logm import log3x3, su3_to_eigs
+from l2hmc.group.pytorch.logm import log3x3
 
 nn = torch.nn
 
@@ -31,9 +31,9 @@ class SUN:
         assert n == 3, "Operation supported only for SU(3)"
         return x @ log3x3(x.conj().transpose(-2, -1) @ y)
 
-    def proju(self, x: Tensor, u: Tensor, inplace: bool = False) -> Tensor:
-        """Arbitrary matrix C projects to skew-Hermitian 
-        
+    def proju(self, x: Tensor, u: Tensor) -> Tensor:
+        """Arbitrary matrix C projects to skew-Hermitian
+
                     B := (C - C^†) / 2
 
         then make traceless with
