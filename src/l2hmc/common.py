@@ -60,16 +60,23 @@ def setup_annealing_schedule(cfg: DictConfig) -> AnnealingSchedule:
 def save_dataset(
         dataset: xr.Dataset,
         outdir: os.PathLike,
+        use_hdf5: Optional[bool] = True,
         job_type: Optional[str] = None,
+        **kwargs,
 ) -> Path:
-    fname = 'dataset.nc' if job_type is None else f'{job_type}_dataset.nc'
-    datafile = Path(outdir).joinpath(fname)
-    mode = 'a' if datafile.is_file() else 'w'
-    log.info(f'Saving dataset to: {datafile.as_posix()}')
-    datafile.parent.mkdir(exist_ok=True, parents=True)
-    dataset.to_netcdf(datafile.as_posix(), mode=mode)
+    if use_hdf5:
+        fname = 'dataset.h5' if job_type is None else f'{job_type}_data.h5'
+        outfile = Path(outdir).joinpath(fname)
+        dataset_to_h5pyfile(outfile, dataset=dataset, **kwargs)
+    else:
+        fname = 'dataset.nc' if job_type is None else f'{job_type}_dataset.nc'
+        outfile = Path(outdir).joinpath(fname)
+        mode = 'a' if outfile.is_file() else 'w'
+        log.info(f'Saving dataset to: {outfile.as_posix()}')
+        outfile.parent.mkdir(exist_ok=True, parents=True)
+        dataset.to_netcdf(outfile.as_posix(), mode=mode)
 
-    return datafile
+    return outfile
 
 
 def dataset_to_h5pyfile(hfile: os.PathLike, dataset: xr.Dataset, **kwargs):
@@ -248,6 +255,7 @@ def analyze_dataset(
         job_type: Optional[str] = None,
         save: Optional[bool] = True,
         run: Optional[Any] = None,
+        use_hdf5: Optional[bool] = True,
 ):
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
     dirs = make_subdirs(outdir)
@@ -259,6 +267,7 @@ def analyze_dataset(
     if save:
         try:
             datafile = save_dataset(dataset,
+                                    use_hdf5=use_hdf5,
                                     outdir=dirs['data'],
                                     job_type=job_type)
         except ValueError:
