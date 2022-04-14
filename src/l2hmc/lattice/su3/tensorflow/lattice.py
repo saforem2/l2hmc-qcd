@@ -23,6 +23,7 @@ PI = np.pi
 TWO_PI = 2. * np.pi
 
 Tensor = tf.Tensor
+TensorLike = tf.types.experimental.TensorLike
 
 
 def pbc(tup: tuple[int], shape: tuple[int]) -> list:
@@ -94,9 +95,15 @@ class LatticeSU3:
 
     def _plaquette(self, x: Tensor, u: int, v: int):
         """U[μ](x) * U[ν](x+μ) * U†[μ](x+ν) * U†[ν](x)"""
+        assert isinstance(x, Tensor)  # and len(x.shape.as_list > 1)
         xuv = self.g.mul(x[:, u], tf.roll(x[:, v], shift=-1, axis=u + 1))
         xvu = self.g.mul(x[:, v], tf.roll(x[:, u], shift=-1, axis=v + 1))
         return self.g.trace(self.g.mul(xuv, xvu, adjoint_b=True))
+
+    def _plaq(self, x: Tensor, d: int, u: int, v: int):
+        """Calculate the 1x1 square plaquette
+        Return: U[μ](x) * U[ν](x+μ) * U†[μ](x+ν) * U†[ν](x)"""
+        pass
 
     def _wilson_loops(
             self,
@@ -105,8 +112,9 @@ class LatticeSU3:
     ) -> tuple[Tensor, Tensor]:
         # y.shape = [nb, d, nt, nx, nx, nx, 3, 3]
         x = tf.reshape(x, self._shape)
-        assert len(x.shape) == 8
         assert isinstance(x, Tensor)
+        assert len(x.shape) == 8
+        # assert isinstance(x, Tensor)
         pcount = 0
         rcount = 0
         plaqs = tf.TensorArray(x.dtype, size=0, dynamic_size=True)
@@ -117,6 +125,7 @@ class LatticeSU3:
                 yvu = self.g.mul(x[:, v], tf.roll(x[:, u], shift=-1, axis=v+1))
                 plaq = self.g.trace(self.g.mul(yuv, yvu, adjoint_b=True))
                 plaqs = plaqs.write(pcount, plaq)
+                pcount += 1
 
                 # plaqs.append(plaq)
                 if needs_rect:
@@ -158,7 +167,11 @@ class LatticeSU3:
 
     def _int_charges(self, wloops: Tensor) -> Tensor:
         # TODO: IMPLEMENT
-        return tf.zeros_like(tf.math.imag(wloops[0]))
+        qsum = tf.zeros_like(tf.math.imag(wloops[0]))  # type:ignore
+        for p in wloops:
+            qsum += tf.reduce_sum(tf.math.imag(p), axis=range(1, len(p.shape)))
+
+        return qsum / (32 * (np.pi ** 2))
 
     def _sin_charges(self, wloops: Tensor) -> Tensor:
         qsum = tf.zeros_like(tf.math.imag(wloops[0]))  # type:ignore
@@ -179,6 +192,7 @@ class LatticeSU3:
         """Returns the action"""
         coeffs = self.coeffs(beta)
         ps, rs = self._wilson_loops(x, needs_rect=self.c1 != 0)
+        assert isinstance(x, Tensor)
         psum = tf.zeros(x.shape[0])
         for p in ps:
             psum += tf.reduce_sum(
