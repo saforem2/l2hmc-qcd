@@ -1,36 +1,47 @@
----
-framework: ???
-profile: false
-precision: 'float32'
-width: 235
-eps_hmc: 0.1181  # determined from sweep
-nchains: ${dynamics.nleapfrog}
-# pretty print config at the start of the run using Rich library
+# @package _global_
+_target_: l2hmc.configs.ExperimentConfig
+
+# --------------------------------------------------------------------------------------------
+framework: ???                        # ML framework to use: one of 'pytorch', 'tensorflow'
+profile: false                        # Flag for profiling in pytorch
+precision: 'float32'                  # Default floating point precision
+width: 235                            # Setting controlling terminal width for printing
+eps_hmc: 0.1181                       # Reasonable default value, determined from sweep
+compile: True                         # Compile network in tensorflow? (True by default)
+nchains:  128                         # Number of chains to use when evaluating model
+# --------------------------------------------------------------------------------------------
+# pretty print config at the start 
+# of the run using Rich library
 # print_config: True
-# disable python warnings if they annoy you
+# -----------------------------------
+# disable python warnings 
+# if they annoy you
 ignore_warnings: True
-
-# seed for random number generators in pytorch, numpy and python.random
+# -----------------------------------
+# seed for random number generators
+# in pytorch, numpy and python.random
 # seed: null
-
-compile: True
-
-# name of the run, should be used along with experiment mode
+# -----------------------------------
+# name of the run, should be used 
+# along with experiment mode
 name: null
-
-
+# --------------------------------------------------------------------------------------------
+# DEFAULTS
+# --------------------------------------------------------------------------------------------
 defaults:
   - _self_
-  - steps: default.yaml
-  - dynamics: default.yaml
-  - wandb: default.yaml             # Weights & Biases config
-  - logdir: default.yaml
-  - loss: default.yaml
-  - network: default.yaml
-  - conv: none.yaml
-  - net_weights: default.yaml
-  - learning_rate: default.yaml
-  - annealing_schedule: default.yaml
+  # ------------------------------------------------------------------------------------------
+  - steps: default.yaml               # Defines num_era, num_epoch, num_test, etc.
+  - dynamics: default.yaml            # Defines gauge group, nleapfrog, lattice volume, etc.
+  - wandb: default.yaml               # Weights & Biases config
+  - logdir: default.yaml              # Defines where to run experiment using info from cfg
+  - loss: default.yaml                # Defines weights of various terms in loss function
+  - network: default.yaml             # Defines network architecture, activation fns, etc.
+  - conv: default.yaml                # Defines arch of Conv block to prepend to xnetwork
+  - net_weights: default.yaml         # Weights for controlling rel contribution of net fns
+  - learning_rate: default.yaml       # Defines initial lr, optimizer type, lr schedule, etc.
+  - annealing_schedule: default.yaml  # Defines annealing schedule to use for training
+  # ------------------------------------------------------------------------------------------
   # modes are special collections of config options for different purposes, e.g. debugging
   - mode: default.yaml
   # - mode: default.yaml
@@ -50,6 +61,13 @@ defaults:
   # https://hydra.cc/docs/tutorials/basic/running_your_app/logging/
   # use this to set level of only chosen command line loggers to 'DEBUG'
   # verbose: [src.train, src.utils]
+
+# --------------------------------------------------------------------------------------------
+# IGNORE
+# --------------------------------------------------------------------------------------------
+# hydra:
+#   job_logging:
+#     version: 1
 
 # path to original working directory
 # hydra hijacks working directory by changing it to the new log directory

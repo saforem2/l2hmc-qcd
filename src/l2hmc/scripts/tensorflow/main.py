@@ -15,7 +15,6 @@ from l2hmc.common import save_and_analyze_data
 from l2hmc.configs import get_jobdir
 from l2hmc.experiment import Experiment
 from l2hmc.trainers.tensorflow.trainer import Trainer
-from l2hmc.utils.tensorflow.utils import get_summary_writer
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +35,7 @@ def evaluate(
         trainer: Trainer,
         job_type: str,
         run: Optional[Any] = None,
+        writer: Optional[Any] = None,
         nchains: Optional[int] = 10,
         eps: Optional[TensorLike] = None,
 ) -> dict:
@@ -43,9 +43,8 @@ def evaluate(
     assert job_type in ['eval', 'hmc']
     therm_frac = cfg.get('therm_frac', 0.2)
     jobdir = get_jobdir(cfg, job_type=job_type)
-    writer = None
-    if trainer.rank == 0:
-        writer = get_summary_writer(cfg, job_type=job_type)
+    # if trainer.rank == 0:
+    #     writer = get_summary_writer(cfg, job_type=job_type)
 
     if writer is not None:
         writer.set_as_default()
@@ -82,14 +81,15 @@ def train(
         cfg: DictConfig,
         trainer: Trainer,
         run: Optional[Any] = None,
+        writer: Optional[Any] = None,
         nchains: Optional[int] = None,
         **kwargs,
 ) -> dict:
     writer = None
     nchains = 16 if nchains is None else nchains
     jobdir = get_jobdir(cfg, job_type='train')
-    if trainer.rank == 0:
-        writer = get_summary_writer(cfg, job_type='train')
+    # if trainer.rank == 0:
+    #     writer = get_summary_writer(cfg, job_type='train')
 
     if writer is not None:
         writer.set_as_default()
@@ -130,24 +130,29 @@ def main(cfg: DictConfig) -> dict:
     # -------------------------------------------------------------
     should_train = (cfg.steps.nera > 0 and cfg.steps.nepoch > 0)
     if should_train:
-        outputs['train'] = train(cfg, trainer, run=run)      # [1.]
+        tw = experiment.get_summary_writer('train')
+        outputs['train'] = train(cfg, trainer, run=run, writer=tw)  # [1.]
 
     if trainer.rank == 0:
         nchains = max((4, cfg.dynamics.nchains // 8))
-        if should_train and cfg.steps.test > 0:              # [2.]
+        if should_train and cfg.steps.test > 0:                     # [2.]
             log.warning('Evaluating trained model')
+            ew = experiment.get_summary_writer('eval')
             outputs['eval'] = evaluate(cfg,
                                        run=run,
                                        eps=None,
+                                       writer=ew,
                                        job_type='eval',
                                        nchains=nchains,
                                        trainer=trainer)
-        if cfg.steps.test > 0:                               # [3.]
+        if cfg.steps.test > 0:                                      # [3.]
             log.warning('Running generic HMC')
             eps = tf.constant(float(cfg.get('eps_hmc', 0.118)))
+            hw = experiment.get_summary_writer('hmc')
             outputs['hmc'] = evaluate(cfg=cfg,
                                       run=run,
                                       eps=eps,
+                                      writer=hw,
                                       job_type='hmc',
                                       nchains=nchains,
                                       trainer=trainer)
@@ -157,7 +162,7 @@ def main(cfg: DictConfig) -> dict:
     return outputs
 
 
-@hydra.main(config_path='./conf', config_name='config')
+@hydra.main(config_path='../../conf', config_name='config')
 def launch(cfg: DictConfig) -> None:
     _ = main(cfg)
 
