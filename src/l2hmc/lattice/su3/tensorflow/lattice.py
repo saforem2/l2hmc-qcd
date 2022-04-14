@@ -4,7 +4,7 @@ lattice.py
 Contains implementation of generic GaugeLattice object.
 """
 from __future__ import absolute_import, print_function, division, annotations
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 import tensorflow as tf
@@ -15,8 +15,6 @@ from l2hmc.group.tensorflow import group as g
 log = logging.getLogger(__name__)
 # from l2hmc.lattice.su3.lattice.
 
-# from lgt.group.tensorflow import group as g
-# from lgt.lattice.su3.lattice import BaseLatticeSU3
 # from typing import Generator
 # from l2hmc.lattice.generators import generate_SU3
 
@@ -25,6 +23,7 @@ PI = np.pi
 TWO_PI = 2. * np.pi
 
 Tensor = tf.Tensor
+TensorLike = tf.types.experimental.TensorLike
 
 
 def pbc(tup: tuple[int], shape: tuple[int]) -> list:
@@ -35,13 +34,13 @@ def mat_adj(mat: Array) -> Array:
     return mat.conj().T
 
 
-Site = tuple[int, int, int, int]                # t, x, y, z
-Link = tuple[int, int, int, int, int]           # t, x, y, z, dim
-Buffer = tuple[int, int, int, int, int, int]    # b, t, x, y, z, dim
+Site: Tuple[int, int, int, int]                # t, x, y, z
+Link: Tuple[int, int, int, int, int]           # t, x, y, z, dim
+Buffer: Tuple[int, int, int, int, int, int]    # b, t, x, y, z, dim
 
 
 # ---------------------------------------------------------------
-# TODO: 
+# TODO:
 # - Finish implementation of BaseLatticeSU3
 # - Write tensorflow and torch implementations as subclasses
 #
@@ -95,6 +94,8 @@ class LatticeSU3:
         return self.g.mul(link, staple)
 
     def _plaquette(self, x: Tensor, u: int, v: int):
+        """U[μ](x) * U[ν](x+μ) * U†[μ](x+ν) * U†[ν](x)"""
+        assert isinstance(x, Tensor)  # and len(x.shape.as_list > 1)
         xuv = self.g.mul(x[:, u], tf.roll(x[:, v], shift=-1, axis=u + 1))
         xvu = self.g.mul(x[:, v], tf.roll(x[:, u], shift=-1, axis=v + 1))
         return self.g.trace(self.g.mul(xuv, xvu, adjoint_b=True))
@@ -106,8 +107,9 @@ class LatticeSU3:
     ) -> tuple[Tensor, Tensor]:
         # y.shape = [nb, d, nt, nx, nx, nx, 3, 3]
         x = tf.reshape(x, self._shape)
-        assert len(x.shape) == 8
         assert isinstance(x, Tensor)
+        assert len(x.shape) == 8
+        # assert isinstance(x, Tensor)
         pcount = 0
         rcount = 0
         plaqs = tf.TensorArray(x.dtype, size=0, dynamic_size=True)
@@ -118,6 +120,7 @@ class LatticeSU3:
                 yvu = self.g.mul(x[:, v], tf.roll(x[:, u], shift=-1, axis=v+1))
                 plaq = self.g.trace(self.g.mul(yuv, yvu, adjoint_b=True))
                 plaqs = plaqs.write(pcount, plaq)
+                pcount += 1
 
                 # plaqs.append(plaq)
                 if needs_rect:
@@ -143,7 +146,6 @@ class LatticeSU3:
 
     def _plaquettes(self, x: Tensor) -> Tensor:
         ps, _ = self._wilson_loops(x)
-        # psum = tf.constant(0.0)
         psum = tf.zeros_like(tf.math.real(ps[0]))  # type: ignore
         for p in ps:  # NOTE: len(ps) == 6
             psum += tf.reduce_sum(tf.math.real(p), axis=range(1, len(p.shape)))
@@ -159,10 +161,14 @@ class LatticeSU3:
         return psum / (6 * 3 * self.volume)
 
     def _int_charges(self, wloops: Tensor) -> Tensor:
-        return tf.zeros_like(tf.math.imag(wloops[0]))
+        # TODO: IMPLEMENT
+        qsum = tf.zeros_like(tf.math.imag(wloops[0]))  # type:ignore
+        for p in wloops:
+            qsum += tf.reduce_sum(tf.math.imag(p), axis=range(1, len(p.shape)))
+
+        return qsum / (32 * (np.pi ** 2))
 
     def _sin_charges(self, wloops: Tensor) -> Tensor:
-        # qsum = tf.constant(0.0)
         qsum = tf.zeros_like(tf.math.imag(wloops[0]))  # type:ignore
         for p in wloops:
             qsum += tf.reduce_sum(tf.math.imag(p), axis=range(1, len(p.shape)))
@@ -181,6 +187,7 @@ class LatticeSU3:
         """Returns the action"""
         coeffs = self.coeffs(beta)
         ps, rs = self._wilson_loops(x, needs_rect=self.c1 != 0)
+        assert isinstance(x, Tensor)
         psum = tf.zeros(x.shape[0])
         for p in ps:
             psum += tf.reduce_sum(
@@ -229,8 +236,9 @@ class LatticeSU3:
         # charges = self.charges(wloops=wloops)
         plaqs = self.plaqs(wloops)
         qsin = self._sin_charges(wloops)
+        qint = tf.zeros_like(qsin)
         # TODO: FIX ME
-        metrics = {'plaqs': plaqs,  'sinQ': qsin}
+        metrics = {'plaqs': plaqs,  'sinQ': qsin, 'intQ': qint}
         # qsin = self._sin_charges(wloops=ps)
         # if beta is not None:
         #     pexact = plaq_exact(beta) * tf.ones_like(plaqs)

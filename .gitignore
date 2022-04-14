@@ -1,6 +1,12 @@
 ## --------------------------------
 ## USER-DEFINED .gitignore below
 ## --------------------------------
+**.venv**
+poetry.lock
+src/l2hmc/wandb/**
+src/l2hmc/outputs/**
+**outputs**
+**wandb/**
 .venv/**
 old/**
 src/l2hmc/outputs/*

@@ -12,17 +12,13 @@ defaults:
   - override /network: debug.yaml
   - override /dynamics: debug.yaml
   - override /annealing_schedule: constant.yaml
+  - override /logdir: debug.yaml
 
 debug_mode: True
 
 hydra:
   # sets level of all command line loggers to 'DEBUG'
-  verbose: True
-  run:
-    dir: outputs/debug/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}
-  sweep:
-    dir: outputs/debug/multiruns
-    subdir: ${hydra.job.num}
+  verbose: ['l2hmc', 'tensorflow', 'pytorch', 'numpy']
 
   # https://hydra.cc/docs/tutorials/basic/running_your_app/logging/
   # use this to set level of only chosen command line loggers to 'DEBUG'

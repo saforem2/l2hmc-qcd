@@ -83,6 +83,18 @@ class LatticeU1(BaseLatticeU1):
         local_action = tf.ones_like(wloops) - tf.math.cos(wloops)
         return beta * tf.reduce_sum(local_action, (1, 2))
 
+    def grad_action(self, x: Tensor, beta: Tensor) -> Tensor:
+        """Compute the gradient of the potential function."""
+        if tf.executing_eagerly():
+            with tf.GradientTape() as tape:
+                tape.watch(x)
+                pe = self.action(x, beta)
+            grad = tape.gradient(pe, x)
+        else:
+            grad = tf.gradients(self.action(x, beta), [x])[0]
+
+        return grad
+
     def calc_metrics(
             self,
             x: Tensor,
@@ -125,7 +137,8 @@ class LatticeU1(BaseLatticeU1):
         #       wloop = U0(x, y) +  U1(x+1, y) - U0(x, y+1) - U1(x, y)
         #   and so output = wloop.T, with output.shape = [-1, Lt, Lx]
         # --------------------------
-        x = tf.transpose(tf.reshape(x, self._shape), (1, 2, 3, 0))
+        x = tf.transpose(tf.reshape(x, (-1, *self.xshape)), (1, 2, 3, 0))
+        # x = tf.transpose(tf.reshape(x, self._shape), (1, 2, 3, 0))
         x0 = x[0]  # type:ignore  NOTE: x0 = t links
         x1 = x[1]  # type:ignore  NOTE: x1 = x links
         return tf.transpose(

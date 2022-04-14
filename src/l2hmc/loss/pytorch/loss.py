@@ -10,12 +10,17 @@ import torch
 
 from l2hmc.configs import LossConfig
 from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
+from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
 
 Tensor = torch.Tensor
 
 
 class LatticeLoss:
-    def __init__(self, lattice: LatticeU1, loss_config: LossConfig):
+    def __init__(
+            self,
+            lattice: LatticeU1 | LatticeSU3,
+            loss_config: LossConfig
+    ):
         self.lattice = lattice
         self.config = loss_config
 
@@ -34,8 +39,8 @@ class LatticeLoss:
         return (-ploss / self.config.plaq_weight).mean(0)
 
     def _charge_loss(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
-        q1 = self.lattice._sin_charges(wloops=w1)
-        q2 = self.lattice._sin_charges(wloops=w2)
+        q1 = self.lattice._sin_charges(wloops=w1)  # type:ignore
+        q2 = self.lattice._sin_charges(wloops=w2)  # type:ignore
         qloss = (acc * (q2 - q1) ** 2) + 1e-4
         if self.config.use_mixed_loss:
             return self.mixed_loss(qloss, self.config.charge_weight).mean(0)

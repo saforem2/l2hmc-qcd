@@ -1,11 +1,9 @@
-program: ../../main.py
+program: main.py
 method: bayes
 metric:
   name: dQint_hmc.mean
   goal: maximize
 parameters:
-  dynamics.nleapfrog:
-    values: 16
   eps_hmc:
     # min: !!float 1e-2
     min: 0.01
@@ -15,13 +13,15 @@ command:
   - ${env}
   - ${interpreter}
   - ${program}
+  - width=${env:COLUMNS}
+  - framework=tensorflow
   - steps.nera=0
   - steps.nepoch=0
   - steps.test=2500
-  - width=${env:COLUMNS}
-  - framework=tensorflow
+  - dynamics.group=U1
   - dynamics.nleapfrog=16
-  - dynamics.xshape=[1024,16,16,2]
+  - dynamics.nchains=1024
+  - dynamics.latvolume=[8, 8]
   - annealing_schedule.beta_init=4.0
   - annealing_schedule.beta_final=4.0
   - ${args_no_hyphens}

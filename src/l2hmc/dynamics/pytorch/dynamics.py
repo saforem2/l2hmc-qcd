@@ -9,7 +9,7 @@ from math import pi as PI
 import os
 from pathlib import Path
 import logging
-from typing import Callable, Union
+from typing import Callable, Union, Optional
 from typing import Tuple
 
 from l2hmc.configs import DynamicsConfig
@@ -225,8 +225,8 @@ class Dynamics(nn.Module):
     ) -> tuple[Tensor, dict]:
         data = self.generate_proposal_hmc(inputs, eps=eps)
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
-        ma = ma_.unsqueeze(-1)
-        mr = mr_.unsqueeze(-1)
+        ma = ma_.unsqueeze(-1).to(inputs[0].device)
+        mr = mr_.unsqueeze(-1).to(inputs[0].device)
 
         vout = ma * data['proposed'].v + mr * data['init'].v
         xout = ma * data['proposed'].x + mr * data['init'].x
@@ -248,6 +248,8 @@ class Dynamics(nn.Module):
         data = self.generate_proposal_fb(inputs)
 
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
+        ma_ = ma_.to(inputs[0].device)
+        mr_ = mr_.to(inputs[0].device)
         ma = ma_.unsqueeze(-1)
         mr = mr_.unsqueeze(-1)
 
@@ -278,8 +280,10 @@ class Dynamics(nn.Module):
         bwd = self.generate_proposal(inputs, forward=False)
 
         mf_, mb_ = self._get_direction_masks(batch_size=x.shape[0])
-        mf = mf_.unsqueeze(-1)  # mf = mf_[:, None]
-        mb = mb_.unsqueeze(-1)  # mb = mb_[:, None]
+        mf_ = mf_.to(x.device)
+        mb_ = mb_.to(x.device)
+        mf = mf_.unsqueeze(-1)  # .to(x.device)  # mf = mf_[:, None]
+        mb = mb_.unsqueeze(-1)  # .to(x.device)  # mb = mb_[:, None]
 
         v_init = mf * fwd['init'].v + mb * bwd['init'].v
 
@@ -315,20 +319,30 @@ class Dynamics(nn.Module):
         mc_states = MonteCarloStates(init=state_init,
                                      proposed=state_prop,
                                      out=state_out)
-        metrics = {
+        metrics = {}
+        for (key, vf), (_, vb) in zip(mfwd.items(), mbwd.items()):
+            try:
+                vprop = ma_ * (mf_ * vf + mb_ * vb)
+            except RuntimeError:
+                vprop = ma * (mf * vf + mb * vb)
+
+            metrics[key] = vprop
+
+        metrics.update({
             'acc': acc,
             'acc_mask': ma_,
             'sumlogdet': logdet,
             'mc_states': mc_states,
-        }
-        metrics.update(**{f'fwd/{key}': val for key, val in mfwd.items()})
-        metrics.update(**{f'bwd/{key}': val for key, val in mbwd.items()})
+        })
+
+        # metrics.update(**{f'fwd/{key}': val for key, val in mfwd.items()})
+        # metrics.update(**{f'bwd/{key}': val for key, val in mbwd.items()})
 
         return x_out, metrics
 
     def random_state(self, beta: float) -> State:
         x = torch.rand(tuple(self.xshape)).reshape(self.xshape[0], -1)
-        v = torch.randn_like(x)
+        v = torch.randn_like(x).to(x.device)
         return State(x=x, v=v, beta=torch.tensor(beta))
 
     def test_reversibility(self) -> dict[str, Tensor]:
@@ -345,7 +359,7 @@ class Dynamics(nn.Module):
             eps: Tensor,
     ) -> dict:
         x, beta = inputs
-        v = torch.randn_like(x)
+        v = torch.randn_like(x).to(x.device)
         init = State(x=x, v=v, beta=beta)
         proposed, metrics = self.transition_kernel_hmc(init, eps=eps)
 
@@ -356,7 +370,7 @@ class Dynamics(nn.Module):
             inputs: tuple[Tensor, Tensor],
     ) -> dict:
         x, beta = inputs
-        v = torch.randn_like(x)
+        v = torch.randn_like(x).to(x.device)
         init = State(x=x, v=v, beta=beta)
         proposed, metrics = self.transition_kernel_fb(init)
 
@@ -368,7 +382,7 @@ class Dynamics(nn.Module):
             forward: bool,
     ) -> dict:
         x, beta = inputs
-        v = torch.randn_like(x)
+        v = torch.randn_like(x).to(x.device)
         state_init = State(x=x, v=v, beta=beta)
         state_prop, metrics = self.transition_kernel(state_init, forward)
 
@@ -378,7 +392,7 @@ class Dynamics(nn.Module):
             self,
             state: State,
             logdet: Tensor,
-            step: int = None
+            step: Optional[int] = None
     ) -> dict:
         energy = self.hamiltonian(state)
         logprob = energy - logdet
@@ -522,20 +536,20 @@ class Dynamics(nn.Module):
         dh = h_init - h_prop + sumlogdet
         prob = torch.exp(
             torch.minimum(dh, torch.zeros_like(dh, device=dh.device))
-        )
+        ).to(state_init.x.device)
 
         return prob
 
     @staticmethod
     def _get_accept_masks(px: Tensor) -> tuple[Tensor, Tensor]:
-        acc = (px > torch.rand_like(px).to(DEVICE)).to(torch.float)
+        acc = (px > torch.rand_like(px).to(px.device)).to(torch.float)
         rej = torch.ones_like(acc) - acc
-        return acc, rej
+        return acc.to(px.device), rej.to(px.device)
 
     @staticmethod
     def _get_direction_masks(batch_size: int) -> tuple[Tensor, Tensor]:
         """Returns (forward_mask, backward_mask)."""
-        fwd = (torch.rand(batch_size).to(DEVICE) > 0.5).to(torch.float)
+        fwd = (torch.rand(batch_size) > 0.5).to(torch.float)
         bwd = torch.ones_like(fwd) - fwd
 
         return fwd, bwd
@@ -764,13 +778,14 @@ class Dynamics(nn.Module):
             self,
             x: Tensor,
             beta: Tensor,
-            create_graph: bool = True,
+            # create_graph: bool = True,
     ) -> Tensor:
         """Compute the gradient of the potential function."""
         x.requires_grad_(True)
         s = self.potential_energy(x, beta)
         id = torch.ones(x.shape[0], device=x.device)
         dsdx, = torch.autograd.grad(s, x,
-                                    create_graph=create_graph,
+                                    # create_graph=create_graph,
+                                    # retain_graph=True,
                                     grad_outputs=id)
         return dsdx

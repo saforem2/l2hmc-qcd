@@ -1,0 +1,15 @@
+# @package _global_
+
+hydra:
+  run:
+    dir: "outputs/debug/runs\
+      /${dynamics.latvolume[0]}x${dynamics.latvolume[1]}\
+      /nlf-${dynamics.nleapfrog}\
+      /beta-${annealing_schedule.beta_final}\
+      /merge_directions-${dynamics.merge_directions}\
+      /${framework}\
+      /${now:%Y-%m-%d}\
+      /${now:%H-%M-%S}"
+  sweep:
+    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+    subdir: ${hydra.job.override_dirname}
