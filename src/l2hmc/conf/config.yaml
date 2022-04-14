@@ -10,11 +10,11 @@ eps_hmc: 0.1181                       # Reasonable default value, determined fro
 compile: True                         # Compile network in tensorflow? (True by default)
 nchains:  128                         # Number of chains to use when evaluating model
 # --------------------------------------------------------------------------------------------
-# pretty print config at the start 
+# pretty print config at the start
 # of the run using Rich library
 # print_config: True
 # -----------------------------------
-# disable python warnings 
+# disable python warnings
 # if they annoy you
 ignore_warnings: True
 # -----------------------------------
@@ -22,7 +22,7 @@ ignore_warnings: True
 # in pytorch, numpy and python.random
 # seed: null
 # -----------------------------------
-# name of the run, should be used 
+# name of the run, should be used
 # along with experiment mode
 name: null
 # --------------------------------------------------------------------------------------------
