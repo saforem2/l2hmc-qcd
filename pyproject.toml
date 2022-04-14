@@ -1,8 +1,12 @@
 [tool.poetry]
 name = "l2hmc"
-version = "0.7.0"
+version = "0.8.0"
 description = "L2HMC algorithm for sampling in Lattice QCD"
 authors = ["Sam Foreman <saforem2@gmail.com>"]
+readme = "README.md"
+repository = "https://github.com/saforem2/l2hmc-qcd"
+homepage = "https://github.com/saforem2/l2hmc-qcd"
+keywords = ["machine-learning", "lattice", "mcmc", "latticeqcd", "qcd"]
 packages = [{include = "l2hmc", from = "src"}]
 exclude = [
   "wandb",
@@ -49,6 +53,8 @@ accelerate = "^0.6.2"
 euporie = "^1.4.3"
 ipykernel = "^6.12.1"
 notebook = "^6.4.10"
+ipython = {version = "^8.2.0", optional = true}
+ptipython = {version = "^1.0.1", optional = true}
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
