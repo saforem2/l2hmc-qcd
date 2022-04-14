@@ -47,13 +47,11 @@ class Experiment:
             if framework == 'pytorch':
                 from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
                 return LatticeU1(nchains, tuple(latvolume))
-            elif framework == 'tensorflow':
+            if framework == 'tensorflow':
                 from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
                 return LatticeU1(nchains, tuple(latvolume))
-            else:
-                raise ValueError(
-                    f'Unexpected value for `framework`: {framework}'
-                )
+
+            raise ValueError(f'Unexpected value for `framework`: {framework}')
 
         if self.config.dynamics.group == 'SU3':
             if framework == 'pytorch':
