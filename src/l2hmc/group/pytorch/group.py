@@ -273,11 +273,11 @@ def SU3Gradient(
     """
     x.requires_grad_(True)
     y = f(x)
-    id = torch.ones(x.shape[0], device=x.device)
+    identity = torch.ones(x.shape[0], device=x.device)
     dydx, = torch.autograd.grad(y, x,
                                 create_graph=create_graph,
                                 retain_graph=True,
-                                grad_outputs=id)
+                                grad_outputs=identity)
     return y, dydx
 
 
@@ -292,9 +292,9 @@ class Group:
     ) -> Tensor:
         if adjoint_a and adjoint_b:
             return torch.matmul(a.adjoint(), b.adjoint())
-        elif adjoint_a:
+        if adjoint_a:
             return torch.matmul(a.adjoint(), b)
-        elif adjoint_b:
+        if adjoint_b:
             return torch.matmul(a, b.adjoint())
         return torch.matmul(a, b)
 
@@ -309,9 +309,9 @@ class U1Phase(Group):
     ) -> Tensor:
         if adjoint_a and adjoint_b:
             return -a - b
-        elif adjoint_a:
+        if adjoint_a:
             return -a + b
-        elif adjoint_b:
+        if adjoint_b:
             return a - b
         return a + b
 
@@ -354,9 +354,9 @@ class SU3(Group):
     ) -> Tensor:
         if adjoint_a and adjoint_b:
             return torch.matmul(a.adjoint(), b.adjoint())
-        elif adjoint_a:
+        if adjoint_a:
             return torch.matmul(a.adjoint(), b)
-        elif adjoint_b:
+        if adjoint_b:
             return torch.matmul(a, b.adjoint())
         return torch.matmul(a, b)
 

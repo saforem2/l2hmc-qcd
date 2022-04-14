@@ -72,11 +72,11 @@ class LatticeU1(BaseLatticeU1):
         """Compute the gradient of the potential function."""
         x.requires_grad_(True)
         s = self.action(x, beta)
-        id = torch.ones(x.shape[0], device=x.device)
+        identity = torch.ones(x.shape[0], device=x.device)
         dsdx, = torch.autograd.grad(s, x,
-                                    create_graph=create_graph,
                                     retain_graph=True,
-                                    grad_outputs=id)
+                                    create_graph=create_graph,
+                                    grad_outputs=identity)
         return dsdx
 
     def plaqs_diff(
