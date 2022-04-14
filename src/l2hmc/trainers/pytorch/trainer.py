@@ -345,6 +345,7 @@ class Trainer:
             avgs = {k: v.mean() for k, v in record.items()}
 
         summary = summarize_dict(avgs)
+        # if step is not None:
         if writer is not None:
             assert step is not None
             update_summaries(step=step,
@@ -353,7 +354,8 @@ class Trainer:
                              metrics=record,
                              prefix=job_type,
                              optimizer=optimizer)
-            writer.flush()
+            if writer is not None:
+                writer.flush()
 
         if run is not None:
             dQint = record.get('dQint', None)
@@ -539,10 +541,10 @@ class Trainer:
                 if layout is not None and self.rank == 0:
                     layout['root']['main'].update(table)
                     # console.width = min(int(main_panel.get), WIDTH)
-                    # console.rule(', '.join([
-                    #     f'BETA: {beta}',
-                    #     f'ERA: {era} / {self.steps.nera}',
-                    # ]))
+                    console.rule(', '.join([
+                        f'BETA: {beta}',
+                        f'ERA: {era} / {self.steps.nera}',
+                    ]))
 
                 # if WIDTH is not None and WIDTH > 0 and console is not None:
                 #     console.width = WIDTH
