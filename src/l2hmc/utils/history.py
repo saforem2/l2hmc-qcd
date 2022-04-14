@@ -5,21 +5,24 @@ Contains implementation of History object for tracking / aggregating metrics.
 """
 from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass
+import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from typing import Union
-
-import numpy as np
-import xarray as xr
 
 import matplotlib.pyplot as plt
 import matplotx
+import numpy as np
 import seaborn as sns
+import xarray as xr
+
 from l2hmc.configs import MonteCarloStates, Steps
 import l2hmc.utils.plot_helpers as hplt
 
 
-xplt = xr.plot
+log = logging.getLogger(__name__)
+
+xplt = xr.plot  # type:ignore
 LW = plt.rcParams.get('axes.linewidth', 1.75)
 
 
@@ -44,7 +47,7 @@ class StateHistory:
 
 
 class BaseHistory:
-    def __init__(self, steps: Steps = None):
+    def __init__(self, steps: Optional[Steps] = None):
         self.steps = steps
         self.history = {}
         nera = 1 if steps is None else steps.nera
@@ -105,18 +108,19 @@ class BaseHistory:
     def plot_dataArray(
             self,
             val: xr.DataArray,
-            key: str = None,
-            therm_frac: float = 0.,
-            num_chains: int = 0,
-            title: str = None,
-            outdir: str = None,
-            subplots_kwargs: dict[str, Any] = None,
-            plot_kwargs: dict[str, Any] = None,
+            key: Optional[str] = None,
+            therm_frac: Optional[float] = 0.,
+            num_chains: Optional[int] = 0,
+            title: Optional[str] = None,
+            outdir: Optional[str] = None,
+            subplots_kwargs: Optional[dict[str, Any]] = None,
+            plot_kwargs: Optional[dict[str, Any]] = None,
 
     ) -> tuple:
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
         figsize = subplots_kwargs.get('figsize', hplt.set_size())
+        num_chains = 16 if num_chains is None else num_chains
         subplots_kwargs.update({'figsize': figsize})
         subfigs = None
 
@@ -124,7 +128,7 @@ class BaseHistory:
         arr = val.values  # shape: [nchains, ndraws]
         steps = np.arange(arr.shape[0])
 
-        if therm_frac > 0:
+        if therm_frac is not None and therm_frac > 0:
             drop = int(therm_frac * arr.shape[0])
             arr = arr[drop:]
             steps = steps[drop:]
@@ -154,8 +158,8 @@ class BaseHistory:
             axes = (ax, ax1)
 
             ax0 = subfigs[0].subplots(1, 1)
-            im = val.plot(ax=ax0)
-            im.colorbar.set_label(key)
+            im = val.plot(ax=ax0)           # type:ignore
+            im.colorbar.set_label(key)      # type:ignore
             sns.despine(subfigs[0])
             ax0.plot(steps, arr.mean(0), lw=2., color=color)
             for idx in range(min(num_chains, arr.shape[0])):
@@ -206,25 +210,26 @@ class BaseHistory:
     def plot(
             self,
             val: np.ndarray,
-            key: str = None,
-            therm_frac: float = 0.,
-            num_chains: int = 0,
-            title: str = None,
-            outdir: str = None,
-            subplots_kwargs: dict[str, Any] = None,
-            plot_kwargs: dict[str, Any] = None,
+            key: Optional[str] = None,
+            therm_frac: Optional[float] = 0.,
+            num_chains: Optional[int] = 0,
+            title: Optional[str] = None,
+            outdir: Optional[str] = None,
+            subplots_kwargs: Optional[dict[str, Any]] = None,
+            plot_kwargs: Optional[dict[str, Any]] = None,
     ):
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
         figsize = subplots_kwargs.get('figsize', hplt.set_size())
         subplots_kwargs.update({'figsize': figsize})
+        num_chains = 16 if num_chains is None else num_chains
 
         # tmp = val[0]
         arr = np.array(val)
 
         subfigs = None
         steps = np.arange(arr.shape[0])
-        if therm_frac > 0:
+        if therm_frac is not None and therm_frac > 0:
             drop = int(therm_frac * arr.shape[0])
             arr = arr[drop:]
             steps = steps[drop:]
@@ -304,10 +309,10 @@ class BaseHistory:
             self,
             num_chains: int = 0,
             therm_frac: float = 0.,
-            title: str = None,
-            outdir: str = None,
-            subplots_kwargs: dict[str, Any] = None,
-            plot_kwargs: dict[str, Any] = None,
+            title: Optional[str] = None,
+            outdir: Optional[str] = None,
+            subplots_kwargs: Optional[dict[str, Any]] = None,
+            plot_kwargs: Optional[dict[str, Any]] = None,
     ):
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
@@ -349,10 +354,10 @@ class BaseHistory:
     def to_DataArray(
             self,
             x: Union[list, np.ndarray],
-            therm_frac: float = 0.0,
+            therm_frac: Optional[float] = 0.0,
     ) -> xr.DataArray:
         arr = np.array(x)
-        if therm_frac > 0:
+        if therm_frac is not None and therm_frac > 0:
             drop = int(therm_frac * arr.shape[0])
             arr = arr[drop:]
         # steps = np.arange(len(arr))
@@ -360,21 +365,21 @@ class BaseHistory:
             ndraws = arr.shape[0]
             dims = ['draw']
             coords = [np.arange(len(arr))]
-            return xr.DataArray(arr, dims=dims, coords=coords)
+            return xr.DataArray(arr, dims=dims, coords=coords)  # type:ignore
 
         if len(arr.shape) == 2:                   # [nchains, ndraws]
             arr = arr.T
             nchains, ndraws = arr.shape
             dims = ('chain', 'draw')
             coords = [np.arange(nchains), np.arange(ndraws)]
-            return xr.DataArray(arr, dims=dims, coords=coords)
+            return xr.DataArray(arr, dims=dims, coords=coords)  # type:ignore
 
         if len(arr.shape) == 3:                   # [nchains, nlf, ndraws]
             arr = arr.T
             nchains, nlf, ndraws = arr.shape
             dims = ('chain', 'leapfrog', 'draw')
             coords = [np.arange(nchains), np.arange(nlf), np.arange(ndraws)]
-            return xr.DataArray(arr, dims=dims, coords=coords)
+            return xr.DataArray(arr, dims=dims, coords=coords)  # type:ignore
 
         else:
             print(f'arr.shape: {arr.shape}')
@@ -382,8 +387,8 @@ class BaseHistory:
 
     def get_dataset(
             self,
-            data: dict[str, Union[list, np.ndarray]] = None,
-            therm_frac: float = 0.0,
+            data: Optional[dict[str, Union[list, np.ndarray]]] = None,
+            therm_frac: Optional[float] = 0.0,
     ):
         data = self.history if data is None else data
         data_vars = {}
@@ -395,6 +400,10 @@ class BaseHistory:
             #      data_vars[key] = dataset = self.get_dataset(val)
             name = key.replace('/', '_')
 
-            data_vars[name] = self.to_DataArray(val, therm_frac)
+            try:
+                data_vars[name] = self.to_DataArray(val, therm_frac)
+            except ValueError:
+                log.error(f'Unable to create DataArray for {key}! Skipping!')
+                log.error(f'{key}.shape= {np.stack(val).shape}')  # type:ignore
 
         return xr.Dataset(data_vars)

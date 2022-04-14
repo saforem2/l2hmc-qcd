@@ -17,7 +17,7 @@ from l2hmc.common import save_and_analyze_data
 from l2hmc.configs import get_jobdir
 from l2hmc.experiment import Experiment
 from l2hmc.trainers.pytorch.trainer import Trainer
-from l2hmc.utils.pytorch.utils import get_summary_writer
+# from l2hmc.utils.pytorch.utils import get_summary_writer
 
 
 log = logging.getLogger(__name__)
@@ -35,6 +35,7 @@ def evaluate(
         trainer: Trainer,
         job_type: str,
         run: Optional[Any] = None,
+        writer: Optional[Any] = None,
         nchains: Optional[int] = None,
         eps: Optional[Tensor] = None,
 ) -> dict:
@@ -44,8 +45,8 @@ def evaluate(
 
     writer = None
     jobdir = get_jobdir(cfg, job_type=job_type)
-    if trainer.accelerator.is_local_main_process:
-        writer = get_summary_writer(cfg, job_type=job_type)
+    # if trainer.accelerator.is_local_main_process:
+    #     writer = get_summary_writer(cfg, job_type=job_type)
 
     output = trainer.eval(run=run,
                           writer=writer,
@@ -75,13 +76,14 @@ def train(
         cfg: DictConfig,
         trainer: Trainer,
         run: Optional[Any] = None,
+        writer: Optional[Any] = None,
         nchains: Optional[int] = None,
 ) -> dict:
     writer = None
     nchains = 16 if nchains is None else nchains
     jobdir = get_jobdir(cfg, job_type='train')
-    if trainer.accelerator.is_local_main_process:
-        writer = get_summary_writer(cfg, job_type='train')
+    # if trainer.accelerator.is_local_main_process:
+    #     writer = get_summary_writer(cfg, job_type='train')
 
     # ------------------------------------------
     # NOTE: cfg.profile will be False by default
@@ -136,7 +138,8 @@ def main(cfg: DictConfig) -> dict:
     # ----------------------------------------------------------
     should_train = (cfg.steps.nera > 0 and cfg.steps.nepoch > 0)
     if should_train:
-        outputs['train'] = train(cfg, trainer, run=run)  # [1.]
+        tw = experiment.get_summary_writer('train')
+        outputs['train'] = train(cfg, trainer, run=run, writer=tw)  # [1.]
 
     if run is not None:
         run.unwatch(objs['dynamics'])
@@ -144,18 +147,22 @@ def main(cfg: DictConfig) -> dict:
     if trainer.accelerator.is_local_main_process:
         # batch_size = cfg.dynamics.xshape[0]
         nchains = max((4, cfg.dynamics.nchains // 8))
-        if should_train and cfg.steps.test > 0:           # [2.]
+        if should_train and cfg.steps.test > 0:                     # [2.]
             log.warning('Evaluating trained model')
+            ew = experiment.get_summary_writer('eval')
             outputs['eval'] = evaluate(cfg,
                                        run=run,
+                                       writer=ew,
                                        job_type='eval',
                                        nchains=nchains,
                                        trainer=trainer)
-        if cfg.steps.test > 0:                            # [3.]
+        if cfg.steps.test > 0:                                      # [3.]
             log.warning('Running generic HMC')
             eps_hmc = torch.tensor(cfg.get('eps_hmc', 0.118))
+            hw = experiment.get_summary_writer('hmc')
             outputs['hmc'] = evaluate(cfg=cfg,
                                       run=run,
+                                      writer=hw,
                                       eps=eps_hmc,
                                       job_type='hmc',
                                       nchains=nchains,
@@ -166,7 +173,7 @@ def main(cfg: DictConfig) -> dict:
     return outputs
 
 
-@hydra.main(config_path='./conf', config_name='config')
+@hydra.main(config_path='../../conf', config_name='config')
 def launch(cfg: DictConfig) -> None:
     _ = main(cfg)
 
