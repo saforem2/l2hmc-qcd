@@ -778,14 +778,14 @@ class Dynamics(nn.Module):
             self,
             x: Tensor,
             beta: Tensor,
-            create_graph: bool = True,
+            # create_graph: bool = True,
     ) -> Tensor:
         """Compute the gradient of the potential function."""
         x.requires_grad_(True)
         s = self.potential_energy(x, beta)
         id = torch.ones(x.shape[0], device=x.device)
         dsdx, = torch.autograd.grad(s, x,
-                                    create_graph=create_graph,
-                                    retain_graph=True,
+                                    # create_graph=create_graph,
+                                    # retain_graph=True,
                                     grad_outputs=id)
         return dsdx

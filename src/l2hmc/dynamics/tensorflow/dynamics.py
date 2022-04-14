@@ -23,24 +23,30 @@ TWO = tf.constant(2.)
 
 Tensor = tf.Tensor
 Model = tf.keras.Model
+TensorLike = tf.types.experimental.TensorLike
 TF_FLOAT = tf.keras.backend.floatx()
 
 
 log = logging.getLogger(__name__)
 
 
-DynamicsOutput = Tuple[Tensor, dict]
+DynamicsOutput = Tuple[TensorLike, dict]
 
 
-def to_u1(x: Tensor) -> Tensor:
+def to_u1(x: TensorLike) -> Tensor:
     return (tf.add(x, PI) % TWO_PI) - PI
 
 
 @dataclass
 class State:
-    x: Tensor
-    v: Tensor
-    beta: Tensor
+    x: TensorLike
+    v: TensorLike
+    beta: TensorLike
+
+    def __post_init__(self):
+        assert isinstance(self.x, Tensor)
+        assert isinstance(self.v, Tensor)
+        assert isinstance(self.beta, Tensor)
 
 
 @dataclass
@@ -56,12 +62,12 @@ class MonteCarloProposal:
     proposed: State
 
 
-def xy_repr(x: Tensor) -> Tensor:
+def xy_repr(x: TensorLike) -> TensorLike:
     return tf.stack([tf.math.cos(x), tf.math.sin(x)], axis=-1)
 
 
-CallableNetwork = Callable[[Tuple[Tensor, Tensor], bool],
-                           Tuple[Tensor, Tensor, Tensor]]
+CallableNetwork = Callable[[Tuple[TensorLike, TensorLike], bool],
+                           Tuple[TensorLike, TensorLike, TensorLike]]
 
 
 class Dynamics(Model):
@@ -109,9 +115,9 @@ class Dynamics(Model):
 
     def call(
             self,
-            inputs: tuple[Tensor, Tensor],
+            inputs: tuple[TensorLike, TensorLike],
             training: bool = True
-    ) -> tuple[Tensor, dict]:
+    ) -> tuple[TensorLike, dict]:
         """Call Dynamics object."""
         if self.config.merge_directions:
             return self.apply_transition_fb(inputs, training=training)
@@ -124,7 +130,7 @@ class Dynamics(Model):
         v = tf.random.normal(x.shape, dtype=TF_FLOAT)
         return State(x=x, v=v, beta=tf.constant(beta))
 
-    def test_reversibility(self) -> dict[str, Tensor]:
+    def test_reversibility(self) -> dict[str, TensorLike]:
         """Test reversibility i.e. backward(forward(state)) = state"""
         state = self.random_state(beta=1.)
         state_fwd, _ = self.transition_kernel(state, forward=True)
@@ -136,9 +142,9 @@ class Dynamics(Model):
 
     def apply_transition_hmc(
             self,
-            inputs: tuple[Tensor, Tensor],
-            eps: Tensor,
-    ) -> tuple[Tensor, dict]:
+            inputs: tuple[TensorLike, TensorLike],
+            eps: TensorLike,
+    ) -> tuple[TensorLike, dict]:
         data = self.generate_proposal_hmc(inputs, eps)
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
         ma = ma_[:, None]
@@ -160,9 +166,9 @@ class Dynamics(Model):
 
     def apply_transition_fb(
             self,
-            inputs: tuple[Tensor, Tensor],
+            inputs: tuple[TensorLike, TensorLike],
             training: bool = True,
-    ) -> tuple[Tensor, dict]:
+    ) -> tuple[TensorLike, dict]:
         """Apply transition using single forward/backward update."""
         data = self.generate_proposal_fb(inputs, training=training)
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
@@ -187,14 +193,15 @@ class Dynamics(Model):
 
     def apply_transition(
             self,
-            inputs: tuple[Tensor, Tensor],
+            inputs: tuple[TensorLike, TensorLike],
             training: bool = True
-    ) -> tuple[Tensor,  dict]:
+    ) -> tuple[TensorLike,  dict]:
         """Apply transition using masks to combine forward/backward updates."""
         x, beta = inputs
         fwd = self.generate_proposal(inputs, forward=True, training=training)
         bwd = self.generate_proposal(inputs, forward=False, training=training)
 
+        assert isinstance(x, Tensor)
         mf_, mb_ = self._get_direction_masks(batch_size=x.shape[0])
         mf = mf_[:, None]
         mb = mb_[:, None]
@@ -246,10 +253,11 @@ class Dynamics(Model):
 
     def generate_proposal_hmc(
             self,
-            inputs: tuple[Tensor, Tensor],
-            eps: Tensor,
+            inputs: tuple[TensorLike, TensorLike],
+            eps: TensorLike,
     ) -> dict:
         x, beta = inputs
+        assert isinstance(x, Tensor)
         v = tf.random.normal(x.shape, dtype=x.dtype)
         init = State(x, v, beta)
         proposed, metrics = self.transition_kernel_hmc(init, eps=eps)
@@ -258,7 +266,7 @@ class Dynamics(Model):
 
     def generate_proposal_fb(
             self,
-            inputs: tuple[Tensor, Tensor],
+            inputs: tuple[TensorLike, TensorLike],
             training: bool = True,
     ) -> dict:
         """Generate proposal using single forward/backward update.
@@ -270,6 +278,7 @@ class Dynamics(Model):
         Returns dict of 'init', and 'proposed' states, along with 'metrics'.
         """
         x, beta = inputs
+        assert isinstance(x, Tensor)
         v = tf.random.normal(x.shape, dtype=x.dtype)
         init = State(x, v, beta)
         proposed, metrics = self.transition_kernel_fb(init, training=training)
@@ -278,7 +287,7 @@ class Dynamics(Model):
 
     def generate_proposal(
             self,
-            inputs: tuple[Tensor, Tensor],
+            inputs: tuple[TensorLike, TensorLike],
             forward: bool,
             training: bool = True,
     ) -> dict:
@@ -287,6 +296,7 @@ class Dynamics(Model):
         Returns dict of 'init', and 'proposed' states, along with 'metrics'.
         """
         x, beta = inputs
+        assert isinstance(x, Tensor)
         v = tf.random.normal(x.shape, dtype=TF_FLOAT)
         state_init = State(x=x, v=v, beta=beta)
         state_prop, metrics = self.transition_kernel(state_init,
@@ -298,7 +308,7 @@ class Dynamics(Model):
     def get_metrics(
             self,
             state: State,
-            logdet: Tensor,
+            logdet: TensorLike,
             step: Optional[int] = None,
     ) -> dict:
         """Returns dict of various metrics about input State."""
@@ -334,7 +344,7 @@ class Dynamics(Model):
     def leapfrog_hmc(
             self,
             state: State,
-            eps: Tensor,
+            eps: TensorLike,
     ) -> State:
         """Perform standard HMC leapfrog update."""
         force1 = self.grad_potential(state.x, state.beta)  # f = dU / dx
@@ -347,10 +357,11 @@ class Dynamics(Model):
     def transition_kernel_hmc(
             self,
             state: State,
-            eps: Tensor,
+            eps: TensorLike,
     ) -> tuple[State, dict]:
         """Run the generic HMC transition kernel."""
         state_ = State(x=state.x, v=state.v, beta=state.beta)
+        assert isinstance(state.x, Tensor)
         sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
         metrics = self.get_metrics(state_, sumlogdet)
         history = self.update_history(metrics, history={})
@@ -381,6 +392,7 @@ class Dynamics(Model):
          tuple of output state, and history of metrics tracked during traj.
         """
         state_ = State(state.x, state.v, state.beta)
+        assert isinstance(state.x, Tensor)
         sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
 
         metrics = self.get_metrics(state_, sumlogdet)
@@ -395,8 +407,8 @@ class Dynamics(Model):
                 history = self.update_history(metrics, history=history)
 
         # Flip momentum
-        m1 = -1.0 * tf.ones_like(state_.v)
-        state_ = State(state_.x, m1 * state_.v, state_.beta)
+        # m1 = -1.0 * tf.ones_like(state_.v)
+        state_ = State(state_.x, tf.negative(state_.v), state_.beta)
 
         # Backward
         for step in range(self.config.nleapfrog):
@@ -432,6 +444,7 @@ class Dynamics(Model):
 
         # Copy initial state into proposed state
         state_ = State(x=state.x, v=state.v, beta=state.beta)
+        assert isinstance(state.x, Tensor)
         sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
         metrics = self.get_metrics(state_, sumlogdet)
         history = self.update_history(metrics, history={})
@@ -456,8 +469,8 @@ class Dynamics(Model):
             self,
             state_init: State,
             state_prop: State,
-            sumlogdet: Tensor,
-    ) -> Tensor:
+            sumlogdet: TensorLike,
+    ) -> TensorLike:
         """Compute the acceptance probability."""
         h_init = self.hamiltonian(state_init)
         h_prop = self.hamiltonian(state_prop)
@@ -468,7 +481,7 @@ class Dynamics(Model):
         return tf.where(tf.math.is_finite(prob), prob, tf.zeros_like(prob))
 
     @staticmethod
-    def _get_accept_masks(px: Tensor) -> tuple:
+    def _get_accept_masks(px: TensorLike) -> tuple:
         """Convert acceptance probability to binary mask of accept/rejects."""
         acc = tf.cast(
             px > tf.random.uniform(tf.shape(px), dtype=TF_FLOAT),
@@ -503,7 +516,7 @@ class Dynamics(Model):
 
         return masks
 
-    def _get_mask(self, i: int) -> tuple[Tensor, Tensor]:
+    def _get_mask(self, i: int) -> tuple[TensorLike, TensorLike]:
         """Returns mask used for sequentially updating x."""
         m = self.masks[i]
         mb = tf.ones_like(m) - m
@@ -519,9 +532,9 @@ class Dynamics(Model):
     def _call_vnet(
             self,
             step: int,
-            inputs: tuple[Tensor, Tensor],
+            inputs: tuple[TensorLike, TensorLike],
             training: bool
-    ) -> tuple[Tensor, Tensor, Tensor]:
+    ) -> tuple[TensorLike, TensorLike, TensorLike]:
         """Calls the momentum network used to update v."""
         vnet = self._get_vnet(step)
         assert callable(vnet)
@@ -539,17 +552,17 @@ class Dynamics(Model):
             return xnet
         return xnet
 
-    def _stack_as_xy(self, x: Tensor):
+    def _stack_as_xy(self, x: TensorLike):
         """Returns -pi < x <= pi stacked as [cos(x), sin(x)]"""
         return tf.stack([tf.math.cos(x), tf.math.sin(x)], axis=-1)
 
     def _call_xnet(
             self,
             step: int,
-            inputs: tuple[Tensor, Tensor],
+            inputs: tuple[TensorLike, TensorLike],
             first: bool,
             training: bool = True,
-    ) -> tuple[Tensor, Tensor, Tensor]:
+    ) -> tuple[TensorLike, TensorLike, TensorLike]:
         """Calls the position network used to update x."""
         x, v = inputs
         x = self._stack_as_xy(x)
@@ -562,9 +575,10 @@ class Dynamics(Model):
             step: int,
             state: State,
             training: bool = True,
-    ) -> tuple[State, Tensor]:
+    ) -> tuple[State, TensorLike]:
         """Complete update (leapfrog step) in the forward direction."""
         m, mb = self._get_mask(step)
+        assert isinstance(state.x, Tensor)
         sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
 
         state, logdet = self._update_v_fwd(step, state, training=training)
@@ -588,9 +602,10 @@ class Dynamics(Model):
             step: int,
             state: State,
             training: bool = True,
-    ) -> tuple[State, Tensor]:
+    ) -> tuple[State, TensorLike]:
         """Complete update (leapfrog step) in the backward direction."""
         # Note: Reverse the step count, i.e. count from end of trajectory.
+        assert isinstance(state.x, Tensor)
         step_r = self.config.nleapfrog - step - 1
 
         m, mb = self._get_mask(step_r)
@@ -617,7 +632,7 @@ class Dynamics(Model):
             step: int,
             state: State,
             training: bool = True,
-    ) -> tuple[State, Tensor]:
+    ) -> tuple[State, TensorLike]:
         """Update the momentum in the forward direction."""
         eps = self.veps[step]
         force = self.grad_potential(state.x, state.beta)
@@ -637,7 +652,7 @@ class Dynamics(Model):
             step: int,
             state: State,
             training: bool = True,
-    ) -> tuple[State, Tensor]:
+    ) -> tuple[State, TensorLike]:
         """Update the momentum in the backward direction."""
         eps = self.veps[step]
         force = self.grad_potential(state.x, state.beta)
@@ -654,10 +669,10 @@ class Dynamics(Model):
             self,
             step: int,
             state: State,
-            m: Tensor,
+            m: TensorLike,
             first: bool,
             training: bool = True,
-    ) -> tuple[State, Tensor]:
+    ) -> tuple[State, TensorLike]:
         """Single x update in the forward direction"""
         eps = self.xeps[step]
         mb = tf.ones_like(m) - m
@@ -688,10 +703,10 @@ class Dynamics(Model):
             self,
             step: int,
             state: State,
-            m: Tensor,
+            m: TensorLike,
             first: bool,
             training: bool = True,
-    ) -> tuple[State, Tensor]:
+    ) -> tuple[State, TensorLike]:
         """Update the position in the backward direction."""
         eps = self.xeps[step]
         mb = tf.ones_like(m) - m
@@ -722,23 +737,23 @@ class Dynamics(Model):
 
         return State(x=xb, v=state.v, beta=state.beta), logdet
 
-    def hamiltonian(self, state: State) -> Tensor:
+    def hamiltonian(self, state: State) -> TensorLike:
         """Returns the total energy H = KE + PE."""
         kinetic = self.kinetic_energy(state.v)
         potential = self.potential_energy(state.x, state.beta)
         return tf.add(kinetic, potential)
 
     @staticmethod
-    def kinetic_energy(v: Tensor) -> Tensor:
+    def kinetic_energy(v: TensorLike) -> TensorLike:
         """Returns the kinetic energy, KE = 0.5 * v ** 2."""
         return tf.reduce_sum(tf.math.square(v), axis=-1) / 2.
 
-    def potential_energy(self, x: Tensor, beta: Tensor) -> Tensor:
+    def potential_energy(self, x: TensorLike, beta: TensorLike) -> TensorLike:
         """Returns the potential energy, PE = beta * action(x)."""
         # return tf.multiply(beta, self.potential_fn(x))
         return self.potential_fn(x=x, beta=beta)
 
-    def grad_potential(self, x: Tensor, beta: Tensor) -> Tensor:
+    def grad_potential(self, x: TensorLike, beta: TensorLike) -> TensorLike:
         """Compute the gradient of the potential function."""
         if tf.executing_eagerly():
             with tf.GradientTape() as tape:
