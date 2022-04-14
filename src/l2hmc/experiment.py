@@ -55,28 +55,25 @@ class Experiment:
                     f'Unexpected value for `framework`: {framework}'
                 )
 
-        elif self.config.dynamics.group == 'SU3':
+        if self.config.dynamics.group == 'SU3':
             if framework == 'pytorch':
                 from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
                 c1 = self.config.c1 if self.config.c1 is not None else 0.0
                 return LatticeSU3(nchains, tuple(latvolume), c1=c1)
-            elif framework == 'tensorflow':
+            if framework == 'tensorflow':
                 from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
                 c1 = self.config.c1 if self.config.c1 is not None else 0.0
                 return LatticeSU3(nchains, tuple(latvolume), c1=c1)
-            else:
-                raise ValueError(
-                    f'Unexpected value for `framework`: {framework}'
-                )
+
+            raise ValueError(f'Unexpected value for `framework`: {framework}')
 
             # c1 = self.config.c1 if self.config.c1 is not None else 0.0
             # return LatticeSU3(nchains, tuple(latvolume), c1=c1)
 
-        else:
-            raise ValueError(
-                'Unexpected value for `dynamics.group`: '
-                f'{self.config.dynamics.group}'
-            )
+        raise ValueError(
+            'Unexpected value for `dynamics.group`: '
+            f'{self.config.dynamics.group}'
+        )
 
     def get_input_spec(self) -> InputSpec:
         assert self.lattice is not None
@@ -177,17 +174,19 @@ class Experiment:
 
     def build_optimizer(self, dynamics: Optional[Any] = None):
         lr = self.config.learning_rate.lr_init
-        if self.config.framework == 'pytorch':
+        assert self.config.framework in ['torch', 'pytorch', 'tensorflow']
+        if self.config.framework in ['torch', 'pytorch']:
             from torch.optim import Adam
             if dynamics is None:
                 dynamics = self.build_dynamics()
 
             assert dynamics is not None
             return Adam(dynamics.parameters(), lr=lr)
-
-        elif self.config.framework == 'tensorflow':
+        if self.config.framework == 'tensorflow':
             import tensorflow as tf
             return tf.keras.optimizers.Adam(lr)
+
+        raise ValueError('Unable to build optimizer.')
 
     def build_trainer(
             self,
@@ -215,7 +214,7 @@ class Experiment:
                            dynamics_config=self.config.dynamics,
                            aux_weight=self.config.loss.aux_weight)
 
-        elif self.config.framework == 'tensorflow':
+        if self.config.framework == 'tensorflow':
             import horovod.tensorflow as hvd
             from l2hmc.trainers.tensorflow.trainer import Trainer
 
@@ -228,6 +227,8 @@ class Experiment:
                            lr_config=self.config.learning_rate,
                            dynamics_config=self.config.dynamics,
                            aux_weight=self.config.loss.aux_weight)
+
+        raise ValueError('Unable to build Trainer.')
 
     def init_wandb(
             self,
