@@ -6,17 +6,20 @@ Implements various configuration objects
 from __future__ import absolute_import, annotations, division, print_function
 from collections import namedtuple
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import json
-import os
 import logging
+import os
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-from omegaconf import DictConfig, OmegaConf
+from typing import Any, Dict, List, Optional, Tuple
 
 from hydra.core.config_store import ConfigStore
 import numpy as np
+from omegaconf import DictConfig
 from omegaconf import MISSING
+
+# from accelerate.accelerator import Accelerator
+# from hydra.utils import instantiate
 
 
 log = logging.getLogger(__name__)
@@ -37,6 +40,7 @@ OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 State = namedtuple('State', ['x', 'v', 'beta'])
 
 MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
+
 
 def add_to_outdirs_file(outdir: os.PathLike):
     with open(OUTDIRS_FILE, 'a') as f:
@@ -86,25 +90,27 @@ class BaseConfig:
         self.__init__(**config)
 
 
-defaults = [
-    {'backend': MISSING}
-]
+@dataclass
+class wandbSetup(BaseConfig):
+    id: Optional[str] = None
+    group: Optional[str] = None
+    save_code: Optional[bool] = True
+    sync_tensorboard: Optional[bool] = True
+    tags: Optional[list[str]] = None
+    mode: Optional[str] = 'online'
+    resume: Optional[str] = 'allow'
+    entity: Optional[str] = 'l2hmc-qcd'
+    project: Optional[str] = 'l2hmc-qcd'
+    settings: Optional[dict] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if self.settings is None:
+            self.settings = {'start_method': 'thread'}
 
 
 @dataclass
-class ExperimentConfig(BaseConfig):
-    framework: str
-    steps: Steps
-    dynamics: DynamicsConfig
-    loss: LossConfig
-    network: NetworkConfig
-    conv: ConvolutionConfig
-    net_weights: NetWeights
-    schedule: AnnealingSchedule
-    learning_rate: LearningRateConfig
-
-    def __post_init__(self):
-        self.schedule.setup(self.steps)
+class wandbConfig(BaseConfig):
+    setup: wandbSetup
 
 
 @dataclass
@@ -225,12 +231,6 @@ class AnnealingSchedule(BaseConfig):
 
 
 @dataclass
-class TrainingConfig(BaseConfig):
-    lr_config: LearningRateConfig
-    annealing_schedule: AnnealingSchedule
-
-
-@dataclass
 class ConvolutionConfig(BaseConfig):
     filters: List[int]
     sizes: List[int]
@@ -283,17 +283,16 @@ class DynamicsConfig(BaseConfig):
     merge_directions: bool = False
 
     def __post_init__(self):
+        assert self.group.upper() in ['U1', 'SU3']
         if self.group.upper() == 'U1':
             self.dim = 2
-            assert len(self.latvolume) == 2
             self.nt, self.nx = self.latvolume
             self.xshape = (self.nchains, self.dim, *self.latvolume)
             assert len(self.xshape) == 4
-            self.xdim = int(np.cumprod(self.xshape[1:])[-1])
+            assert len(self.latvolume) == 2
         elif self.group.upper() == 'SU3':
             self.dim = 4
             self.link_shape = (3, 3)
-            assert len(self.latvolume) == 4
             self.nt, self.nt, self.ny, self.nz = self.latvolume
             self.xshape = (
                 self.nchains,
@@ -302,27 +301,22 @@ class DynamicsConfig(BaseConfig):
                 *self.link_shape
             )
             assert len(self.xshape) == 8
-            self.xdim = int(np.cumprod(self.xshape[1:])[-1])
+            assert len(self.latvolume) == 4
         else:
             raise ValueError('Expected `group` to be one of `"U1", "SU3"`')
 
+        self.xdim = int(np.cumprod(self.xshape[1:])[-1])
 
-# @dataclass
-# class wandbConfig:
-#     entity: str
-#     project: str
-#     dir: Optional[str] = None
-#     name: Optional[str] = None
-#     group: Optional[str] = None
-#     resume: Optional[str] = None
-#     config: Optional[dict] = None
-#     job_type: Optional[str] = None
-#     tags: Optional[list[str]] = None
-#     tensorboard: Optional[str] = None
-#     sync_tensorboard: Optional[bool] = None
-
-#     def set_job_type(self, job_type: str) -> None:
-#         self.job_type = job_type
+    # def get_xshape(self):
+    #     if self.group.upper() == 'U1':
+    #         return (self.nchains, self.dim, *self.latvolume)
+    #     elif self.group.upper() == 'SU3':
+    #         return (
+    #             self.nchains,
+    #             self.dim,
+    #             *self.latvolume,
+    #             *self.link_shape
+    #         )
 
 
 @dataclass
@@ -343,11 +337,16 @@ class Steps:
 
     def __post_init__(self):
         self.total = self.nera * self.nepoch
-        if self.log is None:
-            self.log = max(1, int(self.nepoch // 10))
+        if self.total < 1000:
+            self.log = 5
+            self.print = max(1, int(self.nepoch // 10))
+        else:
+            if self.log is None:
+                self.log = max(1, int(self.total // 1000))
+                # self.log = max(1, int(self.nepoch // 10))
 
-        if self.print is None:
-            self.print = max(1, int(self.nepoch // 5))
+            if self.print is None:
+                self.print = max(1, int(self.nepoch // 10))
 
         assert isinstance(self.log, int)
         assert isinstance(self.print, int)
@@ -375,46 +374,50 @@ class InputSpec(BaseConfig):
             self.vnet = {'x': self.xshape, 'v': self.xshape}
 
 
-# def register_configs() -> None:
+@dataclass
+class ExperimentConfig:
+    framework: str
+    steps: Steps
+    loss: LossConfig
+    network: NetworkConfig
+    net_weights: NetWeights
+    dynamics: DynamicsConfig
+    annealing_schedule: AnnealingSchedule
+    learning_rate: LearningRateConfig
+    wandb: Any
+    # ----- optional below -------------------
+    conv: Optional[ConvolutionConfig] = None
+    c1: Optional[float] = 0.0
+    width: Optional[int] = None
+    nchains: Optional[int] = None
+    profile: Optional[bool] = False
+    eps_hmc: Optional[float] = 0.1181
+    debug_mode: Optional[bool] = False
+    default_mode: Optional[bool] = True
+    print_config: Optional[bool] = True
+    precision: Optional[str] = 'float32'
+    ignore_warnings: Optional[bool] = True
+    compile: Optional[bool] = True
+    name: Optional[str] = None
+
+    def __post_init__(self):
+        self.annealing_schedule.setup(self.steps)
+        w = int(os.environ.get('COLUMNS', 235))
+        self.width = w if self.width is None else self.width
+        self.xdim = self.dynamics.xdim
+        self.xshape = self.dynamics.xshape
+        log.warning(f'xdim: {self.dynamics.xdim}')
+        log.warning(f'group: {self.dynamics.group}')
+        log.warning(f'xshape: {self.dynamics.xshape}')
+        log.warning(f'latvolume: {self.dynamics.latvolume}')
+
+
+defaults = [
+    {'backend': MISSING}
+]
+
 cs = ConfigStore()
-cs.store(name='config_schema', node=ExperimentConfig)
 cs.store(
-    group="steps",
-    name="steps",
-    node=Steps,
-)
-cs.store(
-    group="dynamics",
-    name="dynamics",
-    node=DynamicsConfig,
-)
-cs.store(
-    group="loss",
-    name="loss",
-    node=LossConfig,
-)
-cs.store(
-    group='network',
-    name='network',
-    node=NetworkConfig,
-)
-cs.store(
-    group='conv',
-    name='conv',
-    node=ConvolutionConfig,
-)
-cs.store(
-    group="net_weights",
-    name="net_weights",
-    node=NetWeights,
-)
-cs.store(
-    group="annealing_schedule",
-    name="annealing_schedule",
-    node=AnnealingSchedule,
-)
-cs.store(
-    group="learning_rate",
-    name="learning_rate",
-    node=LearningRateConfig,
+    name='config',
+    node=ExperimentConfig,
 )

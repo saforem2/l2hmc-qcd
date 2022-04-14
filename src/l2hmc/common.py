@@ -14,13 +14,14 @@ import h5py
 import joblib
 from omegaconf import DictConfig
 import pandas as pd
+from rich.console import Console
 from rich.table import Table
 import wandb
 import xarray as xr
 
 from l2hmc.configs import AnnealingSchedule, Steps
-from l2hmc.utils.console import console
 from l2hmc.utils.plot_helpers import make_ridgeplots, plot_dataArray
+from l2hmc.utils.rich import is_interactive
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 log = logging.getLogger(__name__)
@@ -140,10 +141,10 @@ def save_logs(
     else:
         logdir = Path(logdir)
 
-    cfile = logdir.joinpath('console.txt').as_posix()
-    text = console.export_text()
-    with open(cfile, 'w') as f:
-        f.write(text)
+    # cfile = logdir.joinpath('console.txt').as_posix()
+    # text = console.export_text()
+    # with open(cfile, 'w') as f:
+    #     f.write(text)
 
     table_dir = logdir.joinpath('tables')
     tdir = table_dir.joinpath('txt')
@@ -155,8 +156,8 @@ def save_logs(
     tfile = tdir.joinpath('table.txt')
     tfile.parent.mkdir(exist_ok=True, parents=True)
 
-    # data = {}
     data = {}
+    console = Console(record=True)
     for idx, table in tables.items():
         if idx == 0:
             data = table_to_dict(table)
@@ -290,5 +291,41 @@ def analyze_dataset(
                 artifact.add_file(datafile.as_posix(), name=f'{job_type}/data')
 
             run.log_artifact(artifact)
+
+    return dataset
+
+
+def save_and_analyze_data(
+        dataset: xr.Dataset,
+        outdir: os.PathLike,
+        run: Optional[Any] = None,
+        output: Optional[dict] = None,
+        nchains: Optional[int] = -1,
+        job_type: Optional[str] = None,
+        framework: Optional[str] = None,
+) -> xr.Dataset:
+    jstr = f'{job_type}'
+    output = {} if output is None else output
+    title = (
+        jstr if framework is None
+        else ': '.join([jstr, f'{framework}'])
+    )
+
+    dataset = analyze_dataset(dataset,
+                              run=run,
+                              save=True,
+                              outdir=outdir,
+                              nchains=nchains,
+                              job_type=job_type,
+                              title=title)
+    if not is_interactive():
+        edir = Path(outdir).joinpath('logs')
+        edir.mkdir(exist_ok=True, parents=True)
+        log.info(f'Saving {job_type} logs to: {edir.as_posix()}')
+        save_logs(run=run,
+                  logdir=edir,
+                  job_type=job_type,
+                  tables=output.get('tables', None),
+                  summaries=output.get('summaries'))
 
     return dataset
