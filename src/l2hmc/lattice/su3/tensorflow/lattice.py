@@ -100,11 +100,6 @@ class LatticeSU3:
         xvu = self.g.mul(x[:, v], tf.roll(x[:, u], shift=-1, axis=v + 1))
         return self.g.trace(self.g.mul(xuv, xvu, adjoint_b=True))
 
-    def _plaq(self, x: Tensor, d: int, u: int, v: int):
-        """Calculate the 1x1 square plaquette
-        Return: U[μ](x) * U[ν](x+μ) * U†[μ](x+ν) * U†[ν](x)"""
-        pass
-
     def _wilson_loops(
             self,
             x: Tensor,
