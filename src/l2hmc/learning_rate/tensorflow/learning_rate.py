@@ -25,17 +25,18 @@ from l2hmc.configs import LearningRateConfig
 
 log = logging.getLogger(__name__)
 
+Callback = tf.keras.callbacks.Callback
 Optimizer = tf.keras.optimizers.Optimizer
 LearningRateSchedule = tf.keras.optimizers.schedules.LearningRateSchedule
 
 
-def moving_average(x, n=1000):
+def moving_average(x: np.ndarray, n: int = 1000):
     out = np.cumsum(x, dtype=np.float32)
-    out[n:] = out[n:] - out[:-n]
+    out[n:] = out[n:] - out[:-n]  # type: ignore
     return out[n-1:] / n
 
 
-class ReduceLROnPlateau(tf.keras.callbacks.Callback):
+class ReduceLROnPlateau(Callback):
     """Reduce learning rate when a metric has stopped improving.
     Models often benefit from reducing the learning rate by a factor
     of 2-10 once learning stagnates. This callback monitors a
@@ -145,7 +146,7 @@ class ReduceLROnPlateau(tf.keras.callbacks.Callback):
         self.wait = 0
         self.cooldown_counter = 0
 
-    def on_train_begin(self, logs=None):  # type:ignore noqa pyright: ignore
+    def on_train_begin(self, logs=None):  # type:ignore
         self._reset()
 
     def set_optimizer(self, optimizer: Optimizer):
