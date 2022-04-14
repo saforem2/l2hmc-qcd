@@ -6,7 +6,7 @@ Contains the pytorch implementation of the Normalizing Flow network
 used to train the L2HMC model.
 """
 from __future__ import absolute_import, annotations, division, print_function
-from typing import Callable
+from typing import Callable, Optional
 
 import numpy as np
 import torch
@@ -73,10 +73,10 @@ class Network(nn.Module):
             self,
             xshape: tuple[int],
             network_config: NetworkConfig,
-            input_shapes: dict[str, int] = None,
-            net_weight: NetWeight = None,
-            conv_config: ConvolutionConfig = None,
-            name: str = None,
+            input_shapes: Optional[dict[str, int]] = None,
+            net_weight: Optional[NetWeight] = None,
+            conv_config: Optional[ConvolutionConfig] = None,
+            name: Optional[str] = None,
     ):
         super().__init__()
         if net_weight is None:
@@ -117,7 +117,7 @@ class Network(nn.Module):
         self.s_coeff = nn.parameter.Parameter(torch.zeros(1, self.xdim))
         self.q_coeff = nn.parameter.Parameter(torch.zeros(1, self.xdim))
 
-        if conv_config is not None:
+        if conv_config is not None and len(conv_config.filters) > 0:
             self.conv_config = conv_config
             if len(xshape) == 3:
                 nt, nx, d = xshape[0], xshape[1], xshape[2]
