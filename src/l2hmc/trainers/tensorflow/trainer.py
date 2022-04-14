@@ -286,14 +286,16 @@ class Trainer:
             avgs = {k: v.mean() for k, v in record.items()}
 
         summary = summarize_dict(avgs)
-        if writer is not None:
+        # if writer is not None:
+        if step is not None:
             assert step is not None
             update_summaries(step=step,
                              prefix=job_type,
                              model=model,
                              metrics=record,
                              optimizer=optimizer)
-            writer.flush()
+            if writer is not None:
+                writer.flush()
 
         if run is not None:
             dQint = record.get('dQint', None)
