@@ -1,10 +1,22 @@
 [tool.poetry]
 name = "l2hmc"
-version = "0.3.0"
+version = "0.7.0"
 description = "L2HMC algorithm for sampling in Lattice QCD"
 authors = ["Sam Foreman <saforem2@gmail.com>"]
 packages = [{include = "l2hmc", from = "src"}]
-exclude = ["src/l2hmc/outputs/", "src/l2hmc/wandb/", "**/old/**/*", "**/outputs/**/*", "**/__pycache__/**/*", "**/.DS_Store/**/*"]
+exclude = [
+  "wandb",
+  "outputs",
+  "old",
+  "src/l2hmc/outputs/",
+  "src/l2hmc/wandb/",
+  "**/old/**/*",
+  "**/wandb/**/*",
+  "**/outputs/**/*",
+  "**/.ipynb_checkpoints/**",
+  "**/__pycache__/**/*",
+  "**/.DS_Store/**/*"
+]
 
 [tool.poetry.dependencies]
 python = "^3.10,<3.11"
@@ -34,7 +46,34 @@ matplotx = "^0.3.6"
 accelerate = "^0.6.2"
 
 [tool.poetry.dev-dependencies]
+euporie = "^1.4.3"
+ipykernel = "^6.12.1"
+notebook = "^6.4.10"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pyright]
+include = ["src"]
+exclude = [
+  "wandb",
+  "outputs",
+  "old",
+  "src/l2hmc/outputs/",
+  "src/l2hmc/wandb/",
+  "**/old/**/*",
+  "**/wandb/**/*",
+  "**/outputs/**/*",
+  "**/__pycache__/**/*",
+  "**/.DS_Store/**/*"
+]
+ignore = [
+  "src/l2hmc/old",
+]
+venvPath = "./.venv"
+reportMissingImports = true
+reportMissingTypeStubs = false
+useLibraryCodeForTypes = true
+pythonVersion = "3.10"
+pythonPlatform = "All"

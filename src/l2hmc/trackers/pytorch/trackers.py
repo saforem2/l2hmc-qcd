@@ -1,6 +1,5 @@
 """
 l2hmc/trackers/pytorch/trackers.py
-
 Contains various utilities for tracking / logging metrics in TensorBoard
 """
 from __future__ import absolute_import, annotations, division, print_function
@@ -26,7 +25,11 @@ def log_item(
         step: Optional[int],
 ):
     if isinstance(val, Tensor):
-        val = val.detach().numpy()
+        val = val.detach().cpu().numpy()
+
+    if step is not None:
+        iter_tag = '/'.join([tag.split('/')[0]] + ['iter'])
+        writer.add_scalar(tag=iter_tag, scalar_value=step, global_step=step)
 
     if (
             'dt' in tag

@@ -100,8 +100,8 @@ def get_network_configs(
         xdim: int,
         network_config: NetworkConfig,
         # factor: float = 1.,
-        activation_fn: str | Callable = None,
-        name: str = 'network',
+        activation_fn: Optional[str | Callable] = None,
+        name: Optional[str] = 'network',
 ) -> dict:
     """Returns network configs."""
     if isinstance(activation_fn, str):
@@ -168,19 +168,83 @@ def get_network_configs(
     }
 
 
+def setup(
+        xdim: int,
+        network_config: NetworkConfig,
+        name: Optional[str] = 'network',
+) -> dict:
+    """Setup for building network."""
+    layer_kwargs = {
+        'x': {
+            'units': network_config.units[0],
+            'name': f'{name}_xLayer',
+            'activation': linear_activation,
+        },
+        'v': {
+            'units': network_config.units[0],
+            'name': f'{name}_vLayer',
+            'activation': linear_activation,
+        },
+        'scale': {
+            'units': xdim,
+            'name': f'{name}_scaleLayer',
+            'activation': linear_activation,
+        },
+        'transl': {
+            'units': xdim,
+            'name': f'{name}_translationLayer',
+            'activation': linear_activation,
+        },
+        'transf': {
+            'units': xdim,
+            'name': f'{name}_transformationLayer',
+            'activation': linear_activation,
+        },
+    }
+
+    coeff_defaults = {
+        'dtype': TF_FLOAT,
+        'trainable': True,
+        'initial_value': tf.zeros([1, xdim], dtype=TF_FLOAT),
+    }
+    coeff_kwargs = {
+        'scale': {
+            'name': f'{name}_scaleCoeff',
+            **coeff_defaults,
+        },
+        'transf': {
+            'name': f'{name}_transformationCoeff',
+            **coeff_defaults,
+        }
+    }
+
+    return {'layer': layer_kwargs, 'coeff': coeff_kwargs}
+
+
 # pylint:disable=too-many-locals, too-many-arguments
 def get_network(
         xshape: tuple,
         network_config: NetworkConfig,
-        input_shapes: dict[str, tuple[int]] = None,
-        net_weight: NetWeight = None,
+        input_shapes: Optional[dict[str, tuple[int]]] = None,
+        net_weight: Optional[NetWeight] = None,
         conv_config: Optional[ConvolutionConfig] = None,
         # factor: float = 1.,
-        name: str = None,
+        name: Optional[str] = None,
 ) -> Model:
     """Returns a functional `tf.keras.Model`."""
     xdim = np.cumprod(xshape[1:])[-1]
     name = 'GaugeNetwork' if name is None else name
+
+    if isinstance(network_config.activation_fn, str):
+        act_fn = Activation(network_config.activation_fn)
+        assert callable(act_fn)
+    elif callable(network_config.activation_fn):
+        act_fn = network_config.activation_fn
+    else:
+        raise ValueError(
+            'Unexpected value encountered in '
+            f'`NetworkConfig.activation_fn`: {network_config.activation_fn}'
+        )
 
     if net_weight is None:
         net_weight = NetWeight(1., 1., 1.)
@@ -190,24 +254,21 @@ def get_network(
             'x': (xdim,), 'v': (xdim,),
         }
 
-    cfg = get_network_configs(name=name,
-                              xdim=xdim,
-                              network_config=network_config,
-                              activation_fn=network_config.activation_fn)
-    args = cfg['args']
-    names = cfg['names']
-    act_fn = cfg['activation']
+    kwargs = setup(xdim=xdim, name=name, network_config=network_config)
+    coeff_kwargs = kwargs['coeff']
+    layer_kwargs = kwargs['layer']
 
-    x_input = Input(input_shapes['x'], name=names['x_input'], dtype=TF_FLOAT)
-    v_input = Input(input_shapes['v'], name=names['v_input'], dtype=TF_FLOAT)
+    x_input = Input(input_shapes['x'], name=f'{name}_xinput', dtype=TF_FLOAT)
+    v_input = Input(input_shapes['v'], name=f'{name}_vinput', dtype=TF_FLOAT)
 
-    s_coeff = tf.Variable(**cfg['coeff_kwargs'], name=names['s_coeff'])
-    q_coeff = tf.Variable(**cfg['coeff_kwargs'], name=names['q_coeff'])
+    s_coeff = tf.Variable(**coeff_kwargs['scale'])
+    q_coeff = tf.Variable(**coeff_kwargs['transf'])
 
-    if conv_config is None:
+    if conv_config is None or len(conv_config.filters) == 0:
         x = Flatten()(x_input)
 
-    else:
+    # if conv_config is not None and len(conv_config.filters) > 0:
+    elif conv_config is not None and len(conv_config.filters) > 0:
         if len(xshape) == 3:
             nt, nx, d = xshape
         elif len(xshape) == 4:
@@ -231,16 +292,20 @@ def get_network(
                 x = MaxPooling2D((p, p), name=f'{name}/xPool{idx}')(x)
 
         x = Flatten()(x)
-        if network_config.use_batch_norm:
-            x = BatchNormalization(-1)(x)
 
-    x = Dense(**args['x'], dtype=TF_FLOAT)(x)
-    v = Dense(**args['v'], dtype=TF_FLOAT)(v_input)
+    else:
+        raise ValueError('Unable to build network.')
+
+    if network_config.use_batch_norm:
+        x = BatchNormalization(-1)(x)
+
+    x = Dense(**layer_kwargs['x'])(x)
+    v = Dense(**layer_kwargs['v'])(v_input)
     z = act_fn(Add()([x, v]))
     for idx, units in enumerate(network_config.units[1:]):
         z = Dense(units,
-                  activation=act_fn,
                   dtype=TF_FLOAT,
+                  activation=act_fn,
                   name=f'{name}_hLayer{idx}')(z)
 
     if network_config.dropout_prob > 0:
@@ -249,23 +314,27 @@ def get_network(
     if network_config.use_batch_norm:
         z = BatchNormalization(-1, name=f'{name}_batchnorm')(z)
 
-    # Scaling
+    # -------------------------------------------------------------
+    # NETWORK OUTPUTS
+    #  1. s: Scale function
+    #  2. t: Translation function
+    #  3. q: Transformation function
+    # -------------------------------------------------------------
+    # 1. Scaling
     s = Multiply()([
         net_weight.s * tf.math.exp(s_coeff),
-        tf.math.tanh(Dense(**args['scale'])(z))
+        tf.math.tanh(Dense(**layer_kwargs['scale'])(z))
     ])
 
-    # Translation
-    t = Dense(**args['transl'])(z)
+    # 2. Translation
+    t = Dense(**layer_kwargs['transl'])(z)
 
-    # Transformation
+    # 3. Transformation
     q = Multiply()([
         net_weight.q * tf.math.exp(q_coeff),
-        tf.math.tanh(Dense(**args['transf'])(z))
+        tf.math.tanh(Dense(**layer_kwargs['transf'])(z))
     ])
 
-    model = Model(name=name,
-                  inputs=[x_input, v_input],
-                  outputs=[s, t, q])
+    model = Model(name=name, inputs=[x_input, v_input], outputs=[s, t, q])
 
     return model

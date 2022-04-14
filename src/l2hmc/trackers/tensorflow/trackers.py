@@ -1,6 +1,5 @@
 """
 l2hmc/trackers/tensorflow/trackers.py
-
 Contains various utilities for tracking / logging metrics in TensorBoard
 """
 from __future__ import absolute_import, annotations, division, print_function
@@ -27,6 +26,10 @@ def log_item(
         val: ArrayLike,
         step: Optional[int] = None,
 ):
+    if step is not None:
+        iter_tag = '/'.join([tag.split('/')[0]] + ['iter'])
+        tf.summary.scalar(iter_tag, step, step=step)
+
     if (
             'dt' in tag
             or 'era' in tag
