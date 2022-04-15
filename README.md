@@ -9,6 +9,8 @@
   <br>
 </div>
 
+<br>
+
 <!---![](assets/image.svg)--->
 
 <!--- # l2hmc-qcd  [![CodeFactor](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge)](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd)--->
@@ -17,19 +19,10 @@
 
 <!---![HitCount] (http://hits.dwyl.com/saforem2/l2hmc-qcd.svg)--->
 
-
-## 📊 [Slides](https://www.bit.ly/l2hmc-ect2021)
-  - [**Accelerated Sampling Techniques for Lattice Gauge Theory**](https://saforem2.github.io/l2hmc-dwq25/#/) @ [BNL & RBRC: DWQ @ 25](https://indico.bnl.gov/event/13576/), December 2021
-  - [**Training Topological Samplers for Lattice Gauge Theory**](https://bit.ly/l2hmc-ect2021) from the [*Machine Learning for High Energy Physics, on and off the Lattice*](https://indico.ectstar.eu/event/77/) @ ect* Trento (09/30/2021)
-
- ## 📒 [Example Notebook](./l2hmc-qcd/notebooks/l2hmc-qcd.ipynb)
-
-- [x]   Accepted to the [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) at **ICLR 2021**
-  - 📚 : [arXiv:2105.03418](https://arxiv.org/abs/2105.03418)  
-  - 📊 : [poster](https://www.bit.ly/l2hmc_poster)
----
-
-## Overview
+# Overview
+- [**Accelerated Sampling Techniques for Lattice Gauge Theory**](https://saforem2.github.io/l2hmc-dwq25/#/) @ [BNL & RBRC: DWQ @ 25](https://indico.bnl.gov/event/13576/), December 2021
+- [**Training Topological Samplers for Lattice Gauge Theory**](https://bit.ly/l2hmc-ect2021) from the [*Machine Learning for High Energy Physics, on and off the Lattice*](https://indico.ectstar.eu/event/77/) @ ect* Trento (09/30/2021) (+ 📊 [slides](https://www.bit.ly/l2hmc-ect2021))
+- [Deep Learning Hamiltonian Monte Carlo](https://arxiv.org/abs/2105.03418) @ [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) **ICLR 2021** (+📈[poster](https://www.bit.ly/l2hmc_poster))
 
 The L2HMC algorithm aims to improve upon [HMC](https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo) by optimizing a carefully chosen loss function which is designed to minimize autocorrelations within the Markov Chain, thereby improving the efficiency of the sampler.
 
@@ -47,6 +40,30 @@ Broadly, given an *analytically* described target distribution, π(x), L2HMC pro
 - Quickly produces uncorrelated samples (fast ***mixing***).
 - Is able to efficiently mix between energy levels.
 - Is capable of traversing low-density zones to mix between modes (often difficult for generic HMC).
+
+
+
+<!-- ## 📒 [Example Notebook](./l2hmc-qcd/notebooks/l2hmc-qcd.ipynb) -->
+
+## Installation
+
+- [`l2hmc`](https://pypi.org/project/l2hmc/) on PyPi:
+
+```bash
+$ python3 -m pip install l2hmc
+```
+
+## Running
+
+This project uses [`hydra`](https://hydra.cc) for configuration management and supports both TensorFlow (+ Horovod) and PyTorch (+ DDP) training frameworks.
+
+The [`l2hmc/conf/config.yaml`](./src/l2hmc/conf/config.yaml) contains a brief explanation of each of the various parameter options, and values can be overriden either by modifying the `config.yaml` file, or directly through the command line, e.g.
+
+```bash
+python3 main.py framework=tensorflow network.activation_fn=swish
+```
+
+for more information on how this works I encourage you to read [Hydra's Documentation Page](https://hydra.cc).
 
 
 ## L2HMC for LatticeQCD
@@ -89,7 +106,7 @@ Lattice code can be found in [`lattice.py`](l2hmc-qcd/lattice/lattice.py), speci
 
 Additionally, the `GaugeLattice` object implements a variety of methods for calculating physical observables such as the average plaquette, ɸₚ, and the topological charge Q,
 
-### Training
+<!--### Training
 
 The training loop is implemented in [`l2hmc-qcd/utils/training_utils.py `](l2hmc-qcd/utils/training_utils.py).
 
@@ -114,6 +131,7 @@ Or via the [` bin/train.sh `](bin/train.sh) script provided in [` bin/ `](bin/).
   
   horovodrun -np ${PROCS} python3 ${TRAINER} --json_file=${JSON_FILE}
   ```
+-->
 
 ## Contact
 ---
