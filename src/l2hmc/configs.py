@@ -44,6 +44,7 @@ MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
 
 def add_to_outdirs_file(outdir: os.PathLike):
     with open(OUTDIRS_FILE, 'a') as f:
+        f.write('\n')
         f.write(Path(outdir).resolve().as_posix())
 
 
