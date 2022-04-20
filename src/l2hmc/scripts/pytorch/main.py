@@ -170,6 +170,10 @@ def main(cfg: DictConfig) -> dict:
                                       nchains=nchains,
                                       trainer=trainer)
     if run is not None:
+        run.save('./train/*ckpt*')
+        run.save('./train/*.h5*')
+        run.save('./eval/*.h5*')
+        run.save('./hmc/*.h5*')
         run.finish()
 
     return outputs
