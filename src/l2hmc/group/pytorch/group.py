@@ -19,10 +19,10 @@ Tensor = torch.Tensor
 
 ONE_HALF = 1. / 2.
 ONE_THIRD = 1. / 3.
-TWO_PI = torch.from_numpy(2. * PI)
+TWO_PI = torch.tensor(2. * PI)
 
-SQRT1by2 = torch.from_numpy(np.sqrt(1. / 2.))
-SQRT1by3 = torch.from_numpy(np.sqrt(1. / 3.))
+SQRT1by2 = torch.tensor(np.sqrt(1. / 2.))
+SQRT1by3 = torch.tensor(np.sqrt(1. / 3.))
 
 
 def eyeOf(m):
@@ -129,9 +129,11 @@ def rsqrtPHM3f(tr, p2, det):
 
 
 def rsqrtPHM3(x: Tensor) -> Tensor:
-    tr = x.trace().real
+    # tr = x.trace().real
+    tr = torch.diagonal(x, dim1=-2, dim2=-1).sum(-1)
     x2 = torch.matmul(x, x)
-    p2 = x2.trace().real
+    p2 = torch.diagonal(x2, dim1=-2, dim2=-1).sum(-1)
+    # p2 = x2.trace().real
     det = x.det().real
     c0, c1, c2 = rsqrtPHM3f(tr, p2, det)
     c0_ = c0.reshape(c0.shape + (1, 1))
