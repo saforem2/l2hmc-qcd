@@ -19,15 +19,15 @@ log = logging.getLogger(__name__)
 
 class Experiment:
     """Convenience class for running framework independent experiments."""
-    def __init__(self, cfg: DictConfig, should_build: bool = False) -> None:
+    def __init__(self, cfg: DictConfig) -> None:
         self.cfg = cfg
         self.config = instantiate(cfg)
         assert isinstance(self.config, ExperimentConfig)
         assert self.config.framework in ['pytorch', 'tensorflow']
         self.lattice = self.build_lattice()
-        objs = self.build()
-        self.run = objs['run']
-        self.trainer = objs['trainer']
+        # objs = self.build()
+        # self.run = objs['run']
+        # self.trainer = objs['trainer']
         # self._is_built = False
         # if should_build:
         #     objs = self.build()
@@ -238,14 +238,11 @@ class Experiment:
         run_id = generate_id()
         self.update_wandb_config(run_id=run_id)
         log.warning(f'os.getcwd(): {os.getcwd()}')
+        wandb.tensorboard.patch(root_logdir=os.getcwd())
         run = wandb.init(dir=os.getcwd(), **self.config.wandb.setup)
         assert run is wandb.run and run is not None
         wandb.define_metric('dQint_eval', summary='mean')
         run.log_code(HERE.as_posix())
-        run.save('./train/*ckpt*')
-        run.save('./train/*.h5*')
-        run.save('./eval/*.h5*')
-        run.save('./hmc/*.h5*')
         cfg_dict = OmegaConf.to_container(self.cfg,
                                           resolve=True,
                                           throw_on_missing=False)
