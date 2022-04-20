@@ -180,7 +180,7 @@ def save_logs(
         with open(hfile.as_posix(), 'r') as f:
             html = f.read()
 
-        run.log({f'Media/{job_type}': wandb.Html(html)})
+        # run.log({f'Media/{job_type}': wandb.Html(html)})
         run.log({
             f'DataFrames/{job_type}': wandb.Table(data=df)
         })
