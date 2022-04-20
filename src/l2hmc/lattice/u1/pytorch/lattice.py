@@ -268,3 +268,20 @@ class LatticeU1(BaseLatticeU1):
         dq = (q2 - q1) ** 2
         qloss = acc * dq + 1e-4
         return -qloss.mean(0)
+
+    def grad_action(
+
+            self,
+            x: Tensor,
+            beta: Tensor,
+            # create_graph: bool = True,
+    ) -> Tensor:
+        """Compute the gradient of the potential function."""
+        x.requires_grad_(True)
+        s = self.action(x, beta)
+        id = torch.ones(x.shape[0], device=x.device)
+        dsdx, = torch.autograd.grad(s, x,
+                                    # create_graph=create_graph,
+                                    # retain_graph=True,
+                                    grad_outputs=id)
+        return dsdx
