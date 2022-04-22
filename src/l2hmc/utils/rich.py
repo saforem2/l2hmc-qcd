@@ -45,6 +45,7 @@ def is_interactive():
 console = Console(record=False,
                   color_system='truecolor',
                   log_path=False,
+                  force_jupyter=is_interactive(),
                   width=WIDTH)
 console.width = WIDTH
 
@@ -219,8 +220,12 @@ def print_config(
 
         branch.add(rich.syntax.Syntax(branch_content, "yaml"))
 
-    rich.print(tree)
-
     outfile = Path(os.getcwd()).joinpath('config_tree.log')
-    with outfile.open('w') as f:
-        rich.print(tree, file=f)
+    # with open(outfile, 'wt') as f:
+    with outfile.open('wt') as f:
+        console = rich.console.Console(file=f)
+        console.print(tree)
+    # rich.print(tree)
+
+    # with outfile.open('w') as f:
+    #     rich.print(tree, file=f)
