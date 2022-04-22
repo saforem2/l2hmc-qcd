@@ -34,7 +34,7 @@ from l2hmc.dynamics.pytorch.dynamics import Dynamics, random_angle, to_u1
 from l2hmc.loss.pytorch.loss import LatticeLoss
 from l2hmc.trackers.pytorch.trackers import update_summaries
 from l2hmc.utils.history import BaseHistory, summarize_dict
-from l2hmc.utils.rich import add_columns, build_layout, console
+from l2hmc.utils.rich import add_columns, build_layout, console, is_interactive
 from l2hmc.utils.step_timer import StepTimer
 # from torchinfo import summary as model_summary
 
@@ -258,7 +258,7 @@ class Trainer:
         if run is not None:
             run.config.update({job_type: {'beta': beta, 'xshape': x.shape}})
 
-        with Live(layout) as live:
+        with Live(layout, console=console) as live:
             if WIDTH is not None and WIDTH > 0:
                 live.console.width = WIDTH
 
@@ -531,15 +531,18 @@ class Trainer:
         # with ctxmgr as live:
         # with Live(layout, console=console) as live:
         estart = time.time()
-        with ctxmgr:
-            # console = getattr(live, 'console', None)
+        with ctxmgr as live:
+            if WIDTH is not None and WIDTH > 0:
+                console.width = WIDTH
             for era in range(self.steps.nera):
                 estart = time.time()
                 table = Table(**tkwargs)
                 beta = self.schedule.betas[str(era)]
-                display['job_progress'].reset(display['tasks']['epoch'])
-                if layout is not None and self.rank == 0:
+                if display is not None:
+                    display['job_progress'].reset(display['tasks']['epoch'])
+                if layout is not None:
                     layout['root']['main'].update(table)
+                if self.rank == 0 and console is not None:
                     # console.width = min(int(main_panel.get), WIDTH)
                     console.rule(', '.join([
                         f'BETA: {beta}',
@@ -556,8 +559,13 @@ class Trainer:
                     x, metrics = self.train_step((x, beta))
                     dt = timer.stop()
                     gstep += 1
-                    display['job_progress'].advance(display['tasks']['step'])
-                    display['job_progress'].advance(display['tasks']['epoch'])
+                    if display is not None:
+                        display['job_progress'].advance(
+                            display['tasks']['step']
+                        )
+                        display['job_progress'].advance(
+                            display['tasks']['epoch']
+                        )
                     # if console is not None and isinstance(live, LiveRender):
 
                     if self.should_print(epoch) or self.should_log(epoch):
@@ -598,7 +606,9 @@ class Trainer:
                 #                      model=self.dynamics,
                 #                      optimizer=self.optimizer)
 
-                console.print(f'Era {era} took: {time.time() - estart:<5g}s')
+                console.print(
+                    f'Era {era} took: {time.time() - estart:<5g}s'
+                )
                 emetrics = self.history.era_metrics[str(era)]
                 # era_summary = self.history.era_summary(era)
                 era_strs = [
