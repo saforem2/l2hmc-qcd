@@ -38,7 +38,7 @@ def evaluate(
         run: Optional[Any] = None,
         # writer: Optional[Any] = None,
         nchains: Optional[int] = 10,
-        eps: Optional[TensorLike] = None,
+        eps: Optional[Tensor] = None,
 ) -> dict:
     assert isinstance(nchains, int)
     assert job_type in ['eval', 'hmc']
@@ -85,10 +85,9 @@ def train(
         trainer: Trainer,
         run: Optional[Any] = None,
         # writer: Optional[Any] = None,
-        nchains: Optional[int] = None,
+        nchains: Optional[int] = -1,
         **kwargs,
 ) -> dict:
-    nchains = 16 if nchains is None else nchains
     jobdir = get_jobdir(cfg, job_type='train')
 
     # if writer is not None:
@@ -105,6 +104,7 @@ def train(
                            **kwargs)
     if trainer.rank == 0:
         dset = output['history'].get_dataset()
+        # nchains = 16 if nchains is None else nchains
         _ = save_and_analyze_data(dset,
                                   run=run,
                                   outdir=jobdir,
