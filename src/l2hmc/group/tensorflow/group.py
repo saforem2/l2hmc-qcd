@@ -19,10 +19,10 @@ import tensorflow as tf
 import math
 from typing import Callable
 
-from tensorflow.types.experimental import TensorLike  # type:ignore
+# from tensorflow.types.experimental import TensorLike  # type:ignore
 
 Array = np.array
-# Tensor = tf.Tensor
+Tensor = tf.Tensor
 PI = tf.convert_to_tensor(math.pi)
 SQRT1by3 = tf.math.sqrt(1. / 3.)
 
@@ -36,22 +36,26 @@ class Group:
     """Gauge group represented as matrices in the last two dims in tensors."""
     def mul(
             self,
-            a: TensorLike,
-            b: TensorLike,
+            a: Tensor,
+            b: Tensor,
             adjoint_a: bool = False,
             adjoint_b: bool = False
-    ) -> TensorLike:
+    ) -> Tensor:
         return tf.linalg.matmul(a, b, adjoint_a=adjoint_a, adjoint_b=adjoint_b)
 
 
 class U1Phase(Group):
+    dtype = TF_FLOAT
+    size = [1]
+    shape = (1)
+
     def mul(
             self,
-            a: TensorLike,
-            b: TensorLike,
+            a: Tensor,
+            b: Tensor,
             adjoint_a: bool = False,
             adjoint_b: bool = False
-    ) -> TensorLike:
+    ) -> Tensor:
         if adjoint_a and adjoint_b:
             return tf.subtract(tf.math.negative(a), b)
         elif adjoint_a:
@@ -61,28 +65,28 @@ class U1Phase(Group):
         else:
             return tf.add(a, b)
 
-    def adjoint(self, x: TensorLike) -> TensorLike:
+    def adjoint(self, x: Tensor) -> Tensor:
         return tf.math.negative(x)
 
-    def trace(self, x: TensorLike) -> TensorLike:
+    def trace(self, x: Tensor) -> Tensor:
         return tf.math.cos(x)
 
-    def diff_trace(self, x: TensorLike) -> TensorLike:
+    def diff_trace(self, x: Tensor) -> Tensor:
         return tf.math.negative(tf.math.sin(x))
 
-    def diff2trace(self, x: TensorLike) -> TensorLike:
+    def diff2trace(self, x: Tensor) -> Tensor:
         return tf.math.negative(tf.math.cos(x))
 
-    def compat_proj(self, x: TensorLike) -> TensorLike:
+    def compat_proj(self, x: Tensor) -> Tensor:
         return tf.math.floormod(x + PI, 2 * PI) - PI
 
     def random(self, shape: list[int]):
         return self.compat_proj(tf.random.uniform(shape, *(-4, 4)))
 
-    def random_momentum(self, shape: list[int]) -> TensorLike:
+    def random_momentum(self, shape: list[int]) -> Tensor:
         return tf.random.normal(shape)
 
-    def kinetic_energy(self, p: TensorLike) -> TensorLike:
+    def kinetic_energy(self, p: Tensor) -> Tensor:
         return tf.reduce_sum(
             tf.square(tf.reshape(p, [p.shape[0], -1])),
             axis=1
@@ -96,47 +100,54 @@ class SU3(Group):
 
     def mul(
             self,
-            a: TensorLike,
-            b: TensorLike,
+            a: Tensor,
+            b: Tensor,
             adjoint_a: bool = False,
             adjoint_b: bool = False,
-    ) -> TensorLike:
+    ) -> Tensor:
         return tf.linalg.matmul(a, b, adjoint_a=adjoint_a, adjoint_b=adjoint_b)
 
-    def adjoint(self, x: TensorLike) -> TensorLike:
+    def adjoint(self, x: Tensor) -> Tensor:
         return tf.linalg.adjoint(x)
 
-    def trace(self, x: TensorLike) -> TensorLike:
+    def trace(self, x: Tensor) -> Tensor:
         return tf.linalg.trace(x)
 
-    def diff_trace(self, x: TensorLike):  # type: ignore
+    def diff_trace(self, x: Tensor):  # type: ignore
         print('TODO')
 
-    def diff2Trace(self, x: TensorLike):  # -> TensorLike:
+    def diff2Trace(self, x: Tensor):  # -> Tensor:
         print('TODO')
 
-    def exp(self, x: TensorLike) -> TensorLike:
+    def exp(self, x: Tensor) -> Tensor:
         return exp(x)
 
-    def projectTAH(self, x: TensorLike) -> TensorLike:
+    def projectTAH(self, x: Tensor) -> Tensor:
         return projectTAH(x)
 
-    def random(self, shape: tuple) -> TensorLike:
+    def compat_proj(self, x: Tensor) -> Tensor:
+        """Arbitrary matrix C projects to skew-hermitian B := (C - C^H) / 2
+
+        Make traceless with tr(B - (tr(B) / N) * I) = tr(B) - tr(B) = 0
+        """
+        return projectSU(x)
+
+    def random(self, shape: list[int]) -> Tensor:
         r = tf.random.normal(shape, dtype=TF_FLOAT)
         i = tf.random.normal(shape, dtype=TF_FLOAT)
         return projectSU(tf.dtypes.complex(r, i))
 
-    def random_momentum(self, shape: tuple) -> TensorLike:
+    def random_momentum(self, shape: list[int]) -> Tensor:
         return randTAH3(shape[:-2])
 
-    def kinetic_energy(self, p: TensorLike) -> TensorLike:
+    def kinetic_energy(self, p: Tensor) -> Tensor:
         p2 = norm2(p) - tf.constant(8.0)  # - 8.0 ??
         return (
             0.5 * tf.math.reduce_sum(tf.reshape(p2, [p.shape[0], -1]), axis=1)
         )
 
 
-def norm2(x: TensorLike, axis=[-2, -1]) -> TensorLike:
+def norm2(x: Tensor, axis=[-2, -1]) -> Tensor:
     """No reduction if axis is empty"""
     n = tf.math.real(tf.math.multiply(tf.math.conj(x), x))
     if len(axis) == 0:
@@ -148,7 +159,7 @@ def norm2(x: TensorLike, axis=[-2, -1]) -> TensorLike:
 # Converted from qex/src/maths/matrixFunctions.nim
 # Last two dims in a tensor contain matrices.
 # WARNING: below only works for SU3 for now
-def randTAH3(shape):
+def randTAH3(shape: list[int]):
     s2 = 0.70710678118654752440    # sqrt(1/2)
     s3 = 0.577350269189625750    # sqrt(1/3)
     r3 = s2 * tf.random.normal(shape, dtype=TF_FLOAT)
@@ -221,7 +232,7 @@ def rsqrtPHM3f(tr, p2, det):
     return c0, c1, c2
 
 
-def rsqrtPHM3(x: TensorLike) -> TensorLike:
+def rsqrtPHM3(x: Tensor) -> Tensor:
     tr = tf.math.real(tf.linalg.trace(x))
     x2 = tf.linalg.matmul(x, x)
     p2 = tf.math.real(tf.linalg.trace(x2))
@@ -236,7 +247,7 @@ def rsqrtPHM3(x: TensorLike) -> TensorLike:
     return term0 + term1 + term2
 
 
-def projectU(x: TensorLike) -> TensorLike:
+def projectU(x: Tensor) -> Tensor:
     """x (x'x)^{-1/2}"""
     # nc = x.shape[-1]
     t = tf.linalg.matmul(x, x, adjoint_a=True)
@@ -244,7 +255,7 @@ def projectU(x: TensorLike) -> TensorLike:
     return tf.linalg.matmul(x, t2)
 
 
-def projectSU(x: TensorLike) -> TensorLike:
+def projectSU(x: Tensor) -> Tensor:
     nc = tf.constant(x.shape[-1], TF_FLOAT)
     m = projectU(x)
     d = tf.linalg.det(m)
@@ -258,7 +269,7 @@ def projectSU(x: TensorLike) -> TensorLike:
     return p_ * m
 
 
-def projectTAH(x: TensorLike) -> TensorLike:
+def projectTAH(x: Tensor) -> Tensor:
     """Returns R = 1/2 (X - X†) - 1/(2 N) tr(X - X†)
     R = - T^a tr[T^a (X - X†)]
       = T^a ∂_a (- tr[X + X†])
@@ -271,7 +282,7 @@ def projectTAH(x: TensorLike) -> TensorLike:
     return r
 
 
-def checkU(x: TensorLike) -> tuple[TensorLike, TensorLike]:
+def checkU(x: Tensor) -> tuple[Tensor, Tensor]:
     """Returns the average and maximum of the sum of the deviations of X†X"""
     nc = tf.constant(x.shape[-1])
     d = norm2(tf.linalg.matmul(x, x, adjoint_a=True) - eyeOf(x))
@@ -282,7 +293,7 @@ def checkU(x: TensorLike) -> tuple[TensorLike, TensorLike]:
     return tf.math.sqrt(a / c), tf.math.sqrt(b / c)
 
 
-def checkSU(x: TensorLike) -> tuple[TensorLike, TensorLike]:
+def checkSU(x: Tensor) -> tuple[Tensor, Tensor]:
     """Returns the average and maximum of the sumf of deviations of:
          - X† X
          - det(x)
@@ -296,11 +307,11 @@ def checkSU(x: TensorLike) -> tuple[TensorLike, TensorLike]:
     # d += norm2(-1 + tf.linalg.det(x), axis=[])
     a = tf.math.reduce_mean(d, axis=range(1, len(d.shape)))
     b = tf.math.reduce_max(d, axis=range(1, len(d.shape)))
-    c = tf.cast(2 * (nc * nc + 1), TF_FLOAT)
+    c = tf.cast(2 * (nc * nc + 1), tf.math.real(x).dtype)
     return tf.math.sqrt(a / c), tf.math.sqrt(b / c)
 
 
-def su3vec(x: TensorLike) -> TensorLike:
+def su3vec(x: Tensor) -> Tensor:
     """Only for x in 3x3 anti-Hermitian.
 
     Return 8 real numbers, X^a T^a = X - 1/3 tr(X)
@@ -329,7 +340,7 @@ def su3vec(x: TensorLike) -> TensorLike:
     ], axis=-1)
 
 
-def su3fromvec(v: TensorLike) -> TensorLike:
+def su3fromvec(v: Tensor) -> Tensor:
     """
     X = X^a T^a
     tr{X T^b} = X^a tr{T^a T^b} = X^a (-1/2) 𝛅^ab = -1/2 X^b
@@ -345,7 +356,7 @@ def su3fromvec(v: TensorLike) -> TensorLike:
     x0i = c * (x2i + v[..., 2])                              # type:ignore
     x1i = c * (x2i - v[..., 2])                              # type:ignore
 
-    def neg_conj(x: TensorLike) -> TensorLike:
+    def neg_conj(x: Tensor) -> Tensor:
         return tf.math.negative(tf.math.conj(x))
 
     # ----------------------------------------------------
@@ -373,7 +384,7 @@ def eyeOf(m):
     return tf.eye(*m.shape[-2:], batch_shape=batch_shape, dtype=m.dtype)
 
 
-def exp(m: TensorLike, order: int = 12):
+def exp(m: Tensor, order: int = 12):
     eye = eyeOf(m)
     x = eye + m / tf.constant(order)
     for i in tf.range(order-1, 0, -1):
@@ -383,9 +394,9 @@ def exp(m: TensorLike, order: int = 12):
 
 
 def SU3GradientTF(
-        f: Callable[[TensorLike], TensorLike],
-        x: TensorLike,
-) -> tuple[TensorLike, TensorLike]:
+        f: Callable[[Tensor], Tensor],
+        x: Tensor,
+) -> tuple[Tensor, Tensor]:
     """Compute gradient using TensorFlow GradientTape.
 
     y = f(x) must be a real scalar value.
