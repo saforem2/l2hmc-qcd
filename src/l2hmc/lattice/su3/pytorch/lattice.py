@@ -8,11 +8,11 @@ from __future__ import absolute_import, print_function, division, annotations
 import numpy as np
 
 from typing import Optional, Tuple
-import numpy as np
 import logging
 
 import torch
 from l2hmc.group.pytorch import group as g
+from l2hmc.configs import Charges
 
 log = logging.getLogger(__name__)
 # from l2hmc.lattice.su3.lattice.
@@ -123,10 +123,12 @@ class LatticeSU3:
         # rects = tf.TensorArray(x.dtype, size=0, dynamic_size=True)
         plaqs = []
         rects = []
-        for u in range(1, 4):
+        for u in range(1, self.dim):
             for v in range(0, u):
-                yuv = self.g.mul(x[:, u], x[:, v].roll(-1, dims=u+1))
-                yvu = self.g.mul(x[:, v], x[:, u].roll(-1, dims=v+1))
+                xu = x[:, u]
+                xv = x[:, v]
+                yuv = self.g.mul(xu, xv.roll(-1, dims=u+1))
+                yvu = self.g.mul(xv, xu.roll(-1, dims=v+1))
                 plaq = self.g.trace(self.g.mul(yuv, yvu, adjoint_b=True))
                 plaqs.append(plaq)
                 # plaqs = plaqs.write(pcount, plaq)
@@ -134,10 +136,10 @@ class LatticeSU3:
 
                 # plaqs.append(plaq)
                 if needs_rect:
-                    yu = x[:, u].roll(-1, dims=v+1)
-                    yv = x[:, v].roll(-1, dims=u+1)
-                    uu = self.g.mul(x[:, v], yuv, adjoint_a=True)
-                    ur = self.g.mul(x[:, u], yvu, adjoint_a=True)
+                    yu = xu.roll(-1, dims=v+1)
+                    yv = xv.roll(-1, dims=u+1)
+                    uu = self.g.mul(xv, yuv, adjoint_a=True)
+                    ur = self.g.mul(xu, yvu, adjoint_a=True)
                     ul = self.g.mul(yuv, yu, adjoint_b=True)
                     ud = self.g.mul(yvu, yv, adjoint_b=True)
                     ul_ = ul.roll(-1, dims=u+1)
@@ -151,39 +153,60 @@ class LatticeSU3:
                     rects.append(tr_urul_)
                     rects.append(tr_uuud_)
                     rcount += 1
+                else:
+                    rects.append(torch.zeros_like(plaq))
+                    rects.append(torch.zeros_like(plaq))
 
         return torch.stack(plaqs), torch.stack(rects)
 
     def _plaquettes(self, x: Tensor) -> Tensor:
         ps, _ = self._wilson_loops(x)
-        psum = torch.zeros_like(ps[0].real)
-        # psum = tf.zeros_like(tf.math.real(ps[0]))  # type: ignore
-        for p in ps:  # NOTE: len(ps) == 6
-            psum = psum + p.real.sum(*range(1, len(p.shape)))
+        psum = ps.real.sum(tuple(range(2, len(ps.shape)))).sum(0)
+        # psum = torch.zeros_like(ps[0].real)
+        # # psum = tf.zeros_like(tf.math.real(ps[0]))  # type: ignore
+        # for p in ps:  # NOTE: len(ps) == 6
+        #     psum = psum + p.real.sum(tuple(range(1, len(p.shape))))
 
         # NOTE: return psum / (len(ps) * dim(link) * volume)
         return psum / (6 * 3 * self.volume)
 
     def plaqs(self, wloops: Tensor) -> Tensor:
         # psum = tf.zeros_like(tf.math.real(wloops[0]))  # type:ignore
-        psum = torch.zeros_like(wloops[0].real)
-        for p in wloops:
-            psum = psum + p.real.sum(*range(1, len(p.shape)))
+        # psum = torch.zeros_like(wloops[0].real)
+        psum = wloops.real.sum(tuple(range(2, len(wloops.shape)))).sum(0)
+        # p = wloops[0]
+        # psum = p.real.sum(tuple(range(1, len(p.shape))))
+        # for p in wloops[1:]:
+        #     psum = psum + p.real.sum(tuple(range(1, len(p.shape))))
 
         return psum / (6 * 3 * self.volume)
 
+    def charges(self, x: Tensor) -> Charges:
+        ps, _ = self._wilson_loops(x)
+        return Charges(intQ=self._int_charges(wloops=ps),
+                       sinQ=self._sin_charges(wloops=ps))
+
+    def int_charges(self, x: Tensor) -> Tensor:
+        ps, _ = self._wilson_loops(x)
+        return self._int_charges(ps)
+
     def _int_charges(self, wloops: Tensor) -> Tensor:
         # TODO: IMPLEMENT
-        qsum = torch.zeros_like(wloops[0].real)
-        for p in wloops:
-            qsum = qsum + p.imag.sum(*range(1, len(p.shape)))
+        # qsum = torch.zeros_like(wloops[0].real)
+        qsum = wloops.imag.sum(tuple(range(2, len(wloops.shape)))).sum(0)
+        # p = wloops[0]
+        # qsum = p.imag.sum(tuple(range(1, len(p.shape))))
+        # for p in wloops[1:]:
+        #     qsum = qsum + p.imag.sum(tuple(range(1, len(p.shape))))
 
         return qsum / (32 * (np.pi ** 2))
 
+    def sin_charges(self, x: Tensor) -> Tensor:
+        ps, _ = self._wilson_loops(x)
+        return self._sin_charges(ps)
+
     def _sin_charges(self, wloops: Tensor) -> Tensor:
-        qsum = torch.zeros_like(wloops[0].real)
-        for p in wloops:
-            qsum = qsum + p.imag.sum(*range(1, len(p.shape)))
+        qsum = wloops.imag.sum(tuple(range(2, len(wloops.shape)))).sum(0)
 
         return qsum / (6 * 3 * self.volume)
 
@@ -200,22 +223,12 @@ class LatticeSU3:
         coeffs = self.coeffs(beta)
         ps, rs = self._wilson_loops(x, needs_rect=(self.c1 != 0))
         assert isinstance(x, Tensor)
-        psum = torch.zeros(x.shape[0])
-        for p in ps:
-            psum = psum + p.real.sum(*range(1, len(p.shape)))
+        psum = ps.real.sum(tuple(range(2, len(ps.shape)))).sum(0)
 
         action = coeffs['plaq'] * psum
 
         if self.c1 != 0:
-            # rsum = torch.tensor(0.0)
-            rsum = torch.zeros(x.shape[0])
-            for r in rs:
-                rsum = rsum + r.real.sum(*range(1, len(r.shape)))
-                # rsum += tf.reduce_sum(
-                #     tf.math.real(r),
-                #     axis=range(1, len(r.shape))
-                # )
-            # action += tf.math.multiply(coeffs['rect'], rsum)
+            rsum = rs.real.sum(tuple(range(2, len(rs.shape)))).sum(0)
             action = action + coeffs['rect'] * rsum
 
         return action * torch.tensor(-1.0 / 3.0)
@@ -225,13 +238,6 @@ class LatticeSU3:
 
     def grad_action(self, x: Tensor, beta: Tensor) -> Tensor:
         """Returns the derivative of the action"""
-        # if tf.executing_eagerly():
-        #     with tf.GradientTape(watch_accessed_variables=False) as tape:
-        #         tape.watch(x)
-        #         action = self.action(x, beta)
-        #     g = tape.gradient(action, x)
-        # else:
-        #     g = tf.gradients(self.action(x, beta), [x])[0]
         x.requires_grad_(True)
         s = self.action(x, beta)
         identity = torch.ones(x.shape[0], device=x.device)

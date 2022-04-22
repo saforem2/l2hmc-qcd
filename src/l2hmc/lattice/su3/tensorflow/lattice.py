@@ -11,6 +11,7 @@ import tensorflow as tf
 import logging
 
 from l2hmc.group.tensorflow import group as g
+from l2hmc.configs import Charges
 
 log = logging.getLogger(__name__)
 # from l2hmc.lattice.su3.lattice.
@@ -93,11 +94,15 @@ class LatticeSU3:
     def _link_staple_op(self, link: Tensor, staple: Tensor) -> Tensor:
         return self.g.mul(link, staple)
 
-    def _plaquette(self, x: Tensor, u: int, v: int):
+    def _plaquette(self, x: TensorLike, u: int, v: int):
         """U[μ](x) * U[ν](x+μ) * U†[μ](x+ν) * U†[ν](x)"""
         assert isinstance(x, Tensor)  # and len(x.shape.as_list > 1)
-        xuv = self.g.mul(x[:, u], tf.roll(x[:, v], shift=-1, axis=u + 1))
-        xvu = self.g.mul(x[:, v], tf.roll(x[:, u], shift=-1, axis=v + 1))
+        xuv = self.g.mul(
+            x[:, u], tf.roll(x[:, v], shift=-1, axis=u + 1)  # type:ignore
+        )
+        xvu = self.g.mul(
+            x[:, v], tf.roll(x[:, u], shift=-1, axis=v + 1)  # type:ignore
+        )
         return self.g.trace(self.g.mul(xuv, xvu, adjoint_b=True))
 
     def _wilson_loops(
@@ -116,18 +121,22 @@ class LatticeSU3:
         rects = tf.TensorArray(x.dtype, size=0, dynamic_size=True)
         for u in range(1, 4):
             for v in range(0, u):
-                yuv = self.g.mul(x[:, u], tf.roll(x[:, v], shift=-1, axis=u+1))
-                yvu = self.g.mul(x[:, v], tf.roll(x[:, u], shift=-1, axis=v+1))
+                xu = x[:, u]  # type: ignore
+                xv = x[:, v]  # type: ignore
+                yuv = self.g.mul(xu, tf.roll(xv, shift=-1, axis=u+1))
+                yvu = self.g.mul(xv, tf.roll(xu, shift=-1, axis=v+1))
                 plaq = self.g.trace(self.g.mul(yuv, yvu, adjoint_b=True))
                 plaqs = plaqs.write(pcount, plaq)
                 pcount += 1
 
                 # plaqs.append(plaq)
                 if needs_rect:
-                    yu = tf.roll(x[:, u], shift=-1, axis=v+1)
-                    yv = tf.roll(x[:, v], shift=-1, axis=u+1)
-                    uu = self.g.mul(x[:, v], yuv, adjoint_a=True)
-                    ur = self.g.mul(x[:, u], yvu, adjoint_a=True)
+                    xu = x[:, u]  # type: ignore
+                    xv = x[:, v]  # type: ignore
+                    yu = tf.roll(xu, shift=-1, axis=v+1)
+                    yv = tf.roll(xv, shift=-1, axis=u+1)
+                    uu = self.g.mul(xv, yuv, adjoint_a=True)
+                    ur = self.g.mul(xu, yvu, adjoint_a=True)
                     ul = self.g.mul(yuv, yu, adjoint_b=True)
                     ud = self.g.mul(yvu, yv, adjoint_b=True)
                     ul_ = tf.roll(ul, shift=-1, axis=u+1)
@@ -146,32 +155,50 @@ class LatticeSU3:
 
     def _plaquettes(self, x: Tensor) -> Tensor:
         ps, _ = self._wilson_loops(x)
-        psum = tf.zeros_like(tf.math.real(ps[0]))  # type: ignore
-        for p in ps:  # NOTE: len(ps) == 6
-            psum += tf.reduce_sum(tf.math.real(p), axis=range(1, len(p.shape)))
+        plaqs = tf.reduce_sum(tf.math.real(ps), axis=range(2, len(ps.shape)))
+        psum = tf.reduce_sum(plaqs, axis=0)
 
         # NOTE: return psum / (len(ps) * dim(link) * volume)
         return psum / (6 * 3 * self.volume)
 
     def plaqs(self, wloops: Tensor) -> Tensor:
-        psum = tf.zeros_like(tf.math.real(wloops[0]))  # type:ignore
-        for p in wloops:
-            psum += tf.reduce_sum(tf.math.real(p), axis=range(1, len(p.shape)))
+        plaqs = tf.reduce_sum(
+            tf.math.real(wloops),
+            axis=range(2, len(wloops.shape))
+        )
+        psum = tf.reduce_sum(plaqs, axis=0)
 
         return psum / (6 * 3 * self.volume)
 
+    def charges(self, x: Tensor) -> Charges:
+        ps, _ = self._wilson_loops(x)
+        return Charges(intQ=self._int_charges(wloops=ps),
+                       sinQ=self._sin_charges(wloops=ps))
+
+    def int_charges(self, x: Tensor) -> Tensor:
+        ps, _ = self._wilson_loops(x)
+        return self._int_charges(wloops=ps)
+
     def _int_charges(self, wloops: Tensor) -> Tensor:
         # TODO: IMPLEMENT
-        qsum = tf.zeros_like(tf.math.imag(wloops[0]))  # type:ignore
-        for p in wloops:
-            qsum += tf.reduce_sum(tf.math.imag(p), axis=range(1, len(p.shape)))
+        qint = tf.reduce_sum(
+            tf.math.imag(wloops),
+            axis=range(2, len(wloops.shape))
+        )
+        qsum = tf.reduce_sum(qint, axis=0)
 
         return qsum / (32 * (np.pi ** 2))
 
+    def sin_charges(self, x: Tensor) -> Tensor:
+        ps, _ = self._wilson_loops(x)
+        return self._sin_charges(wloops=ps)
+
     def _sin_charges(self, wloops: Tensor) -> Tensor:
-        qsum = tf.zeros_like(tf.math.imag(wloops[0]))  # type:ignore
-        for p in wloops:
-            qsum += tf.reduce_sum(tf.math.imag(p), axis=range(1, len(p.shape)))
+        qsin = tf.reduce_sum(
+            tf.math.imag(wloops),
+            axis=range(2, len(wloops.shape))
+        )
+        qsum = tf.reduce_sum(qsin, axis=0)
 
         return qsum / (6 * 3 * self.volume)
 
@@ -188,29 +215,26 @@ class LatticeSU3:
         coeffs = self.coeffs(beta)
         ps, rs = self._wilson_loops(x, needs_rect=self.c1 != 0)
         assert isinstance(x, Tensor)
-        psum = tf.zeros(x.shape[0])
-        for p in ps:
-            psum += tf.reduce_sum(
-                tf.math.real(p),
-                axis=range(1, len(p.shape))
-            )
+        plaqs = tf.reduce_sum(
+            tf.math.real(ps),
+            axis=range(2, len(ps.shape))
+        )
+        psum = tf.reduce_sum(plaqs, axis=0)
 
         action = tf.math.multiply(coeffs['plaq'], psum)
 
         if self.c1 != 0:
-            # rsum = tf.constant(0.0)
-            rsum = tf.zeros(x.shape[0])
-            for r in rs:
-                rsum += tf.reduce_sum(
-                    tf.math.real(r),
-                    axis=range(1, len(r.shape))
-                )
+            rects = tf.reduce_sum(
+                tf.math.real(rs),
+                axis=range(2, len(rs.shape))
+            )
+            rsum = tf.reduce_sum(rects, axis=0)
             action += tf.math.multiply(coeffs['rect'], rsum)
 
         return action * tf.constant(-1.0 / 3.0)
 
     def random(self):
-        return self.g.random(self._shape)
+        return self.g.random(list(self._shape))
 
     def grad_action(self, x: Tensor, beta: Tensor) -> Tensor:
         """Returns the derivative of the action"""
