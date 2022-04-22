@@ -27,7 +27,11 @@ SQRT1by3 = torch.tensor(np.sqrt(1. / 3.))
 
 def eyeOf(m):
     batch_shape = [1] * (len(m.shape) - 2)
-    return torch.tensor([torch.eye(*m.shape[-2:]) for _ in batch_shape])
+    eye = torch.zeros(batch_shape + [*m.shape[-2:]])
+    eye[-2:] = torch.eye(m.shape[-1])
+    # return torch.stack([torch.eye(m.shape[-1]) for _ in batch_shape])
+    # return torch.tensor([torch.eye([*m.shape[-2:]]) for _ in batch_shape])
+    return eye
 
 
 def expm(m: Tensor, order: int = 12) -> Tensor:
@@ -89,16 +93,21 @@ def eigs3x3(
     isq3 = 1.0 / sq3
     maxv = 3e38 * torch.ones_like(isq3)
     minv = -3e38 * torch.ones_like(isq3)
-    isq3c = torch.minimum(maxv, torch.maximum(minv, isq3))
+    # isq3c = torch.from_numpy()
+    isq3c = torch.tensor(
+        np.minimum(maxv.numpy(), np.maximum(minv.numpy(), isq3.numpy()))
+    )
     rsq3c = r * isq3c
-    maxv = torch.ones_like(isq3)
+    maxv = 1. * torch.ones_like(isq3)
     minv = -1. * torch.ones_like(isq3)
-    rsq3 = torch.minimum(maxv, torch.maximum(minv, rsq3c))
+    rsq3 = torch.tensor(
+        np.minimum(maxv.numpy(), np.maximum(minv.numpy(), rsq3c.numpy()))
+    )
     t = (1.0 / 3.0) * torch.acos(rsq3)
     st = torch.sin(t)
     ct = torch.cos(t)
     sqc = sq * ct
-    sqs = torch.from_numpy(np.sqrt(3)) * sq * st
+    sqs = torch.tensor(np.sqrt(3)) * sq * st
     ll = tr3 + sqc
     e0 = tr3 - 2 * sqc
     e1 = ll + sqs
@@ -139,10 +148,14 @@ def rsqrtPHM3(x: Tensor) -> Tensor:
     c0_ = c0.reshape(c0.shape + (1, 1))
     c1_ = c1.reshape(c1.shape + (1, 1))
     c2_ = c2.reshape(c2.shape + (1, 1))
-    eyes = torch.tensor([torch.eye(3) for _ in range((1) * len(c0.shape))])
-    term0 = (c0_ * eyes).type_as(x)
+    # eyes = torch.stack([torch.eye(3) for _ in range((1) * len(c0.shape))])
+    # eye = torch.stack([tf.eye(3)
+    # term0 = (c0_ * eyes).type_as(x)
+    term0 = c0_ * torch.eye(3).type_as(x)
     term1 = x * c1_.type_as(x)
     term2 = x * c2_.type_as(x)
+    # term1 = x * c1_.type_as(x)
+    # term2 = x * c2_.type_as(x)
 
     return term0 + term1 + term2
 
@@ -160,7 +173,9 @@ def projectSU(x: Tensor) -> Tensor:
     d = m.det()
     tmp = torch.atan2(d.imag, d.real)
     p = tmp * (-1.0 / nc)
-    p_ = torch.complex(torch.cos(p), torch.sin(p)).reshape(p.shape + (1, 1))
+    # pcos = torch.cos(p)
+    # psin = torch.sin(p)
+    p_ = torch.complex(p.real, p.imag).reshape(p.shape + (1, 1))
 
     return p_ * m
 
@@ -199,9 +214,11 @@ def checkSU(x: Tensor) -> tuple[Tensor, Tensor]:
     d = norm2(torch.matmul(x.adjoint(), x) - eyeOf(x))
     det = x.det()
     d = d + norm2(torch.ones_like(det) + det, axis=[])
-    a = d.mean(*range(1, len(d.shape)))
-    b = d.max(*range(1, len(d.shape)))
-    c = (2 * (nc * nc + 1)).to(x.dtype)
+    range_ = tuple(range(1, len(d.shape)))
+    a = d.mean(range_)
+    b = d.amax(range_)
+    # b = d.max(tuple(range(1, len(d.shape))))
+    c = (2 * (nc * nc + 1)).real  # .to(x.real.dtype)
 
     return torch.sqrt(a / c), torch.sqrt(b / c)
 
@@ -293,15 +310,34 @@ class Group:
             adjoint_b: bool = False,
     ) -> Tensor:
         if adjoint_a and adjoint_b:
-            return torch.matmul(a.adjoint(), b.adjoint())
+            return a.adjoint() @ b.adjoint()
         if adjoint_a:
-            return torch.matmul(a.adjoint(), b)
+            return a.adjoint() @ b
         if adjoint_b:
-            return torch.matmul(a, b.adjoint())
-        return torch.matmul(a, b)
+            return a @ b.adjoint()
+        return a @ b
+
+
+def rand_unif(
+        shape: list[int],
+        a: float,
+        b: float,
+        requires_grad: bool = True
+):
+    rand = (a - b) * torch.rand(tuple(shape)) + b
+    return rand.clone().detach().requires_grad_(requires_grad)
+
+
+def random_angle(shape: list[int], requires_grad: bool = True) -> Tensor:
+    """Returns random angle with `shape` and values in [-pi, pi)."""
+    return rand_unif(shape, -PI, PI, requires_grad=requires_grad)
 
 
 class U1Phase(Group):
+    dtype = torch.complex128
+    size = [1]
+    shape = (1)
+
     def mul(
         self,
         a: Tensor,
@@ -333,10 +369,11 @@ class U1Phase(Group):
         return (x + PI % TWO_PI) - PI
 
     def random(self, shape: list[int]) -> Tensor:
-        return self.compat_proj(torch.rand(shape, *(-4, 4)))
+        return self.compat_proj(random_angle(shape))
+        # return self.compat_proj(torch.rand(shape, *(-4, 4)))
 
     def random_momentum(self, shape: list[int]) -> Tensor:
-        return torch.randn(shape)
+        return torch.randn(shape).reshape(shape[0], -1)
 
     def kinetic_energy(self, p: Tensor) -> Tensor:
         return p.reshape(p.shape[0], -1).square().sum(1)
@@ -355,24 +392,32 @@ class SU3(Group):
         adjoint_b: bool = False,
     ) -> Tensor:
         if adjoint_a and adjoint_b:
-            return torch.matmul(a.adjoint(), b.adjoint())
+            return a.adjoint() @ b.adjoint()
         if adjoint_a:
-            return torch.matmul(a.adjoint(), b)
+            return a.adjoint() @ b
         if adjoint_b:
-            return torch.matmul(a, b.adjoint())
-        return torch.matmul(a, b)
+            return a @ b.adjoint()
+        return a @ b
 
     def adjoint(self, x: Tensor) -> Tensor:
         return x.adjoint()
 
     def trace(self, x: Tensor) -> Tensor:
-        return torch.trace(x)
+        return torch.diagonal(x, dim1=-2, dim2=-1).sum(-1)
+        # return torch.trace(x)
 
     def exp(self, x: Tensor) -> Tensor:
         return expm(x)
 
     def projectTAH(self, x: Tensor) -> Tensor:
         return projectTAH(x)
+
+    def compat_proj(self, x: Tensor) -> Tensor:
+        """Arbitrary matrix C projects to skew-hermitian B := (C - C^H) / 2
+        
+        Make traceless with tr(B - (tr(B) / N) * I) = tr(B) - tr(B) = 0
+        """
+        return projectSU(x)
 
     def random(self, shape: list[int]) -> Tensor:
         r = torch.randn(shape)
