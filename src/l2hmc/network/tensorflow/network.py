@@ -300,7 +300,7 @@ def get_network(
         x = BatchNormalization(-1)(x)
 
     x = Dense(**layer_kwargs['x'])(x)
-    v = Dense(**layer_kwargs['v'])(v_input)
+    v = Dense(**layer_kwargs['v'])(Flatten()(v_input))
     z = act_fn(Add()([x, v]))
     for idx, units in enumerate(network_config.units[1:]):
         z = Dense(units,

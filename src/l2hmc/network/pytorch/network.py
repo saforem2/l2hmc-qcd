@@ -175,6 +175,7 @@ class Network(nn.Module):
             inputs: tuple[Tensor, Tensor]
     ) -> tuple[Tensor, Tensor, Tensor]:
         x, v = inputs
+
         if len(self.conv_stack) > 0:
             try:
                 x = x.reshape(-1, self.d + 2, self.nt, self.nx)
@@ -184,7 +185,7 @@ class Network(nn.Module):
             for layer in self.conv_stack:
                 x = self.activation_fn(layer(x))
 
-        v = self.v_layer(v)
+        v = self.v_layer(flatten(v))
         x = self.x_layer(flatten(x))
 
         z = self.activation_fn(x + v)
