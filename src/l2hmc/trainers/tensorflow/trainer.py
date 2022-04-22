@@ -117,6 +117,7 @@ class Trainer:
             compression: Optional[str] = 'none',
             evals_per_step: int = 1,
             dynamics_config: Optional[DynamicsConfig] = None,
+            compile: Optional[bool] = True,
     ) -> None:
         self.rank = rank
         self.steps = steps
@@ -132,7 +133,9 @@ class Trainer:
         assert compression in ['none', 'fp16']
         self.compression = HVD_FP_MAP.get(compression, 'none')
         self.reduce_lr = ReduceLROnPlateau(lr_config)
-        self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
+        if compile:
+            self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
+
         self.reduce_lr.set_model(self.dynamics)
         self.reduce_lr.set_optimizer(self.optimizer)
         self.dynamics_config = (
@@ -153,13 +156,15 @@ class Trainer:
             'hmc': StepTimer(evals_per_step=evals_per_step),
         }
 
-    def draw_x(self) -> Tensor:
+    def draw_x(self, shape: Optional[list[int]] = None) -> Tensor:
         """Draw `x` """
-        x = tf.random.uniform(self.dynamics.xshape,
-                              *(-4, 4), dtype=TF_FLOAT)
+        shape = list(self.dynamics.xshape) if shape is None else shape
+        x = self.dynamics.g.random(shape)
+        # x = tf.random.uniform(shape, *(-4, 4), dtype=TF_FLOAT)
         x = tf.reshape(x, (x.shape[0], -1))
 
-        return to_u1(x)
+        # return to_u1(x)
+        return x
 
     def reset_optimizer(self) -> None:
         if len(self.optimizer.variables()) > 0:
@@ -192,7 +197,7 @@ class Trainer:
 
     def metric_to_numpy(
             self,
-            metric: TensorLike | list | np.ndarray,
+            metric: Tensor | list | np.ndarray,
             # key: str = '',
     ) -> np.ndarray:
         """Consistently convert `metric` to np.ndarray."""
@@ -229,7 +234,7 @@ class Trainer:
 
     def metrics_to_numpy(
             self,
-            metrics: dict[str, TensorLike | list | np.ndarray]
+            metrics: dict[str, Tensor | list | np.ndarray]
     ) -> dict:
         m = {}
         for key, val in metrics.items():
@@ -317,16 +322,16 @@ class Trainer:
     @tf.function(experimental_follow_type_hints=True, jit_compile=JIT_COMPILE)
     def hmc_step(
             self,
-            inputs: tuple[TensorLike, TensorLike],
-            eps: TensorLike,
-    ) -> tuple[TensorLike, dict]:
-        xi, beta = inputs
-        inputs = (to_u1(xi), tf.constant(beta))
+            inputs: tuple[Tensor, Tensor],
+            eps: Tensor,
+    ) -> tuple[Tensor, dict]:
+        # xi, beta = inputs
+        # inputs = (to_u1(xi), tf.constant(beta))
         xo, metrics = self.dynamics.apply_transition_hmc(inputs, eps=eps)
-        xo = to_u1(xo)
-        xp = to_u1(metrics.pop('mc_states').proposed.x)
-        loss = self.loss_fn(x_init=xi, x_prop=xp, acc=metrics['acc'])
-        lmetrics = self.loss_fn.lattice_metrics(xinit=xi, xout=xo)
+        xo = self.dynamics.g.compat_proj(xo)
+        xp = self.dynamics.g.compat_proj(metrics.pop('mc_states').proposed.x)
+        loss = self.loss_fn(x_init=inputs[0], x_prop=xp, acc=metrics['acc'])
+        lmetrics = self.loss_fn.lattice_metrics(xinit=inputs[0], xout=xo)
         metrics.update(lmetrics)
         metrics.update({'loss': loss})
 
@@ -335,13 +340,14 @@ class Trainer:
     @tf.function(experimental_follow_type_hints=True, jit_compile=JIT_COMPILE)
     def eval_step(
             self,
-            inputs: tuple[TensorLike, TensorLike],
-    ) -> tuple[TensorLike, dict]:
+            inputs: tuple[Tensor, Tensor],
+    ) -> tuple[Tensor, dict]:
         xi, beta = inputs
-        inputs = (to_u1(xi), tf.constant(beta))
+        # inputs = (to_u1(xi), tf.constant(beta))
         xo, metrics = self.dynamics(inputs, training=False)
-        xo = to_u1(xo)
-        xp = to_u1(metrics.pop('mc_states').proposed.x)
+        # xo = to_u1(xo)
+        # xp = to_u1(metrics.pop('mc_states').proposed.x)
+        xp = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=xi, x_prop=xp, acc=metrics['acc'])
         lmetrics = self.loss_fn.lattice_metrics(xinit=xi, xout=xo)
         metrics.update(lmetrics)
@@ -352,13 +358,13 @@ class Trainer:
     def eval(
             self,
             beta: Optional[float] = None,
-            x: Optional[TensorLike] = None,
+            x: Optional[Tensor] = None,
             skip: Optional[str | list[str]] = None,
             run: Optional[Any] = None,
             writer: Optional[Any] = None,
             job_type: Optional[str] = 'eval',
             nchains: Optional[int] = None,
-            eps: Optional[TensorLike] = None,
+            eps: Optional[Tensor] = None,
     ) -> dict:
         """Evaluate model."""
         if isinstance(skip, str):
@@ -376,9 +382,15 @@ class Trainer:
         assert job_type in ['eval', 'hmc']
 
         if x is None:
-            unif = to_u1(tf.random.uniform(self.dynamics.xshape,
-                                           *(-4, 4), dtype=TF_FLOAT))
-            x = tf.reshape(unif, (unif.shape[0], -1))
+            xshape = (
+                self.dynamics.xshape if nchains is None
+                else [nchains, *self.dynamics.xshape[1:]]
+            )
+            r = self.dynamics.g.random(list(xshape))
+            x = tf.reshape(r, (r.shape[0], -1))
+            # unif = to_u1(tf.random.uniform(self.dynamics.xshape,
+            #                                *(-4, 4), dtype=TF_FLOAT))
+            # x = tf.reshape(unif, (unif.shape[0], -1))
         else:
             x = tf.Variable(x, dtype=TF_FLOAT)
 
@@ -390,7 +402,7 @@ class Trainer:
                 return self.hmc_step(z, eps=eps)  # type: ignore
             return self.eval_step(z)              # type: ignore
 
-        assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
+        assert isinstance(x, Tensor)  # and x.dtype == TF_FLOAT
 
         tables = {}
         rows = {}
@@ -440,7 +452,7 @@ class Trainer:
 
             for step in range(self.steps.test):
                 timer.start()
-                x, metrics = eval_fn((x, beta))  # type: ignore
+                x, metrics = eval_fn((x, tf.constant(beta)))  # type: ignore
                 dt = timer.stop()
                 job_progress.advance(step_task)
                 if step % nprint == 0 or step % nlog == 0:
@@ -480,10 +492,10 @@ class Trainer:
     @tf.function(experimental_follow_type_hints=True, jit_compile=JIT_COMPILE)
     def train_step(
             self,
-            inputs: tuple[TensorLike, TensorLike],
+            inputs: tuple[Tensor, Tensor],
             first_step: Optional[bool] = False,
             clip_grads: Optional[bool] = True,
-    ) -> tuple[TensorLike, dict]:
+    ) -> tuple[Tensor, dict]:
         xinit, beta = inputs
         xinit = to_u1(xinit)
         with tf.GradientTape() as tape:
@@ -524,7 +536,7 @@ class Trainer:
 
     def train(
             self,
-            xinit: Optional[TensorLike] = None,
+            xinit: Optional[Tensor] = None,
             skip: Optional[str | list[str]] = None,
             train_dir: Optional[os.PathLike] = None,
             run: Optional[Any] = None,
