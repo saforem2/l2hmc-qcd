@@ -19,6 +19,7 @@ from l2hmc.network.pytorch.network import (
 import numpy as np
 import torch
 from torch import nn
+import l2hmc.group.pytorch.group as g
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -40,6 +41,14 @@ class State:
     x: Tensor               # gauge links
     v: Tensor               # conj. momenta
     beta: Tensor            # inv. coupling const.
+
+    def __post_init__(self):
+        self.nb = self.x.shape[0]
+        self.xshape = self.x.shape
+
+    @staticmethod
+    def flatten(x: Tensor) -> Tensor:
+        return x.reshape(x.shape[0], -1)
 
 
 @dataclass
@@ -105,6 +114,12 @@ class Dynamics(nn.Module):
             split_xnets=self.config.use_split_xnets
         )
         self.masks = self._build_masks()
+
+        if self.config.group == 'U1':
+            self.g = g.U1Phase()
+        elif self.config.group == 'SU3':
+            self.g = g.SU3()
+
         xeps = {}
         veps = {}
         rg = (not self.config.eps_fixed)
@@ -211,22 +226,27 @@ class Dynamics(nn.Module):
 
     def forward(
             self,
-            inputs: tuple[Tensor, Tensor]
+            inputs: tuple[Tensor, Tensor]  # x, beta
     ) -> tuple[Tensor, dict]:
         if self.config.merge_directions:
             return self.apply_transition_fb(inputs)
 
         return self.apply_transition(inputs)
 
+    def flatten(self, x: Tensor) -> Tensor:
+        return x.reshape(x.shape[0], -1)
+
     def apply_transition_hmc(
             self,
-            inputs: tuple[Tensor, Tensor],
+            inputs: tuple[Tensor, Tensor],  # x, beta
             eps: Tensor,
     ) -> tuple[Tensor, dict]:
         data = self.generate_proposal_hmc(inputs, eps=eps)
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
-        ma = ma_.unsqueeze(-1).to(inputs[0].device)
-        mr = mr_.unsqueeze(-1).to(inputs[0].device)
+        ma_ = ma_.to(inputs[0].device)
+        mr_ = mr_.to(inputs[0].device)
+        ma = ma_[:, None]
+        mr = mr_[:, None]
 
         vout = ma * data['proposed'].v + mr * data['init'].v
         xout = ma * data['proposed'].x + mr * data['init'].x
@@ -243,15 +263,19 @@ class Dynamics(nn.Module):
 
     def apply_transition_fb(
             self,
-            inputs: tuple[Tensor, Tensor]
+            inputs: tuple[Tensor, Tensor]  # x, beta
     ) -> tuple[Tensor, dict]:
         data = self.generate_proposal_fb(inputs)
 
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
         ma_ = ma_.to(inputs[0].device)
         mr_ = mr_.to(inputs[0].device)
-        ma = ma_.unsqueeze(-1)
-        mr = mr_.unsqueeze(-1)
+        ma = ma_.reshape(ma_.shape + (1,) * len(data['init'].v.shape[1:]))
+        mr = mr_.reshape(mr_.shape + (1,) * len(data['init'].v.shape[1:]))
+        # ma_ = ma_.to(inputs[0].device)
+        # mr_ = mr_.to(inputs[0].device)
+        # ma = ma_.unsqueeze(-1)
+        # mr = mr_.unsqueeze(-1)
 
         v_out = ma * data['proposed'].v + mr * data['init'].v
         x_out = ma * data['proposed'].x + mr * data['init'].x
@@ -273,7 +297,7 @@ class Dynamics(nn.Module):
 
     def apply_transition(
             self,
-            inputs: tuple[Tensor, Tensor]
+            inputs: tuple[Tensor, Tensor]  # x, beta
     ) -> tuple[Tensor, dict]:
         x, beta = inputs
         fwd = self.generate_proposal(inputs, forward=True)
@@ -282,8 +306,12 @@ class Dynamics(nn.Module):
         mf_, mb_ = self._get_direction_masks(batch_size=x.shape[0])
         mf_ = mf_.to(x.device)
         mb_ = mb_.to(x.device)
-        mf = mf_.unsqueeze(-1)  # .to(x.device)  # mf = mf_[:, None]
-        mb = mb_.unsqueeze(-1)  # .to(x.device)  # mb = mb_[:, None]
+        mf = mf_.reshape(mf_.shape + (1,) * len(fwd['init'].v.shape[1:]))
+        mb = mb_.reshape(mb_.shape + (1,) * len(fwd['init'].v.shape[1:]))
+        # mf_ = mf_.to(x.device)
+        # mb_ = mb_.to(x.device)
+        # mf = mf_.unsqueeze(-1)  # .to(x.device)  # mf = mf_[:, None]
+        # mb = mb_.unsqueeze(-1)  # .to(x.device)  # mb = mb_[:, None]
 
         v_init = mf * fwd['init'].v + mb * bwd['init'].v
 
@@ -306,8 +334,10 @@ class Dynamics(nn.Module):
 
         acc = mf_ * mfwd['acc'] + mb_ * mbwd['acc']
         ma_, mr_ = self._get_accept_masks(acc)
-        ma = ma_.unsqueeze(-1)
-        mr = mr_.unsqueeze(-1)
+        ma = ma_.reshape(ma_.shape + (1,) * len(self.xshape[1:]))
+        mr = mr_.reshape(mr_.shape + (1,) * len(self.xshape[1:]))
+        # ma = ma_.unsqueeze(-1)
+        # mr = mr_.unsqueeze(-1)
 
         v_out = ma * vp + mr * v_init
         x_out = ma * xp + mr * x
@@ -341,8 +371,10 @@ class Dynamics(nn.Module):
         return x_out, metrics
 
     def random_state(self, beta: float) -> State:
-        x = torch.rand(tuple(self.xshape)).reshape(self.xshape[0], -1)
-        v = torch.randn_like(x).to(x.device)
+        x = self.g.random(list(self.xshape))
+        v = self.g.random_momentum(list(self.xshape))
+        # x = torch.rand(tuple(self.xshape)).reshape(self.xshape[0], -1)
+        # v = torch.randn_like(x).to(x.device)
         return State(x=x, v=v, beta=torch.tensor(beta))
 
     def test_reversibility(self) -> dict[str, Tensor]:
@@ -355,11 +387,12 @@ class Dynamics(nn.Module):
 
     def generate_proposal_hmc(
             self,
-            inputs: tuple[Tensor, Tensor],
+            inputs: tuple[Tensor, Tensor],  # x, beta
             eps: Tensor,
     ) -> dict:
         x, beta = inputs
-        v = torch.randn_like(x).to(x.device)
+        # v = torch.randn_like(x).to(x.device)
+        v = self.g.random_momentum(list(x.shape))
         init = State(x=x, v=v, beta=beta)
         proposed, metrics = self.transition_kernel_hmc(init, eps=eps)
 
@@ -367,10 +400,11 @@ class Dynamics(nn.Module):
 
     def generate_proposal_fb(
             self,
-            inputs: tuple[Tensor, Tensor],
+            inputs: tuple[Tensor, Tensor],  # x, beta
     ) -> dict:
         x, beta = inputs
-        v = torch.randn_like(x).to(x.device)
+        v = self.g.random_momentum(list(x.shape))
+        # v = torch.randn_like(x).to(x.device)
         init = State(x=x, v=v, beta=beta)
         proposed, metrics = self.transition_kernel_fb(init)
 
@@ -378,11 +412,12 @@ class Dynamics(nn.Module):
 
     def generate_proposal(
             self,
-            inputs: tuple[Tensor, Tensor],
+            inputs: tuple[Tensor, Tensor],  # x, beta
             forward: bool,
     ) -> dict:
         x, beta = inputs
-        v = torch.randn_like(x).to(x.device)
+        v = self.g.random_momentum(list(x.shape))
+        # v = torch.randn_like(x).to(x.device)
         state_init = State(x=x, v=v, beta=beta)
         state_prop, metrics = self.transition_kernel(state_init, forward)
 
@@ -538,7 +573,8 @@ class Dynamics(nn.Module):
             torch.minimum(dh, torch.zeros_like(dh, device=dh.device))
         ).to(state_init.x.device)
 
-        return prob
+        # return prob
+        return torch.where(torch.isfinite(prob), prob, torch.zeros_like(prob))
 
     @staticmethod
     def _get_accept_masks(px: Tensor) -> tuple[Tensor, Tensor]:
@@ -674,7 +710,7 @@ class Dynamics(nn.Module):
         exp_q = torch.exp(eps * q)
         vf = exp_s * state.v - 0.5 * eps * (force * exp_q + t)
 
-        return State(state.x, vf, state.beta), logdet
+        return State(state.x, vf.reshape(state.x.shape), state.beta), logdet
 
     def _update_v_bwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the backward direction"""
@@ -767,7 +803,14 @@ class Dynamics(nn.Module):
 
     def kinetic_energy(self, v: Tensor) -> Tensor:
         """Returns the kinetic energy, KE = 0.5 * v ** 2."""
-        return 0.5 * (v ** 2).sum(dim=-1)
+        # if self.config.group == 'U1':
+        #     return 0.5 * (v ** 2).sum(dim=tuple(range(1, len(v.shape))))
+        # elif self.config.group == 'SU3':
+        #     vsq = (v.adjoint() @ v).sum(dim=tuple(range(1, len(v.shape))))
+        #     return vsq.real / 2.0
+        # else:
+        #     raise ValueError('Unexpected value in self.config.group')
+        return self.g.kinetic_energy(v)
 
     def potential_energy(self, x: Tensor, beta: Tensor):
         """Returns the potential energy, PE = beta * action(x)."""
