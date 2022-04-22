@@ -42,14 +42,14 @@ plt.style.use('default')
 plt.rcParams.update({
     'image.cmap': 'viridis',
     'savefig.transparent': True,
-    'text.color': '#666666',
-    'axes.labelcolor': '#666666',
-    'xtick.color': '#66666604',
-    'ytick.color': '#66666604',
-    'ytick.labelcolor': '#666666',
-    'xtick.labelcolor': '#666666',
-    'axes.edgecolor': '#66666600',
-    'grid.color': (0.4, 0.4, 0.4, 0.4),  # #66666602
+    'text.color': '#6f6f6f',
+    'axes.labelcolor': '#6f6f6f',
+    'xtick.color': '#6f6f6f04',
+    'ytick.color': '#6f6f6f04',
+    'ytick.labelcolor': '#6f6f6f',
+    'xtick.labelcolor': '#6f6f6f',
+    'axes.edgecolor': '#6f6f6f00',
+    'grid.color': (0.434, 0.434, 0.434, 0.434),  # #66666602
     'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
     'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
 })
