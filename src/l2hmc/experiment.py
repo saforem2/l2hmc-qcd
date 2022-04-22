@@ -25,15 +25,7 @@ class Experiment:
         assert isinstance(self.config, ExperimentConfig)
         assert self.config.framework in ['pytorch', 'tensorflow']
         self.lattice = self.build_lattice()
-        # objs = self.build()
-        # self.run = objs['run']
-        # self.trainer = objs['trainer']
-        # self._is_built = False
-        # if should_build:
-        #     objs = self.build()
-        #     self.trainer = objs['trainer']
-        #     self.run = objs['run']
-        #     self.dynamics = objs['dynamics']
+        self._is_built = False
 
     def train(self):
         # TODO: Finish implementation??
@@ -64,9 +56,6 @@ class Experiment:
                 return LatticeSU3(nchains, tuple(latvolume), c1=c1)
 
             raise ValueError(f'Unexpected value for `framework`: {framework}')
-
-            # c1 = self.config.c1 if self.config.c1 is not None else 0.0
-            # return LatticeSU3(nchains, tuple(latvolume), c1=c1)
 
         raise ValueError(
             'Unexpected value for `dynamics.group`: '
@@ -105,17 +94,11 @@ class Experiment:
             raise ValueError('Unable to update `wandbConfig`')
 
         group = [self.config.framework, device, size]
-        # if self.config.mode in ['test', 'debug']:
-        #     group.append('debug')
 
         self.config.wandb.setup.update({'group': '/'.join(group)})
         if run_id is not None:
             self.config.wandb.setup.update({'id': run_id})
 
-        # latstr = self.config.dynamics.latvolume.split(',')
-        # volstr = 'x'.join([
-        #     str(int(i.lstrip('[').rstrip(']'))) for i in latstr
-        # ])
         latstr = 'x'.join([str(i) for i in self.config.dynamics.latvolume])
         self.config.wandb.setup.update({
             'tags': [
@@ -220,10 +203,11 @@ class Experiment:
                            optimizer=optimizer,
                            rank=hvd.rank(),
                            steps=self.config.steps,
-                           schedule=self.config.annealing_schedule,
                            lr_config=self.config.learning_rate,
+                           compile=(not self.config.debug_mode),
                            dynamics_config=self.config.dynamics,
-                           aux_weight=self.config.loss.aux_weight)
+                           aux_weight=self.config.loss.aux_weight,
+                           schedule=self.config.annealing_schedule)
 
         raise ValueError('Unable to build Trainer.')
 
@@ -272,10 +256,8 @@ class Experiment:
     def get_summary_writer(
             self,
             job_type: str,
-            outdir: Optional[os.PathLike] = None
     ):
-        outdir = Path(os.getcwd()) if outdir is None else outdir
-        jobdir = Path(outdir).joinpath(job_type)
+        jobdir = self.get_jobdir(job_type=job_type)
         sdir = jobdir.joinpath('summaries')
         sdir.mkdir(exist_ok=True, parents=True)
         sdir = sdir.as_posix()
@@ -288,7 +270,23 @@ class Experiment:
 
         raise ValueError('Unable to get summary writer')
 
-    def build(self):
+    def build(self, init_wandb: bool = True):
+        return self._build(init_wandb=init_wandb)
+
+    def _build(self, init_wandb: bool = True):
+        if self._is_built:
+            assert self.trainer is not None
+            assert self.dynamics is not None
+            assert self.optimizer is not None
+            assert self.loss_fn is not None
+            return {
+                'run': self.run,
+                'trainer': self.trainer,
+                'dynamics': self.dynamics,
+                'optimizer': self.optimizer,
+                'loss_fn': self.loss_fn,
+            }
+
         loss_fn = self.build_loss()
         dynamics = self.build_dynamics()
         optimizer = self.build_optimizer(dynamics)
@@ -310,14 +308,19 @@ class Experiment:
             raise ValueError('Unable to build.')
 
         run = None
-        if IS_CHIEF:
+        if IS_CHIEF and init_wandb:
             run = self.init_wandb(dynamics=dynamics, loss_fn=loss_fn)
 
         self._is_built = True
+        self.run = run
+        self.trainer = trainer
+        self.dynamics = dynamics
+        self.optimizer = optimizer
+        self.loss_fn = loss_fn
         return {
-            'run': run,
-            'trainer': trainer,
-            'dynamics': dynamics,
-            'optimizer': optimizer,
-            'loss_fn': loss_fn,
+            'run': self.run,
+            'trainer': self.trainer,
+            'dynamics': self.dynamics,
+            'optimizer': self.optimizer,
+            'loss_fn': self.loss_fn,
         }
