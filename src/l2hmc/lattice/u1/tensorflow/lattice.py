@@ -11,36 +11,14 @@ import tensorflow as tf
 from typing import Optional
 
 from l2hmc.lattice.u1.numpy.lattice import BaseLatticeU1
+import l2hmc.group.tensorflow.group as g
+from l2hmc.configs import Charges, LatticeMetrics
 
 TF_FLOAT = tf.keras.backend.floatx()
 PI = tf.constant(np.pi)
 TWO_PI = 2. * PI
 
 Tensor = tf.Tensor
-
-
-@dataclass
-class Charges:
-    intQ: Tensor
-    sinQ: Tensor
-
-    def asdict(self):
-        return asdict(self)
-
-
-@dataclass
-class LatticeMetrics:
-    plaqs: Tensor
-    charges: Charges
-    p4x4: Tensor
-
-    def asdict(self):
-        return {
-            'plaqs': self.plaqs,
-            'sinQ': self.charges.sinQ,
-            'intQ': self.charges.intQ,
-            'p4x4': self.p4x4,
-        }
 
 
 def area_law(beta: float, num_plaqs: int) -> float:
@@ -62,6 +40,21 @@ def project_angle(x):
 
 class LatticeU1(BaseLatticeU1):
     def __init__(self, nb: int, shape: tuple[int, int]):
+        self.dim = 2
+        self.g = g.U1Phase()
+        self.link_shape = self.g.shape
+        self.nt, self.nx, = shape
+        self._shape = (nb, self.dim, *shape, self.g.shape)
+        self.volume = self.nt * self.nx
+        self.site_idxs = tuple(
+            [self.nt] + [self.nx for _ in range(self.dim - 1)]
+        )
+        self.nplaqs = self.nt * self.nx
+        self._lattice_shape = shape
+        self.nsites = np.cumprod(shape)[-1]
+        self.nlinks = self.nsites * self.dim
+        self.link_idxs = tuple(list(self.site_idxs) + [self.dim])
+
         super().__init__(nb, shape=shape)
 
     def draw_uniform_batch(self) -> Tensor:
@@ -217,6 +210,9 @@ class LatticeU1(BaseLatticeU1):
             raise ValueError('Expected input `x`')
         return self.wilson_loops(x)
 
+    def random(self):
+        return self.g.random(list(self._shape))
+
     def sin_charges(
             self,
             x: Optional[Tensor] = None,
@@ -242,9 +238,9 @@ class LatticeU1(BaseLatticeU1):
     ) -> Charges:
         """Calculate both charge representations and return as single object"""
         wloops = self._get_wloops(x) if wloops is None else wloops
-        sinQ = self._sin_charges(wloops)
-        intQ = self._int_charges(wloops)
-        return Charges(intQ=intQ, sinQ=sinQ)
+        sinq = self._sin_charges(wloops)
+        intq = self._int_charges(wloops)
+        return Charges(intQ=intq, sinQ=sinq)
 
     def plaq_loss(
             self,

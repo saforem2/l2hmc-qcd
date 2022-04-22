@@ -12,25 +12,15 @@ from typing import Optional
 from math import pi as PI
 
 from scipy.special import i0, i1
+import numpy as np
 import torch
 
 from l2hmc.lattice.u1.numpy.lattice import BaseLatticeU1
+import l2hmc.group.pytorch.group as g
+from l2hmc.configs import Charges, LatticeMetrics
 
 TWO_PI = 2. * PI
 Tensor = torch.Tensor
-
-
-@dataclass
-class Charges:
-    intQ: Tensor
-    sinQ: Tensor
-
-
-@dataclass
-class LatticeMetrics:
-    plaqs: Tensor
-    charges: Charges
-    p4x4: Tensor
 
 
 def area_law(beta: float, nplaqs: int):
@@ -48,6 +38,21 @@ def project_angle(x: Tensor) -> Tensor:
 
 class LatticeU1(BaseLatticeU1):
     def __init__(self, nb: int, shape: tuple[int, int]):
+        self.dim = 2
+        self.g = g.U1Phase()
+        self.link_shape = self.g.shape
+        self.nt, self.nx, = shape
+        self._shape = (nb, self.dim, *shape, self.g.shape)
+        self.volume = self.nt * self.nx
+        self.site_idxs = tuple(
+            [self.nt] + [self.nx for _ in range(self.dim - 1)]
+        )
+        self.nplaqs = self.nt * self.nx
+        self._lattice_shape = shape
+        self.nsites = np.cumprod(shape)[-1]
+        self.nlinks = self.nsites * self.dim
+        self.link_idxs = tuple(list(self.site_idxs) + [self.dim])
+
         super().__init__(nb, shape=shape)
 
     def draw_uniform_batch(self, requires_grad=True) -> Tensor:
@@ -74,7 +79,7 @@ class LatticeU1(BaseLatticeU1):
         s = self.action(x, beta)
         identity = torch.ones(x.shape[0], device=x.device)
         dsdx, = torch.autograd.grad(s, x,
-                                    retain_graph=True,
+                                    # retain_graph=True,
                                     create_graph=create_graph,
                                     grad_outputs=identity)
         return dsdx
@@ -209,6 +214,9 @@ class LatticeU1(BaseLatticeU1):
             raise ValueError('One of `x` or `wloops` must be specified.')
         return self.wilson_loops(x)
 
+    def random(self):
+        return self.g.random(list(self._shape))
+
     def sin_charges(
             self,
             x: Optional[Tensor] = None,
@@ -268,20 +276,3 @@ class LatticeU1(BaseLatticeU1):
         dq = (q2 - q1) ** 2
         qloss = acc * dq + 1e-4
         return -qloss.mean(0)
-
-    def grad_action(
-
-            self,
-            x: Tensor,
-            beta: Tensor,
-            # create_graph: bool = True,
-    ) -> Tensor:
-        """Compute the gradient of the potential function."""
-        x.requires_grad_(True)
-        s = self.action(x, beta)
-        id = torch.ones(x.shape[0], device=x.device)
-        dsdx, = torch.autograd.grad(s, x,
-                                    # create_graph=create_graph,
-                                    # retain_graph=True,
-                                    grad_outputs=id)
-        return dsdx
