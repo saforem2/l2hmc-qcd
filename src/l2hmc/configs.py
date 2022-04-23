@@ -90,6 +90,30 @@ class BaseConfig:
 
         self.__init__(**config)
 
+    def __getitem__(self, key):
+        return super().__getattribute__(key)
+
+
+@dataclass
+class Charges:
+    intQ: Any
+    sinQ: Any
+
+
+@dataclass
+class LatticeMetrics:
+    plaqs: Any
+    charges: Charges
+    p4x4: Any
+
+    def asdict(self) -> dict:
+        return {
+            'plaqs': self.plaqs,
+            'sinQ': self.charges.sinQ,
+            'intQ': self.charges.intQ,
+            'p4x4': self.p4x4,
+        }
+
 
 @dataclass
 class wandbSetup(BaseConfig):
@@ -387,6 +411,7 @@ class ExperimentConfig:
     learning_rate: LearningRateConfig
     wandb: Any
     # ----- optional below -------------------
+    # outdir: Optional[Any] = None
     conv: Optional[ConvolutionConfig] = None
     c1: Optional[float] = 0.0
     width: Optional[int] = None
@@ -417,8 +442,53 @@ defaults = [
     {'backend': MISSING}
 ]
 
-cs = ConfigStore()
+cs = ConfigStore.instance()
 cs.store(
-    name='config',
+    name='experiment_config',
     node=ExperimentConfig,
 )
+# cs.store(
+#     group="dynamics",
+#     name='dynamics',
+#     node=DynamicsConfig,
+# )
+# cs.store(
+#     group='network',
+#     name='network',
+#     node=NetworkConfig,
+# )
+# cs.store(
+#     name='steps',
+#     group='steps',
+#     node=Steps,
+# )
+# cs.store(
+#     name='wandb',
+#     group='wandb',
+#     node=wandbConfig,
+# )
+# cs.store(
+#     name='loss',
+#     group='loss',
+#     node=LossConfig,
+# )
+# cs.store(
+#     name='conv',
+#     group='conv',
+#     node=ConvolutionConfig,
+# )
+# cs.store(
+#     name='net_weights',
+#     group='net_weights',
+#     node=NetWeights,
+# )
+# cs.store(
+#     name='learning_rate',
+#     group='learning_rate',
+#     node=LearningRateConfig,
+# )
+# cs.store(
+#     name='annealing_schedule',
+#     group='annealing_schedule',
+#     node=AnnealingSchedule
+# )
