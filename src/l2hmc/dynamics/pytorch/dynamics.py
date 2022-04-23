@@ -372,7 +372,7 @@ class Dynamics(nn.Module):
 
     def random_state(self, beta: float) -> State:
         x = self.g.random(list(self.xshape))
-        v = self.g.random_momentum(list(self.xshape))
+        v = self.g.random_momentum(list(self.xshape)).to(x.device)
         # x = torch.rand(tuple(self.xshape)).reshape(self.xshape[0], -1)
         # v = torch.randn_like(x).to(x.device)
         return State(x=x, v=v, beta=torch.tensor(beta))
@@ -392,7 +392,7 @@ class Dynamics(nn.Module):
     ) -> dict:
         x, beta = inputs
         # v = torch.randn_like(x).to(x.device)
-        v = self.g.random_momentum(list(x.shape))
+        v = self.g.random_momentum(list(x.shape)).to(x.device)
         init = State(x=x, v=v, beta=beta)
         proposed, metrics = self.transition_kernel_hmc(init, eps=eps)
 
@@ -403,7 +403,7 @@ class Dynamics(nn.Module):
             inputs: tuple[Tensor, Tensor],  # x, beta
     ) -> dict:
         x, beta = inputs
-        v = self.g.random_momentum(list(x.shape))
+        v = self.g.random_momentum(list(x.shape)).to(x.device)
         # v = torch.randn_like(x).to(x.device)
         init = State(x=x, v=v, beta=beta)
         proposed, metrics = self.transition_kernel_fb(init)
@@ -416,7 +416,7 @@ class Dynamics(nn.Module):
             forward: bool,
     ) -> dict:
         x, beta = inputs
-        v = self.g.random_momentum(list(x.shape))
+        v = self.g.random_momentum(list(x.shape)).to(x.device)
         # v = torch.randn_like(x).to(x.device)
         state_init = State(x=x, v=v, beta=beta)
         state_prop, metrics = self.transition_kernel(state_init, forward)
