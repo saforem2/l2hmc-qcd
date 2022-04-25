@@ -376,7 +376,8 @@ class U1Phase(Group):
         return torch.randn(shape).reshape(shape[0], -1)
 
     def kinetic_energy(self, p: Tensor) -> Tensor:
-        return p.reshape(p.shape[0], -1).square().sum(1)
+        return 0.5 * p.reshape(p.shape[0], -1).square().sum(1)
+        # return p.reshape(p.shape[0], -1).square().sum(1)
 
 
 class SU3(Group):
@@ -414,7 +415,7 @@ class SU3(Group):
 
     def compat_proj(self, x: Tensor) -> Tensor:
         """Arbitrary matrix C projects to skew-hermitian B := (C - C^H) / 2
-        
+
         Make traceless with tr(B - (tr(B) / N) * I) = tr(B) - tr(B) = 0
         """
         return projectSU(x)
@@ -428,7 +429,8 @@ class SU3(Group):
         return randTAH3(shape[:-2])
 
     def kinetic_energy(self, p: Tensor) -> Tensor:
-        p2 = norm2(p) - torch.tensor(8.0)
-        return (
-            0.5 * p2.reshape(p.shape[0], -1).sum(1)
-        )
+        return 0.5 * (p.conj() @ p).real.sum(1)
+        # p2 = norm2(p) - torch.tensor(8.0)
+        # return (
+        #     0.5 * p2.reshape(p.shape[0], -1).sum(1)
+        # )

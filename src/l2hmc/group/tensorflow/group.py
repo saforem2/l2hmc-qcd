@@ -87,7 +87,7 @@ class U1Phase(Group):
         return tf.random.normal(shape)
 
     def kinetic_energy(self, p: Tensor) -> Tensor:
-        return tf.reduce_sum(
+        return 0.5 * tf.reduce_sum(
             tf.square(tf.reshape(p, [p.shape[0], -1])),
             axis=1
         )
@@ -141,9 +141,15 @@ class SU3(Group):
         return randTAH3(shape[:-2])
 
     def kinetic_energy(self, p: Tensor) -> Tensor:
-        p2 = norm2(p) - tf.constant(8.0)  # - 8.0 ??
-        return (
-            0.5 * tf.math.reduce_sum(tf.reshape(p2, [p.shape[0], -1]), axis=1)
+        # p2 = norm2(p) - tf.constant(8.0)  # - 8.0 ??
+        # return (
+        #     0.5 * tf.math.reduce_sum(
+        #         tf.reshape(p2, [p.shape[0], -1]), axis=1
+        #     )
+        # )
+        return 0.5 * tf.reduce_sum(
+            tf.math.real(tf.linalg.matmul(tf.math.conj(p), p)),
+            axis=1
         )
 
 
