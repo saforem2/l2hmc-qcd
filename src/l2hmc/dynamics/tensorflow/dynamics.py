@@ -553,8 +553,8 @@ class Dynamics(Model):
          - inputs: (x, force) tuple
         """
         x, force = inputs
-        x = tf.reshape(x, (x.shape[0], -1))
-        force = tf.reshape(force, (force.shape[0], -1))
+        # x = tf.reshape(x, (x.shape[0], -1))
+        # force = tf.reshape(force, (force.shape[0], -1))
         vnet = self._get_vnet(step)
         assert callable(vnet)
         return vnet((x, force), training)
