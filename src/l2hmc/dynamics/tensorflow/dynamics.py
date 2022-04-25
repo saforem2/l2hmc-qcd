@@ -134,9 +134,6 @@ class Dynamics(Model):
         """Returns a random State."""
         x = self.flatten(self.g.random(list(self.xshape)))
         v = self.g.random_momentum(list(x.shape))
-        # x = tf.random.uniform(self.config.xshape, dtype=TF_FLOAT)
-        # x = tf.reshape(x, (self.config.xshape[0], -1))
-        # v = tf.random.normal(x.shape, dtype=tf.math.real(x).dtype)
         return State(x=x, v=v, beta=tf.constant(beta))
 
     def test_reversibility(self) -> dict[str, Tensor]:
@@ -156,8 +153,6 @@ class Dynamics(Model):
     ) -> tuple[Tensor, dict]:
         data = self.generate_proposal_hmc(inputs, eps)
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
-        # ma = tf.reshape(ma_, (ma_.shape + (1,) * len(self.xshape[1:])))
-        # mr = tf.reshape(mr_, (mr_.shape + (1,) * len(self.xshape[1:])))
         ma = ma_[:, None]
         mr = mr_[:, None]
         vout = ma * data['proposed'].v + mr * data['init'].v
@@ -185,11 +180,6 @@ class Dynamics(Model):
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
         ma = ma_[:, None]
         mr = mr_[:, None]
-        # ma = tf.reshape(ma_, (ma_.shape + (1,) * len(self.xshape[1:])))
-        # mr = tf.reshape(mr_, (mr_.shape + (1,) * len(self.xshape[1:])))
-        # ma = ma_[:, None]
-        # mr = mr_[:, None]
-
         v_out = ma * data['proposed'].v + mr * data['init'].v
         x_out = ma * data['proposed'].x + mr * data['init'].x
         sumlogdet = ma_ * data['metrics']['sumlogdet']
@@ -218,10 +208,8 @@ class Dynamics(Model):
 
         # assert isinstance(x, Tensor)
         mf_, mb_ = self._get_direction_masks(batch_size=x.shape[0])
-        mf = tf.reshape(mf_, (mf_.shape + (1,) * len(fwd['init'].v.shape[1:])))
-        mb = tf.reshape(mb_, (mb_.shape + (1,) * len(fwd['init'].v.shape[1:])))
-        # mf = mf_[:, None]
-        # mb = mb_[:, None]
+        mf = mf_[:, None]
+        mb = mb_[:, None]
 
         v_init = mf * fwd['init'].v + mb * bwd['init'].v
 
@@ -235,10 +223,8 @@ class Dynamics(Model):
 
         acc = mf_ * mfwd['acc'] + mb_ * mbwd['acc']
         ma_, mr_ = self._get_accept_masks(acc)
-        ma = tf.reshape(ma_, (ma_.shape + (1,) * len(self.xshape[1:])))
-        mr = tf.reshape(mr_, (mr_.shape + (1,) * len(self.xshape[1:])))
-        # ma = ma_[:, None]
-        # mr = mr_[:, None]
+        ma = ma_[:, None]
+        mr = mr_[:, None]
 
         v_out = ma * v_prop + mr * v_init
         x_out = ma * x_prop + mr * x
