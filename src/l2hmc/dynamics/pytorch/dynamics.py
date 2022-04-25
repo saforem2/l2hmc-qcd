@@ -270,12 +270,8 @@ class Dynamics(nn.Module):
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
         ma_ = ma_.to(inputs[0].device)
         mr_ = mr_.to(inputs[0].device)
-        ma = ma_.reshape(ma_.shape + (1,) * len(data['init'].v.shape[1:]))
-        mr = mr_.reshape(mr_.shape + (1,) * len(data['init'].v.shape[1:]))
-        # ma_ = ma_.to(inputs[0].device)
-        # mr_ = mr_.to(inputs[0].device)
-        # ma = ma_.unsqueeze(-1)
-        # mr = mr_.unsqueeze(-1)
+        ma = ma_[:, None]
+        mr = mr_[:, None]
 
         v_out = ma * data['proposed'].v + mr * data['init'].v
         x_out = ma * data['proposed'].x + mr * data['init'].x
@@ -306,12 +302,8 @@ class Dynamics(nn.Module):
         mf_, mb_ = self._get_direction_masks(batch_size=x.shape[0])
         mf_ = mf_.to(x.device)
         mb_ = mb_.to(x.device)
-        mf = mf_.reshape(mf_.shape + (1,) * len(fwd['init'].v.shape[1:]))
-        mb = mb_.reshape(mb_.shape + (1,) * len(fwd['init'].v.shape[1:]))
-        # mf_ = mf_.to(x.device)
-        # mb_ = mb_.to(x.device)
-        # mf = mf_.unsqueeze(-1)  # .to(x.device)  # mf = mf_[:, None]
-        # mb = mb_.unsqueeze(-1)  # .to(x.device)  # mb = mb_[:, None]
+        mf = mf_[:, None]
+        mb = mb_[:, None]
 
         v_init = mf * fwd['init'].v + mb * bwd['init'].v
 
@@ -334,9 +326,8 @@ class Dynamics(nn.Module):
 
         acc = mf_ * mfwd['acc'] + mb_ * mbwd['acc']
         ma_, mr_ = self._get_accept_masks(acc)
-        ma = ma_.reshape(ma_.shape + (1,) * len(self.xshape[1:]))
-        mr = mr_.reshape(mr_.shape + (1,) * len(self.xshape[1:]))
-        # ma = ma_.unsqueeze(-1)
+        ma = ma_[:, None]
+        mr = mr_[:, None]
         # mr = mr_.unsqueeze(-1)
 
         v_out = ma * vp + mr * v_init
@@ -373,8 +364,6 @@ class Dynamics(nn.Module):
     def random_state(self, beta: float) -> State:
         x = self.g.random(list(self.xshape))
         v = self.g.random_momentum(list(self.xshape)).to(x.device)
-        # x = torch.rand(tuple(self.xshape)).reshape(self.xshape[0], -1)
-        # v = torch.randn_like(x).to(x.device)
         return State(x=x, v=v, beta=torch.tensor(beta))
 
     def test_reversibility(self) -> dict[str, Tensor]:
@@ -710,7 +699,7 @@ class Dynamics(nn.Module):
         exp_q = torch.exp(eps * q)
         vf = exp_s * state.v - 0.5 * eps * (force * exp_q + t)
 
-        return State(state.x, vf.reshape(state.x.shape), state.beta), logdet
+        return State(state.x, vf, state.beta), logdet
 
     def _update_v_bwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the backward direction"""
