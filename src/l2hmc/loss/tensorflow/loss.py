@@ -61,16 +61,16 @@ class LatticeLoss:
             self,
             xinit: Tensor,
             xout: Optional[Tensor] = None,
-            beta: Optional[Tensor] = None,
+            # beta: Optional[Tensor] = None,
     ) -> dict[str, Tensor]:
-        metrics = self.lattice.calc_metrics(x=xinit, beta=beta)
+        metrics = self.lattice.calc_metrics(x=xinit)  # , beta=beta)
         if xout is not None:
-            wl_out = self.lattice.wilson_loops(x=xout)
-            qint_out = self.lattice._int_charges(wloops=wl_out)
-            qsin_out = self.lattice._sin_charges(wloops=wl_out)
+            wloops = self.lattice.wilson_loops(x=xout)
+            qint = self.lattice._int_charges(wloops=wloops)
+            qsin = self.lattice._sin_charges(wloops=wloops)
             metrics.update({
-                'dQint': tf.math.abs(tf.subtract(qint_out, metrics['intQ'])),
-                'dQsin': tf.math.abs(tf.subtract(qsin_out, metrics['sinQ']))
+                'dQint': tf.math.abs(tf.subtract(qint, metrics['intQ'])),
+                'dQsin': tf.math.abs(tf.subtract(qsin, metrics['sinQ']))
             })
 
         return metrics

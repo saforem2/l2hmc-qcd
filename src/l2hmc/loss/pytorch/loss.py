@@ -32,10 +32,14 @@ class LatticeLoss:
         return (weight / loss) - (loss / weight)
 
     def _plaq_loss(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
-        dwloops = 2. * (1. - torch.cos(w2 - w1))
+        dw = w2 - w1
+        dwloops = 2. * (torch.ones_like(w1) - torch.cos(dw))
         ploss = acc * dwloops.sum((1, 2)) + 1e-4
+
+        # dwloops = 2. * (1. - torch.cos(w2 - w1))
         if self.config.use_mixed_loss:
             return self.mixed_loss(ploss, self.config.plaq_weight).mean(0)
+
         return (-ploss / self.config.plaq_weight).mean(0)
 
     def _charge_loss(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
@@ -44,24 +48,23 @@ class LatticeLoss:
         qloss = (acc * (q2 - q1) ** 2) + 1e-4
         if self.config.use_mixed_loss:
             return self.mixed_loss(qloss, self.config.charge_weight).mean(0)
+
         return (-qloss / self.config.charge_weight).mean(0)
 
     def lattice_metrics(
             self,
             xinit: Tensor,
             xout: Optional[Tensor] = None,
-            beta: Optional[float] = None,
+            # beta: Optional[float] = None,
     ) -> dict[str, Tensor]:
-        metrics = self.lattice.calc_metrics(x=xinit, beta=beta)
+        metrics = self.lattice.calc_metrics(x=xinit)  # , beta=beta)
         if xout is not None:
-            qint_init = metrics['intQ']
-            qsin_init = metrics['sinQ']
-            wl_out = self.lattice.wilson_loops(x=xout)
-            qint_out = self.lattice._int_charges(wloops=wl_out)
-            qsin_out = self.lattice._sin_charges(wloops=wl_out)
+            wloops = self.lattice.wilson_loops(x=xout)
+            qint = self.lattice._int_charges(wloops=wloops)
+            qsin = self.lattice._sin_charges(wloops=wloops)
             metrics.update({
-                'dQint': (qint_out - qint_init).abs(),
-                'dQsin': (qsin_out - qsin_init).abs(),
+                'dQint': (qint - metrics['intQ']).abs(),
+                'dQsin': (qsin - metrics['sinQ']).abs(),
             })
 
         return metrics
