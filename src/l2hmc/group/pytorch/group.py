@@ -334,7 +334,7 @@ def random_angle(shape: list[int], requires_grad: bool = True) -> Tensor:
 
 
 class U1Phase(Group):
-    dtype = torch.complex128
+    # dtype = torch.complex128
     size = [1]
     shape = (1)
 
@@ -376,7 +376,7 @@ class U1Phase(Group):
         return torch.randn(shape).reshape(shape[0], -1)
 
     def kinetic_energy(self, p: Tensor) -> Tensor:
-        return 0.5 * p.reshape(p.shape[0], -1).square().sum(1)
+        return 0.5 * p.reshape(p.shape[0], -1).square().sum(-1)
         # return p.reshape(p.shape[0], -1).square().sum(1)
 
 
@@ -418,7 +418,18 @@ class SU3(Group):
 
         Make traceless with tr(B - (tr(B) / N) * I) = tr(B) - tr(B) = 0
         """
-        return projectSU(x)
+        _, n, _ = x.shape
+        algebra_elem = torch.solve(u, x)[0]  # X^{-1} u
+        # do projection in lie algebra
+        B = (algebra_elem - algebra_elem.conj().transpose(-2, -1)) / 2.
+        trace = torch.einsum('bii->b', B)
+        B = B - (
+            (1 / n) * trace.unsqueeze(-1).unsqueeze(-1)
+            * torch.eye(n).repeat(x.shape[0], 1, 1)
+        )
+        assert torch.abs(torch.mean(torch.einsum('bii->b', B))) < 1e-6
+
+        return B
 
     def random(self, shape: list[int]) -> Tensor:
         r = torch.randn(shape)
@@ -430,7 +441,3 @@ class SU3(Group):
 
     def kinetic_energy(self, p: Tensor) -> Tensor:
         return 0.5 * (p.conj() @ p).real.sum(1)
-        # p2 = norm2(p) - torch.tensor(8.0)
-        # return (
-        #     0.5 * p2.reshape(p.shape[0], -1).sum(1)
-        # )
