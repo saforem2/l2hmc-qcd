@@ -7,7 +7,7 @@ Author: Sam Foreman
 Date: 06/02/2021
 """
 from __future__ import absolute_import, annotations, division, print_function
-from dataclasses import dataclass
+# from dataclasses import dataclass
 from typing import Optional
 from math import pi as PI
 
@@ -19,7 +19,7 @@ from l2hmc.lattice.u1.numpy.lattice import BaseLatticeU1
 import l2hmc.group.pytorch.group as g
 from l2hmc.configs import Charges, LatticeMetrics
 
-TWO_PI = 2. * PI
+TWOPI = 2. * PI
 Tensor = torch.Tensor
 
 
@@ -33,16 +33,16 @@ def plaq_exact(beta: float | Tensor):
 
 def project_angle(x: Tensor) -> Tensor:
     """For x in [-4pi, 4pi], returns x in [-pi, pi]."""
-    return x - TWO_PI * torch.floor((x + PI) / TWO_PI)
+    return x - TWOPI * torch.floor((x + PI) / TWOPI)
 
 
 class LatticeU1(BaseLatticeU1):
-    def __init__(self, nb: int, shape: tuple[int, int]):
+    def __init__(self, nchains: int, shape: tuple[int, int]):
         self.dim = 2
         self.g = g.U1Phase()
         self.link_shape = self.g.shape
         self.nt, self.nx, = shape
-        self._shape = (nb, self.dim, *shape, self.g.shape)
+        self._shape = (nchains, self.dim, *shape, self.g.shape)
         self.volume = self.nt * self.nx
         self.site_idxs = tuple(
             [self.nt] + [self.nx for _ in range(self.dim - 1)]
@@ -53,20 +53,23 @@ class LatticeU1(BaseLatticeU1):
         self.nlinks = self.nsites * self.dim
         self.link_idxs = tuple(list(self.site_idxs) + [self.dim])
 
-        super().__init__(nb, shape=shape)
+        super().__init__(nchains, shape=shape)
 
     def draw_uniform_batch(self, requires_grad=True) -> Tensor:
         """Draw batch of samples, uniformly from [-pi, pi)."""
-        unif = torch.rand(self._shape, requires_grad=requires_grad)
-        return TWO_PI * unif - PI
+        return (
+            TWOPI * (torch.rand(self._shape, requires_grad=requires_grad)) - PI
+        )
 
     def unnormalized_log_prob(self, x: Tensor, beta: Tensor) -> Tensor:
         return self.action(x=x, beta=beta)
 
     def action(self, x: Tensor, beta: Tensor) -> Tensor:
         """Calculate the Wilson gauge action for a batch of lattices."""
-        wloops = self._get_wloops(x)
-        return beta * (1. - torch.cos(wloops)).sum((1, 2))
+        return beta * (1. - self.wilson_loops(x).cos()).sum((1, 2))
+        # wloops = self._get_wloops(x)
+        # return beta * (1. - torch.cos(wloops)).sum((1, 2))
+        # return beta * (1. - self._get_wloops(x).cos()).sum((1, 2))
 
     def grad_action(
             self,
@@ -99,17 +102,17 @@ class LatticeU1(BaseLatticeU1):
     def calc_metrics(
             self,
             x: Tensor,
-            beta: Optional[float] = None
+            # beta: Optional[float] = None
     ) -> dict[str, Tensor]:
         """Calculate various metrics and return as dict"""
         wloops = self.wilson_loops(x)
         plaqs = self.plaqs(wloops=wloops)
         charges = self.charges(wloops=wloops)
         metrics = {'plaqs': plaqs}
-        if beta is not None:
-            metrics.update({
-               'plaqs_err': plaq_exact(torch.from_numpy(beta)) - plaqs
-            })
+        # if beta is not None:
+        #     metrics.update({
+        #        'plaqs_err': plaq_exact(torch.from_numpy(beta)) - plaqs
+        #     })
         metrics.update({
             'intQ': charges.intQ, 'sinQ': charges.sinQ
         })
@@ -128,44 +131,68 @@ class LatticeU1(BaseLatticeU1):
         # --------------------------
         # NOTE: Watch your shapes!
         # --------------------------
-        # * First, x.shape = [-1, 2, Lt, Lx], so
-        #       (x_reshaped).T.shape = [2, Lx, Lt, -1]
+        # * Input, x.shape = [-1, Lt * Lx * 2], so reshape as
+        #       (x_reshaped).T.shape = [-1, 2, Lt, Lx]
         #   and,
-        #       x0.shape = x1.shape = [Lx, Lt, -1]
-        #   where x0 and x1 are the links along the 2 (t, x) dimensions.
+        #       xu.shape = xv.shape = [-1, Lx, Lt]
+        #   where xu and xv are the links along the 2 (t, x) dimensions.
         #
         # * The Wilson loop is then:
         #       wloop = U0(x, y) +  U1(x+1, y) - U0(x, y+1) - U(1)(x, y)
-        #   and so output = wloop.T, with output.shape = [-1, Lt, Lx]
-        # --------------------------
-        x0, x1 = x.reshape(-1, *self.xshape).transpose(0, 1)
-        x0 = x0.T
-        x1 = x1.T
-
-        return (x0 + x1.roll(-1, dims=0) - x0.roll(-1, dims=1) - x1).T
+        #             = xu + xv.roll(-1, dims=1) - xu.roll(-1, dims=2) - xv
+        # ------------------------------------------------------------------
+        # - Input:
+        #     [Nb, 2 * Lt * Lx] ->
+        #       [Nb, 2, Lt, Lx] ->
+        #       [2, Nb, Lt, Lx] ->
+        # - Split into 0th and 1st components:
+        #     xu, xv = [Nb, Lt, Lx]
+        # ------------------------------------------------------------------
+        x = x.reshape((-1, *self.xshape)).transpose(0, 1)
+        xu = x[0]
+        xv = x[1]
+        return xu + xv.roll(-1, dims=1) - xu.roll(-1, dims=2) - xv
+        # --------------------------------
+        #         transpose axes
+        # ---------------------------------
+        # * input:        [0, 1, 2, 3]
+        #    0 <-> 1      [1, 0, 2, 3]
+        #    1 <-> 2      [1, 2, 0, 3]
+        #    2 <-> 3      [1, 2, 3, 0]
+        # ---------------------------------
+        # x = x.transpose(0, 1).transpose(1, 2).transpose(2, 3)
+        # = T_23(T_12(T_01(x)))
+        # x = x.reshape(-1, *self.xshape)
+        # x = x.reshape((-1, *self.xshape)).transpose(dim0=0, dim1=1)
+        # [0, 1, 2, 3] --> [1, 0, 2, 3] --> [1, 2, 0, 3] --> [1, 2, 3, 0]
+        # xu = x[0]
+        # xv = x[1]
 
     def wilson_loops4x4(self, x: Tensor) -> Tensor:
         """Calculate the 4x4 Wilson loops"""
-        x0, x1 = x.reshape(-1, *self.xshape).transpose(0, 1)
-        x0 = x0.T
-        x1 = x1.T
+        x = x.reshape(-1, *self.xshape)
+        xu = x[:, 0]
+        xv = x[:, 1]
+        # xu, xv = x.reshape(-1, *self.xshape).transpose(0, 1)
+        # xv = xv.T
+        # xu = xu.T
         return (
-            x0                                  # Ux  [x, y]
-            + x0.roll(-1, dims=2)               # Ux  [x+1, y]
-            + x0.roll(-2, dims=2)               # Ux  [x+2, y]
-            + x0.roll(-3, dims=2)               # Ux  [x+3, y]
-            + x0.roll(-4, dims=2)               # Ux  [x+4, y]
-            + x1.roll((-4, -1), dims=(2, 1))    # Uy  [x+4, y+1]
-            + x1.roll((-4, -2), dims=(2, 1))    # Uy  [x+4, y+2]
-            + x1.roll((-4, -3), dims=(2, 1))    # Uy  [x+4, y+3]
-            - x0.roll((-3, -4), dims=(2, 1))    # -Ux [x+3, y+4]
-            - x0.roll((-2, -4), dims=(2, 1))    # -Ux [x+2, y+4]
-            - x0.roll((-1, -4), dims=(2, 1))    # -Ux [x+1, y+4]
-            - x1.roll(-4, dims=1)               # -Uy [x, y+4]
-            - x1.roll(-3, dims=1)               # -Uy [x, y+3]
-            - x1.roll(-2, dims=1)               # -Uy [x, y+2]
-            - x1.roll(-1, dims=1)               # -Uy [x, y+1]
-            - x1                                # -Uy [x, y]
+            xu                                  # Ux  [x, y]
+            + xu.roll(-1, dims=2)               # Ux  [x+1, y]
+            + xu.roll(-2, dims=2)               # Ux  [x+2, y]
+            + xu.roll(-3, dims=2)               # Ux  [x+3, y]
+            + xu.roll(-4, dims=2)               # Ux  [x+4, y]
+            + xv.roll((-4, -1), dims=(2, 1))    # Uy  [x+4, y+1]
+            + xv.roll((-4, -2), dims=(2, 1))    # Uy  [x+4, y+2]
+            + xv.roll((-4, -3), dims=(2, 1))    # Uy  [x+4, y+3]
+            - xu.roll((-3, -4), dims=(2, 1))    # -Ux [x+3, y+4]
+            - xu.roll((-2, -4), dims=(2, 1))    # -Ux [x+2, y+4]
+            - xu.roll((-1, -4), dims=(2, 1))    # -Ux [x+1, y+4]
+            - xv.roll(-4, dims=1)               # -Uy [x, y+4]
+            - xv.roll(-3, dims=1)               # -Uy [x, y+3]
+            - xv.roll(-2, dims=1)               # -Uy [x, y+2]
+            - xv.roll(-1, dims=1)               # -Uy [x, y+1]
+            - xv                                # -Uy [x, y]
         ).T
 
     def plaqs(
@@ -180,10 +207,12 @@ class LatticeU1(BaseLatticeU1):
                 raise ValueError('One of `x` or `wloops` must be specified.')
             wloops = self.wilson_loops(x)
 
-        return torch.cos(wloops).mean((1, 2))
+        # return torch.cos(wloops).mean((1, 2))
+        return wloops.cos().mean((1, 2))
 
     def _plaqs4x4(self, wloops4x4: Tensor) -> Tensor:
-        return torch.cos(wloops4x4).mean((1, 2))
+        # return torch.cos(wloops4x4).mean((1, 2))
+        return wloops4x4.cos().mean((1, 2))
 
     def plaqs4x4(
             self,
@@ -200,11 +229,15 @@ class LatticeU1(BaseLatticeU1):
 
     def _sin_charges(self, wloops: Tensor) -> Tensor:
         """Calculate sinQ from Wilson loops."""
-        return torch.sin(wloops).sum((1, 2)) / TWO_PI
+        # return torch.sin(wloops).sum((1, 2)) / TWO_PI
+        return wloops.sin().sum((1, 2)) / TWOPI
 
     def _int_charges(self, wloops: Tensor) -> Tensor:
         """Calculate intQ from Wilson loops."""
-        return project_angle(wloops).sum((1, 2)) / TWO_PI
+        return project_angle(wloops).sum((1, 2)) / TWOPI
+        # return self.g.com
+        # return wloops
+        # return self.g.compat_proj(wloops).sum((1, 2)) / TWO_PI
 
     def _get_wloops(
             self,
