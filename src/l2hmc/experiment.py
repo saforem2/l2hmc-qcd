@@ -7,6 +7,7 @@ import logging
 from omegaconf import DictConfig, OmegaConf
 from hydra.utils import instantiate
 import os
+from dataclasses import asdict
 import wandb
 
 from pathlib import Path
@@ -80,20 +81,20 @@ class Experiment:
         if self.config.framework == 'pytorch':
             import torch
             device = 'gpu' if torch.cuda.is_available() else 'cpu'
-            size = 'DDP' if torch.cuda.device_count() > 1 else 'local'
+            # size = 'DDP' if torch.cuda.device_count() > 1 else 'local'
 
         elif self.config.framework == 'tensorflow':
             import tensorflow as tf
-            import horovod.tensorflow as hvd
+            # import horovod.tensorflow as hvd
             device = (
                 'gpu' if len(tf.config.list_physical_devices('GPU')) > 0
                 else 'cpu'
             )
-            size = 'horovod' if hvd.size() > 1 else 'local'
+            # size = 'horovod' if hvd.size() > 1 else 'local'
         else:
             raise ValueError('Unable to update `wandbConfig`')
 
-        group = [self.config.framework, device, size]
+        group = [self.config.framework, device]
 
         self.config.wandb.setup.update({'group': '/'.join(group)})
         if run_id is not None:
@@ -113,6 +114,7 @@ class Experiment:
     def build_accelerator(self):
         assert self.config.framework == 'pytorch'
         from accelerate.accelerator import Accelerator
+        # return Accelerator(**asdict(self.config.accelerator))
         return Accelerator()
 
     def build_dynamics(self):
@@ -128,8 +130,7 @@ class Experiment:
             return Dynamics(config=self.config.dynamics,
                             potential_fn=self.lattice.action,
                             network_factory=net_factory)
-
-        if self.config.framework == 'tensorflow':
+        elif self.config.framework == 'tensorflow':
             from l2hmc.dynamics.tensorflow.dynamics import Dynamics
             from l2hmc.network.tensorflow.network import NetworkFactory
             net_factory = NetworkFactory(input_spec=input_spec,
@@ -139,28 +140,28 @@ class Experiment:
             return Dynamics(config=self.config.dynamics,
                             potential_fn=self.lattice.action,
                             network_factory=net_factory)
+        raise ValueError('Unexpected value encountered in cfg.framework.')
+
 
     def build_loss(self):
         assert self.lattice is not None
         if self.config.framework == 'pytorch':
             from l2hmc.loss.pytorch.loss import LatticeLoss
-            return LatticeLoss(lattice=self.lattice,  # type: ignore
-                               loss_config=self.config.loss)
-        if self.config.framework == 'tensorflow':
+        elif self.config.framework == 'tensorflow':
             from l2hmc.loss.tensorflow.loss import LatticeLoss
-            return LatticeLoss(lattice=self.lattice,  # type: ignore
-                               loss_config=self.config.loss)
-        raise ValueError('Unexpected value for `config.framework`')
+        else:
+            raise ValueError(
+                'Unexpected value encountered for `self.config.framework`'
+            )
+
+        return LatticeLoss(lattice=self.lattice, loss_config=self.config.loss)
 
     def build_optimizer(self, dynamics: Optional[Any] = None):
         lr = self.config.learning_rate.lr_init
         assert self.config.framework in ['torch', 'pytorch', 'tensorflow']
+        assert dynamics is not None
         if self.config.framework in ['torch', 'pytorch']:
             from torch.optim import Adam
-            if dynamics is None:
-                dynamics = self.build_dynamics()
-
-            assert dynamics is not None
             return Adam(dynamics.parameters(), lr=lr)
         if self.config.framework == 'tensorflow':
             import tensorflow as tf
@@ -222,7 +223,7 @@ class Experiment:
         run_id = generate_id()
         self.update_wandb_config(run_id=run_id)
         log.warning(f'os.getcwd(): {os.getcwd()}')
-        wandb.tensorboard.patch(root_logdir=os.getcwd())
+        # wandb.tensorboard.patch(root_logdir=os.getcwd())
         run = wandb.init(dir=os.getcwd(), **self.config.wandb.setup)
         assert run is wandb.run and run is not None
         wandb.define_metric('dQint_eval', summary='mean')
