@@ -69,6 +69,7 @@ class Trainer:
     ) -> None:
         self.steps = steps
         self.dynamics = dynamics
+        self.g = self.dynamics.g
         self.optimizer = optimizer
         self.schedule = schedule
         self.loss_fn = loss_fn
@@ -200,6 +201,7 @@ class Trainer:
             nchains: Optional[int] = -1,
             eps: Optional[Tensor] = None,
     ) -> dict:
+        """Evaluate dynamics."""
         summaries = []
         self.dynamics.eval()
         if isinstance(skip, str):
@@ -392,31 +394,53 @@ class Trainer:
 
         return to_u1(xout).detach(), metrics
 
-    def train_step(self, inputs: tuple[Tensor, Tensor]) -> tuple[Tensor, dict]:
+    def train_step(
+            self,
+            inputs: tuple[Tensor, Tensor],
+    ) -> tuple[Tensor, dict]:
+        """Logic for performing a single training step"""
         xinit, beta = inputs
-        xinit = to_u1(xinit).to(self.accelerator.device)
+        xinit = self.g.compat_proj(xinit).to(self.accelerator.device)
         beta = torch.tensor(beta).to(self.accelerator.device)
+        # -===================================================================+
+        #                             Train step
+        # --------------------------------------------------------------------+
+        # 1. Call model on inputs to generate proposal config `xprop`:
+        # 2. Calc loss using `xinit`, `xprop` and `acc` (acceptance rate)
+        # 3. Backpropagate gradients and update network weights
+        # 4. Metropolis-Hastings accept/reject to determine `xout`
+        # --------------------------------------------------------------------+
+        # [1.] Forward call
         xout, metrics = self.dynamics((xinit, beta))
-        xprop = to_u1(metrics.pop('mc_states').proposed.x)
-        loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
-        xout = to_u1(xout)
+        xprop = self.g.compat_proj(metrics.pop('mc_states').proposed.x)
+
+        # [2.] Backprop
+        self.optimizer.zero_grad()
+        with self.accelerator.autocast():
+            loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
 
         if self.aux_weight > 0:
-            yinit = to_u1(self.draw_x()).to(self.accelerator.device)
+            yinit = self.g.compat_proj(
+                (self.draw_x()).to(self.accelerator.device)
+            )
             _, metrics_ = self.dynamics((yinit, beta))
-            yprop = to_u1(metrics_.pop('mc_states').proposed.x)
+            yprop = self.g.compat_proj((metrics_.pop('mc_states').proposed.x))
             aux_loss = self.aux_weight * self.loss_fn(x_init=yinit,
                                                       x_prop=yprop,
                                                       acc=metrics_['acc'])
-            loss = (loss + aux_loss) / (1. + self.aux_weight)
+            loss = loss + (aux_loss / self.aux_weight)
 
-        self.optimizer.zero_grad()
         self.accelerator.backward(loss)
         # extract_model_from_parallel(self.dynamics).parameters(),
-        self.accelerator.clip_grad_norm_(
-            self.dynamics.parameters(),
-            max_norm=self.clip_norm,
-        )
+        # if clip_grads:
+
+        # if should_clip:
+        if self.lr_config.clip_norm > 0.0:
+            self.accelerator.clip_grad_norm_(
+                self.dynamics.parameters(),
+                max_norm=self.clip_norm
+            )
+
         self.optimizer.step()
 
         metrics['loss'] = loss

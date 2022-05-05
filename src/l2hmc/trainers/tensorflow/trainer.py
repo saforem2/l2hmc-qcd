@@ -343,7 +343,7 @@ class Trainer:
             inputs: tuple[Tensor, Tensor],
     ) -> tuple[Tensor, dict]:
         xi, beta = inputs
-        # inputs = (to_u1(xi), tf.constant(beta))
+        inputs = (self.dynamics.g.compat_proj(xi), tf.constant(beta))
         xo, metrics = self.dynamics(inputs, training=False)
         # xo = to_u1(xo)
         # xp = to_u1(metrics.pop('mc_states').proposed.x)
@@ -494,21 +494,32 @@ class Trainer:
             self,
             inputs: tuple[Tensor, Tensor],
             first_step: Optional[bool] = False,
-            clip_grads: Optional[bool] = True,
+            clip_grads: Optional[bool] = None,
     ) -> tuple[Tensor, dict]:
         xinit, beta = inputs
-        xinit = to_u1(xinit)
+        xinit = self.dynamics.g.compat_proj(xinit)
+        should_clip = (
+            (self.lr_config.clip_norm > 0)
+            if clip_grads is None else clip_grads
+        )
         with tf.GradientTape() as tape:
             tape.watch(xinit)
             xout, metrics = self.dynamics((xinit, beta), training=True)
-            xprop = to_u1(metrics.pop('mc_states').proposed.x)
+            xprop = self.dynamics.g.compat_proj(
+                metrics.pop('mc_states').proposed.x
+            )
             loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
-            xout = to_u1(xout)
+            xout = self.dynamics.g.compat_proj(xout)
+            # xout = to_u1(xout)
 
             if self.aux_weight > 0:
-                yinit = to_u1(self.draw_x())
+                # yinit = to_u1(self.draw_x())
+                yinit = self.dynamics.g.compat_proj(self.draw_x())
                 _, metrics_ = self.dynamics((yinit, beta), training=True)
-                yprop = to_u1(metrics_.pop('mc_states').proposed.x)
+                # yprop = to_u1(metrics_.pop('mc_states').proposed.x)
+                yprop = self.dynamics.g.compat_proj(
+                    metrics_.pop('mc_states').proposed.x
+                )
                 aux_loss = self.aux_weight * self.loss_fn(x_init=yinit,
                                                           x_prop=yprop,
                                                           acc=metrics_['acc'])
@@ -516,7 +527,7 @@ class Trainer:
 
         tape = hvd.DistributedGradientTape(tape, compression=self.compression)
         grads = tape.gradient(loss, self.dynamics.trainable_variables)
-        if clip_grads:
+        if should_clip:
             grads = [
                 tf.clip_by_norm(grad, clip_norm=self.clip_norm)
                 for grad in grads
@@ -532,7 +543,7 @@ class Trainer:
         lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
         metrics.update(lmetrics)
 
-        return to_u1(xout), metrics
+        return xout, metrics
 
     def train(
             self,
