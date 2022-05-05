@@ -4,7 +4,7 @@ lattice.py
 TensorFlow implementation of the Lattice object.
 """
 from __future__ import absolute_import, annotations, division, print_function
-from dataclasses import asdict, dataclass
+# from dataclasses import asdict, dataclass
 
 import numpy as np
 import tensorflow as tf
@@ -39,12 +39,12 @@ def project_angle(x):
 
 
 class LatticeU1(BaseLatticeU1):
-    def __init__(self, nb: int, shape: tuple[int, int]):
+    def __init__(self, nchains: int, shape: tuple[int, int]):
         self.dim = 2
         self.g = g.U1Phase()
         self.link_shape = self.g.shape
         self.nt, self.nx, = shape
-        self._shape = (nb, self.dim, *shape, self.g.shape)
+        self._shape = (nchains, self.dim, *shape, self.g.shape)
         self.volume = self.nt * self.nx
         self.site_idxs = tuple(
             [self.nt] + [self.nx for _ in range(self.dim - 1)]
@@ -55,7 +55,7 @@ class LatticeU1(BaseLatticeU1):
         self.nlinks = self.nsites * self.dim
         self.link_idxs = tuple(list(self.site_idxs) + [self.dim])
 
-        super().__init__(nb, shape=shape)
+        super().__init__(nchains, shape=shape)
 
     def draw_uniform_batch(self) -> Tensor:
         """Draw batch of samples, uniformly from [-pi, pi)."""
@@ -91,17 +91,17 @@ class LatticeU1(BaseLatticeU1):
     def calc_metrics(
             self,
             x: Tensor,
-            beta: Optional[Tensor] = None,
+            # beta: Optional[Tensor] = None,
     ) -> dict[str, Tensor]:
         wloops = self.wilson_loops(x)
         plaqs = self.plaqs(wloops=wloops)
         charges = self.charges(wloops=wloops)
         metrics = {'plaqs': plaqs}
-        if beta is not None:
-            pexact = plaq_exact(beta) * tf.ones_like(plaqs)
-            metrics.update({
-               'plaqs_err': pexact - plaqs
-            })
+        # if beta is not None:
+        #     pexact = plaq_exact(beta) * tf.ones_like(plaqs)
+        #     metrics.update({
+        #        'plaqs_err': pexact - plaqs
+        #     })
 
         metrics.update({
             'intQ': charges.intQ, 'sinQ': charges.sinQ
