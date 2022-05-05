@@ -734,12 +734,15 @@ class Dynamics(nn.Module):
         exp_q = torch.exp(q)
         if self.config.use_ncp:
             halfx = state.x / 2.
-            _x = 2. * torch.atan(torch.tan(halfx) * exp_s)
+            _x = 2. * (halfx.tan() * exp_s).atan()
+            # _x = 2. * torch.atan(torch.tan(halfx) * exp_s)
             xp = _x + eps * (state.v * exp_q + t)
             xf = xm_init + (mb * xp)
-            cterm = torch.cos(halfx) ** 2
-            sterm = (exp_s * torch.sin(state.x / 2.)) ** 2
-            logdet_ = torch.log(exp_s / (cterm + sterm))
+            # cterm = torch.cos(halfx) ** 2
+            cterm = halfx.cos().square()
+            sterm = (exp_s * halfx.sin()).square()
+            logdet_ = (exp_s / (cterm + sterm)).log()
+            # logdet_ = torch.log(exp_s / (cterm + sterm))
             logdet = (mb * logdet_).sum(dim=1)
         else:
             xp = state.x * exp_s + eps * (state.v * exp_q + t)
@@ -792,13 +795,7 @@ class Dynamics(nn.Module):
 
     def kinetic_energy(self, v: Tensor) -> Tensor:
         """Returns the kinetic energy, KE = 0.5 * v ** 2."""
-        # if self.config.group == 'U1':
-        #     return 0.5 * (v ** 2).sum(dim=tuple(range(1, len(v.shape))))
-        # elif self.config.group == 'SU3':
-        #     vsq = (v.adjoint() @ v).sum(dim=tuple(range(1, len(v.shape))))
-        #     return vsq.real / 2.0
-        # else:
-        #     raise ValueError('Unexpected value in self.config.group')
+        # return 0.5 * v.reshape(v.shape[0], -1).square()
         return self.g.kinetic_energy(v)
 
     def potential_energy(self, x: Tensor, beta: Tensor):
