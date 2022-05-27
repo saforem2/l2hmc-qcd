@@ -18,7 +18,6 @@ from accelerate.utils import extract_model_from_parallel
 import numpy as np
 from rich import box
 from rich.live import Live
-# from rich.layout import Layout
 from rich.table import Table
 import torch
 from torch import optim
@@ -31,10 +30,11 @@ from l2hmc.configs import (
     LearningRateConfig,
 )
 from l2hmc.dynamics.pytorch.dynamics import Dynamics, random_angle, to_u1
+import l2hmc.group.pytorch.group as g
 from l2hmc.loss.pytorch.loss import LatticeLoss
 from l2hmc.trackers.pytorch.trackers import update_summaries
 from l2hmc.utils.history import BaseHistory, summarize_dict
-from l2hmc.utils.rich import add_columns, build_layout, console, is_interactive
+from l2hmc.utils.rich import add_columns, build_layout, console
 from l2hmc.utils.step_timer import StepTimer
 # from torchinfo import summary as model_summary
 
@@ -69,7 +69,6 @@ class Trainer:
     ) -> None:
         self.steps = steps
         self.dynamics = dynamics
-        self.g = self.dynamics.g
         self.optimizer = optimizer
         self.schedule = schedule
         self.loss_fn = loss_fn
@@ -79,20 +78,26 @@ class Trainer:
         self.accelerator = accelerator
         self.rank = self.accelerator.local_process_index
         self.lr_config = lr_config
+        self.keep = [keep] if isinstance(keep, str) else keep
+        self.skip = [skip] if isinstance(skip, str) else skip
         self._dynamics = extract_model_from_parallel(  # type: Module
             self.dynamics
         )
-        self.keep = [keep] if isinstance(keep, str) else keep
-        self.skip = [skip] if isinstance(skip, str) else skip
         if dynamics_config is None:
             dynamics_ = extract_model_from_parallel(self.dynamics)
             cfg = dynamics_.config  # type: ignore
 
             dynamics_config = DynamicsConfig(**asdict(cfg))
 
-        self.dynamics_config = dynamics_config
-        self.xshape = dynamics_config.xshape
         self.nlf = dynamics_config.nleapfrog
+        self.xshape = dynamics_config.xshape
+        self.dynamics_config = dynamics_config
+        if self.dynamics_config.group == 'U1':
+            self.g = g.U1Phase()
+        elif self.dynamics_config.group == 'SU3':
+            self.g = g.SU3()
+        else:
+            raise ValueError('Unexpected value for `dynamics_config.group`')
 
         self.history = BaseHistory(steps=steps)
         self.timer = StepTimer(evals_per_step=self.nlf)
@@ -402,21 +407,22 @@ class Trainer:
         xinit, beta = inputs
         xinit = self.g.compat_proj(xinit).to(self.accelerator.device)
         beta = torch.tensor(beta).to(self.accelerator.device)
-        # -===================================================================+
-        #                             Train step
-        # --------------------------------------------------------------------+
-        # 1. Call model on inputs to generate proposal config `xprop`:
+        # ====================================================================
+        # -----------------------  Train step  -------------------------------
+        # ====================================================================
+        # 1. Call model on inputs to generate:
+        #      a. PROPOSAL config `xprop`   (before MH acc / rej)
+        #      b. OUTPUT config `xout`      (after MH acc / rej)
         # 2. Calc loss using `xinit`, `xprop` and `acc` (acceptance rate)
         # 3. Backpropagate gradients and update network weights
-        # 4. Metropolis-Hastings accept/reject to determine `xout`
-        # --------------------------------------------------------------------+
+        # --------------------------------------------------------------------
         # [1.] Forward call
-        xout, metrics = self.dynamics((xinit, beta))
-        xprop = self.g.compat_proj(metrics.pop('mc_states').proposed.x)
-
-        # [2.] Backprop
         self.optimizer.zero_grad()
         with self.accelerator.autocast():
+            xout, metrics = self.dynamics((xinit, beta))
+            xprop = self.g.compat_proj(metrics.pop('mc_states').proposed.x)
+
+            # [2.] Calc loss
             loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
 
         if self.aux_weight > 0:
@@ -430,11 +436,9 @@ class Trainer:
                                                       acc=metrics_['acc'])
             loss = loss + (aux_loss / self.aux_weight)
 
+        # [3.] Backpropagate gradients
         self.accelerator.backward(loss)
-        # extract_model_from_parallel(self.dynamics).parameters(),
-        # if clip_grads:
 
-        # if should_clip:
         if self.lr_config.clip_norm > 0.0:
             self.accelerator.clip_grad_norm_(
                 self.dynamics.parameters(),
@@ -536,10 +540,6 @@ class Trainer:
         table = Table(expand=True)
         timer = self.timers['train']
         history = self.histories['train']
-        tkwargs = {
-            'box': box.HORIZONTALS,
-            'row_styles': ['dim', 'none'],
-        }
         self.dynamics.train()
         log.warning(f'x.dtype: {x.dtype}')
         display = build_layout(
@@ -552,31 +552,35 @@ class Trainer:
             Live(layout, console=console) if self.rank == 0
             else nullcontext()
         )
-        # with ctxmgr as live:
-        # with Live(layout, console=console) as live:
         estart = time.time()
-        with ctxmgr as live:
+        with ctxmgr:
             if WIDTH is not None and WIDTH > 0:
                 console.width = WIDTH
             for era in range(self.steps.nera):
                 estart = time.time()
-                table = Table(**tkwargs)
                 beta = self.schedule.betas[str(era)]
-                if display is not None:
-                    display['job_progress'].reset(display['tasks']['epoch'])
+                # ---- Setup Table for storing metrics ---------------------
+                table = Table(
+                    box=box.HORIZONTALS,
+                    row_styles=['dim', 'none'],
+                    title=f'ERA: {era} / {self.steps.nera}',
+                    caption=(
+                        None if era == 0
+                        else self.histories['train'].era_summary(era - 1)
+                    ),
+                )
+                # ---------------------------------------
+                # -- Update Main Layout -----------------
+                # ---------------------------------------
                 if layout is not None:
                     layout['root']['main'].update(table)
+                if display is not None:
+                    display['job_progress'].reset(display['tasks']['epoch'])
                 if self.rank == 0 and console is not None:
-                    # console.width = min(int(main_panel.get), WIDTH)
                     console.rule(', '.join([
                         f'BETA: {beta}',
                         f'ERA: {era} / {self.steps.nera}',
                     ]))
-
-                # if WIDTH is not None and WIDTH > 0 and console is not None:
-                #     console.width = WIDTH
-                # if self.rank == 0:
-                    # console.width = WIDTH
 
                 for epoch in range(self.steps.nepoch):
                     timer.start()
@@ -618,9 +622,10 @@ class Trainer:
                         if self.should_print(epoch):
                             table.add_row(*[f'{v}' for _, v in avgs.items()])
 
-            # self.reset_optimizer()
+                    if layout is not None:
+                        layout['root']['main'].update(table)
+
             tables[str(era)] = table
-            # if self.accelerator.is_local_main_process:
             if self.accelerator.is_local_main_process:
                 # if writer is not None:
                 #     model = extract_model_from_parallel(self.dynamics)
@@ -629,19 +634,18 @@ class Trainer:
                 #                      writer=writer,
                 #                      model=self.dynamics,
                 #                      optimizer=self.optimizer)
-
-                console.print(
-                    f'Era {era} took: {time.time() - estart:<5g}s'
-                )
-                emetrics = self.history.era_metrics[str(era)]
-                # era_summary = self.history.era_summary(era)
+                emetrics = self.histories['train'].era_metrics[str(era)]
+                era_summary = self.history.era_summary(era)
                 era_strs = [
                     f'{k} = {np.mean(v):<.4g}' for k, v in emetrics.items()
                     if k not in ['era', 'epoch']
                 ]
-                console.print('\n'.join([
-                    'Avgs over last era:', f'{", ".join(era_strs)}'
-                ]))
+                estr = '\n'.join([
+                    f'Era {era} took: {time.time() - estart:<5g}s',
+                    'Avgs over last era:', f'{", ".join(era_strs)}',
+                    f'Saving checkpoint to: {train_dir}',
+                ])
+                console.log(estr)
                 # if layout is not None:
                 #     layout['root']['footer']['bottom'].update(
                 #         Panel.fit(
@@ -653,19 +657,17 @@ class Trainer:
                 #     # live.console.print(Panel.fit(
                 #     # title='[b]Avgs over last era:',
                 #     # border_style='white',
-                console.log(f'Saving checkpoint to: {train_dir}')
                 ckpt_metrics = {'loss': metrics['loss']}
                 st0 = time.time()
                 self.save_ckpt(era, epoch, train_dir,
                                metrics=ckpt_metrics, run=run)
-                console.log(f'Saving took: {time.time() - st0:<5g}s')
-
-                console.log(
+                ckptstr = '\n'.join([
+                    f'Saving took: {time.time() - st0:<5g}s',
                     f'Era {era} took: {time.time() - estart:<5g}s',
-                )
-                console.log(
-                    f'Avgs over last era:\n {self.history.era_summary(era)}',
-                )
+                    'Avgs over last era:',
+                    f'{era_summary}',
+                ])
+                console.log(ckptstr)
 
         return {
             'timer': timer,
