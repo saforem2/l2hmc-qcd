@@ -24,12 +24,13 @@ from tensorflow.python.keras import backend as K
 from l2hmc.configs import (
     AnnealingSchedule, DynamicsConfig, LearningRateConfig, Steps
 )
-from l2hmc.dynamics.tensorflow.dynamics import Dynamics, to_u1
+# from l2hmc.dynamics.tensorflow.dynamics import Dynamics, to_u1
 from l2hmc.learning_rate.tensorflow.learning_rate import ReduceLROnPlateau
 from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.utils.history import summarize_dict
 from l2hmc.trackers.tensorflow.trackers import update_summaries
 from l2hmc.utils.step_timer import StepTimer
+from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.utils.tensorflow.history import History
 from l2hmc.utils.rich import add_columns, build_layout, console
 from contextlib import nullcontext
@@ -102,6 +103,7 @@ def reset_optimizer(optimizer: Optimizer):
 
 
 class Trainer:
+    # TODO: Replace arguments in __init__ call below with configs.TrainerConfig
     def __init__(
             self,
             steps: Steps,
@@ -343,8 +345,8 @@ class Trainer:
             inputs: tuple[Tensor, Tensor],
     ) -> tuple[Tensor, dict]:
         xi, beta = inputs
-        inputs = (self.dynamics.g.compat_proj(xi), tf.constant(beta))
-        xo, metrics = self.dynamics(inputs, training=False)
+        dinputs = (self.dynamics.g.compat_proj(xi), beta)
+        xo, metrics = self.dynamics(dinputs, training=False)
         # xo = to_u1(xo)
         # xp = to_u1(metrics.pop('mc_states').proposed.x)
         xp = metrics.pop('mc_states').proposed.x
@@ -357,7 +359,7 @@ class Trainer:
 
     def eval(
             self,
-            beta: Optional[float] = None,
+            beta: Optional[Tensor | float] = None,
             x: Optional[Tensor] = None,
             skip: Optional[str | list[str]] = None,
             run: Optional[Any] = None,
@@ -397,10 +399,10 @@ class Trainer:
         if writer is not None:
             writer.set_as_default()
 
-        def eval_fn(z):
+        def eval_fn(inputs):
             if job_type == 'hmc':
-                return self.hmc_step(z, eps=eps)  # type: ignore
-            return self.eval_step(z)              # type: ignore
+                return self.hmc_step(inputs, eps=eps)  # type: ignore
+            return self.eval_step(inputs)              # type: ignore
 
         assert isinstance(x, Tensor)  # and x.dtype == TF_FLOAT
 
@@ -478,6 +480,8 @@ class Trainer:
                     if avgs.get('acc', 1.0) <= 1e-5:
                         log.warning('Chains are stuck! Re-drawing x !')
                         x = self.draw_x()
+                    if layout is not None:
+                        layout['root']['main'].update(table)
 
             tables[str(0)] = table
 
@@ -545,6 +549,64 @@ class Trainer:
 
         return xout, metrics
 
+    def train_epoch(
+            self,
+            beta: float | Tensor,
+            x: Optional[Tensor] = None,
+            step: Optional[int] = None,
+            run: Optional[Any] = None,
+            writer: Optional[Any] = None,
+            display: Optional[dict] = None,
+    ) -> dict:
+        if x is None:
+            x = self.draw_x()
+        if isinstance(beta, float):
+            beta = tf.constant(beta)
+
+        gstep = 0
+        avgs = {}
+        summaries = []
+        table = Table(expand=True)
+        for step in range(self.steps.nepoch):
+            self.timers['train'].start()
+            x, metrics = self.train_step((x, beta))  # type: ignore
+            dt = self.timers['train'].stop()
+            gstep += 1
+
+            if self.should_print(step) or self.should_log(step):
+                record = {
+                    'epoch': step, 'beta': beta, 'dt': dt,
+                }
+                avgs_, summary = self.record_metrics(
+                    run=run,
+                    step=gstep,
+                    writer=writer,
+                    record=record,      # template w/ step info, np.arr
+                    metrics=metrics,    # metrics from Dynamics, Tensor
+                    job_type='train',
+                    model=self.dynamics,
+                    optimizer=self.optimizer,
+                    history=self.histories['train'],
+                )
+                avgs[gstep] = avgs_
+                summaries.append(summary)
+
+                if step == 0:
+                    table = add_columns(avgs_, table)
+                else:
+                    table.add_row(*[f'{v}' for _, v in avgs_.items()])
+
+                if avgs_.get('acc', 1.0) <= 1e-5:
+                    self.reset_optimizer()
+                    log.warning('Chains are stuck! Re-drawing x !')
+                    x = self.draw_x()
+
+            if display is not None:
+                display['job_progress'].advance(display['tasks']['step'])
+                display['job_progress'].advance(display['tasks']['epoch'])
+
+        return {'avgs': avgs, 'summaries': summaries}
+
     def train(
             self,
             xinit: Optional[Tensor] = None,
@@ -596,9 +658,13 @@ class Trainer:
             visible=(self.rank == 0),
         )
         layout = display['layout']
+        make_layout = (
+            self.rank == 0
+            and os.getenv('TERM') not in ['dumb', 'DUMB']
+        )
 
         ctxmgr = (
-            Live(layout, console=console) if self.rank == 0
+            Live(layout, console=console) if make_layout
             else nullcontext()
         )
         assert isinstance(layout, Layout)
