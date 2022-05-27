@@ -116,6 +116,22 @@ class LatticeMetrics:
 
 
 @dataclass
+class AcceleratorConfig(BaseConfig):
+    device_placement: Optional[bool] = True
+    split_batches: Optional[bool] = False
+    mixed_precision: Optional[str] = 'no'
+    cpu: Optional[bool] = False
+    deepspeed_plugin: Optional[Any] = None
+    # fsdp_plugin: Optional[Any] = None
+    rng_types: Optional[list[str]] = None
+    log_with: Optional[list[str]] = None
+    logging_dir: Optional[str | os.PathLike] = None
+    dispatch_batches: Optional[bool] = False
+    step_scheduler_with_optimizer: Optional[bool] = True
+    kwargs_handlers: Optional[list[Any]] = None
+
+
+@dataclass
 class wandbSetup(BaseConfig):
     id: Optional[str] = None
     group: Optional[str] = None
@@ -195,10 +211,6 @@ class NetWeights(BaseConfig):
             self.x = NetWeight(**self.x)
         if not isinstance(self.v, NetWeight):
             self.v = NetWeight(**self.v)
-        # if self.x is None:
-        #     self.x = NetWeight(s=1., t=1., q=1.)
-        # if self.v is None:
-        #     self.v = NetWeight(s=1., t=1., q=1.)
 
 
 @dataclass
@@ -400,6 +412,20 @@ class InputSpec(BaseConfig):
 
 
 @dataclass
+class TrainerConfig:
+    steps: Steps
+    lr: LearningRateConfig
+    dynamics: DynamicsConfig
+    schedule: AnnealingSchedule
+    compile: bool = True
+    aux_weight: float = 0.0
+    evals_per_step: int = 1
+    compression: Optional[str] = 'none'
+    keep: Optional[str | list[str]] = None
+    skip: Optional[str | list[str]] = None
+
+
+@dataclass
 class ExperimentConfig:
     framework: str
     steps: Steps
@@ -413,7 +439,7 @@ class ExperimentConfig:
     # ----- optional below -------------------
     # outdir: Optional[Any] = None
     conv: Optional[ConvolutionConfig] = None
-    c1: Optional[float] = 0.0
+    c1: Optional[float] = 0.0                # rectangle coefficient for SU3
     width: Optional[int] = None
     nchains: Optional[int] = None
     profile: Optional[bool] = False
@@ -427,6 +453,9 @@ class ExperimentConfig:
     name: Optional[str] = None
 
     def __post_init__(self):
+        if self.debug_mode:
+            self.compile = False
+
         self.annealing_schedule.setup(self.steps)
         w = int(os.environ.get('COLUMNS', 235))
         self.width = w if self.width is None else self.width
@@ -447,48 +476,3 @@ cs.store(
     name='experiment_config',
     node=ExperimentConfig,
 )
-# cs.store(
-#     group="dynamics",
-#     name='dynamics',
-#     node=DynamicsConfig,
-# )
-# cs.store(
-#     group='network',
-#     name='network',
-#     node=NetworkConfig,
-# )
-# cs.store(
-#     name='steps',
-#     group='steps',
-#     node=Steps,
-# )
-# cs.store(
-#     name='wandb',
-#     group='wandb',
-#     node=wandbConfig,
-# )
-# cs.store(
-#     name='loss',
-#     group='loss',
-#     node=LossConfig,
-# )
-# cs.store(
-#     name='conv',
-#     group='conv',
-#     node=ConvolutionConfig,
-# )
-# cs.store(
-#     name='net_weights',
-#     group='net_weights',
-#     node=NetWeights,
-# )
-# cs.store(
-#     name='learning_rate',
-#     group='learning_rate',
-#     node=LearningRateConfig,
-# )
-# cs.store(
-#     name='annealing_schedule',
-#     group='annealing_schedule',
-#     node=AnnealingSchedule
-# )
