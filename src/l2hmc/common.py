@@ -174,7 +174,7 @@ def save_logs(
 
     df = pd.DataFrame.from_dict(data)
     dfile = Path(logdir).joinpath(f'{job_type}_table.csv')
-    df.to_csv(dfile.as_posix())
+    df.to_csv(dfile.as_posix(), mode='a')
 
     if run is not None:
         with open(hfile.as_posix(), 'r') as f:
@@ -187,7 +187,7 @@ def save_logs(
 
     if summaries is not None:
         sfile = logdir.joinpath('summaries.txt').as_posix()
-        with open(sfile, 'w') as f:
+        with open(sfile, 'a') as f:
             f.writelines(summaries)
 
 
