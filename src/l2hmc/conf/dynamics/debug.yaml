@@ -1,11 +1,11 @@
 _target_: l2hmc.configs.DynamicsConfig
 
 group: 'U1'
-nchains: 4
+nchains: 64
 latvolume: [8, 8]
 # xshape: [64, 8, 8]
-eps: 0.01
-nleapfrog: 5
+eps: 0.1
+nleapfrog: 3
 eps_fixed: false
 use_ncp: true
 use_split_xnets: true
