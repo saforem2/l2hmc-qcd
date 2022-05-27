@@ -1,35 +1,38 @@
 # @package _global_
 _target_: l2hmc.configs.ExperimentConfig
+#
+# ----------------------------------------------------------------------------
+framework: ???          # ML framework to use: one of 'pytorch', 'tensorflow'
+profile: false          # Flag for profiling in pytorch
+precision: 'float32'    # Default floating point precision
+width: 235              # Setting controlling terminal width for printing
+eps_hmc: 0.1181         # Reasonable default value, determined from sweep
+compile: True           # Compile network in tensorflow? (True by default)
+nchains:  null          # Number of chains to use when evaluating model
+# optional outdir: outputs/${now:%Y-%m-%d_%H-%M-%S}
+# ----------------------------------------------------------------------------
 
-# --------------------------------------------------------------------------------------------
-framework: ???                        # ML framework to use: one of 'pytorch', 'tensorflow'
-profile: false                        # Flag for profiling in pytorch
-precision: 'float32'                  # Default floating point precision
-width: 235                            # Setting controlling terminal width for printing
-eps_hmc: 0.1181                       # Reasonable default value, determined from sweep
-compile: True                         # Compile network in tensorflow? (True by default)
-nchains:  128                         # Number of chains to use when evaluating model
-# --------------------------------------------------------------------------------------------
-# pretty print config at the start
-# of the run using Rich library
-# print_config: True
-# -----------------------------------
-# disable python warnings
-# if they annoy you
+# ----------------------------------------------------------------------------
+# pretty print config at the start of the run using Rich library
+print_config: True
+# ----------------------------------------------------------------------------
+# disable python warnings if they annoy you
 ignore_warnings: True
-# -----------------------------------
-# seed for random number generators
-# in pytorch, numpy and python.random
+# ----------------------------------------------------------------------------
+# seed for random number generators in pytorch, numpy and python.random
 # seed: null
-# -----------------------------------
-# name of the run, should be used
-# along with experiment mode
+# ----------------------------------------------------------------------------
+# name of the run, should be used along with experiment mode
 name: null
-# --------------------------------------------------------------------------------------------
-# DEFAULTS
-# --------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+hydra:
+  job:
+    chdir: true
+
 defaults:
   - _self_
+  # ------------------------------------------------------------------------------------------
+  #                                 DEFAULTS
   # ------------------------------------------------------------------------------------------
   - steps: default.yaml               # Defines num_era, num_epoch, num_test, etc.
   - dynamics: default.yaml            # Defines gauge group, nleapfrog, lattice volume, etc.
@@ -41,21 +44,18 @@ defaults:
   - net_weights: default.yaml         # Weights for controlling rel contribution of net fns
   - learning_rate: default.yaml       # Defines initial lr, optimizer type, lr schedule, etc.
   - annealing_schedule: default.yaml  # Defines annealing schedule to use for training
+  # - accelerator: default.yaml       # Defines options for HuggingFace Accelerator
   # ------------------------------------------------------------------------------------------
   # modes are special collections of config options for different purposes, e.g. debugging
   - mode: default.yaml
-  # - mode: default.yaml
-
   # experiment configs allow for version control of specific configurations
   # for example, use them to store best hyperparameters for each model configuration
   - experiment: null
-
   # - hydra/run: default.yaml
-
   # - optional local: default.yaml
+  #
   - override hydra/hydra_logging: colorlog
   - override hydra/job_logging: colorlog
-
   # - override hydra/launcher: joblib
 
   # https://hydra.cc/docs/tutorials/basic/running_your_app/logging/
@@ -66,6 +66,19 @@ defaults:
 # IGNORE
 # --------------------------------------------------------------------------------------------
 # hydra:
+# hydra:
+#   # launcher:
+#   #   # override the number of jobs from joblib
+#   #   n_jobs = 10
+#   run:
+#     # Default output paths for all file logs
+#     dir: ${hydra.job.}
+#   sweep:
+#     dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+#     subdir: ${hydra.job.override_dirname}
+#     # subdir: ${hydra.job.num}
+
+
 #   job_logging:
 #     version: 1
 
