@@ -505,6 +505,62 @@ class Trainer:
 
         return metrics
 
+    def train_epoch(
+            self,
+            beta: float | Tensor,
+            x: Optional[Tensor] = None,
+            era: Optional[int] = None,
+            run: Optional[Any] = None,
+            writer: Optional[Any] = None,
+            display: Optional[dict] = None,
+    ) -> dict:
+        """Train the sampler for a single epoch."""
+        x = self.draw_x().to(self.accelerator.device) if x is None else x
+        if isinstance(beta, float):
+            beta = torch.tensor(beta).to(x.device)
+
+        avgs = {}
+        summaries = {}
+        table = Table(expand=True)
+        timer = self.timers['train']
+        for step in range(self.steps.nepoch):
+            timer.start()
+            x, metrics = self.train_step((x, beta))
+            dt = timer.stop()
+
+            if metrics.get('acc', 1.0) < 1e-3:
+                self.reset_optimizer()
+                log.warning('Chains are stuck, redrawing x!')
+                x = self.draw_x().to(self.accelerator.device)
+
+            if self.should_log(step):
+                record = {
+                    'epoch': step, 'beta': beta, 'dt': dt,
+                }
+                avgs_, summary = self.record_metrics(
+                    run=run,
+                    writer=writer,
+                    record=record,
+                    metrics=metrics,
+                    job_type='train',
+                    model=self.dynamics,
+                    step=timer.iterations,
+                    optimizer=self.optimizer,
+                    history=self.histories['train'],
+                )
+                avgs[f'{step}'] = avgs_
+                summaries[f'{step}'] = summary
+
+                if step == 0:
+                    table = add_columns(avgs_, table)
+                else:
+                    table.add_row(*[f'{v}' for _, v in avgs_.items()])
+            if display is not None:
+                display['job_progress'].advance(display['tasks']['step'])
+                display['job_progress'].advance(display['tasks']['epoch'])
+
+        return {'avgs': avgs, 'summaries': summaries}
+
     def train(
             self,
             x: Optional[Tensor] = None,
