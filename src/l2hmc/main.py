@@ -25,8 +25,10 @@ def train_tensorflow(cfg: DictConfig) -> dict:
     for gpu in gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
     if gpus:
-        gpu = gpus[hvd.local_rank()]
-        tf.config.experimental.set_visible_devices(gpu, 'GPU')
+        tf.config.experimental.set_visible_devices(
+            gpus[hvd.local_rank()],
+            'GPU'
+        )
 
     from l2hmc.scripts.tensorflow.main import main as main_tf
     output = main_tf(cfg)
@@ -38,14 +40,14 @@ def train_pytorch(cfg: DictConfig) -> dict:
     import torch
     if cfg.precision == 'float64':
         torch.set_default_dtype(torch.float64)
-    else:
-        torch.set_default_dtype(torch.float32)
+    # else:
+    #     torch.set_default_dtype(torch.float32)
 
     from l2hmc.scripts.pytorch.main import main as main_pt
     return main_pt(cfg)
 
 
-@hydra.main(config_path='./conf', config_name='config')
+@hydra.main(version_base=None, config_path='./conf', config_name='config')
 def main(cfg: DictConfig) -> None:
     width = cfg.get('width', None)
     if width is not None and os.environ.get('COLUMNS', None) is None:
