@@ -179,7 +179,7 @@ def main(cfg: DictConfig) -> dict:
     return outputs
 
 
-@hydra.main(config_path='../../conf', config_name='config')
+@hydra.main(version_base=None, config_path='../../conf', config_name='config')
 def launch(cfg: DictConfig) -> None:
     _ = main(cfg)
 
