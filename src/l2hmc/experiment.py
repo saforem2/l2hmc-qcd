@@ -7,7 +7,6 @@ import logging
 from omegaconf import DictConfig, OmegaConf
 from hydra.utils import instantiate
 import os
-from dataclasses import asdict
 import wandb
 
 from pathlib import Path
@@ -142,7 +141,6 @@ class Experiment:
                             network_factory=net_factory)
         raise ValueError('Unexpected value encountered in cfg.framework.')
 
-
     def build_loss(self):
         assert self.lattice is not None
         if self.config.framework == 'pytorch':
@@ -154,9 +152,16 @@ class Experiment:
                 'Unexpected value encountered for `self.config.framework`'
             )
 
-        return LatticeLoss(lattice=self.lattice, loss_config=self.config.loss)
+        return LatticeLoss(
+            lattice=self.lattice,  # type:ignore
+            loss_config=self.config.loss
+        )
 
     def build_optimizer(self, dynamics: Optional[Any] = None):
+        """Build framework-dependent optimizer. Adam by default."""
+        # TODO: Expand method, re-build LR scheduler, etc
+        # TODO: Replace `LearningRateConfig` with `OptimizerConfig`
+        # TODO: Optionally, break up in to lrScheduler, OptimizerConfig ?
         lr = self.config.learning_rate.lr_init
         assert self.config.framework in ['torch', 'pytorch', 'tensorflow']
         assert dynamics is not None
