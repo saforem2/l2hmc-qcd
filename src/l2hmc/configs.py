@@ -170,7 +170,7 @@ class U1Config(BaseConfig):
         self.input_spec = InputSpec(
             xshape=self.dynamics.xshape,  # type:ignore
             xnet={'x': [xdim, int(2)], 'v': [xdim, ]},
-            vnet={'x': [xdim, ], 'v': [xdim, ]}
+            vnet={'x': [xdim, int(2)], 'v': [xdim, ]}
         )
 
 
