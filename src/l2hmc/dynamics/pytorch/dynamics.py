@@ -106,6 +106,7 @@ class Dynamics(nn.Module):
         self.config = config
         self.xdim = self.config.xdim
         self.xshape = tuple(network_factory.input_spec.xshape)
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.potential_fn = potential_fn
         self.network_factory = network_factory
         self.nlf = self.config.nleapfrog
@@ -362,9 +363,9 @@ class Dynamics(nn.Module):
         return x_out, metrics
 
     def random_state(self, beta: float) -> State:
-        x = self.g.random(list(self.xshape))
+        x = self.g.random(list(self.xshape)).to(self.device)
         v = self.g.random_momentum(list(self.xshape)).to(x.device)
-        return State(x=x, v=v, beta=torch.tensor(beta))
+        return State(x=x, v=v, beta=torch.tensor(beta).to(self.device))
 
     def test_reversibility(self) -> dict[str, Tensor]:
         state = self.random_state(beta=1.)
@@ -598,9 +599,11 @@ class Dynamics(nn.Module):
             idx = np.random.permutation(_idx)[:self.xdim // 2]
             mask = np.zeros((self.xdim,), dtype=np.float32)
             mask[idx] = 1.
-            masks.append(torch.from_numpy(mask[None, :]).to(DEVICE))
+            masks.append(mask[None, :])
+            # masks.append(torch.from_numpy(mask[None, :]).to(self.device))
 
-        return masks
+        # return torch.stack(list(masks)).to(self.device)
+        return torch.from_numpy(np.array(masks)).to(self.device)
 
     def _get_vnet(self, step: int) -> nn.Module:
         """Returns momentum network to be used for updating v."""
@@ -675,6 +678,7 @@ class Dynamics(nn.Module):
     def _forward_lf(self, step: int, state: State) -> tuple[State, Tensor]:
         """Complete update (leapfrog step) in the forward direction. """
         m, mb = self._get_mask(step)
+        m, mb = m.to(self.device), mb.to(self.device)
         sumlogdet = torch.zeros(state.x.shape[0],
                                 dtype=state.x.dtype,
                                 device=state.x.device)
@@ -699,6 +703,7 @@ class Dynamics(nn.Module):
         step_r = self.config.nleapfrog - step - 1
 
         m, mb = self._get_mask(step_r)
+        m, mb = m.to(self.device), mb.to(self.device)
         sumlogdet = torch.zeros(state.x.shape[0],
                                 dtype=state.x.dtype,
                                 device=state.x.device)
