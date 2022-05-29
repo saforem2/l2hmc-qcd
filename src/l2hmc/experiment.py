@@ -64,12 +64,22 @@ class Experiment:
 
     def get_input_spec(self) -> InputSpec:
         assert self.lattice is not None
-        # xdim = int(np.cumprod(self.config.dynamics.get_xshape()[1:])[-1])
         xdim = self.config.dynamics.xdim
         xshape = self.config.dynamics.xshape
-        input_spec = InputSpec(xshape=tuple(xshape),
-                               vnet={'v': [xdim, ], 'x': [xdim, ]},
-                               xnet={'v': [xdim, ], 'x': [xdim, 2]})
+        if self.config.dynamics.group == 'U1':
+            input_dims = {
+                'xnet': {'x': [xdim, 2], 'v': [xdim, ]},
+                'vnet': {'x': [xdim, 2], 'v': [xdim, ]},
+            }
+        else:
+            input_dims = {
+                'xnet': {'x': [xdim, ], 'v': [xdim, ]},
+                'vnet': {'x': [xdim, ], 'v': [xdim, ]},
+            }
+
+        input_spec = InputSpec(xshape=tuple(xshape), **input_dims)
+        # vnet={'v': [xdim, ], 'x': [xdim, ]},
+        # xnet={'v': [xdim, ], 'x': [xdim, 2]})
         return input_spec
 
     def update_wandb_config(
