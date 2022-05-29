@@ -73,7 +73,7 @@ class Network(nn.Module):
             self,
             xshape: tuple[int],
             network_config: NetworkConfig,
-            input_shapes: Optional[dict[str, int]] = None,
+            input_shapes: Optional[dict[str, tuple[int, int]]] = None,
             net_weight: Optional[NetWeight] = None,
             conv_config: Optional[ConvolutionConfig] = None,
             name: Optional[str] = None,
@@ -91,7 +91,10 @@ class Network(nn.Module):
         self.xdim = np.cumprod(xshape[1:])[-1]
 
         if input_shapes is None:
-            input_shapes = {'x': self.xdim, 'v': self.xdim}
+            input_shapes = {
+                'x': (int(self.xdim), int(2)),
+                'v': (int(self.xdim), int(2)),
+            }
 
         self.input_shapes = {}
         for key, val in input_shapes.items():
