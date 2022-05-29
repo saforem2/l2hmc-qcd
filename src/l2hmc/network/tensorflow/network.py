@@ -258,8 +258,8 @@ def get_network(
     coeff_kwargs = kwargs['coeff']
     layer_kwargs = kwargs['layer']
 
-    x_input = Input(input_shapes['x'], name=f'{name}_xinput', dtype=TF_FLOAT)
-    v_input = Input(input_shapes['v'], name=f'{name}_vinput', dtype=TF_FLOAT)
+    x_input = Input(input_shapes['x'], name=f'{name}_xinput')
+    v_input = Input(input_shapes['v'], name=f'{name}_vinput')
 
     s_coeff = tf.Variable(**coeff_kwargs['scale'])
     q_coeff = tf.Variable(**coeff_kwargs['transf'])
@@ -299,12 +299,12 @@ def get_network(
     if network_config.use_batch_norm:
         x = BatchNormalization(-1)(x)
 
-    x = Dense(**layer_kwargs['x'])(x)
+    x = Dense(**layer_kwargs['x'])(Flatten()(x))
     v = Dense(**layer_kwargs['v'])(Flatten()(v_input))
     z = act_fn(Add()([x, v]))
     for idx, units in enumerate(network_config.units[1:]):
         z = Dense(units,
-                  dtype=TF_FLOAT,
+                  # dtype=TF_FLOAT,
                   activation=act_fn,
                   name=f'{name}_hLayer{idx}')(z)
 

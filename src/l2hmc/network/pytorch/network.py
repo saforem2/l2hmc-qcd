@@ -83,6 +83,7 @@ class Network(nn.Module):
             net_weight = NetWeight(1., 1., 1.)
 
         self.name = name if name is not None else 'network'
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.xshape = xshape
         self.net_config = network_config
         self.nw = net_weight
@@ -114,8 +115,9 @@ class Network(nn.Module):
 
         self.units = self.net_config.units
 
-        self.s_coeff = nn.parameter.Parameter(torch.zeros(1, self.xdim))
-        self.q_coeff = nn.parameter.Parameter(torch.zeros(1, self.xdim))
+        zeros = torch.zeros(1, self.xdim)
+        self.s_coeff = nn.parameter.Parameter(zeros.to(self.device))
+        self.q_coeff = nn.parameter.Parameter(zeros.clone().to(self.device))
 
         if conv_config is not None and len(conv_config.filters) > 0:
             self.conv_config = conv_config
@@ -143,7 +145,7 @@ class Network(nn.Module):
                 if (idx + 1) % 2 == 0:
                     conv_stack.append(nn.MaxPool2d(conv_config.pool[idx]))
 
-            conv_stack.append(nn.Flatten())
+            conv_stack.append(nn.Flatten(1))
             if network_config.use_batch_norm:
                 conv_stack.append(nn.BatchNorm1d(-1))
 
@@ -152,6 +154,7 @@ class Network(nn.Module):
         else:
             self.conv_stack = []
 
+        self.flatten = nn.Flatten(1)
         self.x_layer = nn.Linear(self.input_shapes['x'], self.units[0])
         self.v_layer = nn.Linear(self.input_shapes['v'], self.units[0])
 
@@ -175,6 +178,8 @@ class Network(nn.Module):
             inputs: tuple[Tensor, Tensor]
     ) -> tuple[Tensor, Tensor, Tensor]:
         x, v = inputs
+        if torch.cuda.is_available():
+            x, v = x.to('cuda'), v.to('cuda')
 
         if len(self.conv_stack) > 0:
             try:
@@ -185,9 +190,8 @@ class Network(nn.Module):
             for layer in self.conv_stack:
                 x = self.activation_fn(layer(x))
 
-        v = self.v_layer(flatten(v))
-        x = self.x_layer(flatten(x))
-
+        v = self.v_layer(self.flatten(v))
+        x = self.x_layer(self.flatten(x))
         z = self.activation_fn(x + v)
         for layer in self.hidden_layers:
             z = self.activation_fn(layer(z))
