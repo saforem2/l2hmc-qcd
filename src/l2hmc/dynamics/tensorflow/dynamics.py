@@ -593,7 +593,6 @@ class Dynamics(Model):
             s, t, q: Scaling, Translation, and Transformation functions
         """
         x, v = inputs
-        x = self._stack_as_xy(x)
         xnet = self._get_xnet(step, first)
         assert callable(xnet)
         if isinstance(self.g, g.U1Phase):
