@@ -374,7 +374,7 @@ class Dynamics(Model):
         """Run the generic HMC transition kernel."""
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         assert isinstance(state.x, Tensor)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
         metrics = self.get_metrics(state_, sumlogdet)
         history = self.update_history(metrics, history={})
         for step in range(self.config.nleapfrog):
@@ -405,7 +405,7 @@ class Dynamics(Model):
         """
         state_ = State(state.x, state.v, state.beta)
         assert isinstance(state.x, Tensor)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
 
         metrics = self.get_metrics(state_, sumlogdet)
         history = self.update_history(metrics, history={})
@@ -457,7 +457,7 @@ class Dynamics(Model):
         # Copy initial state into proposed state
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         assert isinstance(state.x, Tensor)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
         metrics = self.get_metrics(state_, sumlogdet)
         history = self.update_history(metrics, history={})
 
@@ -541,24 +541,6 @@ class Dynamics(Model):
             return vnet[str(step)]
         return vnet
 
-    def _call_vnet(
-            self,
-            step: int,
-            inputs: tuple[Tensor, Tensor],  # x, ∂S/∂x
-            training: bool
-    ) -> tuple[Tensor, Tensor, Tensor]:
-        """Calls the momentum network used to update v.
-
-        Args:
-         - inputs: (x, force) tuple
-        """
-        x, force = inputs
-        # x = tf.reshape(x, (x.shape[0], -1))
-        # force = tf.reshape(force, (force.shape[0], -1))
-        vnet = self._get_vnet(step)
-        assert callable(vnet)
-        return vnet((x, force), training)
-
     def _get_xnet(self, step: int, first: bool) -> CallableNetwork:
         """Returns position network to be used for updating x."""
         xnet = self.xnet
@@ -575,18 +557,48 @@ class Dynamics(Model):
         """Returns -pi < x <= pi stacked as [cos(x), sin(x)]"""
         return tf.stack([tf.math.cos(x), tf.math.sin(x)], axis=-1)
 
+    def _call_vnet(
+            self,
+            step: int,
+            inputs: tuple[Tensor, Tensor],  # (x, ∂S/∂x)
+            training: bool
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """Calls the momentum network used to update v.
+
+        Args:
+            inputs: (x, force) tuple
+        Returns:
+            s, t, q: Scaling, Translation, and Transformation functions
+        """
+        x, force = inputs
+        vnet = self._get_vnet(step)
+        assert callable(vnet)
+        if isinstance(self.g, g.U1Phase):
+            x = self._stack_as_xy(x)
+
+        return vnet((x, force), training)
+
     def _call_xnet(
             self,
             step: int,
-            inputs: tuple[Tensor, Tensor],
+            inputs: tuple[Tensor, Tensor],  # (m * x, v)
             first: bool,
             training: bool = True,
     ) -> tuple[Tensor, Tensor, Tensor]:
-        """Calls the position network used to update x."""
+        """Call the position network used to update x.
+
+        Args:
+            inputs: (m * x, v) tuple, where (m * x) is a masking operation.
+        Returns:
+            s, t, q: Scaling, Translation, and Transformation functions
+        """
         x, v = inputs
         x = self._stack_as_xy(x)
         xnet = self._get_xnet(step, first)
         assert callable(xnet)
+        if isinstance(self.g, g.U1Phase):
+            x = self._stack_as_xy(x)
+
         return xnet((x, v), training)
 
     def _forward_lf(
@@ -598,7 +610,7 @@ class Dynamics(Model):
         """Complete update (leapfrog step) in the forward direction."""
         m, mb = self._get_mask(step)
         assert isinstance(state.x, Tensor)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
 
         state, logdet = self._update_v_fwd(step, state, training=training)
         sumlogdet = sumlogdet + logdet
@@ -628,7 +640,7 @@ class Dynamics(Model):
         step_r = self.config.nleapfrog - step - 1
 
         m, mb = self._get_mask(step_r)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
 
         state, logdet = self._update_v_bwd(step_r, state, training=training)
         sumlogdet = sumlogdet + logdet
