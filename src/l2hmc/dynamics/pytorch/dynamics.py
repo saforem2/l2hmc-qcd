@@ -464,7 +464,9 @@ class Dynamics(nn.Module):
             eps: Tensor,
     ) -> tuple[State, dict]:
         state_ = State(x=state.x, v=state.v, beta=state.beta)
-        sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device)
+        sumlogdet = torch.zeros(state.x.shape[0],
+                                dtype=state.x.dtype,
+                                device=state.x.device)
         metrics = self.get_metrics(state_, sumlogdet)
         history = self.update_history(metrics, history={})
         for step in range(self.config.nleapfrog):
@@ -487,7 +489,9 @@ class Dynamics(nn.Module):
             state: State,
     ) -> tuple[State, dict]:
         state_ = State(x=state.x, v=state.v, beta=state.beta)
-        sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device)
+        sumlogdet = torch.zeros(state.x.shape[0],
+                                dtype=state.x.dtype,
+                                device=state.x.device)
         metrics = self.get_metrics(state_, sumlogdet)
         history = self.update_history(metrics, history={})
 
@@ -529,7 +533,9 @@ class Dynamics(nn.Module):
 
         # Copy initial state into proposed state
         state_ = State(x=state.x, v=state.v, beta=state.beta)
-        sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device)
+        sumlogdet = torch.zeros(state.x.shape[0],
+                                dtype=state.x.dtype,
+                                device=state.x.device)
         metrics = self.get_metrics(state_, sumlogdet, step=0)
         history = self.update_history(metrics, history={})
 
@@ -626,30 +632,52 @@ class Dynamics(nn.Module):
     def _call_vnet(
             self,
             step: int,
-            inputs: tuple[Tensor, Tensor],
+            inputs: tuple[Tensor, Tensor],  # (x, ∂S/∂x)
     ) -> tuple[Tensor, Tensor, Tensor]:
-        """Call the momentum update network for a step along the trajectory"""
+        """Call the momentum update network used to update v.
+
+        Args:
+            inputs: (x, force) tuple
+        Returns:
+            s, t, q: Scaling, Translation, and Transformation functions
+        """
         vnet = self._get_vnet(step)
         assert callable(vnet)
-        return vnet(inputs)
+        vnet.train()
+        x, force = inputs
+        if isinstance(self.g, g.U1Phase):
+            x = self._stack_as_xy(x)
+
+        return vnet((x, force))
 
     def _call_xnet(
             self,
             step: int,
-            inputs: tuple[Tensor, Tensor],
+            inputs: tuple[Tensor, Tensor],  # (m * x, v)
             first: bool = False,
     ) -> tuple[Tensor, Tensor, Tensor]:
-        """Call the position update network for a step along the trajectory."""
-        x, v = inputs
-        x = self._stack_as_xy(x)
+        """Call the position network used to update x.
+
+        Args:
+            inputs: (m * x, v) tuple, where (m * x) is a masking operation.
+        Returns:
+            s, t, q: Scaling, Translation, and Transformation functions
+        """
         xnet = self._get_xnet(step, first)
         assert callable(xnet)
+        xnet.train()
+        x, v = inputs
+        if isinstance(self.g, g.U1Phase):
+            x = self._stack_as_xy(x)
+
         return xnet((x, v))
 
     def _forward_lf(self, step: int, state: State) -> tuple[State, Tensor]:
         """Complete update (leapfrog step) in the forward direction. """
         m, mb = self._get_mask(step)
-        sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device)
+        sumlogdet = torch.zeros(state.x.shape[0],
+                                dtype=state.x.dtype,
+                                device=state.x.device)
 
         state, logdet = self._update_v_fwd(step, state)
         sumlogdet = sumlogdet + logdet
@@ -671,7 +699,9 @@ class Dynamics(nn.Module):
         step_r = self.config.nleapfrog - step - 1
 
         m, mb = self._get_mask(step_r)
-        sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device)
+        sumlogdet = torch.zeros(state.x.shape[0],
+                                dtype=state.x.dtype,
+                                device=state.x.device)
 
         state, logdet = self._update_v_bwd(step_r, state)
         sumlogdet = sumlogdet + logdet
@@ -732,7 +762,7 @@ class Dynamics(nn.Module):
         q = eps * q
         exp_s = torch.exp(s)
         exp_q = torch.exp(q)
-        if self.config.use_ncp:
+        if isinstance(self.g, g.U1Phase) and self.config.use_ncp:
             halfx = state.x / 2.
             _x = 2. * (halfx.tan() * exp_s).atan()
             # _x = 2. * torch.atan(torch.tan(halfx) * exp_s)
