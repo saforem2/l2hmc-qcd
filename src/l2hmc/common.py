@@ -220,6 +220,7 @@ def plot_dataset(
         try:
             fig, _, _ = plot_dataArray(val,
                                        key=key,
+                                       outdir=outdir,
                                        title=title,
                                        line_labels=False,
                                        num_chains=nchains)
@@ -251,7 +252,7 @@ def plot_dataset(
 def analyze_dataset(
         dataset: xr.Dataset,
         outdir: os.PathLike,
-        nchains: Optional[int] = 16,
+        nchains: int = 16,
         title: Optional[str] = None,
         job_type: Optional[str] = None,
         save: Optional[bool] = True,
@@ -298,9 +299,9 @@ def analyze_dataset(
 def save_and_analyze_data(
         dataset: xr.Dataset,
         outdir: os.PathLike,
+        nchains: int = 16,
         run: Optional[Any] = None,
         output: Optional[dict] = None,
-        nchains: Optional[int] = -1,
         job_type: Optional[str] = None,
         framework: Optional[str] = None,
 ) -> xr.Dataset:
