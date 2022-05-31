@@ -379,12 +379,18 @@ class Dynamics(nn.Module):
             self,
             inputs: tuple[Tensor, Tensor],  # x, beta
             eps: Tensor,
+            nsteps: Optional[int] = None,
     ) -> dict:
         x, beta = inputs
         # v = torch.randn_like(x).to(x.device)
         v = self.g.random_momentum(list(x.shape)).to(x.device)
         init = State(x=x, v=v, beta=beta)
-        proposed, metrics = self.transition_kernel_hmc(init, eps=eps)
+        nsteps = 2 * self.nlf if self.config.merge_directions else self.nlf
+        proposed, metrics = self.transition_kernel_hmc(
+            init,
+            eps=eps,
+            nsteps=nsteps
+        )
 
         return {'init': init, 'proposed': proposed, 'metrics': metrics}
 
@@ -463,18 +469,28 @@ class Dynamics(nn.Module):
             self,
             state: State,
             eps: Tensor,
+            nsteps: Optional[int] = None,
     ) -> tuple[State, dict]:
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = torch.zeros(state.x.shape[0],
                                 dtype=state.x.dtype,
                                 device=state.x.device)
-        metrics = self.get_metrics(state_, sumlogdet)
-        history = self.update_history(metrics, history={})
-        for step in range(self.config.nleapfrog):
+        history = {}
+        if self.config.verbose:
+            history = self.update_history(
+                self.get_metrics(state_, sumlogdet),
+                history=history,
+            )
+
+        nsteps = self.config.nleapfrog if nsteps is None else nsteps
+
+        for _ in range(nsteps):
             state_ = self.leapfrog_hmc(state_, eps=eps)
             if self.config.verbose:
-                metrics = self.get_metrics(state_, sumlogdet, step=step)
-                history = self.update_history(metrics, history=history)
+                history = self.update_history(
+                    self.get_metrics(state_, sumlogdet),
+                    history=history,
+                )
 
         acc = self.compute_accept_prob(state, state_, sumlogdet)
         history.update({'acc': acc, 'sumlogdet': sumlogdet})
@@ -493,16 +509,22 @@ class Dynamics(nn.Module):
         sumlogdet = torch.zeros(state.x.shape[0],
                                 dtype=state.x.dtype,
                                 device=state.x.device)
-        metrics = self.get_metrics(state_, sumlogdet)
-        history = self.update_history(metrics, history={})
+        history = {}
+        if self.config.verbose:
+            history = self.update_history(
+                self.get_metrics(state_, sumlogdet),
+                history={}
+            )
 
         # Forward
         for step in range(self.config.nleapfrog):
             state_, logdet = self._forward_lf(step, state_)
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
-                metrics = self.get_metrics(state_, sumlogdet, step=step)
-                history = self.update_history(metrics, history=history)
+                history = self.update_history(
+                    self.get_metrics(state_, sumlogdet),
+                    history=history,
+                )
 
         # Flip momentum
         state_ = State(state_.x, -1. * state_.v, state_.beta)
@@ -512,8 +534,10 @@ class Dynamics(nn.Module):
             state_, logdet = self._backward_lf(step, state_)
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
-                metrics = self.get_metrics(state_, sumlogdet, step=step)
-                history = self.update_history(metrics, history=history)
+                history = self.update_history(
+                    self.get_metrics(state_, sumlogdet),
+                    history=history,
+                )
 
         acc = self.compute_accept_prob(state, state_, sumlogdet)
         history.update({'acc': acc, 'sumlogdet': sumlogdet})
