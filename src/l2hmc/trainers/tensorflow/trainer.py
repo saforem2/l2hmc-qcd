@@ -390,11 +390,6 @@ class Trainer:
             )
             r = self.dynamics.g.random(list(xshape))
             x = tf.reshape(r, (r.shape[0], -1))
-            # unif = to_u1(tf.random.uniform(self.dynamics.xshape,
-            #                                *(-4, 4), dtype=TF_FLOAT))
-            # x = tf.reshape(unif, (unif.shape[0], -1))
-        else:
-            x = tf.Variable(x, dtype=TF_FLOAT)
 
         if writer is not None:
             writer.set_as_default()
@@ -647,11 +642,6 @@ class Trainer:
         timer = self.timers['train']
         history = self.histories['train']
         record = {'era': 0, 'epoch': 0, 'beta': 0.0, 'dt': 0.0}
-        tkwargs = {
-            'box': box.HORIZONTALS,
-            'row_styles': ['dim', 'none'],
-            'expand': True,
-        }
         display = build_layout(
             steps=self.steps,
             job_type='train',
@@ -672,23 +662,40 @@ class Trainer:
         estart = time.time()
         with ctxmgr:  # as live:
             for era in range(self.steps.nera):
-                estart = time.time()
-                table = Table(**tkwargs)
                 beta = tf.constant(self.schedule.betas[str(era)])
-                display['job_progress'].reset(display['tasks']['epoch'])
-                if self.rank == 0:
+                tstr = f'ERA: {era}/{self.steps.nera} beta: {beta.numpy()}'
+                table = Table(
+                    box=box.HORIZONTALS,
+                    row_styles=['dim', 'none'],
+                    title=tstr,
+                    caption=(
+                        None if era == 0
+                        else self.histories['train'].era_summary(era-1)
+                    ),
+                )
+                if layout is not None:
                     layout['root']['main'].update(table)
-                    # console.rule(', '.join([
-                    #     f'BETA: {beta}',
-                    #     f'ERA: {era} / {self.steps.nera}',
-                    # ]))
+                if display is not None:
+                    display['job_progress'].reset(display['tasks']['epoch'])
+                if self.rank == 0 and console is not None:
+                    console.rule(', '.join([
+                        f'BETA: {beta}',
+                        f'ERA: {era} / {self.steps.nera}',
+                    ]))
+
+                estart = time.time()
                 for epoch in range(self.steps.nepoch):
                     timer.start()
                     x, metrics = self.train_step((x, beta))
                     dt = timer.stop()
                     gstep += 1
-                    display['job_progress'].advance(display['tasks']['step'])
-                    display['job_progress'].advance(display['tasks']['epoch'])
+                    if display is not None:
+                        display['job_progress'].advance(
+                            display['tasks']['step']
+                        )
+                        display['job_progress'].advance(
+                            display['tasks']['epoch']
+                        )
                     if self.should_print(epoch) or self.should_log(epoch):
                         record = {
                             'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
@@ -718,32 +725,46 @@ class Trainer:
                         if self.should_print(epoch):
                             table.add_row(*[f'{v}' for _, v in avgs.items()])
 
+                    if layout is not None:
+                        layout['root']['main'].update(table)
+
             tables[str(era)] = table
             self.reduce_lr.on_epoch_end((era + 1) * self.steps.nepoch, {
                 'loss': metrics.get('loss', tf.constant(np.Inf)),
             })
             if self.rank == 0:
+                emetrics = self.histories['train'].era_metrics[str(era)]
+                era_summary = self.histories['train'].era_summary(era)
+                era_strs = [
+                    f'{k}={np.mean(v):<.4f}' for k, v in emetrics.items()
+                    if k not in ['era', 'epoch']
+                ]
+                estr = '\n'.join([
+                    f'Era {era} took: {time.time() - estart:<5f}s'
+                    'Avgs over last era:',
+                    f'{", ".join(era_strs)}',
+                    f'Saving checkpoint to: {train_dir}',
+                ])
+                console.log(estr)
                 if writer is not None:
                     update_summaries(step=gstep,
                                      model=self.dynamics,
                                      optimizer=self.optimizer)
                 st0 = time.time()
-                manager.save()
-                if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
-                    self.dynamics.save_networks(train_dir)
-                console.print(
-                    f'Era {era} took: {time.time() - estart:<5g}s'
-                )
-                console.print(
-                    '\n'.join([
-                        'Avgs over last era:, '
-                        f'{self.history.era_summary(era)}'
-                    ])
-                )
                 console.print(
                     f'Saving checkpoint to: {manager.latest_checkpoint}'
                 )
-                console.print(f'Saving took: {time.time() - st0:<5g}s')
+                manager.save()
+                if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
+                    self.dynamics.save_networks(train_dir)
+
+                ckptstr = '\n'.join([
+                    f'Saving took: {time.time() - st0:<5g}s',
+                    f'Era {era} took: {time.time() - estart:<5g}s',
+                    'Avgs over last era:',
+                    f'{era_summary}',
+                ])
+                console.log(ckptstr)
 
         return {
             'timer': timer,
