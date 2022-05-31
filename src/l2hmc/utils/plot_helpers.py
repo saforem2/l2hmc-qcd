@@ -274,7 +274,7 @@ def plot_dataArray(
         therm_frac: Optional[float] = 0.,
         num_chains: Optional[int] = 10,
         title: Optional[str] = None,
-        outdir: Optional[str] = None,
+        outdir: Optional[str | Path] = None,
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
         line_labels: Optional[bool] = True,
@@ -348,8 +348,17 @@ def plot_dataArray(
         fig.suptitle(title)
 
     if outdir is not None:
-        plt.savefig(Path(outdir).joinpath(f'{key}.svg'),
-                    dpi=400, bbox_inches='tight')
+        outfile = Path(outdir).joinpath(f'{key}.svg')
+        if outfile.is_file():
+            tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
+            pngdir = Path(outdir).joinpath('pngs')
+            pngdir.mkdir(exist_ok=True, parents=True)
+            pngfile = pngdir.joinpath(f'{key}-{tstamp}.png')
+            svgfile = Path(outdir).joinpath(f'{key}-{tstamp}.svg')
+            plt.savefig(pngfile, dpi=400, bbox_inches='tight')
+            plt.savefig(svgfile, dpi=400, bbox_inches='tight')
+            # plt.savefig(Path(outdir).joinpath(f'{key}.svg'),
+            #             dpi=400, bbox_inches='tight')
 
     return (fig, subfigs, axes)
 

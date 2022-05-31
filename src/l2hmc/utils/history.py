@@ -109,8 +109,8 @@ class BaseHistory:
             self,
             val: xr.DataArray,
             key: Optional[str] = None,
-            therm_frac: Optional[float] = 0.,
-            num_chains: Optional[int] = 0,
+            therm_frac: float = 0.,
+            num_chains: int = 16,
             title: Optional[str] = None,
             outdir: Optional[str] = None,
             subplots_kwargs: Optional[dict[str, Any]] = None,
@@ -120,7 +120,6 @@ class BaseHistory:
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
         figsize = subplots_kwargs.get('figsize', hplt.set_size())
-        num_chains = 16 if num_chains is None else num_chains
         subplots_kwargs.update({'figsize': figsize})
         subfigs = None
 
@@ -300,8 +299,17 @@ class BaseHistory:
             fig.suptitle(title)
 
         if outdir is not None:
-            plt.savefig(Path(outdir).joinpath(f'{key}.svg'),
-                        dpi=400, bbox_inches='tight')
+            # plt.savefig(Path(outdir).joinpath(f'{key}.svg'),
+            #             dpi=400, bbox_inches='tight')
+            outfile = Path(outdir).joinpath(f'{key}.svg')
+            if outfile.is_file():
+                tstamp = hplt.get_timestamp('%Y-%m-%d-%H%M%S')
+                pngdir = Path(outdir).joinpath('pngs')
+                pngdir.mkdir(exist_ok=True, parents=True)
+                pngfile = pngdir.joinpath(f'{key}-{tstamp}.png')
+                svgfile = Path(outdir).joinpath(f'{key}-{tstamp}.svg')
+                plt.savefig(pngfile, dpi=400, bbox_inches='tight')
+                plt.savefig(svgfile, dpi=400, bbox_inches='tight')
 
         return fig, subfigs, axes
 
@@ -399,7 +407,6 @@ class BaseHistory:
             #         tmp = invert
             #      data_vars[key] = dataset = self.get_dataset(val)
             name = key.replace('/', '_')
-
             try:
                 data_vars[name] = self.to_DataArray(val, therm_frac)
             except ValueError:
