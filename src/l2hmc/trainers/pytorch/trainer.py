@@ -613,7 +613,6 @@ class Trainer:
             if WIDTH is not None and WIDTH > 0:
                 console.width = WIDTH
             for era in range(self.steps.nera):
-                estart = time.time()
                 beta = self.schedule.betas[str(era)]
                 # ---- Setup Table for storing metrics ---------------------
                 table = Table(
@@ -638,6 +637,7 @@ class Trainer:
                         f'ERA: {era} / {self.steps.nera}',
                     ]))
 
+                estart = time.time()
                 for epoch in range(self.steps.nepoch):
                     timer.start()
                     x, metrics = self.train_step((x, beta))
