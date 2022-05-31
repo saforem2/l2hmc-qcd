@@ -147,8 +147,8 @@ def main(cfg: DictConfig) -> dict:
         run.unwatch(objs['dynamics'])
 
     if trainer.accelerator.is_local_main_process:
-        # batch_size = cfg.dynamics.xshape[0]
-        nchains = max((4, cfg.dynamics.nchains // 8))
+        # nchains = max((4, cfg.dynamics.nchains // 8))
+        nchains = cfg.dynamics.nchains
         if should_train and cfg.steps.test > 0:                     # [2.]
             log.warning('Evaluating trained model')
             # ew = experiment.get_summary_writer('eval')
