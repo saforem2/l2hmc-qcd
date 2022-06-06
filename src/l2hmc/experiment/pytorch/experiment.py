@@ -5,6 +5,7 @@ Implements ptExperiment, a pytorch-specific subclass of the
 Experiment base class.
 """
 from __future__ import absolute_import, annotations, division, print_function
+import os
 import logging
 from typing import Any, Callable, Optional
 
@@ -22,6 +23,11 @@ from l2hmc.network.pytorch.network import NetworkFactory
 from l2hmc.trainers.pytorch.trainer import Trainer
 
 log = logging.getLogger(__name__)
+
+from mpi4py import MPI
+LOCAL_RANK = os.environ.get('OMPI_COMM_WORLD_LOCAL_RANK', None)
+RANK = MPI.COMM_WORLD.Get_rank()
+
 
 
 class Experiment(BaseExperiment):
@@ -52,11 +58,12 @@ class Experiment(BaseExperiment):
         # size = 'DDP' if torch.cuda.device_count() > 1 else 'local'
         self._update_wandb_config(device=device, run_id=run_id)
 
-    def build_accelerator(self):
+    def build_accelerator(self, **kwargs):
         assert self.config.framework == 'pytorch'
         from accelerate.accelerator import Accelerator
         # return Accelerator(**asdict(self.config.accelerator))
-        return Accelerator(log_with=['all'])
+        # return Accelerator(log_with=['all'])
+        return Accelerator(**kwargs)
 
     def build_dynamics(self):
         assert self.lattice is not None
@@ -95,20 +102,20 @@ class Experiment(BaseExperiment):
             loss_fn: Callable,
             accelerator: Optional[Any] = None,
     ) -> Trainer:
-        if accelerator is None:
-            accelerator = self.build_accelerator()
+        # if accelerator is None:
+        #     accelerator = self.build_accelerator()
         if torch.cuda.is_available():
             dynamics.cuda()
 
         # dynamics = dynamics.to(accelerator.device)
         optimizer = self.build_optimizer(dynamics=dynamics)
-        dynamics, optimizer = accelerator.prepare(dynamics, optimizer)
+        # dynamics, optimizer = accelerator.prepare(dynamics, optimizer)
 
         return Trainer(
             loss_fn=loss_fn,
             dynamics=dynamics,
             optimizer=optimizer,
-            accelerator=accelerator,
+            # accelerator=accelerator,
             steps=self.config.steps,
             schedule=self.config.annealing_schedule,
             lr_config=self.config.learning_rate,
@@ -159,15 +166,16 @@ class Experiment(BaseExperiment):
         loss_fn = self.build_loss()
         dynamics = self.build_dynamics()
         optimizer = self.build_optimizer(dynamics)
-        accelerator = self.build_accelerator()
+        # accelerator = self.build_accelerator()
         trainer = self.build_trainer(
             dynamics=dynamics,
             loss_fn=loss_fn,
             optimizer=optimizer,
-            accelerator=accelerator,
+            # accelerator=accelerator,
         )
         run = None
-        if accelerator.is_local_main_process and init_wandb:
+        # if accelerator.is_local_main_process and init_wandb:
+        if LOCAL_RANK == 0 and init_wandb:
             run = self.init_wandb(dynamics=dynamics, loss_fn=loss_fn)
 
         self._is_built = True

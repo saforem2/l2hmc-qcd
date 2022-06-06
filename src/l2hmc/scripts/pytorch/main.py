@@ -45,7 +45,8 @@ def evaluate(
     assert isinstance(nchains, int)
     assert job_type in ['eval', 'hmc']
     jobdir = get_jobdir(cfg, job_type=job_type)
-    if trainer.accelerator.is_local_main_process:
+    # if trainer.accelerator.is_local_main_process:
+    if trainer.rank == 0:
         writer = get_summary_writer(cfg, job_type=job_type)
     else:
         writer = None
@@ -86,7 +87,8 @@ def train(
 ) -> dict:
     writer = None
     jobdir = get_jobdir(cfg, job_type='train')
-    if trainer.accelerator.is_local_main_process:
+    # if trainer.accelerator.is_local_main_process:
+    if trainer.rank == 0:
         writer = get_summary_writer(cfg, job_type='train')
 
     # ------------------------------------------
@@ -106,7 +108,8 @@ def train(
     else:
         output = trainer.train(run=run, writer=writer, train_dir=jobdir)
 
-    if trainer.accelerator.is_local_main_process:
+    # if trainer.accelerator.is_local_main_process:
+    if trainer.rank == 0:
         dset = output['history'].get_dataset()
         nchains = int(
             min(cfg.dynamics.nchains, max(16, cfg.dynamics.nchains // 8))
@@ -147,7 +150,8 @@ def main(cfg: DictConfig) -> dict:
     if run is not None:
         run.unwatch(objs['dynamics'])
 
-    if trainer.accelerator.is_local_main_process:
+    # if trainer.accelerator.is_local_main_process:
+    if trainer.rank == 0:
         nchains = min(cfg.dynamics.nchains, max(16, cfg.dynamics.nchains // 8))
         if should_train and cfg.steps.test > 0:                     # [2.]
             log.warning('Evaluating trained model')
