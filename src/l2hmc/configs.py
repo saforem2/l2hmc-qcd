@@ -327,10 +327,11 @@ class DynamicsConfig(BaseConfig):
             self.xshape = (self.nchains, self.dim, *self.latvolume)
             assert len(self.xshape) == 4
             assert len(self.latvolume) == 2
+            self.xdim = int(np.cumprod(self.xshape[1:])[-1])
         elif self.group.upper() == 'SU3':
             self.dim = 4
             self.link_shape = (3, 3)
-            self.nt, self.nt, self.ny, self.nz = self.latvolume
+            self.nt, self.nx, self.ny, self.nz = self.latvolume
             self.xshape = (
                 self.nchains,
                 self.dim,
@@ -339,10 +340,9 @@ class DynamicsConfig(BaseConfig):
             )
             assert len(self.xshape) == 8
             assert len(self.latvolume) == 4
+            self.xdim = self.nt * self.nx * self.ny * self.nz * self.dim * 8
         else:
             raise ValueError('Expected `group` to be one of `"U1", "SU3"`')
-
-        self.xdim = int(np.cumprod(self.xshape[1:])[-1])
 
     # def get_xshape(self):
     #     if self.group.upper() == 'U1':
