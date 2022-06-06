@@ -38,7 +38,6 @@ from l2hmc.utils.rich import add_columns, build_layout, console
 from l2hmc.utils.step_timer import StepTimer
 
 from mpi4py import MPI
-from torch.nn.utils.clip_grad import clip_grad_norm
 # from torchinfo import summary as model_summary
 
 
@@ -54,6 +53,7 @@ Module = torch.nn.modules.Module
 LOCAL_RANK = os.environ.get('OMPI_COMM_WORLD_LOCAL_RANK', '0')
 SIZE = MPI.COMM_WORLD.Get_size()
 RANK = MPI.COMM_WORLD.Get_rank()
+
 
 def grab(x: Tensor) -> np.ndarray:
     return x.detach().cpu().numpy()
@@ -88,6 +88,7 @@ class Trainer:
         # self.rank = self.accelerator.local_process_index
         # self.rank = rank if rank is not None else 0
         # self.rank = LOCAL_RANK
+        self.device = self.accelerator.device
         self.rank = self.accelerator.local_process_index
         self.lr_config = lr_config
         self.keep = [keep] if isinstance(keep, str) else keep
@@ -177,11 +178,11 @@ class Trainer:
             eps: float,
             nsteps: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
+        self.dynamics.eval()
         xi, beta = inputs
-        # xi = xi.to(self.accelerator.device)
-        beta = torch.tensor(beta)  # .to(self.accelerator.device)
-        # eps = eps.to(self.accelerator.device)
-        xo, metrics = self.dynamics.apply_transition_hmc(  # type: ignore
+        xi = xi.to(self.device)
+        beta = torch.tensor(beta).to(self.device)
+        xo, metrics = self._dynamics.apply_transition_hmc(  # type: ignore
             (xi, beta), eps=eps, nsteps=nsteps,
         )
         xp = metrics.pop('mc_states').proposed.x
@@ -194,8 +195,9 @@ class Trainer:
         return xo.detach(), metrics
 
     def eval_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
+        self.dynamics.eval()
         xinit, beta = inputs
-        xinit = xinit  # .to(self.accelerator.device)
+        xinit = xinit.to(self.device)
         xout, metrics = self.dynamics((xinit, beta))
         # xout = self.g.compat_proj(xout)
         xprop = metrics.pop('mc_states').proposed.x
@@ -419,9 +421,10 @@ class Trainer:
             inputs: tuple[Tensor, Tensor],
     ) -> tuple[Tensor, dict]:
         """Logic for performing a single training step"""
+        self.dynamics.train()
         xinit, beta = inputs
-        xinit = self.g.compat_proj(xinit)  # .to(self.accelerator.device)
-        beta = torch.tensor(beta)  # .to(self.accelerator.device)
+        xinit = self.g.compat_proj(xinit).to(self.accelerator.device)
+        beta = torch.tensor(beta).to(self.accelerator.device)
         # ====================================================================
         # -----------------------  Train step  -------------------------------
         # ====================================================================
@@ -442,7 +445,7 @@ class Trainer:
 
         if self.aux_weight > 0:
             yinit = self.g.compat_proj(
-                (self.draw_x())  # .to(self.accelerator.device)
+                (self.draw_x()).to(self.accelerator.device)
             )
             _, metrics_ = self.dynamics((yinit, beta))
             yprop = self.g.compat_proj((metrics_.pop('mc_states').proposed.x))
@@ -452,16 +455,16 @@ class Trainer:
             loss = loss + (aux_loss / self.aux_weight)
 
         # [3.] Backpropagate gradients
-        # self.accelerator.backward(loss)
-        loss.backward()
+        self.accelerator.backward(loss)
+        # loss.backward()
 
         if self.lr_config.clip_norm > 0.0:
-            clip_grad_norm(self.dynamics.parameters(),
-                           max_norm=self.clip_norm)
-            # self.accelerator.clip_grad_norm_(
-            #     self.dynamics.parameters(),
-            #     max_norm=self.clip_norm
-            # )
+            # clip_grad_norm(self.dynamics.parameters(),
+            #                max_norm=self.clip_norm)
+            self.accelerator.clip_grad_norm_(
+                self.dynamics.parameters(),
+                max_norm=self.clip_norm
+            )
 
         self.optimizer.step()
 
@@ -480,40 +483,37 @@ class Trainer:
             metrics: Optional[dict] = None,
             run: Optional[Any] = None,
     ) -> None:
-        dynamics = extract_model_from_parallel(self.dynamics)
+        unwrapped_model = self.accelerator.unwrap_model(self.dynamics)
         ckpt_dir = Path(train_dir).joinpath('checkpoints')
         ckpt_dir.mkdir(exist_ok=True, parents=True)
         ckpt_file = ckpt_dir.joinpath(f'ckpt-{era}-{epoch}.tar')
-        # if self.accelerator.is_local_main_process:
         if self.rank == 0:
             log.info(f'Saving checkpoint to: {ckpt_file.as_posix()}')
         # self.dynamics.save(train_dir)  # type: ignore
         xeps = {
-            k: grab(v) for k, v in dynamics.xeps.items()  # type:ignore
+            k: grab(v) for k, v in unwrapped_model.xeps.items()
         }
         veps = {
-            k: grab(v) for k, v in dynamics.veps.items()  # type:ignore
+            k: grab(v) for k, v in unwrapped_model.veps.items()
         }
         ckpt = {
             'era': era,
             'epoch': epoch,
             'xeps': xeps,
             'veps': veps,
-            'model_state_dict': dynamics.state_dict(),  # type: ignore
+            'model_state_dict': unwrapped_model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
         }
         if metrics is not None:
             ckpt.update(metrics)
 
-        # torch.save(ckpt, ckpt_file)
-        # self.accelerator.save(ckpt, ckpt_file)
+        self.accelerator.save(ckpt, ckpt_file)
+        modelfile = ckpt_dir.joinpath('model.pth')
+        self.accelerator.save(unwrapped_model.state_dict(), modelfile)
         if run is not None:
             assert run is wandb.run
-            outfile = Path(train_dir).joinpath('model.pth').as_posix()
-            torch.save(self.dynamics.state_dict(), outfile)
-            # self.accelerator.save(self.dynamics.state_dict(), outfile)
             artifact = wandb.Artifact('model', type='model')
-            artifact.add_file(outfile)
+            artifact.add_file(modelfile.as_posix())
             run.log_artifact(artifact)
 
     def profile(self, nsteps: int = 5) -> dict:
@@ -530,22 +530,23 @@ class Trainer:
             self,
             beta: float | Tensor,
             x: Optional[Tensor] = None,
-            era: Optional[int] = None,
+            # era: Optional[int] = None,
             run: Optional[Any] = None,
             writer: Optional[Any] = None,
             display: Optional[dict] = None,
     ) -> dict:
         """Train the sampler for a single epoch."""
-        x = self.draw_x()  if x is None else x
+        x = self.draw_x() if x is None else x
         # .to(self.accelerator.device) if x is None else x
-        if isinstance(beta, float):
-            beta = torch.tensor(beta).to(x.device)
+        # if isinstance(beta, float):
+        #     beta = torch.tensor(beta).to(x.device)
 
         avgs = {}
         summaries = {}
         table = Table(expand=True)
         timer = self.timers['train']
         for step in range(self.steps.nepoch):
+            x, beta = x.to(self.device), torch.tensor(beta).to(self.device)
             timer.start()
             x, metrics = self.train_step((x, beta))
             dt = timer.stop()
@@ -553,7 +554,7 @@ class Trainer:
             if metrics.get('acc', 1.0) < 1e-3:
                 self.reset_optimizer()
                 log.warning('Chains are stuck, redrawing x!')
-                x = self.draw_x()  # .to(self.accelerator.device)
+                x = self.draw_x().to(self.device)
 
             if self.should_log(step):
                 record = {
@@ -618,16 +619,11 @@ class Trainer:
         history = self.histories['train']
         self.dynamics.train()
         log.warning(f'x.dtype: {x.dtype}')
-        if self.rank == 0:
-            ctxmgr = Live(console=console)
-        else:
-            ctxmgr = nullcontext()
-
         for era in range(self.steps.nera):
             beta = self.schedule.betas[str(era)]
             # --- Reset optimizer states when changing beta -----------
-            if beta != self.schedule.betas[str(0)]:
-                self.reset_optimizer()
+            # if beta != self.schedule.betas[str(0)]:
+            #     self.reset_optimizer()
             # ---- Setup Table for storing metrics ---------------------
             table = Table(
                 box=box.HORIZONTALS,
@@ -954,7 +950,7 @@ class LiveTrainer(Trainer):
         step_task = display['tasks']['step']
         job_progress = display['job_progress']
         layout = (
-            display['layout'] if self.rank == 0  # self.accelerator.is_local_main_process
+            display['layout'] if self.rank == 0
             else None
         )
 
@@ -1004,4 +1000,3 @@ class LiveTrainer(Trainer):
             'summaries': summaries,
             'tables': tables,
         }
-
