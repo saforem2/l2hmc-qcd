@@ -59,7 +59,7 @@ def train_pytorch(cfg: DictConfig) -> dict:
         MASTER_ADDR = socket.gethostname() if RANK == 0 else None
         MASTER_ADDR = MPI.COMM_WORLD.bcast(MASTER_ADDR, root=0)
         os.environ['MASTER_ADDR'] = MASTER_ADDR
-        os.environ['MASTER_PORT'] = str(2345)
+        os.environ['MASTER_PORT'] = str(9992)
     except (ImportError, ModuleNotFoundError) as e:
         SIZE = 1
         RANK = 0
