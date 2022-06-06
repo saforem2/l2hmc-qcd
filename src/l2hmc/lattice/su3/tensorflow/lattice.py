@@ -54,7 +54,7 @@ class LatticeSU3:
     def __init__(
             self,
             nb: int,
-            shape: tuple[int, int, int, int],
+            shape: list[int] | tuple[int, int, int, int],
             c1: float = 0.0,
     ) -> None:
         """4D SU(3) Lattice object for dealing with lattice quantities.
@@ -83,6 +83,13 @@ class LatticeSU3:
         self.nsites = np.cumprod(shape)[-1]
         self.nlinks = self.nsites * self.dim
         self.link_idxs = tuple(list(self.site_idxs) + [self.dim])
+
+    def update_link(
+            self,
+            x: Tensor,
+            p: Tensor,
+    ) -> Tensor:
+        return self.g.mul(self.g.exp(p), x)
 
     def coeffs(self, beta: Tensor) -> dict[str, Tensor]:
         """Coefficients for the plaquette and rectangle terms."""
@@ -254,23 +261,12 @@ class LatticeSU3:
             beta: Optional[Tensor] = None,
     ) -> dict[str, Tensor]:
         wloops = self.wilson_loops(x)
-        # ps, rs = self._wilson_loops(x, needs_rect=(self.c1 != 0))
-        # plaqs = self.plaqs(wloops=wloops)
-
-        # charges = self.charges(wloops=wloops)
         plaqs = self.plaqs(wloops)
         qsin = self._sin_charges(wloops)
-        qint = tf.zeros_like(qsin)
+        qint = self._int_charges(wloops)
         # TODO: FIX ME
         metrics = {'plaqs': plaqs,  'sinQ': qsin, 'intQ': qint}
-        # qsin = self._sin_charges(wloops=ps)
-        # if beta is not None:
-        #     pexact = plaq_exact(beta) * tf.ones_like(plaqs)
-        #     metrics.update({
-        #        'plaqs_err': pexact - plaqs
-        #     })
-
-        # metrics.update({
-        #     'intQ': charges.intQ, 'sinQ': charges.sinQ
-        # })
+        if beta is not None:
+            action = self.action(x, beta)
+            metrics['action'] = action
         return metrics
