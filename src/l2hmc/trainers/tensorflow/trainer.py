@@ -25,6 +25,7 @@ from l2hmc.configs import (
     AnnealingSchedule, DynamicsConfig, LearningRateConfig, Steps
 )
 # from l2hmc.dynamics.tensorflow.dynamics import Dynamics, to_u1
+import l2hmc.group.tensorflow.group as g
 from l2hmc.learning_rate.tensorflow.learning_rate import ReduceLROnPlateau
 from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.utils.history import summarize_dict
@@ -133,20 +134,30 @@ class Trainer:
         self.keep = [keep] if isinstance(keep, str) else keep
         self.skip = [skip] if isinstance(skip, str) else skip
         assert compression in ['none', 'fp16']
-        self.compression = HVD_FP_MAP.get(compression, 'none')
+        self.compression = hvd.Compression.fp16
         self.reduce_lr = ReduceLROnPlateau(lr_config)
         if compile:
             self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
 
         self.reduce_lr.set_model(self.dynamics)
         self.reduce_lr.set_optimizer(self.optimizer)
+
         self.dynamics_config = (
             dynamics_config if dynamics_config is not None
             else self.dynamics.config
         )
+        self.nlf = self.dynamics_config.nleapfrog
+        self.xshape = self.dynamics_config.xshape
+        self.verbose = self.dynamics_config.verbose
+        if self.dynamics_config.group == 'U1':
+            self.g = g.U1Phase()
+        elif self.dynamics_config.group == 'SU3':
+            self.g = g.SU3()
+        else:
+            raise ValueError('Unexpected value for dynamics_config.group')
+
         self.history = History(steps=steps)
-        evals_per_step = self.dynamics.config.nleapfrog
-        self.timer = StepTimer(evals_per_step=evals_per_step)
+        self.timer = StepTimer(evals_per_step=self.nlf)
         self.histories = {
             'train': self.history,
             'eval': History(),
@@ -274,10 +285,10 @@ class Trainer:
             record: Optional[dict] = None,
             run: Optional[Any] = None,
             writer: Optional[Any] = None,
-            history: Optional[History] = None,
             model: Optional[Model] = None,
             optimizer: Optional[Optimizer] = None,
     ):
+        assert job_type in ['train', 'eval', 'hmc']
         record = {} if record is None else record
         if step is not None:
             record.update({f'{job_type}_step': step})
@@ -287,15 +298,9 @@ class Trainer:
             'dQint': metrics.get('dQint', tf.constant(0.)),
         })
         record.update(self.metrics_to_numpy(metrics))
-        if history is not None:
-            avgs = history.update(record)
-        else:
-            avgs = {k: v.mean() for k, v in record.items()}
-
+        avgs = self.histories[job_type].update(record)
         summary = summarize_dict(avgs)
-        # if writer is not None:
         if step is not None:
-            assert step is not None
             update_summaries(step=step,
                              prefix=job_type,
                              model=model,
@@ -325,16 +330,23 @@ class Trainer:
     def hmc_step(
             self,
             inputs: tuple[Tensor, Tensor],
-            eps: Tensor,
+            eps: float,
+            nsteps: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
         # xi, beta = inputs
         # inputs = (to_u1(xi), tf.constant(beta))
-        xo, metrics = self.dynamics.apply_transition_hmc(inputs, eps=eps)
-        xo = self.dynamics.g.compat_proj(xo)
-        xp = self.dynamics.g.compat_proj(metrics.pop('mc_states').proposed.x)
+        xo, metrics = self.dynamics.apply_transition_hmc(
+            inputs,
+            eps=eps,
+            nsteps=nsteps
+        )
+        # xo = self.dynamics.g.compat_proj(xo)
+        # xp = self.dynamics.g.compat_proj(metrics.pop('mc_states').proposed.x)
+        xp = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=inputs[0], x_prop=xp, acc=metrics['acc'])
-        lmetrics = self.loss_fn.lattice_metrics(xinit=inputs[0], xout=xo)
-        metrics.update(lmetrics)
+        if self.verbose:
+            lmetrics = self.loss_fn.lattice_metrics(xinit=inputs[0], xout=xo)
+            metrics.update(lmetrics)
         metrics.update({'loss': loss})
 
         return xo, metrics
@@ -344,15 +356,15 @@ class Trainer:
             self,
             inputs: tuple[Tensor, Tensor],
     ) -> tuple[Tensor, dict]:
-        xi, beta = inputs
-        dinputs = (self.dynamics.g.compat_proj(xi), beta)
-        xo, metrics = self.dynamics(dinputs, training=False)
+        xo, metrics = self.dynamics(inputs, training=False)
         # xo = to_u1(xo)
         # xp = to_u1(metrics.pop('mc_states').proposed.x)
         xp = metrics.pop('mc_states').proposed.x
-        loss = self.loss_fn(x_init=xi, x_prop=xp, acc=metrics['acc'])
-        lmetrics = self.loss_fn.lattice_metrics(xinit=xi, xout=xo)
-        metrics.update(lmetrics)
+        loss = self.loss_fn(x_init=inputs[0], x_prop=xp, acc=metrics['acc'])
+        if self.verbose:
+            lmetrics = self.loss_fn.lattice_metrics(xinit=inputs[0], xout=xo)
+            metrics.update(lmetrics)
+
         metrics.update({'loss': loss})
 
         return xo, metrics
@@ -366,7 +378,8 @@ class Trainer:
             writer: Optional[Any] = None,
             job_type: Optional[str] = 'eval',
             nchains: Optional[int] = None,
-            eps: Optional[Tensor] = None,
+            eps: Optional[float] = None,
+            nsteps: Optional[int] = None,
     ) -> dict:
         """Evaluate model."""
         if isinstance(skip, str):
@@ -384,20 +397,22 @@ class Trainer:
         assert job_type in ['eval', 'hmc']
 
         if x is None:
-            xshape = (
-                self.dynamics.xshape if nchains is None
-                else [nchains, *self.dynamics.xshape[1:]]
-            )
-            r = self.dynamics.g.random(list(xshape))
+            r = self.dynamics.g.random(list(self.xshape))
             x = tf.reshape(r, (r.shape[0], -1))
 
         if writer is not None:
             writer.set_as_default()
 
         def eval_fn(inputs):
+            if job_type == 'eval':
+                return self.eval_step(inputs)  # type:ignore
+
             if job_type == 'hmc':
-                return self.hmc_step(inputs, eps=eps)  # type: ignore
-            return self.eval_step(inputs)              # type: ignore
+                return self.hmc_step(
+                    inputs, eps=eps, nsteps=nsteps
+                )  # type: ignore
+
+            raise ValueError
 
         assert isinstance(x, Tensor)  # and x.dtype == TF_FLOAT
 
@@ -428,30 +443,11 @@ class Trainer:
                 job_type: {'beta': beta, 'xshape': x.shape.as_list()}
             })
 
-        display = build_layout(steps=self.steps,
-                               job_type=job_type,
-                               visible=True)
-        step_task = display['tasks']['step']
-        job_progress = display['job_progress']
-        layout = display['layout']  # if self.rank == 0 else None
-        # with Live(table, screen=False, auto_refresh=False) as live:
-        with Live(
-                layout,
-                # screen=False,
-                # auto_refresh=True,
-                console=console,
-        ) as live:
-            # if WIDTH is not None and WIDTH > 0:
-            #     live.console.width = WIDTH
-            if layout is not None:
-                layout['root']['main'].update(table)
-                # layout['left']['right'].update(log)
-
+        with Live(table) as live:
             for step in range(self.steps.test):
                 timer.start()
                 x, metrics = eval_fn((x, tf.constant(beta)))  # type: ignore
                 dt = timer.stop()
-                job_progress.advance(step_task)
                 if step % nprint == 0 or step % nlog == 0:
                     record = {
                         'step': step, 'beta': beta, 'dt': dt,
@@ -461,24 +457,19 @@ class Trainer:
                                                         record=record,
                                                         writer=writer,
                                                         metrics=metrics,
-                                                        history=history,
                                                         job_type=job_type)
                     rows[step] = avgs
                     summaries.append(summary)
                     if step == 0:
                         table = add_columns(avgs, table)
-
-                    if step % nprint == 0:
+                    else:
                         table.add_row(*[f'{v:5}' for _, v in avgs.items()])
-                        live.refresh()
 
                     if avgs.get('acc', 1.0) <= 1e-5:
-                        log.warning('Chains are stuck! Re-drawing x !')
+                        live.console.log('Chains are stuck! Re-drawing x !')
                         x = self.draw_x()
-                    if layout is not None:
-                        layout['root']['main'].update(table)
 
-            tables[str(0)] = table
+        tables[str(0)] = table
 
         return {
             'timer': timer,
@@ -539,8 +530,9 @@ class Trainer:
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
         metrics['loss'] = loss
-        lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
-        metrics.update(lmetrics)
+        if self.verbose:
+            lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
+            metrics.update(lmetrics)
 
         return xout, metrics
 
@@ -551,7 +543,6 @@ class Trainer:
             step: Optional[int] = None,
             run: Optional[Any] = None,
             writer: Optional[Any] = None,
-            display: Optional[dict] = None,
     ) -> dict:
         if x is None:
             x = self.draw_x()
@@ -579,9 +570,9 @@ class Trainer:
                     record=record,      # template w/ step info, np.arr
                     metrics=metrics,    # metrics from Dynamics, Tensor
                     job_type='train',
-                    model=self.dynamics,
-                    optimizer=self.optimizer,
-                    history=self.histories['train'],
+                    # model=self.dynamics,
+                    # optimizer=self.optimizer,
+                    # history=self.histories['train'],
                 )
                 avgs[gstep] = avgs_
                 summaries.append(summary)
@@ -596,13 +587,146 @@ class Trainer:
                     log.warning('Chains are stuck! Re-drawing x !')
                     x = self.draw_x()
 
-            if display is not None:
-                display['job_progress'].advance(display['tasks']['step'])
-                display['job_progress'].advance(display['tasks']['epoch'])
-
         return {'avgs': avgs, 'summaries': summaries}
 
     def train(
+            self,
+            xinit: Optional[Tensor] = None,
+            skip: Optional[str | list[str]] = None,
+            train_dir: Optional[os.PathLike] = None,
+            run: Optional[Any] = None,
+            writer: Optional[Any] = None,
+            extend_last_era: Optional[bool] = True,
+    ) -> dict:
+        """Train l2hmc Dynamics."""
+        if isinstance(skip, str):
+            skip = [skip]
+
+        if writer is not None:
+            writer.set_as_default()
+
+        if train_dir is None:
+            train_dir = Path(os.getcwd()).joinpath('train')
+
+        manager = self.setup_CheckpointManager(train_dir)
+        gstep = K.get_value(self.optimizer.iterations)
+
+        x = self.draw_x() if xinit is None else tf.constant(xinit, TF_FLOAT)
+        assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
+
+        inputs = (x, tf.constant(self.schedule.beta_init))
+        assert callable(self.train_step)
+        _ = self.train_step(inputs, first_step=True)
+
+        era = 0
+        epoch = 0
+        tables = {}
+        rows = {}
+        metrics = {}
+        summaries = []
+        timer = self.timers['train']
+        history = self.histories['train']
+        record = {'era': 0, 'epoch': 0, 'beta': 0.0, 'dt': 0.0}
+        table = Table(expand=True)
+        estart = time.time()
+        for era in range(self.steps.nera):
+            beta = tf.constant(self.schedule.betas[str(era)])
+            # --- Reset optimizer states when changing beta -----------
+            if beta != self.schedule.betas[str(0)]:
+                self.reset_optimizer()
+
+            # ---- Setup Table for storing metrics ---------------------
+            table = Table(
+                box=box.HORIZONTALS,
+                row_styles=['dim', 'none'],
+            )
+
+            if extend_last_era and era == self.steps.nera - 1:
+                nepoch = 2 * self.steps.nepoch
+            else:
+                nepoch = self.steps.nepoch
+
+            with (
+                    Live(table, console=console) if self.rank == 0
+                    else nullcontext()
+            ) as live:
+                if live is not None:
+                    tstr = f'ERA: {era}/{self.steps.nera} BETA: {beta.numpy()}'
+                    live.console.clear_live()
+                    live.console.rule(tstr)
+                    live.update(table)
+
+                estart = time.time()
+                for epoch in range(nepoch):
+                    timer.start()
+                    x, metrics = self.train_step((x, beta))
+                    dt = timer.stop()
+                    gstep += 1
+                    if self.should_print(epoch) or self.should_log(epoch):
+                        record = {
+                            'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
+                        }
+                        avgs, summary = self.record_metrics(
+                            run=run,
+                            step=gstep,
+                            writer=writer,
+                            record=record,      # template w/ step info, np.arr
+                            metrics=metrics,    # metrics from Dynamics, Tensor
+                            job_type='train',
+                            model=self.dynamics,
+                            optimizer=self.optimizer,
+                        )
+                        rows[gstep] = avgs
+                        summaries.append(summary)
+
+                        if epoch == 0:
+                            table = add_columns(avgs, table)
+                        else:
+                            table.add_row(*[f'{v}' for _, v in avgs.items()])
+
+                        if avgs.get('acc', 1.0) < 1e-5:
+                            self.reset_optimizer()
+                            log.warning('Chains are stuck! Re-drawing x !')
+                            x = self.g.random(list(x.shape))
+
+                tables[str(era)] = table
+                self.reduce_lr.on_epoch_end((era + 1) * self.steps.nepoch, {
+                    'loss': metrics.get('loss', tf.constant(np.Inf)),
+                })
+                if self.rank == 0:
+                    if writer is not None:
+                        update_summaries(step=gstep,
+                                         model=self.dynamics,
+                                         optimizer=self.optimizer)
+                    st0 = time.time()
+                    manager.save()
+                    if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
+                        self.dynamics.save_networks(train_dir)
+
+                    # ckptstr = '\n'.join([
+                    if live is not None:
+                        live.console.log(
+                            f'Era {era} took: {time.time() - estart:<5g}s'
+                        )
+                        live.console.log(
+                            f'Checkpoint saved to: {manager.latest_checkpoint} '
+                            f'in {time.time() - st0:<5f}s'
+                        )
+
+        return {
+            'timer': timer,
+            'rows': rows,
+            'summaries': summaries,
+            'history': history,
+            'tables': tables,
+        }
+
+
+class LiveTrainer(Trainer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def train_live(
             self,
             xinit: Optional[Tensor] = None,
             skip: Optional[str | list[str]] = None,
@@ -707,7 +831,6 @@ class Trainer:
                             record=record,      # template w/ step info, np.arr
                             metrics=metrics,    # metrics from Dynamics, Tensor
                             job_type='train',
-                            history=history,
                             model=self.dynamics,
                             optimizer=self.optimizer,
                         )
@@ -721,8 +844,7 @@ class Trainer:
 
                         if epoch == 0:
                             table = add_columns(avgs, table)
-
-                        if self.should_print(epoch):
+                        else:
                             table.add_row(*[f'{v}' for _, v in avgs.items()])
 
                     if layout is not None:
@@ -733,38 +855,31 @@ class Trainer:
                 'loss': metrics.get('loss', tf.constant(np.Inf)),
             })
             if self.rank == 0:
-                emetrics = self.histories['train'].era_metrics[str(era)]
-                era_summary = self.histories['train'].era_summary(era)
-                era_strs = [
-                    f'{k}={np.mean(v):<.4f}' for k, v in emetrics.items()
-                    if k not in ['era', 'epoch']
-                ]
-                estr = '\n'.join([
-                    f'Era {era} took: {time.time() - estart:<5f}s'
-                    'Avgs over last era:',
-                    f'{", ".join(era_strs)}',
-                    f'Saving checkpoint to: {train_dir}',
-                ])
-                console.log(estr)
+                # emetrics = self.histories['train'].era_metrics[str(era)]
+                # era_summary = self.histories['train'].era_summary(era)
+                # era_strs = [
+                #     f'{k}={np.mean(v):<.4f}' for k, v in emetrics.items()
+                #     if k not in ['era', 'epoch']
+                # ]
+                # estr = '\n'.join([
+                #     f'Era {era} took: {time.time() - estart:<5f}s'
+                #     f'Saving checkpoint to: {train_dir}',
+                # ])
+                # console.log(estr)
                 if writer is not None:
                     update_summaries(step=gstep,
                                      model=self.dynamics,
                                      optimizer=self.optimizer)
                 st0 = time.time()
-                console.print(
-                    f'Saving checkpoint to: {manager.latest_checkpoint}'
-                )
                 manager.save()
                 if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
                     self.dynamics.save_networks(train_dir)
 
-                ckptstr = '\n'.join([
-                    f'Saving took: {time.time() - st0:<5g}s',
-                    f'Era {era} took: {time.time() - estart:<5g}s',
-                    'Avgs over last era:',
-                    f'{era_summary}',
-                ])
-                console.log(ckptstr)
+                log.info(f'Era {era} took: {time.time() - estart:<5g}s')
+                log.info(
+                    f'Checkpoint saved to: {manager.latest_checkpoint} '
+                    f'in {time.time() - st0:<5f}s'
+                )
 
         return {
             'timer': timer,
@@ -773,3 +888,131 @@ class Trainer:
             'history': history,
             'tables': tables,
         }
+
+    def eval_live(
+            self,
+            beta: Optional[Tensor | float] = None,
+            x: Optional[Tensor] = None,
+            skip: Optional[str | list[str]] = None,
+            run: Optional[Any] = None,
+            writer: Optional[Any] = None,
+            job_type: Optional[str] = 'eval',
+            nchains: Optional[int] = None,
+            eps: Optional[Tensor] = None,
+    ) -> dict:
+        """Evaluate model."""
+        if isinstance(skip, str):
+            skip = [skip]
+
+        if beta is None:
+            beta = self.schedule.beta_final
+
+        if eps is None and str(job_type).lower() == 'hmc':
+            eps = tf.constant(0.1)
+            log.warn(
+                'Step size `eps` not specified for HMC! Using default: 0.1'
+            )
+
+        assert job_type in ['eval', 'hmc']
+
+        if x is None:
+            r = self.dynamics.g.random(list(self.xshape))
+            x = tf.reshape(r, (r.shape[0], -1))
+
+        if writer is not None:
+            writer.set_as_default()
+
+        def eval_fn(inputs):
+            if job_type == 'hmc':
+                return self.hmc_step(inputs, eps=eps)  # type: ignore
+            return self.eval_step(inputs)              # type: ignore
+
+        assert isinstance(x, Tensor)  # and x.dtype == TF_FLOAT
+
+        tables = {}
+        rows = {}
+        summaries = []
+        table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
+        # nprint = max((20, self.steps.test // 20))
+        nprint = max(1, self.steps.test // 20)
+        nlog = max((1, min((10, self.steps.test))))
+        if nlog <= self.steps.test:
+            nlog = min(10, max(1, self.steps.test // 100))
+
+        assert job_type in ['eval', 'hmc']
+        timer = self.timers[job_type]
+        history = self.histories[job_type]
+
+        log.warning(f'x.shape (original): {x.shape}')
+        if nchains is not None:
+            if isinstance(nchains, int) and nchains > 0:
+                x = x[:nchains]  # type: ignore
+
+        assert isinstance(x, Tensor)
+        log.warning(f'x[:nchains].shape: {x.shape}')
+
+        if run is not None:
+            run.config.update({
+                job_type: {'beta': beta, 'xshape': x.shape.as_list()}
+            })
+
+        display = build_layout(
+            visible=True,
+            steps=self.steps,
+            job_type=job_type,
+        )
+        step_task = display['tasks']['step']
+        job_progress = display['job_progress']
+        layout = display['layout']  # if self.rank == 0 else None
+        # with Live(table, screen=False, auto_refresh=False) as live:
+        with Live(
+                layout,
+                # screen=False,
+                # auto_refresh=True,
+                console=console,
+        ) as live:
+            # if WIDTH is not None and WIDTH > 0:
+            #     live.console.width = WIDTH
+            if layout is not None:
+                layout['root']['main'].update(table)
+                # layout['left']['right'].update(log)
+
+            for step in range(self.steps.test):
+                timer.start()
+                x, metrics = eval_fn((x, tf.constant(beta)))  # type: ignore
+                dt = timer.stop()
+                job_progress.advance(step_task)
+                if step % nprint == 0 or step % nlog == 0:
+                    record = {
+                        'step': step, 'beta': beta, 'dt': dt,
+                    }
+                    avgs, summary = self.record_metrics(run=run,
+                                                        step=step,
+                                                        record=record,
+                                                        writer=writer,
+                                                        metrics=metrics,
+                                                        job_type=job_type)
+                    rows[step] = avgs
+                    summaries.append(summary)
+                    if step == 0:
+                        table = add_columns(avgs, table)
+                    else:
+                        table.add_row(*[f'{v:5}' for _, v in avgs.items()])
+                        live.refresh()
+
+                    if avgs.get('acc', 1.0) <= 1e-5:
+                        log.warning('Chains are stuck! Re-drawing x !')
+                        x = self.draw_x()
+                    if layout is not None:
+                        layout['root']['main'].update(table)
+
+            tables[str(0)] = table
+
+        return {
+            'timer': timer,
+            'history': history,
+            'rows': rows,
+            'summaries': summaries,
+            'tables': tables,
+        }
+
