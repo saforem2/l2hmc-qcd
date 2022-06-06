@@ -269,9 +269,9 @@ def get_network(
     s_coeff = tf.Variable(**coeff_kwargs['scale'])
     q_coeff = tf.Variable(**coeff_kwargs['transf'])
 
+    v = Flatten()(v_input)
     if conv_config is None or len(conv_config.filters) == 0:
         x = Flatten()(x_input)
-        v = Flatten()(v_input)
 
     # if conv_config is not None and len(conv_config.filters) > 0:
     elif conv_config is not None and len(conv_config.filters) > 0:
