@@ -45,7 +45,8 @@ class LatticeU1(BaseLatticeU1):
         self._shape = (nchains, self.dim, *shape, self.g.shape)
         self.volume = self.nt * self.nx
         self.site_idxs = tuple(
-            [self.nt] + [self.nx for _ in range(self.dim - 1)]
+            [self.nt]
+            + [self.nx for _ in range(self.dim - 1)]
         )
         self.nplaqs = self.nt * self.nx
         self._lattice_shape = shape
@@ -57,9 +58,9 @@ class LatticeU1(BaseLatticeU1):
 
     def draw_uniform_batch(self, requires_grad=True) -> Tensor:
         """Draw batch of samples, uniformly from [-pi, pi)."""
-        return (
-            TWOPI * (torch.rand(self._shape, requires_grad=requires_grad)) - PI
-        )
+        return TWOPI * (
+            torch.rand(self._shape, requires_grad=requires_grad)
+        ) - PI
 
     def unnormalized_log_prob(self, x: Tensor, beta: Tensor) -> Tensor:
         return self.action(x=x, beta=beta)
@@ -67,9 +68,6 @@ class LatticeU1(BaseLatticeU1):
     def action(self, x: Tensor, beta: Tensor) -> Tensor:
         """Calculate the Wilson gauge action for a batch of lattices."""
         return beta * (1. - self.wilson_loops(x).cos()).sum((1, 2))
-        # wloops = self._get_wloops(x)
-        # return beta * (1. - torch.cos(wloops)).sum((1, 2))
-        # return beta * (1. - self._get_wloops(x).cos()).sum((1, 2))
 
     def grad_action(
             self,
@@ -82,7 +80,6 @@ class LatticeU1(BaseLatticeU1):
         s = self.action(x, beta)
         identity = torch.ones(x.shape[0], device=x.device)
         dsdx, = torch.autograd.grad(s, x,
-                                    # retain_graph=True,
                                     create_graph=create_graph,
                                     grad_outputs=identity)
         return dsdx
@@ -102,71 +99,32 @@ class LatticeU1(BaseLatticeU1):
     def calc_metrics(
             self,
             x: Tensor,
-            # beta: Optional[float] = None
     ) -> dict[str, Tensor]:
         """Calculate various metrics and return as dict"""
         wloops = self.wilson_loops(x)
         plaqs = self.plaqs(wloops=wloops)
         charges = self.charges(wloops=wloops)
-        metrics = {'plaqs': plaqs}
-        # if beta is not None:
-        #     metrics.update({
-        #        'plaqs_err': plaq_exact(torch.from_numpy(beta)) - plaqs
-        #     })
-        metrics.update({
-            'intQ': charges.intQ, 'sinQ': charges.sinQ
-        })
-
-        return metrics
+        return {
+            'plaqs': plaqs,
+            'intQ': charges.intQ,
+            'sinQ': charges.sinQ
+        }
 
     def observables(self, x: Tensor) -> LatticeMetrics:
         """Calculate observables and return as LatticeMetrics object"""
         wloops = self.wilson_loops(x)
-        return LatticeMetrics(p4x4=self.plaqs4x4(x=x),
-                              plaqs=self.plaqs(wloops=wloops),
-                              charges=self.charges(wloops=wloops))
+        return LatticeMetrics(
+            p4x4=self.plaqs4x4(x=x),
+            plaqs=self.plaqs(wloops=wloops),
+            charges=self.charges(wloops=wloops)
+        )
 
     def wilson_loops(self, x: Tensor) -> Tensor:
         """Calculate the Wilson loops by summing links in CCW direction."""
-        # --------------------------
-        # NOTE: Watch your shapes!
-        # --------------------------
-        # * Input, x.shape = [-1, Lt * Lx * 2], so reshape as
-        #       (x_reshaped).T.shape = [-1, 2, Lt, Lx]
-        #   and,
-        #       xu.shape = xv.shape = [-1, Lx, Lt]
-        #   where xu and xv are the links along the 2 (t, x) dimensions.
-        #
-        # * The Wilson loop is then:
-        #       wloop = U0(x, y) +  U1(x+1, y) - U0(x, y+1) - U(1)(x, y)
-        #             = xu + xv.roll(-1, dims=1) - xu.roll(-1, dims=2) - xv
-        # ------------------------------------------------------------------
-        # - Input:
-        #     [Nb, 2 * Lt * Lx] ->
-        #       [Nb, 2, Lt, Lx] ->
-        #       [2, Nb, Lt, Lx] ->
-        # - Split into 0th and 1st components:
-        #     xu, xv = [Nb, Lt, Lx]
-        # ------------------------------------------------------------------
-        x = x.reshape((-1, *self.xshape)).transpose(0, 1)
-        xu = x[0]
-        xv = x[1]
+        x = x.view((-1, *self.xshape))  # shape: [nchains, 2, Nt, Nx]
+        xu = x[:, 0]  # shape: [nchains, Nt, Nx]
+        xv = x[:, 1]  # shape: [nchains, Nt, Nx]
         return xu + xv.roll(-1, dims=1) - xu.roll(-1, dims=2) - xv
-        # --------------------------------
-        #         transpose axes
-        # ---------------------------------
-        # * input:        [0, 1, 2, 3]
-        #    0 <-> 1      [1, 0, 2, 3]
-        #    1 <-> 2      [1, 2, 0, 3]
-        #    2 <-> 3      [1, 2, 3, 0]
-        # ---------------------------------
-        # x = x.transpose(0, 1).transpose(1, 2).transpose(2, 3)
-        # = T_23(T_12(T_01(x)))
-        # x = x.reshape(-1, *self.xshape)
-        # x = x.reshape((-1, *self.xshape)).transpose(dim0=0, dim1=1)
-        # [0, 1, 2, 3] --> [1, 0, 2, 3] --> [1, 2, 0, 3] --> [1, 2, 3, 0]
-        # xu = x[0]
-        # xv = x[1]
 
     def wilson_loops4x4(self, x: Tensor) -> Tensor:
         """Calculate the 4x4 Wilson loops"""
