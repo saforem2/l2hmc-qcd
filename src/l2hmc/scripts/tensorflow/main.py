@@ -106,9 +106,7 @@ def train(
                            **kwargs)
     if trainer.rank == 0:
         dset = output['history'].get_dataset()
-        # nchains = (cfg.dynamics.nchains // 8)
-        # nchains = 16 if nchains is None else nchains
-        nchains = max(16, cfg.dynamics.nchains // 8)
+        nchains = min(cfg.dynamics.nchains, max(16, cfg.dynamics.nchains // 8))
         _ = save_and_analyze_data(dset,
                                   run=run,
                                   outdir=jobdir,

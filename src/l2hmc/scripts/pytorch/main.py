@@ -36,7 +36,7 @@ def evaluate(
         job_type: str,
         run: Optional[Any] = None,
         nchains: Optional[int] = None,
-        eps: Optional[Tensor] = None,
+        eps: Optional[float] = None,
         nsteps: Optional[int] = None,
 ) -> dict:
     """Evaluate model (nested as `trainer.model`)"""
@@ -44,19 +44,20 @@ def evaluate(
 
     assert isinstance(nchains, int)
     assert job_type in ['eval', 'hmc']
-    # # writer = None
     jobdir = get_jobdir(cfg, job_type=job_type)
     if trainer.accelerator.is_local_main_process:
         writer = get_summary_writer(cfg, job_type=job_type)
     else:
         writer = None
 
-    output = trainer.eval(run=run,
-                          writer=writer,
-                          nchains=nchains,
-                          job_type=job_type,
-                          eps=eps,
-                          nsteps=nsteps)
+    output = trainer.eval(
+        run=run,
+        writer=writer,
+        nchains=nchains,
+        job_type=job_type,
+        eps=eps,
+        nsteps=nsteps
+    )
     dataset = output['history'].get_dataset(therm_frac=therm_frac)
     if run is not None:
         dQint = dataset.data_vars.get('dQint').values
@@ -103,14 +104,13 @@ def train(
         prof.export_chrome_trace(tracefile)
 
     else:
-        output = trainer.train(run=run,
-                               writer=writer,
-                               train_dir=jobdir)
+        output = trainer.train(run=run, writer=writer, train_dir=jobdir)
 
     if trainer.accelerator.is_local_main_process:
         dset = output['history'].get_dataset()
-        nchains = max(16, cfg.dynamics.nchains // 8)
-        # nchains = 16 if nchains is None else nchains
+        nchains = int(
+            min(cfg.dynamics.nchains, max(16, cfg.dynamics.nchains // 8))
+        )
         _ = save_and_analyze_data(dset,
                                   run=run,
                                   outdir=jobdir,
@@ -142,15 +142,13 @@ def main(cfg: DictConfig) -> dict:
     should_train = (cfg.steps.nera > 0 and cfg.steps.nepoch > 0)
     if should_train:
         # tw = experiment.get_summary_writer('train')
-        outputs['train'] = train(cfg, trainer, run=run)  # , writer=tw)  # [1.]
+        outputs['train'] = train(cfg, trainer, run=run)             # [1.]
 
     if run is not None:
         run.unwatch(objs['dynamics'])
 
     if trainer.accelerator.is_local_main_process:
-        # nchains = max((4, cfg.dynamics.nchains // 8))
-        # nchains = cfg.dynamics.nchains
-        nchains = max(16, cfg.dynamics.nchains // 8)
+        nchains = min(cfg.dynamics.nchains, max(16, cfg.dynamics.nchains // 8))
         if should_train and cfg.steps.test > 0:                     # [2.]
             log.warning('Evaluating trained model')
             # ew = experiment.get_summary_writer('eval')
@@ -162,8 +160,8 @@ def main(cfg: DictConfig) -> dict:
                                        trainer=trainer)
         if cfg.steps.test > 0:                                      # [3.]
             log.warning('Running generic HMC')
-            eps_hmc = torch.tensor(cfg.get('eps_hmc', 0.118 / 2))
-            # hw = experiment.get_summary_writer('hmc')
+            eps_default = 1. / cfg.dynamics.nleapfrog
+            eps_hmc = cfg.get('eps_hmc', eps_default)
             outputs['hmc'] = evaluate(cfg=cfg,
                                       run=run,
                                       # writer=hw,
