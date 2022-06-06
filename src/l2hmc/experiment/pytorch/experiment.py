@@ -4,28 +4,25 @@ pytorch/experiment.py
 Implements ptExperiment, a pytorch-specific subclass of the
 Experiment base class.
 """
-from __future__ import absolute_import, division, print_function, annotations
-
+from __future__ import absolute_import, annotations, division, print_function
 import logging
+from typing import Any, Callable, Optional
+
 from omegaconf import DictConfig
+import torch
+from torch.utils.tensorboard.writer import SummaryWriter
 import wandb
 
-from typing import Optional, Any, Callable
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
+from l2hmc.experiment.experiment import BaseExperiment
 from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
 from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
-
-import torch
 from l2hmc.loss.pytorch.loss import LatticeLoss
-
 from l2hmc.network.pytorch.network import NetworkFactory
 from l2hmc.trainers.pytorch.trainer import Trainer
 
 log = logging.getLogger(__name__)
 
-from l2hmc.experiment.experiment import BaseExperiment
-
-from torch.utils.tensorboard.writer import SummaryWriter
 
 class Experiment(BaseExperiment):
     def __init__(self, cfg: DictConfig) -> None:
@@ -43,7 +40,8 @@ class Experiment(BaseExperiment):
             c1 = self.config.c1 if self.config.c1 is not None else 0.0
             return LatticeSU3(*lat_args, c1=c1)
         raise ValueError(
-            f'Unexpected value for `dynamics.group`: {self.config.dynamics.group}'
+            'Unexpected value for `dynamics.group`: '
+            f'{self.config.dynamics.group}'
         )
 
     def update_wandb_config(
@@ -58,7 +56,7 @@ class Experiment(BaseExperiment):
         assert self.config.framework == 'pytorch'
         from accelerate.accelerator import Accelerator
         # return Accelerator(**asdict(self.config.accelerator))
-        return Accelerator()
+        return Accelerator(log_with=['all'])
 
     def build_dynamics(self):
         assert self.lattice is not None
@@ -75,7 +73,7 @@ class Experiment(BaseExperiment):
 
     def build_loss(self):
         assert (
-            self.lattice is not None 
+            self.lattice is not None
             and isinstance(self.lattice, (LatticeU1, LatticeSU3))
         )
         return LatticeLoss(
@@ -199,4 +197,3 @@ class Experiment(BaseExperiment):
 
     def evaluate(self):
         pass
-
