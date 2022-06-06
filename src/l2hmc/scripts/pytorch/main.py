@@ -15,7 +15,7 @@ import torch
 
 from l2hmc.common import save_and_analyze_data
 from l2hmc.configs import get_jobdir
-from l2hmc.experiment import Experiment
+from l2hmc.experiment.pytorch.experiment import Experiment
 from l2hmc.trainers.pytorch.trainer import Trainer
 from l2hmc.utils.pytorch.utils import get_summary_writer
 
@@ -35,14 +35,15 @@ def evaluate(
         trainer: Trainer,
         job_type: str,
         run: Optional[Any] = None,
-        # writer: Optional[Any] = None,
         nchains: Optional[int] = None,
         eps: Optional[Tensor] = None,
+        nsteps: Optional[int] = None,
 ) -> dict:
     """Evaluate model (nested as `trainer.model`)"""
-    nchains = -1 if nchains is None else nchains
     therm_frac = cfg.get('therm_frac', 0.2)
 
+    assert isinstance(nchains, int)
+    assert job_type in ['eval', 'hmc']
     # # writer = None
     jobdir = get_jobdir(cfg, job_type=job_type)
     if trainer.accelerator.is_local_main_process:
@@ -54,7 +55,8 @@ def evaluate(
                           writer=writer,
                           nchains=nchains,
                           job_type=job_type,
-                          eps=eps)
+                          eps=eps,
+                          nsteps=nsteps)
     dataset = output['history'].get_dataset(therm_frac=therm_frac)
     if run is not None:
         dQint = dataset.data_vars.get('dQint').values
@@ -82,7 +84,6 @@ def train(
         nchains: Optional[int] = None,
 ) -> dict:
     writer = None
-    nchains = 16 if nchains is None else nchains
     jobdir = get_jobdir(cfg, job_type='train')
     if trainer.accelerator.is_local_main_process:
         writer = get_summary_writer(cfg, job_type='train')
@@ -108,6 +109,8 @@ def train(
 
     if trainer.accelerator.is_local_main_process:
         dset = output['history'].get_dataset()
+        nchains = max(16, cfg.dynamics.nchains // 8)
+        # nchains = 16 if nchains is None else nchains
         _ = save_and_analyze_data(dset,
                                   run=run,
                                   outdir=jobdir,
@@ -125,8 +128,6 @@ def train(
 # @record
 def main(cfg: DictConfig) -> dict:
     outputs = {}
-    nchains = max((1, cfg.dynamics.nchains // 4))
-    cfg.update({'nchains': nchains})
     # config = instantiate(cfg)
     experiment = Experiment(cfg)
     objs = experiment.build()
@@ -148,7 +149,8 @@ def main(cfg: DictConfig) -> dict:
 
     if trainer.accelerator.is_local_main_process:
         # nchains = max((4, cfg.dynamics.nchains // 8))
-        nchains = cfg.dynamics.nchains
+        # nchains = cfg.dynamics.nchains
+        nchains = max(16, cfg.dynamics.nchains // 8)
         if should_train and cfg.steps.test > 0:                     # [2.]
             log.warning('Evaluating trained model')
             # ew = experiment.get_summary_writer('eval')
@@ -160,7 +162,7 @@ def main(cfg: DictConfig) -> dict:
                                        trainer=trainer)
         if cfg.steps.test > 0:                                      # [3.]
             log.warning('Running generic HMC')
-            eps_hmc = torch.tensor(cfg.get('eps_hmc', 0.118))
+            eps_hmc = torch.tensor(cfg.get('eps_hmc', 0.118 / 2))
             # hw = experiment.get_summary_writer('hmc')
             outputs['hmc'] = evaluate(cfg=cfg,
                                       run=run,

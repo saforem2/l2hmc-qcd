@@ -13,7 +13,7 @@ import tensorflow as tf
 
 from l2hmc.common import save_and_analyze_data
 from l2hmc.configs import get_jobdir
-from l2hmc.experiment import Experiment
+from l2hmc.experiment.tensorflow.experiment import Experiment
 from l2hmc.trainers.tensorflow.trainer import Trainer
 from l2hmc.utils.tensorflow.utils import get_summary_writer
 
@@ -37,8 +37,9 @@ def evaluate(
         job_type: str,
         run: Optional[Any] = None,
         # writer: Optional[Any] = None,
-        nchains: Optional[int] = 10,
-        eps: Optional[Tensor] = None,
+        nchains: Optional[int] = None,
+        eps: Optional[float] = None,
+        nsteps: Optional[int] = None,
 ) -> dict:
     assert isinstance(nchains, int)
     assert job_type in ['eval', 'hmc']
@@ -56,7 +57,8 @@ def evaluate(
                           writer=writer,
                           nchains=nchains,
                           job_type=job_type,
-                          eps=eps)
+                          eps=eps,
+                          nsteps=nsteps)
     dataset = output['history'].get_dataset(therm_frac=therm_frac)
 
     if run is not None:
@@ -85,7 +87,7 @@ def train(
         trainer: Trainer,
         run: Optional[Any] = None,
         # writer: Optional[Any] = None,
-        nchains: Optional[int] = -1,
+        nchains: Optional[int] = None,
         **kwargs,
 ) -> dict:
     jobdir = get_jobdir(cfg, job_type='train')
@@ -104,13 +106,16 @@ def train(
                            **kwargs)
     if trainer.rank == 0:
         dset = output['history'].get_dataset()
+        # nchains = (cfg.dynamics.nchains // 8)
         # nchains = 16 if nchains is None else nchains
+        nchains = max(16, cfg.dynamics.nchains // 8)
         _ = save_and_analyze_data(dset,
                                   run=run,
                                   outdir=jobdir,
                                   output=output,
                                   nchains=nchains,
-                                  job_type='train')
+                                  job_type='train',
+                                  framework='tensorflow')
     if writer is not None:
         writer.close()
 
@@ -122,8 +127,8 @@ def main(cfg: DictConfig) -> dict:
     # -----------------------------
     # Create experiment from cfg
     # -----------------------------
-    nchains = max((1, cfg.dynamics.nchains // 4))
-    cfg.update({'nchains': nchains})
+    # nchains = max((16, cfg.dynamics.nchains // 4))
+    # cfg.update({'nchains': nchains})
     experiment = Experiment(cfg)
     objs = experiment.build()
     run = objs['run']
@@ -142,7 +147,7 @@ def main(cfg: DictConfig) -> dict:
         outputs['train'] = train(cfg=cfg, trainer=trainer, run=run)
 
     if trainer.rank == 0:
-        nchains = max((4, cfg.dynamics.nchains // 8))
+        nchains = max(16, cfg.dynamics.nchains // 8)
         if should_train and cfg.steps.test > 0:                     # [2.]
             log.warning('Evaluating trained model')
             # ew = experiment.get_summary_writer('eval')
@@ -155,7 +160,8 @@ def main(cfg: DictConfig) -> dict:
                                        trainer=trainer)
         if cfg.steps.test > 0:                                      # [3.]
             log.warning('Running generic HMC')
-            eps = tf.constant(float(cfg.get('eps_hmc', 0.118)))
+            # eps = tf.constant(float(cfg.get('eps_hmc', 0.118)))
+            eps = float(cfg.get('eps_hmc', 0.118))
             # hw = experiment.get_summary_writer('hmc')
             outputs['hmc'] = evaluate(cfg=cfg,
                                       run=run,
