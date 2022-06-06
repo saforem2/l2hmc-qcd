@@ -28,6 +28,7 @@ log = logging.getLogger(__name__)
 
 RANK = hvd.rank()
 
+
 class Experiment(BaseExperiment):
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg=cfg)
@@ -44,7 +45,8 @@ class Experiment(BaseExperiment):
             c1 = self.config.c1 if self.config.c1 is not None else 0.0
             return LatticeSU3(*lat_args, c1=c1)
         raise ValueError(
-            f'Unexpected value for `dynamics.group`: {self.config.dynamics.group}'
+            'Unexpected value for `dynamics.group`: '
+            f'{self.config.dynamics.group}'
         )
 
     def update_wandb_config(
@@ -73,7 +75,7 @@ class Experiment(BaseExperiment):
 
     def build_loss(self):
         assert (
-            self.lattice is not None 
+            self.lattice is not None
             and isinstance(self.lattice, (LatticeU1, LatticeSU3))
         )
         return LatticeLoss(
@@ -81,7 +83,10 @@ class Experiment(BaseExperiment):
             loss_config=self.config.loss,
         )
 
-    def build_optimizer(self, dynamics: Optional[Dynamics] = None) -> None:
+    def build_optimizer(
+            self,
+            dynamics: Optional[Dynamics] = None  # pyright: ignore type:ignore
+    ) -> None:
         # TODO: Expand method, re-build LR scheduler, etc
         # TODO: Replace `LearningRateConfig` with `OptimizerConfig`
         # TODO: Optionally, break up in to lrScheduler, OptimizerConfig ?
@@ -163,4 +168,3 @@ class Experiment(BaseExperiment):
 
     def evaluate(self):
         pass
-
