@@ -36,6 +36,7 @@ def log_item(
             or 'beta' in tag
             or 'era' in tag
             or 'epoch' in tag
+            or 'loss' in tag
             or isinstance(val, (float, int, bool))
     ):
         writer.add_scalar(tag=tag, scalar_value=val, global_step=step)
