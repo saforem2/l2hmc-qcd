@@ -55,7 +55,7 @@ class LatticeSU3:
     def __init__(
             self,
             nb: int,
-            shape: tuple[int, int, int, int],
+            shape: list[int] | tuple[int, int, int, int],
             c1: float = 0.0,
     ) -> None:
         """4D SU(3) Lattice object for dealing with lattice quantities.
@@ -76,6 +76,7 @@ class LatticeSU3:
         # self.c1 = torch.tensor(c1)
         self.link_shape = self.g.shape
         self.nt, self.nx, self.ny, self.nz = shape
+        self.xshape = (self.dim, *shape, *self.g.shape)
         self._shape = (nb, self.dim, *shape, *self.g.shape)
         self.volume = self.nt * self.nx * self.ny * self.nz
         self.site_idxs = tuple(
@@ -87,6 +88,13 @@ class LatticeSU3:
         self.nlinks = self.nsites * self.dim
         self.link_idxs = tuple(list(self.site_idxs) + [self.dim])
 
+    def update_link(
+            self,
+            x: Tensor,
+            p: Tensor,
+    ) -> Tensor:
+        return self.g.mul(self.g.exp(p), x)
+
     def coeffs(self, beta: Tensor) -> dict[str, Tensor]:
         """Coefficients for the plaquette and rectangle terms."""
         rect_coeff = beta * self.c1
@@ -97,14 +105,75 @@ class LatticeSU3:
     def _link_staple_op(self, link: Tensor, staple: Tensor) -> Tensor:
         return self.g.mul(link, staple)
 
-    def _plaquette(self, x: Tensor, u: int, v: int):
+    def _rectangles(self, x: Tensor, u: int, v: int) -> tuple[Tensor, Tensor]:
+        xu = x[:, u]
+        xv = x[:, v]
+        xuv = xu @ xv.roll(shifts=-1, dims=(u + 1))
+        xvu = xv @ xu.roll(shifts=-1, dims=(v + 1))
+        yu = xu.roll(-1, dims=v+1)
+        yv = xv.roll(-1, dims=u+1)
+        uu = xv.adjoint() @ xuv
+        ur = xu.adjoint() @ xvu
+        ul = xuv @ yu.adjoint()
+        ud = xvu @ yv.adjoint()
+        # uu = self.g.mul(xv, xuv, adjoint_a=True)
+        # ur = self.g.mul(xu, xvu, adjoint_a=True)
+        # ul = self.g.mul(xuv, yu, adjoint_b=True)
+        # ud = self.g.mul(xvu, yv, adjoint_b=True)
+        ul_ = ul.roll(-1, dims=u+1)
+        ud_ = ud.roll(-1, dims=v+1)
+        urul_ = ur @ ul_.adjoint()
+        uuud_ = uu @ ud_.adjoint()
+
+        return urul_, uuud_
+
+    def _plaquette(
+            self,
+            x: Tensor,
+            u: int,
+            v: int,
+    ):
         """U[μ](x) * U[ν](x+μ) * U†[μ](x+ν) * U†[ν](x)"""
         assert isinstance(x, Tensor)  # and len(x.shape.as_list > 1)
-        xuv = self.g.mul(x[:, u], x[:, v].roll(shifts=-1, dims=(u + 1)))
-        xvu = self.g.mul(x[:, v], x[:, u].roll(shifts=-1, dims=(v + 1)))
-        # xuv = self.g.mul(x[:, u], .roll(x[:, v], shift=-1, axis=u + 1))
-        # xvu = self.g.mul(x[:, v], tf.roll(x[:, u], shift=-1, axis=v + 1))
-        return self.g.trace(self.g.mul(xuv, xvu, adjoint_b=True))
+        xu = x[:, u]
+        xv = x[:, v]
+        xuv = xu @ xv.roll(shifts=-1, dims=(u + 1))
+        xvu = xv @ xu.roll(shifts=-1, dims=(v + 1))
+        return xuv @ xvu.adjoint()
+
+    def _trace_plaquette(self, x: Tensor, u: int, v: int):
+        """tr[Up] = tr{ U[μ](x) * U[ν](x+μ) * U†[μ](x+ν) * U†[ν](x) }"""
+        return self.g.trace(self._plaquette(x, u, v))
+
+    def _plaquette_field(self, x: Tensor, needs_rect: bool = False):
+        # y.shape = [nb, d, nt, nx, nx, nx, 3, 3]
+        x = x.view(self._shape)
+        # x = tf.reshape(x, self._shape)
+        assert isinstance(x, Tensor)
+        assert len(x.shape) == 8
+        # assert isinstance(x, Tensor)
+        pcount = 0
+        rcount = 0
+        plaqs = []
+        rects = []
+        for u in range(1, self.dim):
+            for v in range(0, u):
+                plaq = self._plaquette(x, u, v)
+                plaqs.append(plaq)
+                # plaq = self.g.trace(self.g.mul(yuv, yvu, adjoint_b=True))
+                pcount += 1
+
+                # plaqs.append(plaq)
+                if needs_rect:
+                    urul_, uuud_ = self._rectangles(x, u, v)
+                    rects.append(urul_)
+                    rects.append(uuud_)
+                    rcount += 1
+                else:
+                    rects.append(torch.zeros_like(plaq))
+                    rects.append(torch.zeros_like(plaq))
+
+        return plaqs, rects
 
     def _wilson_loops(
             self,
@@ -190,20 +259,14 @@ class LatticeSU3:
         ps, _ = self._wilson_loops(x)
         return self._int_charges(ps)
 
-    def _int_charges(self, wloops: Tensor) -> Tensor:
-        # TODO: IMPLEMENT
-        # qsum = torch.zeros_like(wloops[0].real)
-        qsum = wloops.imag.sum(tuple(range(2, len(wloops.shape)))).sum(0)
-        # p = wloops[0]
-        # qsum = p.imag.sum(tuple(range(1, len(p.shape))))
-        # for p in wloops[1:]:
-        #     qsum = qsum + p.imag.sum(tuple(range(1, len(p.shape))))
-
-        return qsum / (32 * (np.pi ** 2))
-
     def sin_charges(self, x: Tensor) -> Tensor:
         ps, _ = self._wilson_loops(x)
         return self._sin_charges(ps)
+
+    def _int_charges(self, wloops: Tensor) -> Tensor:
+        # TODO: IMPLEMENT
+        qsum = wloops.imag.sum(tuple(range(2, len(wloops.shape)))).sum(0)
+        return qsum / (32 * (np.pi ** 2))
 
     def _sin_charges(self, wloops: Tensor) -> Tensor:
         qsum = wloops.imag.sum(tuple(range(2, len(wloops.shape)))).sum(0)
@@ -213,6 +276,19 @@ class LatticeSU3:
     def wilson_loops(self, x: Tensor) -> Tensor:
         ps, _ = self._wilson_loops(x=x, needs_rect=False)
         return ps
+
+    def kinetic_energy(
+            self,
+            v: Tensor,
+    ) -> Tensor:
+        return self.g.kinetic_energy(v)
+
+    def potential_energy(
+            self,
+            x: Tensor,
+            beta: Tensor,
+    ) -> Tensor:
+        return self.action(x, beta)
 
     def action(
             self,
@@ -236,14 +312,17 @@ class LatticeSU3:
     def random(self):
         return self.g.random(list(self._shape))
 
+    def random_momentum(self):
+        return self.g.random_momentum(list(self._shape))
+
     def grad_action(self, x: Tensor, beta: Tensor) -> Tensor:
         """Returns the derivative of the action"""
         x.requires_grad_(True)
         s = self.action(x, beta)
         identity = torch.ones(x.shape[0], device=x.device)
         dsdx, = torch.autograd.grad(s, x, grad_outputs=identity)
-
-        return self.g.projectTAH(self.g.mul(dsdx, x, adjoint_b=True))
+        # return self.g.projectTAH(self.g.mul(dsdx, x, adjoint_b=True))
+        return self.g.projectTAH(dsdx @ x.adjoint())
 
     def calc_metrics(
             self,
@@ -251,14 +330,9 @@ class LatticeSU3:
             beta: Optional[Tensor] = None,
     ) -> dict[str, Tensor]:
         wloops = self.wilson_loops(x)
-        # ps, rs = self._wilson_loops(x, needs_rect=(self.c1 != 0))
-        # plaqs = self.plaqs(wloops=wloops)
-
-        # charges = self.charges(wloops=wloops)
         plaqs = self.plaqs(wloops)
         qsin = self._sin_charges(wloops)
         qint = self._int_charges(wloops)
-        # qint = tf.zeros_like(qsin)
         metrics = {
             'sinQ': qsin,
             'intQ': qint,
@@ -268,15 +342,13 @@ class LatticeSU3:
             action = self.action(x, beta)
             metrics['action'] = action
 
-        # TODO: FIX ME
-        # qsin = self._sin_charges(wloops=ps)
-        # if beta is not None:
-        #     pexact = plaq_exact(beta) * tf.ones_like(plaqs)
-        #     metrics.update({
-        #        'plaqs_err': pexact - plaqs
-        #     })
-
-        # metrics.update({
-        #     'intQ': charges.intQ, 'sinQ': charges.sinQ
-        # })
         return metrics
+
+
+if __name__ == '__main__':
+    lattice = LatticeSU3(3, [4, 4, 4, 8])
+    beta = torch.tensor(1.0)
+    x = lattice.random()
+    v = lattice.random_momentum()
+    action = lattice.action(x, beta)
+    kinetic = lattice.kinetic_energy(v)
