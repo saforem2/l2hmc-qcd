@@ -49,6 +49,13 @@ class U1Phase(Group):
     size = [1]
     shape = (1)
 
+    def update_gauge(
+            self,
+            x: Tensor,
+            p: Tensor,
+    ) -> Tensor:
+        return tf.add(x, p)
+
     def mul(
             self,
             a: Tensor,
@@ -98,6 +105,13 @@ class SU3(Group):
     size = [3, 3]
     shape = (3, 3)
 
+    def update_gauge(
+            self,
+            x: Tensor,
+            p: Tensor,
+    ) -> Tensor:
+        return self.mul(self.exp(p), x)
+
     def mul(
             self,
             a: Tensor,
@@ -120,7 +134,8 @@ class SU3(Group):
         print('TODO')
 
     def exp(self, x: Tensor) -> Tensor:
-        return exp(x)
+        # return exp(x)
+        return tf.linalg.expm(x)
 
     def projectTAH(self, x: Tensor) -> Tensor:
         return projectTAH(x)
@@ -141,16 +156,23 @@ class SU3(Group):
         return randTAH3(shape[:-2])
 
     def kinetic_energy(self, p: Tensor) -> Tensor:
-        # p2 = norm2(p) - tf.constant(8.0)  # - 8.0 ??
-        # return (
-        #     0.5 * tf.math.reduce_sum(
-        #         tf.reshape(p2, [p.shape[0], -1]), axis=1
-        #     )
-        # )
-        return 0.5 * tf.reduce_sum(
-            tf.math.real(tf.linalg.matmul(tf.math.conj(p), p)),
-            axis=1
+        p2 = norm2(p) - tf.constant(8.0)  # - 8.0 ??
+        return (
+            0.5 * tf.math.reduce_sum(
+                tf.reshape(p2, [p.shape[0], -1]), axis=1
+            )
         )
+        # return 0.5 * tf.reduce_sum(
+        #     tf.math.real(tf.linalg.matmul(tf.math.conj(p), p)),
+        #     axis=1
+        # )
+        # return 0.5 * (norm2(p) - 8.0)
+
+    def vec_to_group(self, x: Tensor) -> Tensor:
+        return vec_to_su3(x)
+
+    def group_to_vec(self, x: Tensor) -> Tensor:
+        return su3_to_vec(x)
 
 
 def norm2(x: Tensor, axis=[-2, -1]) -> Tensor:
@@ -270,8 +292,9 @@ def projectSU(x: Tensor) -> Tensor:
     # p = -(1.0 / nc) * tf.math.atan2(tf.math.imag(d), tf.math.real(d))
     # p = tf.math.multiply(tf.math.negative(tf.constant(1.0) / nc),
     #                      tf.math.atan2(tf.math.imag(d), tf.math.real(d)))
-    p_ = tf.reshape(tf.dtypes.complex(tf.math.cos(p), tf.math.sin(p)),
-                    p.shape + [1, 1])
+    pr = tf.math.real(p)
+    pi = tf.math.imag(p)
+    p_ = tf.reshape(tf.dtypes.complex(pr, pi), p.shape + [1, 1])
     return p_ * m
 
 
@@ -317,7 +340,7 @@ def checkSU(x: Tensor) -> tuple[Tensor, Tensor]:
     return tf.math.sqrt(a / c), tf.math.sqrt(b / c)
 
 
-def su3vec(x: Tensor) -> Tensor:
+def su3_to_vec(x: Tensor) -> Tensor:
     """Only for x in 3x3 anti-Hermitian.
 
     Return 8 real numbers, X^a T^a = X - 1/3 tr(X)
@@ -346,7 +369,7 @@ def su3vec(x: Tensor) -> Tensor:
     ], axis=-1)
 
 
-def su3fromvec(v: Tensor) -> Tensor:
+def vec_to_su3(v: Tensor) -> Tensor:
     """
     X = X^a T^a
     tr{X T^b} = X^a tr{T^a T^b} = X^a (-1/2) 𝛅^ab = -1/2 X^b
@@ -417,7 +440,8 @@ def SU3GradientTF(
     zeros = tf.zeros(8)
     with tf.GradientTape(watch_accessed_variables=False) as tape:
         tape.watch(zeros)
-        y = f(tf.linalg.matmul(exp(su3fromvec(zeros)), x))
+        y = f(tf.linalg.matmul(exp(vec_to_su3(zeros)), x))
+        # y = f(tf.linalg.matmul(exp(su3fromvec(zeros)), x))
     d = tape.gradient(y, zeros)
 
     return y, d

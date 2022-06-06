@@ -11,7 +11,8 @@ import torch
 from math import pi as PI
 
 
-from typing import Callable
+from typing import Callable, Optional
+# from l2hmc.group.pytorch.logm import charpoly3x3, su3_to_eigs, log3x3
 
 
 Array = np.array
@@ -25,7 +26,22 @@ SQRT1by2 = torch.tensor(np.sqrt(1. / 2.))
 SQRT1by3 = torch.tensor(np.sqrt(1. / 3.))
 
 
-def eyeOf(m):
+def cmax(x: Tensor, y: Tensor) -> Tensor:
+    """Returns the largets-magnitude complex number"""
+    return torch.where(torch.abs(x) > torch.abs(y), x, y)
+
+
+def unit(
+        shape: list[int],
+        dtype: Optional[torch.dtype] = torch.complex64,
+):
+    batch_shape = list([1] * (len(shape) - 2))
+    eye = torch.zeros(list(batch_shape + [*shape[-2:]])).to(dtype)
+    eye[-2:] = torch.eye(shape[-1])
+    return eye
+
+
+def eyeOf(m: Tensor):
     batch_shape = [1] * (len(m.shape) - 2)
     eye = torch.zeros(batch_shape + [*m.shape[-2:]])
     eye[-2:] = torch.eye(m.shape[-1])
@@ -43,13 +59,21 @@ def expm(m: Tensor, order: int = 12) -> Tensor:
     return x
 
 
-def norm2(x: Tensor, axis: list[int] = [-2, -1]) -> Tensor:
+def norm2(
+        x: Tensor,
+        axis: list[int] = [-2, -1],
+        exclude: Optional[list[int]] = None,
+) -> Tensor:
     """No reduction if axis is empty"""
-    n = torch.real(torch.multiply(x.conj(), x))
-    if len(axis) == 0:
-        return n
-
-    return n.sum(axis)
+    # n = torch.real(torch.multiply(x.conj(), x))
+    if x.dtype == torch.complex64 or x.dtype == torch.complex128:
+        x = x.abs()
+    n = x.square()
+    if exclude is None:
+        if len(axis) == 0:
+            return n
+        return n.sum(axis)
+    return n.sum([i for i in range(len(n.shape)) if i not in exclude])
 
 
 def randTAH3(shape: list[int]):
@@ -91,18 +115,16 @@ def eigs3x3(
     sq = torch.sqrt(q)
     sq3 = q * sq
     isq3 = 1.0 / sq3
-    maxv = 3e38 * torch.ones_like(isq3)
-    minv = -3e38 * torch.ones_like(isq3)
+    maxv = 3e38 * torch.ones(isq3.shape).to(isq3.device)
+    minv = -3e38 * torch.ones(isq3.shape).to(isq3.device)
     # isq3c = torch.from_numpy()
-    isq3c = torch.tensor(
-        np.minimum(maxv.numpy(), np.maximum(minv.numpy(), isq3.numpy()))
-    )
+
+    isq3c = maxv.minimum(minv.maximum(isq3))
     rsq3c = r * isq3c
-    maxv = 1. * torch.ones_like(isq3)
-    minv = -1. * torch.ones_like(isq3)
-    rsq3 = torch.tensor(
-        np.minimum(maxv.numpy(), np.maximum(minv.numpy(), rsq3c.numpy()))
-    )
+    maxv = 1.0 * torch.ones(isq3.shape).to(isq3.device)
+    minv = -1.0 * torch.ones(isq3.shape).to(isq3.device)
+
+    rsq3 = maxv.minimum(minv.maximum(rsq3c.real))
     t = (1.0 / 3.0) * torch.acos(rsq3)
     st = torch.sin(t)
     ct = torch.cos(t)
@@ -138,45 +160,34 @@ def rsqrtPHM3f(tr, p2, det):
 
 
 def rsqrtPHM3(x: Tensor) -> Tensor:
-    # tr = x.trace().real
-    tr = torch.diagonal(x, dim1=-2, dim2=-1).sum(-1)
+    tr = torch.diagonal(x, dim1=-2, dim2=-1).sum(-1).real
     x2 = torch.matmul(x, x)
-    p2 = torch.diagonal(x2, dim1=-2, dim2=-1).sum(-1)
-    # p2 = x2.trace().real
+    p2 = torch.diagonal(x2, dim1=-2, dim2=-1).sum(-1).real
     det = x.det().real
-    c0, c1, c2 = rsqrtPHM3f(tr, p2, det)
-    c0_ = c0.reshape(c0.shape + (1, 1))
-    c1_ = c1.reshape(c1.shape + (1, 1))
-    c2_ = c2.reshape(c2.shape + (1, 1))
-    # eyes = torch.stack([torch.eye(3) for _ in range((1) * len(c0.shape))])
-    # eye = torch.stack([tf.eye(3)
-    # term0 = (c0_ * eyes).type_as(x)
-    term0 = c0_ * eyeOf(x)
-    # term0 = c0_ * torch.eye(3).type_as(x)
-    term1 = x * c1_.type_as(x)
-    term2 = x * c2_.type_as(x)
-    # term1 = x * c1_.type_as(x)
-    # term2 = x * c2_.type_as(x)
-
-    return term0 + term1 + term2
+    c0_, c1_, c2_ = rsqrtPHM3f(tr, p2, det)
+    c0 = c0_.reshape(c0_.shape + (1, 1)).type_as(x)
+    c1 = c1_.reshape(c1_.shape + (1, 1)).type_as(x)
+    c2 = c2_.reshape(c2_.shape + (1, 1)).type_as(x)
+    return c0 * eyeOf(x) + c1 * x + c2 * x2
 
 
 def projectU(x: Tensor) -> Tensor:
     """x (x'x)^{1/2}"""
-    t = torch.matmul(x.adjoint(), x)
+    t = x.adjoint() @ x
     t2 = rsqrtPHM3(t)
-    return torch.matmul(x, t2)
+    # return torch.matmul(x, t2)
+    return x @ t2
 
 
 def projectSU(x: Tensor) -> Tensor:
-    nc = torch.tensor(x.shape[-1]).to(x.dtype)
+    nc = x.shape[-1]
     m = projectU(x)
-    d = m.det()
+    d = m.det().to(x.dtype)
     tmp = torch.atan2(d.imag, d.real)
-    p = tmp * (-1.0 / nc)
-    # pcos = torch.cos(p)
-    # psin = torch.sin(p)
-    p_ = torch.complex(p.real, p.imag).reshape(p.shape + (1, 1))
+    p = tmp * (1.0 / (-nc))
+    p_ = torch.complex(p.cos(), p.sin()).reshape(p.shape + (1, 1))
+    # p_ = torch.complex(p.real, p.imag).reshape(p.shape + (1, 1))
+    # p_ = torch.complex(p.real, p.imag).reshape(p.shape + (1, 1))
 
     return p_ * m
 
@@ -188,7 +199,7 @@ def projectTAH(x: Tensor) -> Tensor:
     """
     nc = torch.tensor(x.shape[-1]).to(x.dtype)
     r = 0.5 * (x - x.adjoint())
-    d = r.trace() / nc
+    d = torch.diagonal(r, dim1=-2, dim2=-1).sum(-1) / nc
     r = r - d.reshape(d.shape + (1, 1)) * eyeOf(x)
 
     return r
@@ -200,9 +211,9 @@ def checkU(x: Tensor) -> tuple[Tensor, Tensor]:
     d = norm2(torch.matmul(x.adjoint(), x) - eyeOf(x))
     a = d.mean(*range(1, len(d.shape)))
     b = d.max(*range(1, len(d.shape)))
-    c = 2 * (nc * nc + 1).to(x.dtype)
+    c = 2 * (nc * nc + 1)
 
-    return torch.sqrt(a / c), torch.sqrt(b / c)
+    return (a / c).sqrt(), (b / c).sqrt()
 
 
 def checkSU(x: Tensor) -> tuple[Tensor, Tensor]:
@@ -220,11 +231,10 @@ def checkSU(x: Tensor) -> tuple[Tensor, Tensor]:
     b = d.amax(range_)
     # b = d.max(tuple(range(1, len(d.shape))))
     c = (2 * (nc * nc + 1)).real  # .to(x.real.dtype)
+    return (a / c).sqrt(), (b / c).sqrt()
 
-    return torch.sqrt(a / c), torch.sqrt(b / c)
 
-
-def su3vec(x: Tensor) -> Tensor:
+def su3_to_vec(x: Tensor) -> Tensor:
     """Only for x in 3x3 anti-Hermitian.
 
     Returns 8 real numbers, X^a T^a = X - 1/3 tr(X)
@@ -253,7 +263,7 @@ def su3vec(x: Tensor) -> Tensor:
     ], dim=-1)
 
 
-def su3fromvec(v: Tensor) -> Tensor:
+def vec_to_su3(v: Tensor) -> Tensor:
     """
     X = X^a T^a
     tr{X T^b} = X^a tr{T^a T^b} = X^a (-1/2) 𝛅^ab = -1/2 X^b
@@ -339,6 +349,13 @@ class U1Phase(Group):
     size = [1]
     shape = (1)
 
+    def update_gauge(
+        self,
+        x: Tensor,
+        p: Tensor,
+    ) -> Tensor:
+        return x + p
+
     def mul(
         self,
         a: Tensor,
@@ -377,7 +394,7 @@ class U1Phase(Group):
         return torch.randn(shape).reshape(shape[0], -1)
 
     def kinetic_energy(self, p: Tensor) -> Tensor:
-        return 0.5 * p.reshape(p.shape[0], -1).square().sum(-1)
+        return 0.5 * p.flatten(1).square().sum(-1)
         # return p.reshape(p.shape[0], -1).square().sum(1)
 
 
@@ -385,6 +402,13 @@ class SU3(Group):
     dtype = torch.complex128
     size = [3, 3]
     shape = (3, 3)
+
+    def update_gauge(
+            self,
+            x: Tensor,
+            p: Tensor,
+    ) -> Tensor:
+        return self.mul(self.exp(p), x)
 
     def mul(
         self,
@@ -409,12 +433,13 @@ class SU3(Group):
         # return torch.trace(x)
 
     def exp(self, x: Tensor) -> Tensor:
-        return expm(x)
+        # return expm(x)
+        return torch.linalg.matrix_exp(x)
 
     def projectTAH(self, x: Tensor) -> Tensor:
         return projectTAH(x)
 
-    def compat_proj(self, x: Tensor) -> Tensor:
+    def compat_proju(self, u: Tensor, x: Tensor) -> Tensor:
         """Arbitrary matrix C projects to skew-hermitian B := (C - C^H) / 2
 
         Make traceless with tr(B - (tr(B) / N) * I) = tr(B) - tr(B) = 0
@@ -432,6 +457,9 @@ class SU3(Group):
 
         return B
 
+    def compat_proj(self, x: Tensor) -> Tensor:
+        return projectSU(x)
+
     def random(self, shape: list[int]) -> Tensor:
         r = torch.randn(shape)
         i = torch.randn(shape)
@@ -441,4 +469,25 @@ class SU3(Group):
         return randTAH3(shape[:-2])
 
     def kinetic_energy(self, p: Tensor) -> Tensor:
-        return 0.5 * (p.conj() @ p).real.sum(1)
+        return 0.5 * (norm2(p) - 8.0).flatten(1).sum(1)
+
+    def vec_to_group(self, x: Tensor) -> Tensor:
+        """
+        Returns batched SU(3) matrices.
+
+        X = X^a T^a
+        tr{X T^b} = X^a tr{T^a T^b} = X^a (-1/2) 𝛅^{ab} = -1/2 X^b
+        X^a = -2 X_ij T^a_ji
+        """
+        return self.compat_proj(vec_to_su3(x))
+
+    def group_to_vec(self, x: Tensor) -> Tensor:
+        """
+        Returns (batched) 8 real numbers,
+        X^a T^a = X - 1/3 tr(X)
+
+        Convention:
+            tr{T^a T^a} = -1/2
+            X^a = - 2 tr[T^a X]
+        """
+        return su3_to_vec(self.compat_proj(x))
