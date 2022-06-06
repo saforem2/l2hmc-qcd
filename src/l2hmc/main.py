@@ -10,6 +10,7 @@ import warnings
 
 import hydra
 from omegaconf import DictConfig
+import socket
 
 
 log = logging.getLogger(__name__)
@@ -38,6 +39,36 @@ def train_tensorflow(cfg: DictConfig) -> dict:
 
 def train_pytorch(cfg: DictConfig) -> dict:
     import torch
+    try:
+        from mpi4py import MPI
+        # WITH_DDP = True
+        LOCAL_RANK = os.environ.get('OMPI_COMM_WORLD_LOCAL_RANK', '0')
+        SIZE = MPI.COMM_WORLD.Get_size()
+        RANK = MPI.COMM_WORLD.Get_rank()
+        # WITH_CUDA = torch.cuda.is_available()
+        # DEVICE = 'gpu' if WITH_CUDA else 'CPU'
+        # pytorch will look for these
+        os.environ['RANK'] = str(RANK)
+        os.environ['WORLD_SIZE'] = str(SIZE)
+        # ----------------------------------------------
+        # NOTE: We get the hostname of the master node
+        # and broadcast it to all other nodes.
+        # It will want the master address too,
+        # which we'll also broadcast
+        # ----------------------------------------------
+        MASTER_ADDR = socket.gethostname() if RANK == 0 else None
+        MASTER_ADDR = MPI.COMM_WORLD.bcast(MASTER_ADDR, root=0)
+        os.environ['MASTER_ADDR'] = MASTER_ADDR
+        os.environ['MASTER_PORT'] = str(2345)
+    except (ImportError, ModuleNotFoundError) as e:
+        SIZE = 1
+        RANK = 0
+        # WITH_DDP = False
+        # LOCAL_RANK = 0
+        MASTER_ADDR = 'localhost'
+        log.warning('MPI Initialization Failed!')
+        log.warning(e)
+
     if cfg.precision == 'float64':
         torch.set_default_dtype(torch.float64)
     # else:
