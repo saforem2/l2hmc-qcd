@@ -25,11 +25,6 @@ from l2hmc.trainers.pytorch.trainer import Trainer
 
 log = logging.getLogger(__name__)
 
-from mpi4py import MPI
-LOCAL_RANK = os.environ.get('OMPI_COMM_WORLD_LOCAL_RANK', None)
-RANK = MPI.COMM_WORLD.Get_rank()
-
-
 
 class Experiment(BaseExperiment):
     def __init__(self, cfg: DictConfig) -> None:
@@ -108,9 +103,9 @@ class Experiment(BaseExperiment):
         if torch.cuda.is_available():
             dynamics.cuda()
 
-        # dynamics = dynamics.to(accelerator.device)
+        dynamics = dynamics.to(accelerator.device)
         optimizer = self.build_optimizer(dynamics=dynamics)
-        # dynamics, optimizer = accelerator.prepare(dynamics, optimizer)
+        dynamics, optimizer = accelerator.prepare(dynamics, optimizer)
 
         return Trainer(
             loss_fn=loss_fn,
@@ -167,24 +162,24 @@ class Experiment(BaseExperiment):
         loss_fn = self.build_loss()
         dynamics = self.build_dynamics()
         optimizer = self.build_optimizer(dynamics)
-        # accelerator = self.build_accelerator()
+        accelerator = self.build_accelerator()
         trainer = self.build_trainer(
             dynamics=dynamics,
             loss_fn=loss_fn,
             optimizer=optimizer,
-            # accelerator=accelerator,
+            accelerator=accelerator,
         )
-        run = None
-        # if accelerator.is_local_main_process and init_wandb:
-        if LOCAL_RANK == 0 and init_wandb:
-            run = self.init_wandb(dynamics=dynamics, loss_fn=loss_fn)
-
-        self._is_built = True
-        self.run = run
+        self.loss_fn = loss_fn
         self.trainer = trainer
         self.dynamics = dynamics
         self.optimizer = optimizer
-        self.loss_fn = loss_fn
+        self.accelerator = accelerator
+        self.run = None
+        if self.trainer.rank == 0 and init_wandb:
+            self.run = self.init_wandb(dynamics=dynamics, loss_fn=loss_fn)
+
+        self._is_built = True
+
         return {
             'run': self.run,
             'trainer': self.trainer,
