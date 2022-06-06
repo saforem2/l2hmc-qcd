@@ -133,7 +133,7 @@ class Dynamics(Model):
     def random_state(self, beta: float = 1.) -> State:
         """Returns a random State."""
         x = self.flatten(self.g.random(list(self.xshape)))
-        v = self.g.random_momentum(list(x.shape))
+        v = self.flatten(self.g.random_momentum(list(self.xshape)))
         return State(x=x, v=v, beta=tf.constant(beta))
 
     def test_reversibility(self) -> dict[str, Tensor]:
@@ -149,14 +149,26 @@ class Dynamics(Model):
     def apply_transition_hmc(
             self,
             inputs: tuple[Tensor, Tensor],
-            eps: Tensor,
+            eps: float,
+            nsteps: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
-        data = self.generate_proposal_hmc(inputs, eps)
+        data = self.generate_proposal_hmc(inputs, eps, nsteps=nsteps)
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
+        ma_ = tf.cast(ma_, dtype=data['proposed'].x.dtype)
+        mr_ = tf.cast(mr_, dtype=data['proposed'].x.dtype)
         ma = ma_[:, None]
         mr = mr_[:, None]
-        vout = ma * data['proposed'].v + mr * data['init'].v
-        xout = ma * data['proposed'].x + mr * data['init'].x
+
+        xinit = self.flatten(data['init'].x)
+        vinit = self.flatten(data['init'].v)
+        xprop = self.flatten(data['proposed'].x)
+        vprop = self.flatten(data['proposed'].v)
+
+        vout = ma * vprop + mr * vinit
+        xout = ma * xprop + mr * xinit
+
+        # vout = ma * data['proposed'].v + mr * data['init'].v
+        # xout = ma * data['proposed'].x + mr * data['init'].x
         sumlogdet = ma_ * data['metrics']['sumlogdet']
         state_out = State(x=xout, v=vout, beta=data['init'].beta)
         mc_states = MonteCarloStates(init=data['init'],
@@ -180,6 +192,8 @@ class Dynamics(Model):
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
         ma = ma_[:, None]
         mr = mr_[:, None]
+        ma_ = tf.cast(ma_, dtype=data['proposed'].x.dtype)
+        mr_ = tf.cast(mr_, dtype=data['proposed'].x.dtype)
         v_out = ma * data['proposed'].v + mr * data['init'].v
         x_out = ma * data['proposed'].x + mr * data['init'].x
         sumlogdet = ma_ * data['metrics']['sumlogdet']
@@ -259,14 +273,15 @@ class Dynamics(Model):
     def generate_proposal_hmc(
             self,
             inputs: tuple[Tensor, Tensor],
-            eps: Tensor,
+            eps: float,
+            nsteps: Optional[int] = None,
     ) -> dict:
         x, beta = inputs
         assert isinstance(x, Tensor)
-        # v = tf.random.normal(x.shape, dtype=x.dtype)
-        v = self.g.random_momentum(list(inputs[0].shape))
+        xshape = [x.shape[0], *self.xshape[1:]]
+        v = self.g.random_momentum(xshape)
         init = State(x, v, beta)
-        proposed, metrics = self.transition_kernel_hmc(init, eps=eps)
+        proposed, metrics = self.transition_kernel_hmc(init, eps=eps, nsteps=nsteps)
 
         return {'init': init, 'proposed': proposed, 'metrics': metrics}
 
@@ -289,7 +304,8 @@ class Dynamics(Model):
         # xi = tf.math.imag(x)
         # vr = tf.random.normal(xr.shape, dtype=xr.dtype)
         # v = tf.random.normal(x.shape, dtype=tf.math.real(x).dtype)
-        v = self.g.random_momentum(list(x.shape))
+        xshape = [x.shape[0], *self.xshape[1:]]
+        v = self.flatten(self.g.random_momentum(xshape))
         # v = tf.complex(vr, vi)
         init = State(x, v, beta)
         proposed, metrics = self.transition_kernel_fb(init, training=training)
@@ -308,8 +324,9 @@ class Dynamics(Model):
         """
         x, beta = inputs
         assert isinstance(x, Tensor)
+        xshape = [x.shape[0], *self.xshape[1:]]
         # v = tf.random.normal(x.shape, dtype=TF_FLOAT)
-        v = self.g.random_momentum(list(x.shape))
+        v = self.flatten(self.g.random_momentum(xshape))
         state_init = State(x=x, v=v, beta=beta)
         state_prop, metrics = self.transition_kernel(state_init,
                                                      forward=forward,
@@ -356,32 +373,50 @@ class Dynamics(Model):
     def leapfrog_hmc(
             self,
             state: State,
-            eps: Tensor,
+            eps: float,
     ) -> State:
         """Perform standard HMC leapfrog update."""
-        force1 = self.grad_potential(state.x, state.beta)  # f = dU / dx
-        v1 = state.v - 0.5 * tf.multiply(eps, force1)     # v -= ½ veps * f
-        xp = state.x + eps * v1                           # x += xeps * v
+        x = tf.reshape(state.x, state.v.shape)
+        force1 = self.grad_potential(x, state.beta)        # f = dU / dx
+        # dt = tf.cast(eps, dtype=force1.dtype)
+        halfeps = tf.constant(0.5 * eps)
+        v1 = state.v - halfeps * force1                    # v -= ½ veps * f
+        # xp = x + dt * v1                                 # x += xeps * v
+        xp = self.g.update_gauge(x, eps * v1)              # x += eps * v
         force2 = self.grad_potential(xp, state.beta)       # calc force, again
-        v2 = v1 - 0.5 * tf.multiply(eps, force2)          # v -= ½ veps * f
+        v2 = v1 - halfeps * force2                         # v -= ½ veps * f
         return State(x=xp, v=v2, beta=state.beta)          # output: (x', v')
 
     def transition_kernel_hmc(
             self,
             state: State,
-            eps: Tensor,
+            eps: Optional[float] = None,
+            nsteps: Optional[int] = None,
     ) -> tuple[State, dict]:
         """Run the generic HMC transition kernel."""
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         assert isinstance(state.x, Tensor)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
-        metrics = self.get_metrics(state_, sumlogdet)
-        history = self.update_history(metrics, history={})
-        for step in range(self.config.nleapfrog):
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        history = {}
+        if self.config.verbose:
+            history = self.update_history(
+                self.get_metrics(state_, sumlogdet),
+                history={}
+            )
+
+        if self.config.merge_directions:
+            nsteps = 2 * self.config.nleapfrog if nsteps is None else nsteps
+        else:
+            nsteps = self.config.nleapfrog if nsteps is None else nsteps
+
+        eps = (1. / nsteps) if eps is None else eps
+        for _ in range(nsteps):
             state_ = self.leapfrog_hmc(state_, eps=eps)
             if self.config.verbose:
-                metrics = self.get_metrics(state_, sumlogdet, step=step)
-                history = self.update_history(metrics, history=history)
+                history = self.update_history(
+                    self.get_metrics(state_, sumlogdet),
+                    history=history,
+                )
 
         acc = self.compute_accept_prob(state, state_, sumlogdet)
         history.update({'acc': acc, 'sumlogdet': sumlogdet})
@@ -405,7 +440,7 @@ class Dynamics(Model):
         """
         state_ = State(state.x, state.v, state.beta)
         assert isinstance(state.x, Tensor)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
 
         metrics = self.get_metrics(state_, sumlogdet)
         history = self.update_history(metrics, history={})
@@ -457,7 +492,7 @@ class Dynamics(Model):
         # Copy initial state into proposed state
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         assert isinstance(state.x, Tensor)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
         metrics = self.get_metrics(state_, sumlogdet)
         history = self.update_history(metrics, history={})
 
@@ -488,7 +523,7 @@ class Dynamics(Model):
         h_prop = self.hamiltonian(state_prop)
         dh = tf.add(tf.subtract(h_init, h_prop), sumlogdet)
         # dh = h_init - h_prop + sumlogdet
-        prob = tf.exp(tf.minimum(dh, 0.))
+        prob = tf.exp(tf.minimum(dh, tf.zeros_like(dh)))
 
         return tf.where(tf.math.is_finite(prob), prob, tf.zeros_like(prob))
 
@@ -575,6 +610,8 @@ class Dynamics(Model):
         assert callable(vnet)
         if isinstance(self.g, g.U1Phase):
             x = self._stack_as_xy(x)
+        elif isinstance(self.g, g.SU3):
+            x = self.g.group_to_vec(x)
 
         return vnet((x, force), training)
 
@@ -598,6 +635,9 @@ class Dynamics(Model):
         if isinstance(self.g, g.U1Phase):
             x = self._stack_as_xy(x)
 
+        elif isinstance(self.g, g.SU3):
+            x = self.g.group_to_vec(x)
+
         return xnet((x, v), training)
 
     def _forward_lf(
@@ -609,7 +649,7 @@ class Dynamics(Model):
         """Complete update (leapfrog step) in the forward direction."""
         m, mb = self._get_mask(step)
         assert isinstance(state.x, Tensor)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
 
         state, logdet = self._update_v_fwd(step, state, training=training)
         sumlogdet = sumlogdet + logdet
@@ -639,7 +679,7 @@ class Dynamics(Model):
         step_r = self.config.nleapfrog - step - 1
 
         m, mb = self._get_mask(step_r)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
 
         state, logdet = self._update_v_bwd(step_r, state, training=training)
         sumlogdet = sumlogdet + logdet
@@ -722,11 +762,17 @@ class Dynamics(Model):
             sterm = (exp_s * tf.math.sin(halfx)) ** 2
             logdet_ = tf.math.log(exp_s / (cterm + sterm))
             logdet = tf.reduce_sum(mb * logdet_, axis=1)
-        else:
-            xp = state.x * exp_s + eps * (state.v * exp_q + t)
+        elif isinstance(self.g, g.SU3):
+            x = self.g.group_to_vec(state.x)
+            v = self.g.group_to_vec(state.v)
+            xm_init = self.g.group_to_vec(xm_init)
+            xp = x * exp_s + eps * (v * exp_q + t)
             xf = xm_init + (mb * xp)
             logdet = tf.reduce_sum(mb * s, axis=1)
+        else:
+            raise ValueError('Unexpected value for `self.g`')
 
+        xf = self.g.compat_proj(xf)
         return State(x=xf, v=state.v, beta=state.beta), logdet
 
     def _update_x_bwd(
@@ -760,11 +806,14 @@ class Dynamics(Model):
             sterm = (exp_s * tf.sin(halfx)) ** 2
             logdet_ = tf.math.log(exp_s / (cterm + sterm))
             logdet = tf.reduce_sum(mb * logdet_, axis=1)
-        else:
+        elif isinstance(self.g, g.SU3):
             xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
             xb = xm_init + mb * xnew
             logdet = tf.reduce_sum(mb * s, axis=1)
+        else:
+            raise ValueError('Unexpected value for `self.g`')
 
+        xb = self.g.compat_proj(xb)
         return State(x=xb, v=state.v, beta=state.beta), logdet
 
     def hamiltonian(self, state: State) -> Tensor:
@@ -835,7 +884,6 @@ class Dynamics(Model):
         """Save networks to `outdir`."""
         outdir = Path(outdir).joinpath('networks')
         outdir.mkdir(exist_ok=True, parents=True)
-        # log.info(f'Saving `xeps`, `veps`, `vnet`, `xnet` to: {outdir}')
 
         veps = np.array([e.numpy() for e in self.veps])
         xeps = np.array([e.numpy() for e in self.xeps])
@@ -853,16 +901,12 @@ class Dynamics(Model):
                 vnet = self._get_vnet(lf)
                 xnet1 = self._get_xnet(lf, first=True)
 
-                # log.info(f'Saving `vnet-{lf} to {fvnet}')
-                # log.info(f'Saving `xnet-{lf}_first to {fxnet1}')
-
                 vnet.save(fvnet)
                 xnet1.save(fxnet1)
 
                 if self.config.use_split_xnets:
                     xnet2 = self._get_xnet(lf, first=False)
                     fxnet2 = outdir.joinpath(f'xnet-{lf}_second').as_posix()
-                    # log.info(f'Saving `xnet-{lf}_second to {fxnet2}')
                     xnet2.save(fxnet2)
         else:
             vnet = self._get_vnet(0)
@@ -871,13 +915,10 @@ class Dynamics(Model):
             fvnet = outdir.joinpath('vnet').as_posix()
             fxnet1 = outdir.joinpath('xnet_first').as_posix()
 
-            # log.info(f'Saving vnet to: {fvnet}')
             vnet.save(fvnet)
-            # log.info(f'Saving xnet_first to: {fxnet1}')
             xnet1.save(fxnet1)
 
             if self.config.use_split_xnets:
                 xnet2 = self._get_xnet(0, first=False)
                 fxnet2 = outdir.joinpath('xnet_second').as_posix()
-                # log.info(f'Saving xnet_second to: {fxnet2}')
                 xnet2.save(fxnet2)
