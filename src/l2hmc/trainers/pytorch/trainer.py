@@ -64,12 +64,12 @@ class Trainer:
             self,
             steps: Steps,
             dynamics: Dynamics,
+            accelerator: Accelerator,
             optimizer: optim.Optimizer,
             schedule: AnnealingSchedule,
             lr_config: LearningRateConfig,
             loss_fn: Callable = LatticeLoss,
             aux_weight: float = 0.0,
-            accelerator: Optional[Accelerator] = None,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
             dynamics_config: Optional[DynamicsConfig] = None,
@@ -83,10 +83,12 @@ class Trainer:
         self.aux_weight = aux_weight
         self.clip_norm = lr_config.clip_norm
         self._with_cuda = torch.cuda.is_available()
-        self.accelerator = accelerator if accelerator is not None else None
+        self.accelerator = accelerator
+        # self.accelerator = accelerator if accelerator is not None else None
         # self.rank = self.accelerator.local_process_index
         # self.rank = rank if rank is not None else 0
-        self.rank = LOCAL_RANK
+        # self.rank = LOCAL_RANK
+        self.rank = self.accelerator.local_process_index
         self.lr_config = lr_config
         self.keep = [keep] if isinstance(keep, str) else keep
         self.skip = [skip] if isinstance(skip, str) else skip
@@ -616,6 +618,10 @@ class Trainer:
         history = self.histories['train']
         self.dynamics.train()
         log.warning(f'x.dtype: {x.dtype}')
+        if self.rank == 0:
+            ctxmgr = Live(console=console)
+        else:
+            ctxmgr = nullcontext()
 
         for era in range(self.steps.nera):
             beta = self.schedule.betas[str(era)]

@@ -8,6 +8,7 @@ from __future__ import absolute_import, annotations, division, print_function
 import os
 import logging
 from typing import Any, Callable, Optional
+from accelerate.accelerator import Accelerator
 
 from omegaconf import DictConfig
 import torch
@@ -100,10 +101,10 @@ class Experiment(BaseExperiment):
             dynamics: Dynamics,
             optimizer: torch.optim.Optimizer,
             loss_fn: Callable,
-            accelerator: Optional[Any] = None,
+            accelerator: Optional[Accelerator] = None,
     ) -> Trainer:
-        # if accelerator is None:
-        #     accelerator = self.build_accelerator()
+        if accelerator is None:
+            accelerator = self.build_accelerator()
         if torch.cuda.is_available():
             dynamics.cuda()
 
@@ -115,7 +116,7 @@ class Experiment(BaseExperiment):
             loss_fn=loss_fn,
             dynamics=dynamics,
             optimizer=optimizer,
-            # accelerator=accelerator,
+            accelerator=accelerator,
             steps=self.config.steps,
             schedule=self.config.annealing_schedule,
             lr_config=self.config.learning_rate,
