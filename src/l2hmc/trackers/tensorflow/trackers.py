@@ -32,8 +32,10 @@ def log_item(
 
     if (
             'dt' in tag
+            or 'beta' in tag
             or 'era' in tag
             or 'epoch' in tag
+            or 'loss' in tag
             or isinstance(val, (int, float, bool))
     ):
         tf.summary.scalar(tag, val, step=step)
