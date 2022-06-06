@@ -36,6 +36,9 @@ from l2hmc.trackers.pytorch.trackers import update_summaries
 from l2hmc.utils.history import BaseHistory, summarize_dict
 from l2hmc.utils.rich import add_columns, build_layout, console
 from l2hmc.utils.step_timer import StepTimer
+
+from mpi4py import MPI
+from torch.nn.utils.clip_grad import clip_grad_norm
 # from torchinfo import summary as model_summary
 
 
@@ -48,6 +51,10 @@ Tensor = torch.Tensor
 Module = torch.nn.modules.Module
 
 
+LOCAL_RANK = os.environ.get('OMPI_COMM_WORLD_LOCAL_RANK', '0')
+SIZE = MPI.COMM_WORLD.Get_size()
+RANK = MPI.COMM_WORLD.Get_rank()
+
 def grab(x: Tensor) -> np.ndarray:
     return x.detach().cpu().numpy()
 
@@ -57,15 +64,16 @@ class Trainer:
             self,
             steps: Steps,
             dynamics: Dynamics,
-            accelerator: Accelerator,
             optimizer: optim.Optimizer,
             schedule: AnnealingSchedule,
             lr_config: LearningRateConfig,
             loss_fn: Callable = LatticeLoss,
             aux_weight: float = 0.0,
+            accelerator: Optional[Accelerator] = None,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
             dynamics_config: Optional[DynamicsConfig] = None,
+            # rank: Optional[int] = None,
     ) -> None:
         self.steps = steps
         self.dynamics = dynamics
@@ -75,8 +83,10 @@ class Trainer:
         self.aux_weight = aux_weight
         self.clip_norm = lr_config.clip_norm
         self._with_cuda = torch.cuda.is_available()
-        self.accelerator = accelerator
-        self.rank = self.accelerator.local_process_index
+        self.accelerator = accelerator if accelerator is not None else None
+        # self.rank = self.accelerator.local_process_index
+        # self.rank = rank if rank is not None else 0
+        self.rank = LOCAL_RANK
         self.lr_config = lr_config
         self.keep = [keep] if isinstance(keep, str) else keep
         self.skip = [skip] if isinstance(skip, str) else skip
@@ -166,8 +176,8 @@ class Trainer:
             nsteps: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
         xi, beta = inputs
-        xi = xi.to(self.accelerator.device)
-        beta = torch.tensor(beta).to(self.accelerator.device)
+        # xi = xi.to(self.accelerator.device)
+        beta = torch.tensor(beta)  # .to(self.accelerator.device)
         # eps = eps.to(self.accelerator.device)
         xo, metrics = self.dynamics.apply_transition_hmc(  # type: ignore
             (xi, beta), eps=eps, nsteps=nsteps,
@@ -183,7 +193,7 @@ class Trainer:
 
     def eval_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
         xinit, beta = inputs
-        xinit = xinit.to(self.accelerator.device)
+        xinit = xinit  # .to(self.accelerator.device)
         xout, metrics = self.dynamics((xinit, beta))
         # xout = self.g.compat_proj(xout)
         xprop = metrics.pop('mc_states').proposed.x
@@ -309,13 +319,15 @@ class Trainer:
     def should_log(self, epoch):
         return (
             epoch % self.steps.log == 0
-            and self.accelerator.is_local_main_process
+            and self.rank == 0
+            # and self.accelerator.is_local_main_process
         )
 
     def should_print(self, epoch):
         return (
             epoch % self.steps.print == 0
-            and self.accelerator.is_local_main_process
+            and self.rank == 0
+            # and self.accelerator.is_local_main_process
         )
 
     def record_metrics(
@@ -381,20 +393,21 @@ class Trainer:
             inputs: tuple[Tensor, Tensor]
     ) -> tuple[Tensor, dict]:
         xinit, beta = inputs
-        xinit = self.g.compat_proj(xinit).to(self.accelerator.device)
+        self.optimizer.zero_grad
+        xinit = self.g.compat_proj(xinit)  # .to(self.accelerator.device)
         xout, metrics = self.dynamics((xinit, beta))
         xout = self.g.compat_proj(xout)
         xprop = self.g.compat_proj(metrics.pop('mc_states').proposed.x)
 
         # xinit = to_u1(xinit).to(self.accelerator.device)
-        beta = beta.to(self.accelerator.device)
+        beta = beta  # .to(self.accelerator.device)
         xout, metrics = self.dynamics((xinit, beta))
         # xprop = to_u1(metrics.pop('mc_states').proposed.x)
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
-        self.optimizer.zero_grad
-        self.accelerator.backward(loss)
-        self.accelerator.clip_grad_norm_(self.dynamics.parameters(),
-                                         max_norm=self.clip_norm,)
+        loss.backward()
+        # self.accelerator.backward(loss)
+        # self.accelerator.clip_grad_norm_(self.dynamics.parameters(),
+        #                                  max_norm=self.clip_norm,)
         self.optimizer.step()
 
         return xout.detach(), metrics
@@ -405,8 +418,8 @@ class Trainer:
     ) -> tuple[Tensor, dict]:
         """Logic for performing a single training step"""
         xinit, beta = inputs
-        xinit = self.g.compat_proj(xinit).to(self.accelerator.device)
-        beta = torch.tensor(beta).to(self.accelerator.device)
+        xinit = self.g.compat_proj(xinit)  # .to(self.accelerator.device)
+        beta = torch.tensor(beta)  # .to(self.accelerator.device)
         # ====================================================================
         # -----------------------  Train step  -------------------------------
         # ====================================================================
@@ -418,16 +431,16 @@ class Trainer:
         # --------------------------------------------------------------------
         # [1.] Forward call
         self.optimizer.zero_grad()
-        with self.accelerator.autocast():
-            xout, metrics = self.dynamics((xinit, beta))
-            xprop = self.g.compat_proj(metrics.pop('mc_states').proposed.x)
+        # with self.accelerator.autocast():
+        xout, metrics = self.dynamics((xinit, beta))
+        xprop = self.g.compat_proj(metrics.pop('mc_states').proposed.x)
 
-            # [2.] Calc loss
-            loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
+        # [2.] Calc loss
+        loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
 
         if self.aux_weight > 0:
             yinit = self.g.compat_proj(
-                (self.draw_x()).to(self.accelerator.device)
+                (self.draw_x())  # .to(self.accelerator.device)
             )
             _, metrics_ = self.dynamics((yinit, beta))
             yprop = self.g.compat_proj((metrics_.pop('mc_states').proposed.x))
@@ -437,13 +450,16 @@ class Trainer:
             loss = loss + (aux_loss / self.aux_weight)
 
         # [3.] Backpropagate gradients
-        self.accelerator.backward(loss)
+        # self.accelerator.backward(loss)
+        loss.backward()
 
         if self.lr_config.clip_norm > 0.0:
-            self.accelerator.clip_grad_norm_(
-                self.dynamics.parameters(),
-                max_norm=self.clip_norm
-            )
+            clip_grad_norm(self.dynamics.parameters(),
+                           max_norm=self.clip_norm)
+            # self.accelerator.clip_grad_norm_(
+            #     self.dynamics.parameters(),
+            #     max_norm=self.clip_norm
+            # )
 
         self.optimizer.step()
 
@@ -466,7 +482,8 @@ class Trainer:
         ckpt_dir = Path(train_dir).joinpath('checkpoints')
         ckpt_dir.mkdir(exist_ok=True, parents=True)
         ckpt_file = ckpt_dir.joinpath(f'ckpt-{era}-{epoch}.tar')
-        if self.accelerator.is_local_main_process:
+        # if self.accelerator.is_local_main_process:
+        if self.rank == 0:
             log.info(f'Saving checkpoint to: {ckpt_file.as_posix()}')
         # self.dynamics.save(train_dir)  # type: ignore
         xeps = {
@@ -487,12 +504,12 @@ class Trainer:
             ckpt.update(metrics)
 
         # torch.save(ckpt, ckpt_file)
-        self.accelerator.save(ckpt, ckpt_file)
+        # self.accelerator.save(ckpt, ckpt_file)
         if run is not None:
             assert run is wandb.run
             outfile = Path(train_dir).joinpath('model.pth').as_posix()
-            # torch.save(self.dynamics.state_dict(), outfile.as_posix())
-            self.accelerator.save(self.dynamics.state_dict(), outfile)
+            torch.save(self.dynamics.state_dict(), outfile)
+            # self.accelerator.save(self.dynamics.state_dict(), outfile)
             artifact = wandb.Artifact('model', type='model')
             artifact.add_file(outfile)
             run.log_artifact(artifact)
@@ -517,7 +534,8 @@ class Trainer:
             display: Optional[dict] = None,
     ) -> dict:
         """Train the sampler for a single epoch."""
-        x = self.draw_x().to(self.accelerator.device) if x is None else x
+        x = self.draw_x()  if x is None else x
+        # .to(self.accelerator.device) if x is None else x
         if isinstance(beta, float):
             beta = torch.tensor(beta).to(x.device)
 
@@ -533,7 +551,7 @@ class Trainer:
             if metrics.get('acc', 1.0) < 1e-3:
                 self.reset_optimizer()
                 log.warning('Chains are stuck, redrawing x!')
-                x = self.draw_x().to(self.accelerator.device)
+                x = self.draw_x()  # .to(self.accelerator.device)
 
             if self.should_log(step):
                 record = {
@@ -598,10 +616,6 @@ class Trainer:
         history = self.histories['train']
         self.dynamics.train()
         log.warning(f'x.dtype: {x.dtype}')
-        if self.rank == 0:
-            ctxmgr = Live(console=console)
-        else:
-            ctxmgr = nullcontext()
 
         for era in range(self.steps.nera):
             beta = self.schedule.betas[str(era)]
@@ -619,9 +633,12 @@ class Trainer:
             else:
                 nepoch = self.steps.nepoch
 
-            with ctxmgr as live:
+            with (
+                    Live(table, console=console) if self.rank == 0
+                    else nullcontext()
+            ) as live:
                 # if self.rank == 0 and console is not None:
-                if live is not None:
+                if live is not None and self.rank == 0:
                     tstr = f'ERA: {era}/{self.steps.nera} BETA: {beta}'
                     live.console.clear_live()
                     live.console.rule(tstr)
@@ -657,17 +674,18 @@ class Trainer:
                         else:
                             table.add_row(*[f'{v}' for _, v in avgs.items()])
 
-                    tables[str(era)] = table
-                    if self.accelerator.is_local_main_process:
-                        ckpt_metrics = {'loss': metrics.get('loss', 0.0)}
-                        st0 = time.time()
-                        self.save_ckpt(era, epoch, train_dir,
-                                       metrics=ckpt_metrics, run=run)
-                        ckptstr = '\n'.join([
-                            f'Saving took: {time.time() - st0:<5g}s',
-                            f'Era {era} took: {time.time() - estart:<5g}s',
-                        ])
-                        log.info(ckptstr)
+            tables[str(era)] = table
+            # if self.accelerator.is_local_main_process:
+            if self.rank == 0:
+                ckpt_metrics = {'loss': metrics.get('loss', 0.0)}
+                st0 = time.time()
+                self.save_ckpt(era, epoch, train_dir,
+                               metrics=ckpt_metrics, run=run)
+                ckptstr = '\n'.join([
+                    f'Saving took: {time.time() - st0:<5g}s',
+                    f'Era {era} took: {time.time() - estart:<5g}s',
+                ])
+                log.info(ckptstr)
 
         return {
             'timer': timer,
@@ -808,7 +826,8 @@ class LiveTrainer(Trainer):
                         layout['root']['main'].update(table)
 
             tables[str(era)] = table
-            if self.accelerator.is_local_main_process:
+            # if self.accelerator.is_local_main_process:
+            if self.rank == 0:
                 # if writer is not None:
                 #     model = extract_model_from_parallel(self.dynamics)
                 #     model = model if isinstance(model, Module) else None
@@ -929,7 +948,7 @@ class LiveTrainer(Trainer):
         step_task = display['tasks']['step']
         job_progress = display['job_progress']
         layout = (
-            display['layout'] if self.accelerator.is_local_main_process
+            display['layout'] if self.rank == 0  # self.accelerator.is_local_main_process
             else None
         )
 
