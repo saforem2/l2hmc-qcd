@@ -8,6 +8,7 @@ used to train the L2HMC model.
 from __future__ import absolute_import, annotations, division, print_function
 from typing import Callable, Optional
 
+import logging
 import numpy as np
 import torch
 from torch import nn
@@ -21,6 +22,8 @@ from l2hmc.configs import (
 )
 
 from l2hmc.network.factory import BaseNetworkFactory
+
+log = logging.getLogger(__name__)
 
 Tensor = torch.Tensor
 
@@ -88,7 +91,7 @@ class Network(nn.Module):
         self.net_config = network_config
         self.nw = net_weight
 
-        self.xdim = np.cumprod(xshape[1:])[-1]
+        self.xdim = int(np.cumprod(xshape[1:])[-1])
 
         if input_shapes is None:
             input_shapes = {
@@ -118,16 +121,19 @@ class Network(nn.Module):
 
         self.units = self.net_config.units
 
-        zeros = torch.zeros(1, self.xdim)
-        self.s_coeff = nn.parameter.Parameter(zeros.to(self.device))
-        self.q_coeff = nn.parameter.Parameter(zeros.clone().to(self.device))
+        self.s_coeff = nn.parameter.Parameter(
+            torch.zeros(1, self.xdim, device=self.device)
+        ).to(self.device)
+        self.q_coeff = nn.parameter.Parameter(
+            torch.zeros(1, self.xdim, device=self.device)
+        ).to(self.device)
 
         if conv_config is not None and len(conv_config.filters) > 0:
             self.conv_config = conv_config
             if len(xshape) == 3:
-                nt, nx, d = xshape[0], xshape[1], xshape[2]
+                d, nt, nx = xshape[0], xshape[1], xshape[2]
             elif len(xshape) == 4:
-                _, nt, nx, d = xshape[0], xshape[1], xshape[2], xshape[3]
+                _, d, nt, nx = xshape[0], xshape[1], xshape[2], xshape[3]
             else:
                 raise ValueError(f'Invalid value for `xshape`: {xshape}')
 
@@ -158,31 +164,55 @@ class Network(nn.Module):
             self.conv_stack = []
 
         self.flatten = nn.Flatten(1)
-        self.x_layer = nn.Linear(self.input_shapes['x'], self.units[0])
-        self.v_layer = nn.Linear(self.input_shapes['v'], self.units[0])
+        self.x_layer = nn.Linear(
+            self.input_shapes['x'],  # input
+            self.units[0],           # output
+            device=self.device
+        )
+        self.v_layer = nn.Linear(
+            self.input_shapes['v'],
+            self.units[0],
+            device=self.device
+        )
 
         self.hidden_layers = nn.ModuleList()
         for idx, units in enumerate(self.units[1:]):
-            h = nn.Linear(self.units[idx], units)
+            h = nn.Linear(self.units[idx], units, device=self.device)
             self.hidden_layers.append(h)
 
-        self.scale = nn.Linear(self.units[-1], self.xdim)
-        self.transl = nn.Linear(self.units[-1], self.xdim)
-        self.transf = nn.Linear(self.units[-1], self.xdim)
+        self.scale = nn.Linear(self.units[-1], self.xdim, device=self.device)
+        self.transl = nn.Linear(self.units[-1], self.xdim, device=self.device)
+        self.transf = nn.Linear(self.units[-1], self.xdim, device=self.device)
 
         if self.net_config.dropout_prob > 0:
             self.dropout = nn.Dropout(self.net_config.dropout_prob)
 
         if self.net_config.use_batch_norm:
-            self.batch_norm = nn.BatchNorm1d(self.units[-1])
+            self.batch_norm = nn.BatchNorm1d(self.units[-1],
+                                             device=self.device)
+        # if self.device == 'cuda':
+        #     self.x_layer.cuda()
+        #     self.v_layer.cuda()
+        #     for layer in self.hidden_layers:
+        #         layer.cuda()
+        #     self.scale.cuda()
+        #     self.transl.cuda()
+        #     self.transf.cuda()
+        #     try:
+        #         self.dropout.cuda()
+        #     except AttributeError:
+        #         pass
+        #     try:
+        #         self.batch_norm.cuda()
+        #     except AttributeError:
+        #         pass
 
     def forward(
             self,
             inputs: tuple[Tensor, Tensor]
     ) -> tuple[Tensor, Tensor, Tensor]:
         x, v = inputs
-        if torch.cuda.is_available():
-            x, v = x.to('cuda'), v.to('cuda')
+        x, v = x.to(self.device), v.to(self.device)
 
         if len(self.conv_stack) > 0:
             try:
@@ -193,8 +223,11 @@ class Network(nn.Module):
             for layer in self.conv_stack:
                 x = self.activation_fn(layer(x))
 
-        v = self.v_layer(self.flatten(v))
-        x = self.x_layer(self.flatten(x))
+            x = self.batch_norm(x)
+
+        v = self.v_layer(v.flatten(1))
+        x = self.x_layer(x.flatten(1))
+        # v = self.v_layer(self.flatten(v))
         z = self.activation_fn(x + v)
         for layer in self.hidden_layers:
             z = self.activation_fn(layer(z))
@@ -205,13 +238,12 @@ class Network(nn.Module):
         if self.net_config.use_batch_norm:
             z = self.batch_norm(z)
 
-        scale = torch.exp(self.s_coeff) * torch.tanh(self.scale(z))
+        scale = torch.tanh(self.scale(z))
         transl = self.transl(z)
-        transf = torch.exp(self.q_coeff) * torch.tanh(self.transf(z))
-
-        s = torch.mul(self.nw.s, scale)
-        t = torch.mul(self.nw.t, transl)
-        q = torch.mul(self.nw.q, transf)
+        transf = torch.tanh(self.transf(z))
+        s = self.nw.s * torch.exp(self.s_coeff) * scale
+        t = self.nw.t * transl
+        q = self.nw.q * torch.exp(self.q_coeff) * transf
 
         return (s, t, q)
 
