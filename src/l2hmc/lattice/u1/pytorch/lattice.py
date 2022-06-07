@@ -165,11 +165,9 @@ class LatticeU1(BaseLatticeU1):
                 raise ValueError('One of `x` or `wloops` must be specified.')
             wloops = self.wilson_loops(x)
 
-        # return torch.cos(wloops).mean((1, 2))
         return wloops.cos().mean((1, 2))
 
     def _plaqs4x4(self, wloops4x4: Tensor) -> Tensor:
-        # return torch.cos(wloops4x4).mean((1, 2))
         return wloops4x4.cos().mean((1, 2))
 
     def plaqs4x4(
@@ -193,9 +191,6 @@ class LatticeU1(BaseLatticeU1):
     def _int_charges(self, wloops: Tensor) -> Tensor:
         """Calculate intQ from Wilson loops."""
         return project_angle(wloops).sum((1, 2)) / TWOPI
-        # return self.g.com
-        # return wloops
-        # return self.g.compat_proj(wloops).sum((1, 2)) / TWO_PI
 
     def _get_wloops(
             self,
