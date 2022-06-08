@@ -150,9 +150,9 @@ class Dynamics(Model):
             self,
             inputs: tuple[Tensor, Tensor],
             eps: float,
-            nsteps: Optional[int] = None,
+            nleapfrog: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
-        data = self.generate_proposal_hmc(inputs, eps, nsteps=nsteps)
+        data = self.generate_proposal_hmc(inputs, eps, nleapfrog=nleapfrog)
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
         ma_ = tf.cast(ma_, dtype=data['proposed'].x.dtype)
         mr_ = tf.cast(mr_, dtype=data['proposed'].x.dtype)
@@ -274,14 +274,14 @@ class Dynamics(Model):
             self,
             inputs: tuple[Tensor, Tensor],
             eps: float,
-            nsteps: Optional[int] = None,
+            nleapfrog: Optional[int] = None,
     ) -> dict:
         x, beta = inputs
         assert isinstance(x, Tensor)
         xshape = [x.shape[0], *self.xshape[1:]]
         v = self.g.random_momentum(xshape)
         init = State(x, v, beta)
-        proposed, metrics = self.transition_kernel_hmc(init, eps=eps, nsteps=nsteps)
+        proposed, metrics = self.transition_kernel_hmc(init, eps=eps, nleapfrog=nleapfrog)
 
         return {'init': init, 'proposed': proposed, 'metrics': metrics}
 
@@ -391,7 +391,7 @@ class Dynamics(Model):
             self,
             state: State,
             eps: Optional[float] = None,
-            nsteps: Optional[int] = None,
+            nleapfrog: Optional[int] = None,
     ) -> tuple[State, dict]:
         """Run the generic HMC transition kernel."""
         state_ = State(x=state.x, v=state.v, beta=state.beta)
@@ -405,12 +405,12 @@ class Dynamics(Model):
             )
 
         if self.config.merge_directions:
-            nsteps = 2 * self.config.nleapfrog if nsteps is None else nsteps
+            nleapfrog = 2 * self.config.nleapfrog if nleapfrog is None else nleapfrog
         else:
-            nsteps = self.config.nleapfrog if nsteps is None else nsteps
+            nleapfrog = self.config.nleapfrog if nleapfrog is None else nleapfrog
 
-        eps = (1. / nsteps) if eps is None else eps
-        for _ in range(nsteps):
+        eps = (1. / nleapfrog) if eps is None else eps
+        for _ in range(nleapfrog):
             state_ = self.leapfrog_hmc(state_, eps=eps)
             if self.config.verbose:
                 history = self.update_history(
@@ -442,16 +442,19 @@ class Dynamics(Model):
         assert isinstance(state.x, Tensor)
         sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
 
-        metrics = self.get_metrics(state_, sumlogdet)
-        history = self.update_history(metrics, history={})
-
+        history = self.update_history(
+            self.get_metrics(state_, sumlogdet, step=0),
+            history={}
+        )
         # Forward
         for step in range(self.config.nleapfrog):
             state_, logdet = self._forward_lf(step, state_, training)
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
-                metrics = self.get_metrics(state_, sumlogdet, step=step)
-                history = self.update_history(metrics, history=history)
+                history = self.update_history(
+                    self.get_metrics(state_, sumlogdet, step=step),
+                    history=history
+                )
 
         # Flip momentum
         # m1 = -1.0 * tf.ones_like(state_.v)
@@ -462,9 +465,12 @@ class Dynamics(Model):
             state_, logdet = self._backward_lf(step, state_, training)
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
+                # Reverse step count to correctly order metrics at each step
                 step = self.config.nleapfrog - step - 1
-                metrics = self.get_metrics(state_, sumlogdet, step=step)
-                history = self.update_history(metrics, history=history)
+                history = self.update_history(
+                    self.get_metrics(state_, sumlogdet, step=step),
+                    history=history
+                )
 
         acc = self.compute_accept_prob(state, state_, sumlogdet)
         history['acc'] = acc
@@ -753,15 +759,21 @@ class Dynamics(Model):
         q = eps * q
         exp_s = tf.exp(s)
         exp_q = tf.exp(q)
-        if self.config.use_ncp:
-            halfx = state.x / TWO
-            _x = TWO * tf.math.atan(tf.math.tan(halfx) * exp_s)
-            xp = _x + eps * (state.v * exp_q + t)
-            xf = xm_init + (mb * xp)
-            cterm = tf.math.square(tf.math.cos(halfx))
-            sterm = (exp_s * tf.math.sin(halfx)) ** 2
-            logdet_ = tf.math.log(exp_s / (cterm + sterm))
-            logdet = tf.reduce_sum(mb * logdet_, axis=1)
+        if isinstance(self.g, g.U1Phase):
+            if self.config.use_ncp:
+                halfx = state.x / TWO
+                _x = TWO * tf.math.atan(tf.math.tan(halfx) * exp_s)
+                xp = _x + eps * (state.v * exp_q + t)
+                xf = xm_init + (mb * xp)
+                cterm = tf.math.square(tf.math.cos(halfx))
+                sterm = (exp_s * tf.math.sin(halfx)) ** 2
+                logdet_ = tf.math.log(exp_s / (cterm + sterm))
+                logdet = tf.reduce_sum(mb * logdet_, axis=1)
+            else:
+                xp = state.x * exp_s + eps * (state.v * exp_q + t)
+                xf = xm_init + (mb * xp)
+                logdet = tf.reduce_sum((mb * s), axis=1)
+
         elif isinstance(self.g, g.SU3):
             x = self.g.group_to_vec(state.x)
             v = self.g.group_to_vec(state.v)
@@ -794,18 +806,23 @@ class Dynamics(Model):
         exp_q = tf.exp(q)
         exp_s = tf.exp(s)
 
-        if self.config.use_ncp:
-            halfx = state.x / TWO
-            halfx_scale = exp_s * tf.tan(halfx)
-            x1 = TWO * tf.atan(halfx_scale)
-            x2 = exp_s * eps * (state.v * exp_q + t)
-            xnew = x1 - x2
-            xb = xm_init + (mb * xnew)
+        if isinstance(self.g, g.U1Phase):
+            if self.config.use_ncp:
+                halfx = state.x / TWO
+                halfx_scale = exp_s * tf.tan(halfx)
+                x1 = TWO * tf.atan(halfx_scale)
+                x2 = exp_s * eps * (state.v * exp_q + t)
+                xnew = x1 - x2
+                xb = xm_init + (mb * xnew)
 
-            cterm = tf.math.square(tf.cos(halfx))
-            sterm = (exp_s * tf.sin(halfx)) ** 2
-            logdet_ = tf.math.log(exp_s / (cterm + sterm))
-            logdet = tf.reduce_sum(mb * logdet_, axis=1)
+                cterm = tf.math.square(tf.cos(halfx))
+                sterm = (exp_s * tf.sin(halfx)) ** 2
+                logdet_ = tf.math.log(exp_s / (cterm + sterm))
+                logdet = tf.reduce_sum(mb * logdet_, axis=1)
+            else:
+                xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
+                xb = xm_init + mb * xnew
+                logdet = tf.reduce_sum(mb * s, axis=1)
         elif isinstance(self.g, g.SU3):
             xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
             xb = xm_init + mb * xnew
