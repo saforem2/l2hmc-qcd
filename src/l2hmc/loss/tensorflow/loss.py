@@ -35,6 +35,8 @@ class LatticeLoss:
             self.g = g.U1Phase()
         elif isinstance(self.lattice, LatticeSU3):
             self.g = g.SU3()
+        else:
+            raise ValueError(f'Unexpected value for `self.g`: {self.g}')
 
     def __call__(self, x_init: Tensor, x_prop: Tensor, acc: Tensor) -> Tensor:
         return self.calc_loss(x_init, x_prop, acc)
@@ -48,24 +50,33 @@ class LatticeLoss:
         dw = tf.subtract(w2, w1)
         dwloops = 2. * (tf.ones_like(w1) - tf.math.cos(dw))
         if isinstance(self.g, g.U1Phase):
-            ploss = acc * tf.reduce_sum(dwloops, axis=(1, 2)) + 1e-4
+            ploss = acc * tf.reduce_sum(dwloops, axis=(1, 2))
         elif isinstance(self.g, g.SU3):
-            ploss = acc * tf.reduce_sum(dwloops, tuple(range(2, len(w1.shape))))
-        ploss = acc * tf.reduce_sum(dwloops, axis=(1, 2)) + 1e-4
-        if self.config.use_mixed_loss:
-            tf.reduce_mean(self.mixed_loss(ploss, self.plaq_weight), axis=0)
+            ploss = acc * tf.reduce_sum(
+                dwloops, tuple(range(2, len(w1.shape)))
+            )
+        else:
+            raise ValueError(f'Unexpected value for self.g: {self.g}')
 
-        return tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
+        if self.config.use_mixed_loss:
+            ploss += 1e-4  # to prevent division by zero in mixed_loss
+            tf.reduce_mean(self.mixed_loss(ploss, self.plaq_weight))
+
+        return tf.reduce_mean(-ploss / self.plaq_weight)
 
     def _charge_loss(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
-        q1 = self.lattice._sin_charges(wloops=w1)
-        q2 = self.lattice._sin_charges(wloops=w2)
-        qloss = (acc * (q2 - q1) ** 2) + 1e-4  # type: ignore
+        dq2 = tf.math.square(tf.subtract(
+            self.lattice._sin_charges(wloops=w2),
+            self.lattice._sin_charges(wloops=w1),
+        ))
+        qloss = acc * dq2
+        # qloss = (acc * (q2 - q1) ** 2)
         if self.config.use_mixed_loss:
+            qloss += 1e-4
             return tf.reduce_mean(
-                self.mixed_loss(qloss, self.charge_weight), axis=0
+                self.mixed_loss(qloss, self.charge_weight)
             )
-        return tf.reduce_mean(-qloss / self.charge_weight, axis=0)
+        return tf.reduce_mean(-qloss / self.charge_weight)
 
     def lattice_metrics(
             self,
