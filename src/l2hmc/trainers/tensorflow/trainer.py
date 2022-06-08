@@ -132,7 +132,8 @@ class Trainer:
         self.keep = [keep] if isinstance(keep, str) else keep
         self.skip = [skip] if isinstance(skip, str) else skip
         assert compression in ['none', 'fp16']
-        self.compression = hvd.Compression.fp16
+        self.compression = HVD_FP_MAP[compression]
+        # self.compression = hvd.Compression.fp16
         self.reduce_lr = ReduceLROnPlateau(lr_config)
         if compile:
             self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
@@ -327,14 +328,14 @@ class Trainer:
             self,
             inputs: tuple[Tensor, Tensor],
             eps: float,
-            nsteps: Optional[int] = None,
+            nleapfrog: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
         # xi, beta = inputs
         # inputs = (to_u1(xi), tf.constant(beta))
         xo, metrics = self.dynamics.apply_transition_hmc(
             inputs,
             eps=eps,
-            nsteps=nsteps
+            nleapfrog=nleapfrog
         )
         # xo = self.dynamics.g.compat_proj(xo)
         # xp = self.dynamics.g.compat_proj(metrics.pop('mc_states').proposed.x)
@@ -375,7 +376,7 @@ class Trainer:
             job_type: Optional[str] = 'eval',
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
-            nsteps: Optional[int] = None,
+            nleapfrog: Optional[int] = None,
     ) -> dict:
         """Evaluate model."""
         if isinstance(skip, str):
@@ -405,7 +406,7 @@ class Trainer:
 
             if job_type == 'hmc':
                 return self.hmc_step(
-                    inputs, eps=eps, nsteps=nsteps
+                    inputs, eps=eps, nleapfrog=nleapfrog
                 )  # type: ignore
 
             raise ValueError
@@ -511,11 +512,7 @@ class Trainer:
                                                           acc=metrics_['acc'])
                 loss = (loss + aux_loss) / (1. + self.aux_weight)
 
-        tape = hvd.DistributedGradientTape(tape)
-        # tape = hvd.DistributedGradientTape(
-        #     tape,
-        #     compression=self.compression
-        # )
+        tape = hvd.DistributedGradientTape(tape, compression=self.compression)
         grads = tape.gradient(loss, self.dynamics.trainable_variables)
         if should_clip:
             grads = [
@@ -633,7 +630,6 @@ class Trainer:
         if extend is not None and isinstance(extend, int) and extend > 1:
             nepoch_last_era *= extend
 
-        estart = time.time()
         for era in range(self.steps.nera):
             beta = tf.constant(self.schedule.betas[str(era)])
             table = Table(
@@ -657,11 +653,11 @@ class Trainer:
                         f'ERA: {era}/{self.steps.nera}',
                         f'BETA: {beta.numpy():.3f}',
                     ])
+                    live.console.clear_live()
                     live.console.rule(tstr)
-                    live.console
                     live.update(table)
 
-                estart = time.time()
+                epoch_start = time.time()
                 for epoch in range(nepoch):
                     timer.start()
                     x, metrics = self.train_step((x, beta))
@@ -710,13 +706,12 @@ class Trainer:
 
                     # ckptstr = '\n'.join([
                     if live is not None:
-                        live.console.log(
-                            f'Era {era} took: {time.time() - estart:<5g}s'
-                        )
-                        live.console.log(
-                            f'Checkpoint saved to: {manager.latest_checkpoint}'
-                            f' in {time.time() - st0:<5f}s'
-                        )
+                        dts = time.time() - st0
+                        ckptstr = '\n'.join([
+                            f'Checkpoint saved to: {manager.latest_checkpoint} in {dts:<5f}s',
+                            f'Era {era} took: {time.time() - epoch_start:<5g}s',
+                        ])
+                        live.console.log(ckptstr)
 
         return {
             'timer': timer,

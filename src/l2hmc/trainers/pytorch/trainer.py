@@ -176,14 +176,14 @@ class Trainer:
             self,
             inputs: tuple[Tensor, float],
             eps: float,
-            nsteps: Optional[int] = None,
+            nleapfrog: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
         self.dynamics.eval()
         xi, beta = inputs
         xi = xi.to(self.device)
         beta = torch.tensor(beta).to(self.device)
-        xo, metrics = self._dynamics.apply_transition_hmc(  # type: ignore
-            (xi, beta), eps=eps, nsteps=nsteps,
+        xo, metrics = self.dynamics.apply_transition_hmc(
+            (xi, beta), eps=eps, nleapfrog=nleapfrog,
         )
         xp = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=xi, x_prop=xp, acc=metrics['acc'])
@@ -221,7 +221,7 @@ class Trainer:
             job_type: Optional[str] = 'eval',
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
-            nsteps: Optional[int] = None,
+            nleapfrog: Optional[int] = None,
     ) -> dict:
         """Evaluate dynamics."""
         summaries = []
@@ -250,7 +250,7 @@ class Trainer:
         def eval_fn(z):
             if job_type == 'hmc':
                 assert eps is not None
-                return self.hmc_step(z, eps=eps, nsteps=nsteps)
+                return self.hmc_step(z, eps=eps, nleapfrog=nleapfrog)
             return self.eval_step(z)
 
         summaries = []
@@ -293,7 +293,6 @@ class Trainer:
                                                         record=record,
                                                         writer=writer,
                                                         metrics=metrics,
-                                                        history=history,
                                                         job_type=job_type)
                     summaries.append(summary)
                     if step == 0:
@@ -342,11 +341,12 @@ class Trainer:
             record: Optional[dict] = None,
             run: Optional[Any] = None,
             writer: Optional[Any] = None,
-            history: Optional[BaseHistory] = None,
             model: Optional[Module] = None,
             optimizer: Optional[optim.Optimizer] = None,
     ):
         record = {} if record is None else record
+        assert job_type in ['train', 'eval', 'hmc']
+        history = self.histories[job_type]
 
         if step is not None:
             record.update({f'{job_type}_step': step})
@@ -358,11 +358,12 @@ class Trainer:
         })
 
         record.update(self.metrics_to_numpy(metrics))
-        if history is not None:
-            avgs = history.update(record)
-        else:
-            avgs = {k: v.mean() for k, v in record.items() if v is not None}
+        # if history is not None:
+        #     avgs = history.update(record)
+        # else:
+        #     avgs = {k: v.mean() for k, v in record.items() if v is not None}
 
+        avgs = history.update(record)
         summary = summarize_dict(avgs)
         # if step is not None:
         if writer is not None and self.verbose:
@@ -569,7 +570,7 @@ class Trainer:
                     model=self.dynamics,
                     step=timer.iterations,
                     optimizer=self.optimizer,
-                    history=self.histories['train'],
+                    # history=self.histories['train'],
                 )
                 avgs[f'{step}'] = avgs_
                 summaries[f'{step}'] = summary
@@ -591,7 +592,7 @@ class Trainer:
             train_dir: Optional[os.PathLike] = None,
             run: Optional[Any] = None,
             writer: Optional[Any] = None,
-            extend_last_era: Optional[bool] = True,
+            # extend_last_era: Optional[bool] = True,
             # keep: str | list[str] = None,
     ) -> dict:
         skip = [skip] if isinstance(skip, str) else skip
@@ -607,45 +608,56 @@ class Trainer:
         if WIDTH is not None and WIDTH > 0:
             console.width = WIDTH
 
+        self.dynamics.train()
+        # log.warning(f'x.dtype: {x.dtype}')
+
         era = 0
-        gstep = 0
         epoch = 0
+        gstep = 0
+        rows = {}
         tables = {}
         metrics = {}
-        rows = {}
         summaries = []
         table = Table(expand=True)
+        nepoch = self.steps.nepoch
         timer = self.timers['train']
         history = self.histories['train']
-        self.dynamics.train()
-        log.warning(f'x.dtype: {x.dtype}')
+        extend = self.steps.extend_last_era
+        nepoch_last_era = self.steps.nepoch
+        record = {'era': 0, 'epoch': 0, 'beta': 0.0, 'dt': 0.0}
+        if extend is not None and isinstance(extend, int) and extend > 1:
+            nepoch_last_era *= extend
+
         for era in range(self.steps.nera):
             beta = self.schedule.betas[str(era)]
-            # --- Reset optimizer states when changing beta -----------
-            # if beta != self.schedule.betas[str(0)]:
-            #     self.reset_optimizer()
-            # ---- Setup Table for storing metrics ---------------------
             table = Table(
                 box=box.HORIZONTALS,
                 row_styles=['dim', 'none'],
             )
-            estart = time.time()
-            if extend_last_era and era == self.steps.nera - 1:
-                nepoch = 2 * self.steps.nepoch
-            else:
-                nepoch = self.steps.nepoch
 
-            with (
-                    Live(table, console=console) if self.rank == 0
-                    else nullcontext()
-            ) as live:
-                # if self.rank == 0 and console is not None:
-                if live is not None and self.rank == 0:
-                    tstr = f'ERA: {era}/{self.steps.nera} BETA: {beta}'
+            if self.rank == 0:
+                ctxmgr = Live(table,
+                              console=console,
+                              vertical_overflow='visible')
+            else:
+                ctxmgr = nullcontext()
+
+            if era == self.steps.nera - 1:
+                nepoch = nepoch_last_era
+            # --- Reset optimizer states when changing beta -----------
+            # if beta != self.schedule.betas[str(0)]:
+            #     self.reset_optimizer()
+            with ctxmgr as live:
+                if live is not None:
+                    tstr = ' '.join([
+                        f'ERA: {era}/{self.steps.nera}',
+                        f'BETA: {beta:.3f}',
+                    ])
                     live.console.clear_live()
                     live.console.rule(tstr)
                     live.update(table)
 
+                epoch_start = time.time()
                 for epoch in range(nepoch):
                     timer.start()
                     x, metrics = self.train_step((x, beta))
@@ -658,12 +670,16 @@ class Trainer:
                         avgs, summary = self.record_metrics(run=run,
                                                             step=gstep,
                                                             writer=writer,
-                                                            record=record,
-                                                            metrics=metrics,
-                                                            job_type='train',
-                                                            history=history)
+                                                            record=record,    # template w/ step info
+                                                            metrics=metrics,  # metrics from Dynamics
+                                                            job_type='train')
                         rows[gstep] = avgs
                         summaries.append(summary)
+
+                        if epoch == 0:
+                            table = add_columns(avgs, table)
+                        else:
+                            table.add_row(*[f'{v}' for _, v in avgs.items()])
 
                         if avgs.get('acc', 1.0) < 1e-5:
                             self.reset_optimizer()
@@ -671,23 +687,23 @@ class Trainer:
                             x = random_angle(self.xshape)
                             x = x.reshape(x.shape[0], -1)
 
-                        if epoch == 0:
-                            table = add_columns(avgs, table)
-                        else:
-                            table.add_row(*[f'{v}' for _, v in avgs.items()])
-
             tables[str(era)] = table
-            # if self.accelerator.is_local_main_process:
             if self.rank == 0:
-                ckpt_metrics = {'loss': metrics.get('loss', 0.0)}
+                if writer is not None:
+                    update_summaries(writer, step=gstep, metrics=metrics)
+
                 st0 = time.time()
-                self.save_ckpt(era, epoch, train_dir,
-                               metrics=ckpt_metrics, run=run)
-                ckptstr = '\n'.join([
-                    f'Saving took: {time.time() - st0:<5g}s',
-                    f'Era {era} took: {time.time() - estart:<5g}s',
-                ])
-                log.info(ckptstr)
+                if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
+                    ckpt_metrics = {'loss': metrics.get('loss', 0.0)}
+                    self.save_ckpt(era, epoch, train_dir,
+                                   metrics=ckpt_metrics, run=run)
+
+                if live is not None:
+                    ckptstr = '\n'.join([
+                        f'Saving took: {time.time() - st0:<5g}s',
+                        f'Era {era} took: {time.time() - epoch_start:<5g}s',
+                    ])
+                    live.console.log(ckptstr)
 
         return {
             'timer': timer,
@@ -808,8 +824,8 @@ class LiveTrainer(Trainer):
                                                             writer=writer,
                                                             record=record,
                                                             metrics=metrics,
-                                                            job_type='train',
-                                                            history=history)
+                                                            job_type='train')
+                                                            # history=history)
                         rows[gstep] = avgs
                         summaries.append(summary)
 
@@ -893,7 +909,7 @@ class LiveTrainer(Trainer):
             job_type: Optional[str] = 'eval',
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
-            nsteps: Optional[int] = None,
+            nleapfrog: Optional[int] = None,
     ) -> dict:
         """Evaluate dynamics."""
         summaries = []
@@ -922,7 +938,7 @@ class LiveTrainer(Trainer):
         def eval_fn(z):
             if job_type == 'hmc':
                 assert eps is not None
-                return self.hmc_step(z, eps, nsteps=nsteps)
+                return self.hmc_step(z, eps, nleapfrog=nleapfrog)
             return self.eval_step(z)
 
         summaries = []
@@ -978,7 +994,7 @@ class LiveTrainer(Trainer):
                                                         record=record,
                                                         writer=writer,
                                                         metrics=metrics,
-                                                        history=history,
+                                                        # history=history,
                                                         job_type=job_type)
                     summaries.append(summary)
                     if step == 0:
