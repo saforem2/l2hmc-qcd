@@ -21,8 +21,6 @@ import torch
 from torch import nn
 import l2hmc.group.pytorch.group as g
 
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-
 log = logging.getLogger(__name__)
 
 TWO_PI = 2. * PI
@@ -98,6 +96,17 @@ def grab(x: Tensor) -> Array:
     return x.detach().cpu().numpy()
 
 
+
+class Clamp(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input):
+        return input.clamp(min=0., max=1.)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output.clone()
+
+
 class Dynamics(nn.Module):
     def __init__(
             self,
@@ -118,6 +127,9 @@ class Dynamics(nn.Module):
             n=(self.nlf if self.config.use_separate_networks else 1),
             split_xnets=self.config.use_split_xnets
         )
+        if self.device == 'cuda':
+            self.networks.cuda()
+
         self.masks = self._build_masks()
 
         if self.config.group == 'U1':
@@ -125,19 +137,18 @@ class Dynamics(nn.Module):
         elif self.config.group == 'SU3':
             self.g = g.SU3()
 
-        xeps = {}
-        veps = {}
+        self.xeps = nn.ParameterDict()
+        self.veps = nn.ParameterDict()
+        clamper = Clamp()
         rg = (not self.config.eps_fixed)
         for lf in range(self.config.nleapfrog):
-            xeps[str(lf)] = nn.parameter.Parameter(
-                data=torch.tensor(self.config.eps), requires_grad=rg
-            )
-            veps[str(lf)] = nn.parameter.Parameter(
-                data=torch.tensor(self.config.eps), requires_grad=rg
-            )
-
-        self.xeps = nn.ParameterDict(xeps)
-        self.veps = nn.ParameterDict(veps)
+            eps = torch.tensor(self.config.eps).to(self.device)
+            xeps = nn.parameter.Parameter(eps, requires_grad=rg)
+            veps = nn.parameter.Parameter(eps, requires_grad=rg)
+            clamper.apply(xeps)
+            clamper.apply(veps)
+            self.xeps[str(lf)] = xeps
+            self.veps[str(lf)] = veps
 
     def save(self, outdir: os.PathLike) -> None:
         netdir = Path(outdir).joinpath('networks')
@@ -449,8 +460,8 @@ class Dynamics(nn.Module):
         }
         if step is not None:
             metrics.update({
-                'xeps': self.xeps[str(step)].clone().detach(),
-                'veps': self.veps[str(step)].clone().detach(),
+                'xeps': self.xeps[str(step)].detach(),
+                'veps': self.veps[str(step)].detach(),
             })
 
         return metrics
@@ -601,7 +612,7 @@ class Dynamics(nn.Module):
         if self.config.verbose:
             for key, val in history.items():
                 if isinstance(val, list) and isinstance(val[0], Tensor):
-                    history[key] = torch.stack(val).detach()
+                    history[key] = torch.stack(val)
 
         return state_, history
 
@@ -623,7 +634,7 @@ class Dynamics(nn.Module):
 
     @staticmethod
     def _get_accept_masks(px: Tensor) -> tuple[Tensor, Tensor]:
-        runif = torch.rand_like(px).to(torch.float)
+        runif = torch.rand_like(px)  # .to(torch.float)
         acc = (px > runif).to(torch.float)
         rej = torch.ones_like(acc) - acc
         # acc = (px > torch.rand_like(px).to(px.device)).to(torch.float)
@@ -683,7 +694,7 @@ class Dynamics(nn.Module):
         # if self.config.use_conv_net:
         #     xcos = xcos.reshape(self.lattice_shape)
         #     xsin = xsin.reshape(self.lattice_shape)
-        return torch.stack([torch.cos(x), torch.sin(x)], dim=-1)
+        return torch.stack([x.cos(), x.sin()], dim=-1).to(self.device)
 
     def _call_vnet(
             self,
@@ -706,6 +717,7 @@ class Dynamics(nn.Module):
         elif isinstance(self.g, g.SU3):
             x = self.g.group_to_vec(x)
 
+        x, force = x.to(self.device), force.to(self.device)
         return vnet((x, force))
 
     def _call_xnet(
@@ -731,6 +743,8 @@ class Dynamics(nn.Module):
         if isinstance(self.g, g.SU3):
             x = self.g.group_to_vec(x)
 
+        x, v = x.to(self.device), v.to(self.device)
+
         return xnet((x, v))
 
     def _forward_lf(self, step: int, state: State) -> tuple[State, Tensor]:
@@ -739,7 +753,7 @@ class Dynamics(nn.Module):
         m, mb = m.to(self.device), mb.to(self.device)
         sumlogdet = torch.zeros(state.x.shape[0],
                                 dtype=state.x.real.dtype,
-                                device=state.x.device)
+                                device=self.device)
 
         state, logdet = self._update_v_fwd(step, state)
         sumlogdet = sumlogdet + logdet
@@ -764,7 +778,7 @@ class Dynamics(nn.Module):
         m, mb = m.to(self.device), mb.to(self.device)
         sumlogdet = torch.zeros(state.x.shape[0],
                                 dtype=state.x.real.dtype,
-                                device=state.x.device)
+                                device=self.device)
 
         state, logdet = self._update_v_bwd(step_r, state)
         sumlogdet = sumlogdet + logdet
@@ -782,7 +796,7 @@ class Dynamics(nn.Module):
 
     def _update_v_fwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the forward direction"""
-        eps = self.veps[str(step)]
+        eps = self.veps[str(step)]  # .clamp_(0., 1.)
         force = self.grad_potential(state.x, state.beta)
         s, t, q = self._call_vnet(step, (state.x, force))
 
@@ -796,7 +810,7 @@ class Dynamics(nn.Module):
 
     def _update_v_bwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the backward direction"""
-        eps = self.veps[str(step)]
+        eps = self.veps[str(step)]  # .clamp_(0., 1.)
         force = self.grad_potential(state.x, state.beta)
         s, t, q = self._call_vnet(step, (state.x, force))
 
@@ -816,8 +830,8 @@ class Dynamics(nn.Module):
             first: bool,
     ) -> tuple[State, Tensor]:
         """Single x update in the forward direction"""
-        eps = self.xeps[str(step)]
-        mb = torch.ones_like(m) - m
+        eps = self.xeps[str(step)]  # .clamp_(0., 1.)
+        mb = (torch.ones_like(m) - m).to(self.device)
         xm_init = m * state.x
         inputs = (xm_init, state.v)
         s, t, q = self._call_xnet(step, inputs, first=first)
@@ -860,8 +874,8 @@ class Dynamics(nn.Module):
             first: bool,
     ) -> tuple[State, Tensor]:
         """Update the position in the backward direction."""
-        eps = self.xeps[str(step)]
-        mb = torch.ones_like(m) - m
+        eps = self.xeps[str(step)]  # .clamp_(0., 1.)
+        mb = (torch.ones_like(m) - m).to(self.device)
         xm_init = m * state.x
         inputs = (xm_init, state.v)
         s, t, q = self._call_xnet(step, inputs, first=first)
@@ -914,9 +928,10 @@ class Dynamics(nn.Module):
             # create_graph: bool = True,
     ) -> Tensor:
         """Compute the gradient of the potential function."""
+        x = x.to(self.device)
         x.requires_grad_(True)
         s = self.potential_energy(x, beta)
-        id = torch.ones(x.shape[0], device=x.device)
+        id = torch.ones(x.shape[0], device=self.device)
         dsdx, = torch.autograd.grad(s, x,
                                     # create_graph=create_graph,
                                     # retain_graph=True,
