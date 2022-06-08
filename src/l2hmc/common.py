@@ -252,7 +252,7 @@ def plot_dataset(
 def analyze_dataset(
         dataset: xr.Dataset,
         outdir: os.PathLike,
-        nchains: int = 16,
+        nchains: Optional[int] = 16,
         title: Optional[str] = None,
         job_type: Optional[str] = None,
         save: Optional[bool] = True,
@@ -299,7 +299,7 @@ def analyze_dataset(
 def save_and_analyze_data(
         dataset: xr.Dataset,
         outdir: os.PathLike,
-        nchains: int = 16,
+        nchains: Optional[int] = None,
         run: Optional[Any] = None,
         output: Optional[dict] = None,
         job_type: Optional[str] = None,
