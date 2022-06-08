@@ -58,7 +58,8 @@ def evaluate(
                           nchains=nchains,
                           job_type=job_type,
                           eps=eps,
-                          nsteps=nsteps)
+                          nleapfrog=nsteps)
+
     dataset = output['history'].get_dataset(therm_frac=therm_frac)
 
     if run is not None:
