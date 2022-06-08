@@ -250,10 +250,10 @@ class Dynamics(nn.Module):
     def apply_transition_hmc(
             self,
             inputs: tuple[Tensor, Tensor],  # x, beta
-            eps: float,
-            nsteps: Optional[int] = None,
+            eps: Optional[float] = None,
+            nleapfrog: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
-        data = self.generate_proposal_hmc(inputs, eps=eps, nsteps=nsteps)
+        data = self.generate_proposal_hmc(inputs, eps=eps, nleapfrog=nleapfrog)
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
         ma_ = ma_.to(inputs[0].device)
         mr_ = mr_.to(inputs[0].device)
@@ -397,8 +397,8 @@ class Dynamics(nn.Module):
     def generate_proposal_hmc(
             self,
             inputs: tuple[Tensor, Tensor],  # x, beta
-            eps: float,
-            nsteps: Optional[int] = None,
+            eps: Optional[float] = None,
+            nleapfrog: Optional[int] = None,
     ) -> dict:
         x, beta = inputs
         # v = torch.randn_like(x).to(x.device)
@@ -407,11 +407,11 @@ class Dynamics(nn.Module):
         # v = v.reshape_as(x).to(x.device)
 
         init = State(x=x, v=v, beta=beta)
-        nsteps = 2 * self.nlf if self.config.merge_directions else self.nlf
+        nleapfrog = 2 * self.nlf if self.config.merge_directions else self.nlf
         proposed, metrics = self.transition_kernel_hmc(
             init,
             eps=eps,
-            nsteps=nsteps
+            nleapfrog=nleapfrog
         )
 
         return {'init': init, 'proposed': proposed, 'metrics': metrics}
@@ -482,8 +482,9 @@ class Dynamics(nn.Module):
     def leapfrog_hmc(
             self,
             state: State,
-            eps: float,
+            eps: Optional[float] = None,
     ) -> State:
+        eps = self.config.eps if eps is None else eps
         x_ = state.x.reshape_as(state.v)
         force1 = self.grad_potential(x_, state.beta)       # f = dU / dx
         v1 = state.v - 0.5 * eps * force1                  # v -= ½ veps * f
@@ -497,29 +498,23 @@ class Dynamics(nn.Module):
             self,
             state: State,
             eps: Optional[float] = None,
-            nsteps: Optional[int] = None,
+            nleapfrog: Optional[int] = None,
     ) -> tuple[State, dict]:
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = torch.zeros(state.x.shape[0],
                                 dtype=state.x.real.dtype,
                                 device=state.x.device)
         history = {}
-        if self.config.verbose:
-            history = self.update_history(
-                self.get_metrics(state_, sumlogdet),
-                history=history,
-            )
-
-        nsteps = self.config.nleapfrog if nsteps is None else nsteps
+        nleapfrog = self.config.nleapfrog if nleapfrog is None else nleapfrog
         if self.config.merge_directions:
-            nsteps = 2 * self.config.nleapfrog if nsteps is None else nsteps
+            nleapfrog = 2 * self.config.nleapfrog if nleapfrog is None else nleapfrog
         else:
-            nsteps = self.config.nleapfrog if nsteps is None else nsteps
+            nleapfrog = self.config.nleapfrog if nleapfrog is None else nleapfrog
 
-        if eps is None:
-            eps = 1. / nsteps
+        eps = self.config.eps_hmc if eps is None else eps
+        nleapfrog = self.config.nleapfrog if nleapfrog is None else nleapfrog
 
-        for _ in range(nsteps):
+        for _ in range(nleapfrog):
             state_ = self.leapfrog_hmc(state_, eps=eps)
             if self.config.verbose:
                 history = self.update_history(
@@ -569,6 +564,7 @@ class Dynamics(nn.Module):
             state_, logdet = self._backward_lf(step, state_)
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
+                # Reverse step count to correctly order metrics at each step
                 step = self.config.nleapfrog - step - 1
                 history = self.update_history(
                     self.get_metrics(state_, sumlogdet, step=step),
@@ -839,18 +835,21 @@ class Dynamics(nn.Module):
         q = eps * q
         exp_s = torch.exp(s)
         exp_q = torch.exp(q)
-        if isinstance(self.g, g.U1Phase) and self.config.use_ncp:
-            halfx = state.x / 2.
-            _x = 2. * (halfx.tan() * exp_s).atan()
-            # _x = 2. * torch.atan(torch.tan(halfx) * exp_s)
-            xp = _x + eps * (state.v * exp_q + t)
-            xf = xm_init + (mb * xp)
-            # cterm = torch.cos(halfx) ** 2
-            cterm = halfx.cos().square()
-            sterm = (exp_s * halfx.sin()).square()
-            logdet_ = (exp_s / (cterm + sterm)).log()
-            # logdet_ = torch.log(exp_s / (cterm + sterm))
-            logdet = (mb * logdet_).sum(dim=1)
+        if isinstance(self.g, g.U1Phase):
+            if self.config.use_ncp:
+                halfx = state.x / 2.
+                _x = 2. * (halfx.tan() * exp_s).atan()
+                xp = _x + eps * (state.v * exp_q + t)
+                xf = xm_init + (mb * xp)
+                cterm = halfx.cos().square()
+                sterm = (exp_s * halfx.sin()).square()
+                logdet_ = (exp_s / (cterm + sterm)).log()
+                logdet = (mb * logdet_).sum(dim=1)
+            else:
+                xp = state.x * exp_s + eps * (state.v * exp_q + t)
+                xf = xm_init + (mb * xp)
+                logdet = (mb * s).sum(dim=1)
+
         elif isinstance(self.g, g.SU3):
             x = self.g.group_to_vec(state.x)
             v = self.g.group_to_vec(state.v)
@@ -883,18 +882,23 @@ class Dynamics(nn.Module):
         q = eps * q
         exp_s = torch.exp(s)
         exp_q = torch.exp(q)
-        if self.config.use_ncp:
-            halfx = state.x / 2.
-            halfx_scale = exp_s * torch.tan(halfx)
-            x1 = 2. * torch.atan(halfx_scale)
-            x2 = exp_s * eps * (state.v * exp_q + t)
-            xnew = x1 - x2
-            xb = xm_init + (mb * xnew)
+        if isinstance(self.g, g.U1Phase):
+            if self.config.use_ncp:
+                halfx = state.x / 2.
+                halfx_scale = exp_s * halfx.tan()
+                x1 = 2. * halfx_scale.atan()
+                x2 = exp_s * eps * (state.v * exp_q + t)
+                xnew = x1 - x2
+                xb = xm_init + (mb * xnew)
 
-            cterm = torch.cos(halfx) ** 2
-            sterm = (exp_s * torch.sin(halfx)) ** 2
-            logdet_ = torch.log(exp_s / (cterm + sterm))
-            logdet = (mb * logdet_).sum(dim=1)
+                cterm = halfx.cos() ** 2
+                sterm = (exp_s * halfx.sin()) ** 2
+                logdet_ = (exp_s / (cterm + sterm)).log()
+                logdet = (mb * logdet_).sum(dim=1)
+            else:
+                xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
+                xb = xm_init + (mb * xnew)
+                logdet = (mb * s).sum(dim=1)
         elif isinstance(self.g, g.SU3):
             xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
             xb = xm_init + (mb * xnew)
