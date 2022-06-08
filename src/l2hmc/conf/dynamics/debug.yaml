@@ -5,6 +5,7 @@ nchains: 64
 latvolume: [8, 8]
 # xshape: [64, 8, 8]
 eps: 0.1
+eps_hmc: null
 nleapfrog: 3
 eps_fixed: false
 use_ncp: true

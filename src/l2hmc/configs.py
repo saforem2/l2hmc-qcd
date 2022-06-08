@@ -312,6 +312,7 @@ class DynamicsConfig(BaseConfig):
     # xshape: List[int]
     nleapfrog: int
     eps: float = 0.01
+    eps_hmc: float = 0.01
     use_ncp: bool = True
     verbose: bool = False
     eps_fixed: bool = False
@@ -321,6 +322,9 @@ class DynamicsConfig(BaseConfig):
 
     def __post_init__(self):
         assert self.group.upper() in ['U1', 'SU3']
+        if self.eps_hmc is None:
+            # if not specified, use a trajectory length of 1
+            self.eps_hmc = 1.0 / self.nleapfrog
         if self.group.upper() == 'U1':
             self.dim = 2
             self.nt, self.nx = self.latvolume
@@ -446,7 +450,6 @@ class ExperimentConfig:
     width: Optional[int] = None
     nchains: Optional[int] = None
     profile: Optional[bool] = False
-    eps_hmc: Optional[float] = 0.1181
     debug_mode: Optional[bool] = False
     default_mode: Optional[bool] = True
     print_config: Optional[bool] = True
