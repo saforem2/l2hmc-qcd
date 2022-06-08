@@ -90,12 +90,10 @@ HVD_FP_MAP = {
 
 def reset_optimizer(optimizer: Optimizer):
     """Reset optimizer states when changing beta during training."""
-    # --------------------------------------------------------------
     # NOTE: We don't want to reset iteration counter. From tf docs:
     # > The first value is always the iterations count of the optimizer,
     # > followed by the optimizer's state variables in the order they are
     # > created.
-    # --------------------------------------------------------------
     weight_shapes = [x.shape for x in optimizer.get_weights()[1:]]
     optimizer.set_weights([
         tf.zeros_like(x) for x in weight_shapes
@@ -103,8 +101,8 @@ def reset_optimizer(optimizer: Optimizer):
     return optimizer
 
 
+# TODO: Replace arguments in __init__ call below with configs.TrainerConfig
 class Trainer:
-    # TODO: Replace arguments in __init__ call below with configs.TrainerConfig
     def __init__(
             self,
             steps: Steps,
@@ -161,22 +159,20 @@ class Trainer:
         self.histories = {
             'train': self.history,
             'eval': History(),
-            'hmc': History(),
+            'hmc': History()
         }
         self.timers = {
             'train': self.timer,
             'eval': StepTimer(evals_per_step=evals_per_step),
-            'hmc': StepTimer(evals_per_step=evals_per_step),
+            'hmc': StepTimer(evals_per_step=evals_per_step)
         }
 
     def draw_x(self, shape: Optional[list[int]] = None) -> Tensor:
         """Draw `x` """
         shape = list(self.dynamics.xshape) if shape is None else shape
         x = self.dynamics.g.random(shape)
-        # x = tf.random.uniform(shape, *(-4, 4), dtype=TF_FLOAT)
         x = tf.reshape(x, (x.shape[0], -1))
 
-        # return to_u1(x)
         return x
 
     def reset_optimizer(self) -> None:
@@ -515,7 +511,11 @@ class Trainer:
                                                           acc=metrics_['acc'])
                 loss = (loss + aux_loss) / (1. + self.aux_weight)
 
-        tape = hvd.DistributedGradientTape(tape, compression=self.compression)
+        tape = hvd.DistributedGradientTape(tape)
+        # tape = hvd.DistributedGradientTape(
+        #     tape,
+        #     compression=self.compression
+        # )
         grads = tape.gradient(loss, self.dynamics.trainable_variables)
         if should_clip:
             grads = [
@@ -595,8 +595,7 @@ class Trainer:
             skip: Optional[str | list[str]] = None,
             train_dir: Optional[os.PathLike] = None,
             run: Optional[Any] = None,
-            writer: Optional[Any] = None,
-            extend_last_era: Optional[bool] = True,
+            writer: Optional[Any] = None
     ) -> dict:
         """Train l2hmc Dynamics."""
         if isinstance(skip, str):
@@ -620,40 +619,46 @@ class Trainer:
 
         era = 0
         epoch = 0
-        tables = {}
         rows = {}
+        tables = {}
         metrics = {}
         summaries = []
+        table = Table(expand=True)
+        nepoch = self.steps.nepoch
         timer = self.timers['train']
         history = self.histories['train']
+        extend = self.steps.extend_last_era
+        nepoch_last_era = self.steps.nepoch
         record = {'era': 0, 'epoch': 0, 'beta': 0.0, 'dt': 0.0}
-        table = Table(expand=True)
+        if extend is not None and isinstance(extend, int) and extend > 1:
+            nepoch_last_era *= extend
+
         estart = time.time()
         for era in range(self.steps.nera):
             beta = tf.constant(self.schedule.betas[str(era)])
-            # --- Reset optimizer states when changing beta -----------
-            if beta != self.schedule.betas[str(0)]:
-                self.reset_optimizer()
-
-            # ---- Setup Table for storing metrics ---------------------
             table = Table(
                 box=box.HORIZONTALS,
                 row_styles=['dim', 'none'],
             )
 
-            if extend_last_era and era == self.steps.nera - 1:
-                nepoch = 2 * self.steps.nepoch
+            if self.rank == 0:
+                ctxmgr = Live(table,
+                              console=console,
+                              vertical_overflow='visible')
             else:
-                nepoch = self.steps.nepoch
+                ctxmgr = nullcontext()
 
-            with (
-                    Live(table, console=console) if self.rank == 0
-                    else nullcontext()
-            ) as live:
+            if era == self.steps.nera - 1:
+                nepoch = nepoch_last_era
+
+            with ctxmgr as live:
                 if live is not None:
-                    tstr = f'ERA: {era}/{self.steps.nera} BETA: {beta.numpy()}'
-                    live.console.clear_live()
+                    tstr = ' '.join([
+                        f'ERA: {era}/{self.steps.nera}',
+                        f'BETA: {beta.numpy():.3f}',
+                    ])
                     live.console.rule(tstr)
+                    live.console
                     live.update(table)
 
                 estart = time.time()
@@ -709,8 +714,8 @@ class Trainer:
                             f'Era {era} took: {time.time() - estart:<5g}s'
                         )
                         live.console.log(
-                            f'Checkpoint saved to: {manager.latest_checkpoint} '
-                            f'in {time.time() - st0:<5f}s'
+                            f'Checkpoint saved to: {manager.latest_checkpoint}'
+                            f' in {time.time() - st0:<5f}s'
                         )
 
         return {
@@ -733,9 +738,6 @@ class LiveTrainer(Trainer):
             train_dir: Optional[os.PathLike] = None,
             run: Optional[Any] = None,
             writer: Optional[Any] = None,
-            # compile: bool = True,
-            # jit_compile: bool = False,
-            # save_x: bool = False,
     ) -> dict:
         """Train l2hmc Dynamics."""
         if isinstance(skip, str):
@@ -1015,4 +1017,3 @@ class LiveTrainer(Trainer):
             'summaries': summaries,
             'tables': tables,
         }
-
