@@ -37,7 +37,7 @@ def evaluate(
         run: Optional[Any] = None,
         nchains: Optional[int] = None,
         eps: Optional[float] = None,
-        nsteps: Optional[int] = None,
+        nleapfrog: Optional[int] = None,
 ) -> dict:
     """Evaluate model (nested as `trainer.model`)"""
     therm_frac = cfg.get('therm_frac', 0.2)
@@ -57,7 +57,7 @@ def evaluate(
         nchains=nchains,
         job_type=job_type,
         eps=eps,
-        nsteps=nsteps
+        nleapfrog=nleapfrog
     )
     dataset = output['history'].get_dataset(therm_frac=therm_frac)
     if run is not None:
