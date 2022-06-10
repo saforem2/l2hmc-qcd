@@ -14,6 +14,7 @@ from omegaconf import DictConfig
 import torch
 from torch.utils.tensorboard.writer import SummaryWriter
 import wandb
+from l2hmc.common import save_and_analyze_data
 
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.experiment.experiment import BaseExperiment
@@ -197,7 +198,72 @@ class Experiment(BaseExperiment):
         jobdir = self.get_jobdir(job_type='train')  # noqa:F481 type:ignore
         if run is not None:
             assert run.isinstance(wandb.run)
-        pass
 
-    def evaluate(self):
-        pass
+        writer = None
+        if self.trainer.rank == 0:
+            writer = self.get_summary_writer(job_type='train')
+
+        output = self.trainer.train(run=run, writer=writer, train_dir=jobdir)
+        if self.trainer.rank == 0:
+            dset = output['history'].get_dataset()
+            nchains = int(
+                min(self.cfg.dynamics.nchains, max(16, self.cfg.dynamics.nchains // 8))
+            )
+            _ = save_and_analyze_data(dset,
+                                      run=run,
+                                      outdir=jobdir,
+                                      output=output,
+                                      nchains=nchains,
+                                      job_type='train',
+                                      framework='pytorch')
+
+        if writer is not None:
+            writer.close()
+
+        return output
+
+
+    def evaluate(
+            self,
+            job_type: str,
+            run: Optional[Any] = None,
+            therm_frac: float = 0.1,
+            nchains: Optional[int] = None,
+            eps: Optional[float] = None,
+            nleapfrog: Optional[int] = None,
+    ):
+        """Evaluate model."""
+        assert job_type in ['eval', 'hmc']
+        jobdir = self.get_jobdir(job_type)
+        if self.trainer.rank == 0:
+            writer = self.get_summary_writer(job_type)
+        else:
+            writer = None
+
+        output = self.trainer.eval(
+            run=self.run,
+            writer=writer,
+            nchains=nchains,
+            job_type=job_type,
+            eps=eps,
+            nleapfrog=nleapfrog,
+        )
+        dataset = output['history'].get_dataset(therm_frac=therm_frac)
+        if run is not None:
+            dQint = dataset.data_vars.get('dQint').values
+            drop = int(0.1 * len(dQint))
+            dQint = dQint[drop:]
+            run.summary[f'dQint_{job_type}'] = dQint
+            run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
+
+        _ = save_and_analyze_data(
+            dataset,
+            run=run,
+            outdir=jobdir,
+            output=output,
+            nchains=nchains,
+            job_type=job_type,
+            framework='pytorch',
+        )
+
+        return output
