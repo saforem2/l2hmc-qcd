@@ -132,8 +132,8 @@ class Dynamics(Model):
 
     def random_state(self, beta: float = 1.) -> State:
         """Returns a random State."""
-        x = self.flatten(self.g.random(list(self.xshape)))
-        v = self.flatten(self.g.random_momentum(list(self.xshape)))
+        x = self.g.random(list(self.xshape))
+        v = self.g.random_momentum(list(self.xshape))
         return State(x=x, v=v, beta=tf.constant(beta))
 
     def test_reversibility(self) -> dict[str, Tensor]:
@@ -169,7 +169,7 @@ class Dynamics(Model):
 
         # vout = ma * data['proposed'].v + mr * data['init'].v
         # xout = ma * data['proposed'].x + mr * data['init'].x
-        sumlogdet = ma_ * data['metrics']['sumlogdet']
+        sumlogdet = tf.math.real(ma_) * data['metrics']['sumlogdet']
         state_out = State(x=xout, v=vout, beta=data['init'].beta)
         mc_states = MonteCarloStates(init=data['init'],
                                      proposed=data['proposed'],
@@ -379,12 +379,12 @@ class Dynamics(Model):
         x = tf.reshape(state.x, state.v.shape)
         force1 = self.grad_potential(x, state.beta)        # f = dU / dx
         # dt = tf.cast(eps, dtype=force1.dtype)
-        halfeps = tf.constant(0.5 * eps)
-        v1 = state.v - halfeps * force1                    # v -= ½ veps * f
+        # halfeps = tf.constant(0.5 * eps, dtype=state.v.dtype)
+        v1 = state.v - tf.multiply(0.5 * eps, force1)
         # xp = x + dt * v1                                 # x += xeps * v
         xp = self.g.update_gauge(x, eps * v1)              # x += eps * v
         force2 = self.grad_potential(xp, state.beta)       # calc force, again
-        v2 = v1 - halfeps * force2                         # v -= ½ veps * f
+        v2 = v1 - tf.multiply(0.5 * eps, force2)           # v -= ½ veps * f
         return State(x=xp, v=v2, beta=state.beta)          # output: (x', v')
 
     def transition_kernel_hmc(
@@ -409,7 +409,8 @@ class Dynamics(Model):
         else:
             nleapfrog = self.config.nleapfrog if nleapfrog is None else nleapfrog
 
-        eps = (1. / nleapfrog) if eps is None else eps
+        # eps = (1. / nleapfrog) if eps is None else eps
+        eps = self.config.eps_hmc if eps is None else eps
         for _ in range(nleapfrog):
             state_ = self.leapfrog_hmc(state_, eps=eps)
             if self.config.verbose:
