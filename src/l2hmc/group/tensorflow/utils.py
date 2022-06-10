@@ -180,15 +180,19 @@ def projectSU(x: Tensor) -> Tensor:
     nc = tf.constant(x.shape[-1], TF_FLOAT)
     m = projectU(x)
     d = tf.linalg.det(m)
-    tmp = tf.math.atan2(tf.math.imag(d), tf.math.real(d))
-    p = tmp * tf.constant(-1.0) / nc
+    # tmp = tf.math.atan2(tf.math.imag(d), tf.math.real(d))
+    p = (1.0 / (-nc)) * tf.math.atan2(tf.math.imag(d), tf.math.real(d))
+    return m * tf.reshape(
+        tf.complex(tf.math.cos(p), tf.math.sin(p)),
+        p.shape + [1, 1]
+    )
+    # p = tmp * tf.constant(-1.0) / nc
     # p = -(1.0 / nc) * tf.math.atan2(tf.math.imag(d), tf.math.real(d))
     # p = tf.math.multiply(tf.math.negative(tf.constant(1.0) / nc),
     #                      tf.math.atan2(tf.math.imag(d), tf.math.real(d)))
-    pr = tf.math.real(p)
-    pi = tf.math.imag(p)
-    p_ = tf.reshape(tf.dtypes.complex(pr, pi), p.shape + [1, 1])
-    return p_ * m
+    # pr = tf.math.real(p)
+    # pi = tf.math.imag(p)
+    # p_ = tf.reshape(tf.dtypes.complex(pr, pi), p.shape + [1, 1])
 
 
 def projectTAH(x: Tensor) -> Tensor:
@@ -206,7 +210,7 @@ def projectTAH(x: Tensor) -> Tensor:
 
 def checkU(x: Tensor) -> tuple[Tensor, Tensor]:
     """Returns the average and maximum of the sum of the deviations of X†X"""
-    nc = tf.constant(x.shape[-1])
+    nc = tf.constant(x.shape[-1], dtype=TF_FLOAT)
     d = norm2(tf.linalg.matmul(x, x, adjoint_a=True) - eyeOf(x))
     a = tf.math.reduce_mean(d, axis=range(1, len(d.shape)))
     b = tf.math.reduce_max(d, axis=range(1, len(d.shape)))
@@ -221,15 +225,12 @@ def checkSU(x: Tensor) -> tuple[Tensor, Tensor]:
          - det(x)
     from unitarity
     """
-    nc = tf.constant(x.shape[-1])
+    nc = tf.constant(x.shape[-1], dtype=TF_FLOAT)
     d = norm2(tf.linalg.matmul(x, x, adjoint_a=True) - eyeOf(x))
-    det = tf.linalg.det(x)
-    d = tf.math.add(d, norm2(tf.constant(1., dtype=det.dtype) + det, axis=[]))
-    # d = tf.math.add(d, norm2(tf.constant(1.) + tf.linalg.det(x), axis=[]))
-    # d += norm2(-1 + tf.linalg.det(x), axis=[])
+    d += norm2(-1 + tf.linalg.det(x), axis=[])  # type: ignore
     a = tf.math.reduce_mean(d, axis=range(1, len(d.shape)))
     b = tf.math.reduce_max(d, axis=range(1, len(d.shape)))
-    c = tf.cast(2 * (nc * nc + 1), tf.math.real(x).dtype)
+    c = 2.0 * (nc * nc + 1)
     return tf.math.sqrt(a / c), tf.math.sqrt(b / c)
 
 
@@ -313,14 +314,6 @@ def exp(m: Tensor, order: int = 12):
         x = eye + tf.linalg.matmul(m, x) / tf.constant(tf.cast(i, m.dtype))
 
     return x
-
-# def exp(m, order=12):
-#     eye = eyeOf(m)
-#     x = eye + 1.0/order * m
-#     for i in tf.range(order-1, 0, -1):
-#         x = eye + 1.0/tf.cast(i,m.dtype)*tf.linalg.matmul(m,x)
-#     return x
-
 
 
 def su3fabc(v: tf.Tensor) -> Tensor:
@@ -551,22 +544,30 @@ def diffexp(adX: Tensor, order: int = 13) -> Tensor:
     return x
 
 
-def SU3GradientTF(f: Callable, x: Tensor) -> tuple[Tensor, Tensor]:
-    """
-    Compute gradient using TensorFlow GradientTape.
-    f(x) must be a real scalar value.
-    Returns (f(x),D), where D = T^a D^a = T^a ∂_a f(x)
-    Use real vector derivatives.
-    D^a = ∂_a f(x)
-        = ∂_t f(exp(t T^a) x) |_t=0
-    """
-    v = tf.zeros(8, dtype=tf.float64)
-    with tf.GradientTape(watch_accessed_variables=False) as t:
-        t.watch(v)
-        r = f(tf.linalg.matmul(exp(vec_to_su3(v)),x))
-    d = t.gradient(r, v)
-    return r, d
+def SU3GradientTF(
+        f: Callable[[Tensor], Tensor],
+        x: Tensor,
+) -> tuple[Tensor, Tensor]:
+    """Compute gradient using TensorFlow GradientTape.
 
+    y = f(x) must be a real scalar value.
+
+    Returns:
+      - (f(x), D), where D = T^a D^a = T^a ∂_a f(x)
+
+    NOTE: Use real vector derivatives, e.g.
+      D^a = ∂_a f(x)
+          = ∂_t f(exp(T^a) x) |_{t=0}
+    """
+    zeros = tf.zeros(8)
+    # v = tf.zeros(8, dtype=tf.float64)
+    with tf.GradientTape(watch_accessed_variables=False) as tape:
+        tape.watch(zeros)
+        y = f(tf.linalg.matmul(tf.linalg.expm(vec_to_su3(zeros)), x))
+        # r = f(tf.linalg.matmul(exp(vec_to_su3(v)),x))
+    d = tape.gradient(y, zeros)
+
+    return y, d
 
 def SU3GradientTFMat(f: Callable, x: Tensor) -> tuple[Tensor, Tensor]:
     """
@@ -652,3 +653,5 @@ def SU3JacobianTFMat(f, x, is_SU3=True):
     jzx = t.jacobian(z, x, experimental_use_pfor=False)
     tj = tf.math.real(tf.einsum('aik,kj,bij->ba', su3gen(), x, tf.math.conj(jzx)))
     return Z, tj
+
+

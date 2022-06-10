@@ -16,7 +16,9 @@ from l2hmc.group.pytorch.utils import (
     randTAH3,
     norm2,
     vec_to_su3,
-    su3_to_vec
+    su3_to_vec,
+    checkU,
+    checkSU,
 )
 
 from typing import Callable
@@ -160,6 +162,12 @@ class SU3(Group):
     ) -> Tensor:
         return self.mul(self.exp(p), x)
 
+    def checkSU(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        return checkSU(x)
+
+    def checkU(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        return checkU(x)
+
     def mul(
         self,
         a: Tensor,
@@ -208,14 +216,20 @@ class SU3(Group):
         return B
 
     def compat_proj(self, x: Tensor) -> Tensor:
+        """Arbitrary matrix C projects to skew-hermitian B := (C - C^H) / 2
+
+        Make traceless with tr(B - (tr(B) / N) * I) = tr(B) - tr(B) = 0
+        """
         return projectSU(x)
 
     def random(self, shape: list[int]) -> Tensor:
+        """Returns (batched) random SU(3) matrices."""
         r = torch.randn(shape)
         i = torch.randn(shape)
         return projectSU(torch.complex(r, i))
 
     def random_momentum(self, shape: list[int]) -> Tensor:
+        """Returns (batched) Traceless Anti-Hermitian matrices"""
         return randTAH3(shape[:-2])
 
     def kinetic_energy(self, p: Tensor) -> Tensor:
