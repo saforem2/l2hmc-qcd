@@ -505,15 +505,22 @@ class Dynamics(nn.Module):
                                 dtype=state.x.real.dtype,
                                 device=state.x.device)
         history = {}
-        nleapfrog = self.config.nleapfrog if nleapfrog is None else nleapfrog
+        if self.config.verbose:
+            history = self.update_history(
+                self.get_metrics(state_, sumlogdet),
+                history=history,
+            )
         if self.config.merge_directions:
             nleapfrog = 2 * self.config.nleapfrog if nleapfrog is None else nleapfrog
         else:
             nleapfrog = self.config.nleapfrog if nleapfrog is None else nleapfrog
 
         eps = self.config.eps_hmc if eps is None else eps
-        nleapfrog = self.config.nleapfrog if nleapfrog is None else nleapfrog
-
+        if isinstance(self.g, g.SU3) and nleapfrog > 32:
+            log.info(' '.join([
+                f'Generating trajectory of length:',
+                f'{eps * nleapfrog:.3f} = {eps:.2f} * {nleapfrog}',
+            ]))
         for _ in range(nleapfrog):
             state_ = self.leapfrog_hmc(state_, eps=eps)
             if self.config.verbose:
