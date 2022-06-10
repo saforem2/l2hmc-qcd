@@ -193,13 +193,8 @@ def projectSU(x: Tensor) -> Tensor:
     nc = x.shape[-1]
     m = projectU(x)
     d = m.det().to(x.dtype)
-    tmp = torch.atan2(d.imag, d.real)
-    p = tmp * (1.0 / (-nc))
-    p_ = torch.complex(p.cos(), p.sin()).reshape(p.shape + (1, 1))
-    # p_ = torch.complex(p.real, p.imag).reshape(p.shape + (1, 1))
-    # p_ = torch.complex(p.real, p.imag).reshape(p.shape + (1, 1))
-
-    return p_ * m
+    p = (1.0 / (-nc)) * torch.atan2(d.imag, d.real)
+    return m * torch.complex(p.cos(), p.sin()).reshape(list(p.shape) + [1, 1])
 
 
 def projectTAH(x: Tensor) -> Tensor:
@@ -233,14 +228,12 @@ def checkSU(x: Tensor) -> tuple[Tensor, Tensor]:
     from unitarity
     """
     nc = torch.tensor(x.shape[-1]).to(x.dtype)
-    d = norm2(torch.matmul(x.adjoint(), x) - eyeOf(x))
-    det = x.det()
-    d = d + norm2(torch.ones_like(det) + det, axis=[])
-    range_ = tuple(range(1, len(d.shape)))
-    a = d.mean(range_)
-    b = d.amax(range_)
-    # b = d.max(tuple(range(1, len(d.shape))))
-    c = (2 * (nc * nc + 1)).real  # .to(x.real.dtype)
+    d = norm2(x.adjoint() @ x - eyeOf(x))
+    d += norm2(-1 + x.det(), axis=[])
+    a = d.mean(*range(1, len(d.shape)))
+    b = d.max(*range(1, len(d.shape)))
+    c = 2 * (nc * nc + 1)
+
     return (a / c).sqrt(), (b / c).sqrt()
 
 

@@ -22,6 +22,8 @@ from typing import Callable
 from l2hmc.group.tensorflow.utils import (
     projectTAH,
     projectSU,
+    checkU,
+    checkSU,
     randTAH3,
     norm2,
     vec_to_su3,
@@ -119,7 +121,14 @@ class SU3(Group):
             x: Tensor,
             p: Tensor,
     ) -> Tensor:
-        return self.mul(self.exp(p), x)
+        # return self.mul(self.exp(p), x)
+        return tf.linalg.expm(p) @ x
+
+    def checkSU(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        return checkSU(x)
+
+    def checkU(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        return checkU(x)
 
     def mul(
             self,
@@ -159,52 +168,37 @@ class SU3(Group):
     def random(self, shape: list[int]) -> Tensor:
         r = tf.random.normal(shape, dtype=TF_FLOAT)
         i = tf.random.normal(shape, dtype=TF_FLOAT)
-        return projectSU(tf.dtypes.complex(r, i))
+        # return self.compat_proj(tf.dtypes.complex(r, i))
+        return projectSU(tf.complex(r, i))
 
     def random_momentum(self, shape: list[int]) -> Tensor:
         return randTAH3(shape[:-2])
 
     def kinetic_energy(self, p: Tensor) -> Tensor:
-        p2 = norm2(p) - tf.constant(8.0)  # - 8.0 ??
+        p2 = norm2(p) - tf.constant(8.0)
         return (
             0.5 * tf.math.reduce_sum(
                 tf.reshape(p2, [p.shape[0], -1]), axis=1
             )
         )
-        # return 0.5 * tf.reduce_sum(
-        #     tf.math.real(tf.linalg.matmul(tf.math.conj(p), p)),
-        #     axis=1
-        # )
-        # return 0.5 * (norm2(p) - 8.0)
 
     def vec_to_group(self, x: Tensor) -> Tensor:
+        """
+        Returns batched SU(3) matrices.
+
+        X = X^a T^a
+        tr{X T^b} = X^a tr{T^a T^b} = X^a (-1/2) 𝛅^{ab} = -1/2 X^b
+        X^a = -2 X_ij T^a_ji
+        """
         return vec_to_su3(x)
 
     def group_to_vec(self, x: Tensor) -> Tensor:
+        """
+        Returns (batched) 8 real numbers,
+        X^a T^a = X - 1/3 tr(X)
+
+        Convention:
+            tr{T^a T^a} = -1/2
+            X^a = - 2 tr[T^a X]
+        """
         return su3_to_vec(x)
-
-
-def SU3GradientTF(
-        f: Callable[[Tensor], Tensor],
-        x: Tensor,
-) -> tuple[Tensor, Tensor]:
-    """Compute gradient using TensorFlow GradientTape.
-
-    y = f(x) must be a real scalar value.
-
-    Returns:
-      - (f(x), D), where D = T^a D^a = T^a ∂_a f(x)
-
-    NOTE: Use real vector derivatives, e.g.
-      D^a = ∂_a f(x)
-          = ∂_t f(exp(T^a) x) |_{t=0}
-    """
-    zeros = tf.zeros(8)
-    with tf.GradientTape(watch_accessed_variables=False) as tape:
-        tape.watch(zeros)
-        y = f(tf.linalg.matmul(tf.linalg.expm(vec_to_su3(zeros)), x))
-        # y = f(tf.linalg.matmul(exp(vec_to_su3(zeros)), x))
-        # y = f(tf.linalg.matmul(exp(su3fromvec(zeros)), x))
-    d = tape.gradient(y, zeros)
-
-    return y, d
