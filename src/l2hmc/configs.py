@@ -473,6 +473,28 @@ class ExperimentConfig:
         log.warning(f'latvolume: {self.dynamics.latvolume}')
 
 
+def get_experiment(overrides: Optional[list[str]] = None):
+    from hydra import (
+        # initialize,
+        # initialize_config_module,
+        initialize_config_dir,
+        compose
+    )
+    from hydra.core.global_hydra import GlobalHydra
+    GlobalHydra.instance().clear()
+    overrides = [] if overrides is None else overrides
+    with initialize_config_dir(CONF_DIR.absolute().as_posix()):
+        cfg = compose('config', overrides=overrides)
+
+    if cfg.framework == 'pytorch':
+        from l2hmc.experiment.pytorch.experiment import Experiment
+        return Experiment(cfg)
+    elif cfg.framework == 'tensorflow':
+        from l2hmc.experiment.tensorflow.experiment import Experiment
+        return Experiment(cfg)
+    else:
+        raise ValueError(f'Unexpected value for `cfg.framework: {cfg.framework}')
+
 defaults = [
     {'backend': MISSING}
 ]
