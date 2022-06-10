@@ -24,7 +24,7 @@ class BaseExperiment(ABC):
     def __init__(self, cfg: DictConfig) -> None:
         self.cfg = cfg
         self.config = instantiate(cfg)
-        assert isinstance(self.config, ExperimentConfig)
+        # assert isinstance(self.config, ExperimentConfig)
         assert self.config.framework in ['pytorch', 'tensorflow']
         self.lattice = self.build_lattice()
         self._is_built = False
@@ -152,7 +152,7 @@ class BaseExperiment(ABC):
         return run
 
     def get_jobdir(self, job_type: str) -> Path:
-        here = Path(self.config.get('outdir', os.getcwd()))
+        here = Path(self.cfg.get('outdir', os.getcwd()))
         jobdir = here.joinpath(job_type)
         jobdir.mkdir(exist_ok=True, parents=True)
         assert jobdir is not None
