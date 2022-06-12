@@ -60,6 +60,11 @@ def grab(x: Tensor) -> np.ndarray:
 
 
 class Trainer:
+    # TODO: Add methods for:
+    #   1. Saving / loading dynamics ? Or move to Experiment?
+    #   2. Saving / loading History objects w/ dynamics?
+    #   3. Resetting Timers + History
+    #   4. Plotting history / running analysis directly?
     def __init__(
             self,
             steps: Steps,
@@ -93,15 +98,10 @@ class Trainer:
         self.lr_config = lr_config
         self.keep = [keep] if isinstance(keep, str) else keep
         self.skip = [skip] if isinstance(skip, str) else skip
-        self._dynamics = extract_model_from_parallel(  # type: Module
-            self.dynamics
-        )
+        self._dynamics = self.accelerator.unwrap_model(self.dynamics)
         if dynamics_config is None:
-            dynamics_ = extract_model_from_parallel(self.dynamics)
-            cfg = dynamics_.config  # type: ignore
-
-            dynamics_config = DynamicsConfig(**asdict(cfg))
-
+            dynamics_config = self._dynamics.config
+        assert isinstance(dynamics_config, DynamicsConfig)
         self.nlf = dynamics_config.nleapfrog
         self.xshape = dynamics_config.xshape
         self.dynamics_config = dynamics_config
@@ -182,7 +182,7 @@ class Trainer:
         xi, beta = inputs
         xi = xi.to(self.device)
         beta = torch.tensor(beta).to(self.device)
-        xo, metrics = self.dynamics.apply_transition_hmc(
+        xo, metrics = self._dynamics.apply_transition_hmc(
             (xi, beta), eps=eps, nleapfrog=nleapfrog,
         )
         xp = metrics.pop('mc_states').proposed.x
@@ -194,14 +194,16 @@ class Trainer:
         metrics.update({'loss': loss.detach().cpu().numpy()})
         return xo.detach(), metrics
 
-    def eval_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
+    def eval_step(
+            self,
+            inputs: tuple[Tensor, float]
+    ) -> tuple[Tensor, dict]:
         self.dynamics.eval()
         xinit, beta = inputs
         xinit = xinit.to(self.device)
         xout, metrics = self.dynamics((xinit, beta))
-        # xout = self.g.compat_proj(xout)
+        xout = self.g.compat_proj(xout)
         xprop = metrics.pop('mc_states').proposed.x
-        # xprop = to_u1(metrics.pop('mc_states').proposed.x)
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
         if self.verbose:
             lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
@@ -233,14 +235,11 @@ class Trainer:
             beta = self.schedule.beta_final
 
         if x is None:
-            # if isinstance(self.g, g.U1Phase):
-            #     x = random_angle(self.xshape)
-            # else:
             x = self.g.random(list(self.xshape))
             x = x.reshape(x.shape[0], -1)
 
         if eps is None and str(job_type).lower() == 'hmc':
-            eps = 0.1
+            eps = self.dynamics_config.eps_hmc
             log.warn(
                 'Step size `eps` not specified for HMC! Using default: 0.1'
             )
@@ -253,11 +252,9 @@ class Trainer:
                 return self.hmc_step(z, eps=eps, nleapfrog=nleapfrog)
             return self.eval_step(z)
 
-        summaries = []
         tables = {}
         table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
-        # nprint = max((20, self.steps.test // 20))
-        nprint = max(1, self.steps.test // 20)
+        nprint = max(1, self.steps.test // 50)
         nlog = max((1, min((10, self.steps.test))))
         if nlog <= self.steps.test:
             nlog = min(10, max(1, self.steps.test // 100))
@@ -298,15 +295,11 @@ class Trainer:
                     if step == 0:
                         table = add_columns(avgs, table)
                     else:
-                        table.add_row(*[f'{v:5}' for _, v in avgs.items()])
-                        # live.console.log(table)
-                        # console.clear()
-                        # console.log(table)
-                        # console.log(summary)
+                        table.add_row(*[f'{v}' for _, v in avgs.items()])
 
                     if avgs.get('acc', 1.0) < 1e-5:
                         self.reset_optimizer()
-                        log.warning('Chains are stuck! Re-drawing x !')
+                        live.console.log('Chains are stuck! Redrawing x')
                         x = self.g.random(list(x.shape))
 
             # console.log(table)
