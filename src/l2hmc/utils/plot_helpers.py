@@ -42,8 +42,8 @@ plt.style.use('default')
 plt.rcParams.update({
     'image.cmap': 'viridis',
     'savefig.transparent': True,
-    'text.color': '#6f6f6f',
-    'axes.labelcolor': '#6f6f6f',
+    'text.color': '#9E9E9E',
+    'axes.labelcolor': '#9E9E9E',
     'xtick.color': '#6f6f6f04',
     'ytick.color': '#6f6f6f04',
     'ytick.labelcolor': '#6f6f6f',
@@ -705,8 +705,8 @@ def make_ridgeplots(
                 ax.set_yticks([])
                 ax.set_yticklabels([])
                 ax.text(0, 0.10, label, fontweight='bold', color=color,
-                        ha='left', va='center', transform=ax.transAxes,
-                        fontsize='small')
+                        ha='left', va='center', transform=ax.transAxes)
+                        #fontsize='small')
 
             _ = g.map(label, key)
             # Set the subplots to overlap
@@ -715,6 +715,7 @@ def make_ridgeplots(
             _ = g.set_titles('')
             _ = g.set(yticks=[])
             _ = g.set(yticklabels=[])
+            _ = g.set(xlabel=f'{key}')
             _ = g.despine(bottom=True, left=True)
             if outdir is not None:
                 outdir = Path(outdir)
