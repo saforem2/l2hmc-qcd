@@ -351,20 +351,19 @@ class Trainer:
     @tf.function(experimental_follow_type_hints=True, jit_compile=JIT_COMPILE)
     def eval_step(
             self,
-            inputs: tuple[Tensor, Tensor],
+            inputs: tuple[Tensor, Tensor],  # xinit, beta
     ) -> tuple[Tensor, dict]:
-        xo, metrics = self.dynamics(inputs, training=False)
-        # xo = to_u1(xo)
-        # xp = to_u1(metrics.pop('mc_states').proposed.x)
+        xout, metrics = self.dynamics(inputs, training=False)
+        xout = self.g.compat_proj(xout)
         xp = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=inputs[0], x_prop=xp, acc=metrics['acc'])
         if self.verbose:
-            lmetrics = self.loss_fn.lattice_metrics(xinit=inputs[0], xout=xo)
+            lmetrics = self.loss_fn.lattice_metrics(xinit=inputs[0], xout=xout)
             metrics.update(lmetrics)
 
         metrics.update({'loss': loss})
 
-        return xo, metrics
+        return xout, metrics
 
     def eval(
             self,
@@ -414,10 +413,8 @@ class Trainer:
         assert isinstance(x, Tensor)  # and x.dtype == TF_FLOAT
 
         tables = {}
-        rows = {}
         summaries = []
         table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
-        # nprint = max((20, self.steps.test // 20))
         nprint = max(1, self.steps.test // 20)
         nlog = max((1, min((10, self.steps.test))))
         if nlog <= self.steps.test:
@@ -440,7 +437,9 @@ class Trainer:
                 job_type: {'beta': beta, 'xshape': x.shape.as_list()}
             })
 
-        with Live(table) as live:
+        # with Live(table) as live:
+        with Live(console=console) as live:
+            live.update(table)
             for step in range(self.steps.test):
                 timer.start()
                 x, metrics = eval_fn((x, tf.constant(beta)))  # type: ignore
@@ -455,23 +454,22 @@ class Trainer:
                                                         writer=writer,
                                                         metrics=metrics,
                                                         job_type=job_type)
-                    rows[step] = avgs
                     summaries.append(summary)
                     if step == 0:
                         table = add_columns(avgs, table)
                     else:
-                        table.add_row(*[f'{v:5}' for _, v in avgs.items()])
+                        table.add_row(*[f'{v}' for _, v in avgs.items()])
 
                     if avgs.get('acc', 1.0) <= 1e-5:
                         live.console.log('Chains are stuck! Re-drawing x !')
-                        x = self.draw_x()
+                        assert isinstance(x, Tensor)
+                        x = self.g.random(list(x.shape))
 
         tables[str(0)] = table
 
         return {
             'timer': timer,
             'history': history,
-            'rows': rows,
             'summaries': summaries,
             'tables': tables,
         }
