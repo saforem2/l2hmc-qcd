@@ -5,7 +5,6 @@ Implements ptExperiment, a pytorch-specific subclass of the
 Experiment base class.
 """
 from __future__ import absolute_import, annotations, division, print_function
-import os
 import logging
 from typing import Any, Callable, Optional
 from accelerate.accelerator import Accelerator
@@ -177,7 +176,9 @@ class Experiment(BaseExperiment):
         self.accelerator = accelerator
         self.run = None
         if self.trainer.rank == 0 and init_wandb:
-            self.run = self.init_wandb(dynamics=dynamics, loss_fn=loss_fn)
+            if self.run is None:
+                self.run = self.init_wandb(dynamics=dynamics,
+                                           loss_fn=loss_fn)
 
         self._is_built = True
 
@@ -194,7 +195,7 @@ class Experiment(BaseExperiment):
         run: Optional[Any] = None,
         nchains: Optional[int] = None,
     ):
-        nchains = 16 if nchains is None else nchains
+        # nchains = 16 if nchains is None else nchains
         jobdir = self.get_jobdir(job_type='train')  # noqa:F481 type:ignore
         if run is not None:
             assert run.isinstance(wandb.run)
@@ -207,7 +208,8 @@ class Experiment(BaseExperiment):
         if self.trainer.rank == 0:
             dset = output['history'].get_dataset()
             nchains = int(
-                min(self.cfg.dynamics.nchains, max(16, self.cfg.dynamics.nchains // 8))
+                min(self.cfg.dynamics.nchains,
+                    max(64, self.cfg.dynamics.nchains // 8))
             )
             _ = save_and_analyze_data(dset,
                                       run=run,
@@ -221,7 +223,6 @@ class Experiment(BaseExperiment):
             writer.close()
 
         return output
-
 
     def evaluate(
             self,
