@@ -13,7 +13,9 @@ from abc import ABC, abstractmethod
 
 from pathlib import Path
 from typing import Optional, Any
+
 from l2hmc.configs import InputSpec, HERE, OUTDIRS_FILE, ExperimentConfig
+from l2hmc.common import get_timestamp, is_interactive
 
 
 log = logging.getLogger(__name__)
@@ -24,10 +26,15 @@ class BaseExperiment(ABC):
     def __init__(self, cfg: DictConfig) -> None:
         self.cfg = cfg
         self.config = instantiate(cfg)
-        # assert isinstance(self.config, ExperimentConfig)
+        assert isinstance(self.config, ExperimentConfig)
         assert self.config.framework in ['pytorch', 'tensorflow']
         self.lattice = self.build_lattice()
         self._is_built = False
+        self.run = None
+        self.loss_fn = None
+        self.trainer = None
+        self.dynamics = None
+        self.optimizer = None
         super().__init__()
 
     @abstractmethod
@@ -152,10 +159,24 @@ class BaseExperiment(ABC):
         return run
 
     def get_jobdir(self, job_type: str) -> Path:
-        here = Path(self.cfg.get('outdir', os.getcwd()))
-        jobdir = here.joinpath(job_type)
+        outdir = self.cfg.get('outdir', None)
+        if outdir is None:
+            outdir = Path(os.getcwd())
+            if is_interactive():
+                framework = self.cfg.get('framework', None)
+                outdir = outdir.joinpath(
+                    'outputs',
+                    get_timestamp('%Y-%m-%d-%H%M%S'),
+                    framework,
+                )
+        jobdir = outdir.joinpath(job_type)
         jobdir.mkdir(exist_ok=True, parents=True)
         assert jobdir is not None
+        setattr(self, f'{job_type}_dir', jobdir)
+        if hasattr(self, 'run') and getattr(self, 'run', None) is not None:
+            assert self.run is not None and self.run is wandb.run
+            self.run.config[f'{job_type}_dir'] = jobdir
+
         with open(OUTDIRS_FILE, 'a') as f:
             f.write(Path(jobdir).resolve().as_posix())
 
