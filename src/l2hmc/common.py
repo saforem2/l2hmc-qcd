@@ -27,6 +27,14 @@ os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 log = logging.getLogger(__name__)
 
 
+def is_interactive():
+    try:
+        from IPython import get_ipython
+        return get_ipython() is not None
+    except (ImportError, ModuleNotFoundError):
+        return False
+
+
 def get_timestamp(fstr=None):
     """Get formatted timestamp."""
     now = datetime.datetime.now()
