@@ -10,14 +10,17 @@ import warnings
 
 import hydra
 from omegaconf import DictConfig
-import socket
+# import socket
+
+from l2hmc.configs import ExperimentConfig
 
 
 log = logging.getLogger(__name__)
 
 
-def train_tensorflow(cfg: DictConfig) -> dict:
+def setup_tensorflow(cfg: DictConfig) -> int:
     import tensorflow as tf
+    # tf.config.run_functions_eagerly(True)
     tf.keras.backend.set_floatx(cfg.precision)
     # assert tf.keras.backend.floatx() == tf.float32
     import horovod.tensorflow as hvd
@@ -31,45 +34,141 @@ def train_tensorflow(cfg: DictConfig) -> dict:
             'GPU'
         )
 
-    from l2hmc.scripts.tensorflow.main import main as main_tf
-    output = main_tf(cfg)
+    # from l2hmc.scripts.tensorflow.main import main as main_tf
+    RANK = hvd.rank()
+    LOCAL_RANK = hvd.local_rank()
+    SIZE = hvd.size()
+    LOCAL_SIZE = hvd.local_size()
+    log.warning(f'Global {RANK} / {SIZE}')
+    log.warning(f'[{RANK}] local: {LOCAL_RANK} / {LOCAL_SIZE}')
+    # if cfg.get('debug_mode', False):
+    return RANK
 
-    return output
+
+def setup_torch(cfg: DictConfig) -> int:
+    import torch
+    import horovod.torch as hvd
+
+    hvd.init()
+
+    if cfg.precision == 'float64':
+        torch.set_default_dtype(torch.float64)
+
+    torch.manual_seed(cfg.seed)
+    if torch.cuda.is_available():
+        torch.cuda.set_device(hvd.local_rank())
+        torch.cuda.manual_seed(cfg.seed)
+    # else:
+    #     torch.set_default_dtype(torch.float32)
+    RANK = hvd.rank()
+    LOCAL_RANK = hvd.local_rank()
+    SIZE = hvd.size()
+    LOCAL_SIZE = hvd.local_size()
+    log.info(f'Global Rank: {RANK} / {SIZE}')
+    log.info(f'[{RANK}]: Local rank: {LOCAL_RANK} / {LOCAL_SIZE}')
+    return RANK
+
+
+def train_tensorflow(cfg: DictConfig) -> dict:
+    RANK = setup_tensorflow(cfg)
+    from l2hmc.experiment.tensorflow.experiment import Experiment
+    outputs = {}
+    ex = Experiment(cfg)
+    _ = ex.build(init_wandb=(RANK == 0))
+    assert isinstance(ex.config, ExperimentConfig)
+    should_train = (
+        ex.config.steps.nera > 0
+        and ex.config.steps.nepoch > 0
+    )
+    if should_train:
+        outputs['train'] = ex.train()
+        # Evaluate trained model
+        if RANK == 0 and ex.config.steps.test > 0:
+            log.warning('Evaluating trained model')
+            outputs['eval'] = ex.evaluate(job_type='eval')
+
+    # Run generic HMC for baseline comparison
+    if RANK == 0 and ex.config.steps.test > 0:
+        log.warning('Running generic HMC with same traj len')
+        outputs['hmc'] = ex.evaluate(job_type='hmc')
+
+    return outputs
 
 
 def train_pytorch(cfg: DictConfig) -> dict:
-    import torch
-    if cfg.precision == 'float64':
-        torch.set_default_dtype(torch.float64)
-    # else:
-    #     torch.set_default_dtype(torch.float32)
+    RANK = setup_torch(cfg)
 
-    from l2hmc.scripts.pytorch.main import main as main_pt
-    return main_pt(cfg)
+    from l2hmc.experiment.pytorch.experiment import Experiment
+
+    outputs = {}
+    ex = Experiment(cfg)
+    _ = ex.build(init_wandb=(RANK == 0))
+    assert isinstance(ex.config, ExperimentConfig)
+    should_train = (
+        ex.config.steps.nera > 0
+        and ex.config.steps.nepoch > 0
+    )
+    if should_train:
+        outputs['train'] = ex.train()
+        # Evaluate trained model
+        if RANK == 0 and ex.config.steps.test > 0:
+            log.warning('Evaluating trained model')
+            outputs['eval'] = ex.evaluate(job_type='eval')
+
+    # Run generic HMC for baseline comparison
+    if RANK == 0 and ex.config.steps.test > 0:
+        log.warning('Running generic HMC with same traj len')
+        outputs['hmc'] = ex.evaluate(job_type='hmc')
+
+    return outputs
 
 
-@hydra.main(version_base=None, config_path='./conf', config_name='config')
-def main(cfg: DictConfig) -> None:
+def setup(cfg: DictConfig):
     width = cfg.get('width', None)
     if width is not None and os.environ.get('COLUMNS', None) is None:
         os.environ['COLUMNS'] = str(width)
     elif os.environ.get('COLUMNS', None) is not None:
         cfg.update({'width': int(os.environ.get('COLUMNS', 235))})
-
-    framework = cfg.get('framework', None)
-    assert framework is not None, (
-        'Framework must be specified, one of: [pytorch, tensorflow]'
-    )
-
     if cfg.get('ignore_warnings'):
         warnings.filterwarnings('ignore')
 
-    if framework in ['tf', 'tensorflow']:
-        _ = train_tensorflow(cfg)
 
-    elif framework in ['pt', 'pytorch']:
-        _ = train_pytorch(cfg)
+@hydra.main(version_base=None, config_path='./conf', config_name='config')
+def main(cfg: DictConfig) -> None:
+    setup(cfg)
+    framework = cfg.get('framework', None)
+    if framework in ['tf', 'tensorflow']:
+        RANK = setup_tensorflow(cfg)
+        from l2hmc.experiment.tensorflow.experiment import Experiment
+    elif framework in ['pt', 'pytorch', 'torch']:
+        RANK = setup_torch(cfg)
+        from l2hmc.experiment.pytorch.experiment import Experiment
+    else:
+        raise ValueError(
+            'Framework must be specified, one of: [pytorch, tensorflow]'
+        )
+
+    ex = Experiment(cfg)
+    _ = ex.build(init_wandb=(RANK == 0))
+    assert isinstance(ex.config, ExperimentConfig)
+    should_train = (
+        ex.config.steps.nera > 0
+        and ex.config.steps.nepoch > 0
+    )
+    if should_train:
+        _ = ex.train()
+        # Evaluate trained model
+        if RANK == 0 and ex.config.steps.test > 0:
+            log.warning('Evaluating trained model')
+            _ = ex.evaluate(job_type='eval')
+
+    # Run generic HMC for baseline comparison
+    if RANK == 0 and ex.config.steps.test > 0:
+        log.warning('Running generic HMC with same traj len')
+        _ = ex.evaluate(job_type='hmc')
 
 
 if __name__ == '__main__':
+    import wandb
+    wandb.require(experiment='service')
     main()
