@@ -96,7 +96,6 @@ def grab(x: Tensor) -> Array:
     return x.detach().cpu().numpy()
 
 
-
 class Clamp(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input):
@@ -127,9 +126,6 @@ class Dynamics(nn.Module):
             n=(self.nlf if self.config.use_separate_networks else 1),
             split_xnets=self.config.use_split_xnets
         )
-        if self.device == 'cuda':
-            self.networks.cuda()
-
         self.masks = self._build_masks()
 
         if self.config.group == 'U1':
@@ -139,14 +135,16 @@ class Dynamics(nn.Module):
 
         self.xeps = nn.ParameterDict()
         self.veps = nn.ParameterDict()
-        clamper = Clamp()
+        # clamper = Clamp()
         rg = (not self.config.eps_fixed)
         for lf in range(self.config.nleapfrog):
-            eps = torch.tensor(self.config.eps).to(self.device)
-            xeps = nn.parameter.Parameter(eps, requires_grad=rg)
-            veps = nn.parameter.Parameter(eps, requires_grad=rg)
-            clamper.apply(xeps)
-            clamper.apply(veps)
+            # eps = torch.tensor(self.config.eps).to(self.device)
+            xeps = torch.tensor(self.config.eps).clamp_min_(0.0)
+            veps = torch.tensor(self.config.eps).clamp_min_(0.0)
+            xeps = nn.parameter.Parameter(xeps, requires_grad=rg)
+            veps = nn.parameter.Parameter(veps, requires_grad=rg)
+            # clamper.apply(xeps)
+            # clamper.apply(veps)
             self.xeps[str(lf)] = xeps
             self.veps[str(lf)] = veps
 
@@ -945,6 +943,6 @@ class Dynamics(nn.Module):
         id = torch.ones(x.shape[0], device=self.device)
         dsdx, = torch.autograd.grad(s, x,
                                     # create_graph=create_graph,
-                                    # retain_graph=True,
+                                    retain_graph=True,
                                     grad_outputs=id)
         return dsdx
