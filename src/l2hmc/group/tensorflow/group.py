@@ -34,7 +34,8 @@ from l2hmc.group.tensorflow.utils import (
 
 Array = np.array
 Tensor = tf.Tensor
-PI = tf.convert_to_tensor(math.pi)
+PI = tf.constant(np.pi)
+# PI = tf.convert_to_tensor(math.pi)
 SQRT1by3 = tf.math.sqrt(1. / 3.)
 
 TF_FLOAT = tf.keras.backend.floatx()
@@ -95,8 +96,13 @@ class U1Phase(Group):
     def diff2trace(self, x: Tensor) -> Tensor:
         return tf.math.negative(tf.math.cos(x))
 
+    def floormod(self, x: Tensor, y: Tensor) -> Tensor:
+        return (x - tf.math.floordiv(x, y) * y)
+
     def compat_proj(self, x: Tensor) -> Tensor:
-        return tf.math.floormod(x + PI, 2 * PI) - PI
+        # return tf.math.floormod(x + PI, 2 * PI) - PI
+        # return (x + PI % (2 * PI)) - PI
+        return self.floormod(x + PI, tf.constant(2.*np.pi)) - PI
 
     def random(self, shape: list[int]):
         return self.compat_proj(tf.random.uniform(shape, *(-4, 4)))
