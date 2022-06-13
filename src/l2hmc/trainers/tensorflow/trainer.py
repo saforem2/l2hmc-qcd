@@ -13,7 +13,7 @@ from typing import Callable, Any, Optional
 import horovod.tensorflow as hvd  # type: ignore
 
 import numpy as np
-from rich.layout import Layout
+# from rich.layout import Layout
 from rich.live import Live
 from rich.table import Table
 from rich import box
@@ -33,7 +33,7 @@ from l2hmc.trackers.tensorflow.trackers import update_summaries
 from l2hmc.utils.step_timer import StepTimer
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.utils.tensorflow.history import History
-from l2hmc.utils.rich import add_columns, build_layout, console
+from l2hmc.utils.rich import add_columns, console
 from contextlib import nullcontext
 
 # from rich.layout import Layout
@@ -45,11 +45,11 @@ from contextlib import nullcontext
 
 WIDTH = int(os.environ.get('COLUMNS', 150))
 
-tf.autograph.set_verbosity(0)
-os.environ['AUTOGRAPH_VERBOSITY'] = '0'
-JIT_COMPILE = (len(os.environ.get('JIT_COMPILE', '')) > 0)
+# tf.autograph.set_verbosity(0)
+# os.environ['AUTOGRAPH_VERBOSITY'] = '0'
+# JIT_COMPILE = (len(os.environ.get('JIT_COMPILE', '')) > 0)
 
-log = logging.getLogger('trainer')
+log = logging.getLogger(__name__)
 
 Tensor = tf.Tensor
 TF_FLOAT = tf.keras.backend.floatx()
@@ -118,7 +118,7 @@ class Trainer:
             compression: Optional[str] = 'none',
             evals_per_step: int = 1,
             dynamics_config: Optional[DynamicsConfig] = None,
-            compile: Optional[bool] = True,
+            # compile: Optional[bool] = True,
     ) -> None:
         self.rank = rank
         self.steps = steps
@@ -135,8 +135,11 @@ class Trainer:
         self.compression = HVD_FP_MAP[compression]
         # self.compression = hvd.Compression.fp16
         self.reduce_lr = ReduceLROnPlateau(lr_config)
-        if compile:
-            self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
+        # if compile:
+        #     self.dynamics.compile(
+        #             optimizer=self.optimizer,
+        #             loss=self.loss_fn
+        #     )
 
         self.reduce_lr.set_model(self.dynamics)
         self.reduce_lr.set_optimizer(self.optimizer)
@@ -323,7 +326,9 @@ class Trainer:
 
         return avgs, summary
 
-    @tf.function(experimental_follow_type_hints=True, jit_compile=JIT_COMPILE)
+    # @tf.function(experimental_follow_type_hints=True,
+    #         jit_compile=JIT_COMPILE)
+    @tf.function
     def hmc_step(
             self,
             inputs: tuple[Tensor, Tensor],
@@ -348,10 +353,12 @@ class Trainer:
 
         return xo, metrics
 
-    @tf.function(experimental_follow_type_hints=True, jit_compile=JIT_COMPILE)
+    # @tf.function(experimental_follow_type_hints=True,
+    #         jit_compile=JIT_COMPILE)
+    @tf.function
     def eval_step(
             self,
-            inputs: tuple[Tensor, Tensor],  # xinit, beta
+            inputs: tuple[Tensor, Tensor],
     ) -> tuple[Tensor, dict]:
         xout, metrics = self.dynamics(inputs, training=False)
         xout = self.g.compat_proj(xout)
@@ -474,19 +481,19 @@ class Trainer:
             'tables': tables,
         }
 
-    @tf.function(experimental_follow_type_hints=True, jit_compile=JIT_COMPILE)
+    # @tf.function(experimental_follow_type_hints=True,
+    #         jit_compile=JIT_COMPILE)
+    @tf.function
     def train_step(
             self,
             inputs: tuple[Tensor, Tensor],
-            first_step: Optional[bool] = False,
-            clip_grads: Optional[bool] = None,
     ) -> tuple[Tensor, dict]:
         xinit, beta = inputs
         xinit = self.dynamics.g.compat_proj(xinit)
-        should_clip = (
-            (self.lr_config.clip_norm > 0)
-            if clip_grads is None else clip_grads
-        )
+        # should_clip = (
+        #     (self.lr_config.clip_norm > 0)
+        #     if clip_grads is None else clip_grads
+        # )
         with tf.GradientTape() as tape:
             tape.watch(xinit)
             xout, metrics = self.dynamics((xinit, beta), training=True)
@@ -512,7 +519,7 @@ class Trainer:
 
         tape = hvd.DistributedGradientTape(tape, compression=self.compression)
         grads = tape.gradient(loss, self.dynamics.trainable_variables)
-        if should_clip:
+        if self.clip_norm > 0.0:
             grads = [
                 tf.clip_by_norm(grad, clip_norm=self.clip_norm)
                 for grad in grads
@@ -520,7 +527,7 @@ class Trainer:
         self.optimizer.apply_gradients(
             zip(grads, self.dynamics.trainable_variables)
         )
-        if first_step:
+        if self.timers['train'].iterations == 0:
             hvd.broadcast_variables(self.dynamics.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
@@ -602,6 +609,13 @@ class Trainer:
         if train_dir is None:
             train_dir = Path(os.getcwd()).joinpath('train')
 
+        try:
+            model_dir = Path(os.getcwd()).joinpath('plots', 'models')
+            model_dir.mkdir(exist_ok=True, parents=True)
+            plot_models(self.dynamics, train_dir)
+        except Exception:
+            pass
+
         manager = self.setup_CheckpointManager(train_dir)
         gstep = K.get_value(self.optimizer.iterations)
 
@@ -610,7 +624,7 @@ class Trainer:
 
         inputs = (x, tf.constant(self.schedule.beta_init))
         assert callable(self.train_step)
-        _ = self.train_step(inputs, first_step=True)
+        _ = self.train_step(inputs)
 
         era = 0
         epoch = 0
@@ -658,7 +672,9 @@ class Trainer:
                 epoch_start = time.time()
                 for epoch in range(nepoch):
                     timer.start()
-                    x, metrics = self.train_step((x, beta))
+                    x, metrics = self.train_step(   # type:ignore
+                        (x, tf.constant(beta))
+                    )
                     dt = timer.stop()
                     gstep += 1
                     if self.should_print(epoch) or self.should_log(epoch):
@@ -705,10 +721,16 @@ class Trainer:
                     # ckptstr = '\n'.join([
                     if live is not None:
                         dts = time.time() - st0
-                        ckptstr = '\n'.join([
-                            f'Checkpoint saved to: {manager.latest_checkpoint} in {dts:<5f}s',
-                            f'Era {era} took: {time.time() - epoch_start:<5g}s',
+                        savestr = ' '.join([
+                            'Checkpoint saved to:',
+                            f'{manager.latest_checkpoint}',
+                            f'in {dts:<5f}s'
                         ])
+                        estr = ' '.join([
+                            f'Era {era} took:',
+                            f'{time.time() - epoch_start:4f}s'
+                        ])
+                        ckptstr = '\n'.join([savestr, estr])
                         live.console.log(ckptstr)
 
         return {
@@ -716,297 +738,5 @@ class Trainer:
             'rows': rows,
             'summaries': summaries,
             'history': history,
-            'tables': tables,
-        }
-
-
-class LiveTrainer(Trainer):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def train_live(
-            self,
-            xinit: Optional[Tensor] = None,
-            skip: Optional[str | list[str]] = None,
-            train_dir: Optional[os.PathLike] = None,
-            run: Optional[Any] = None,
-            writer: Optional[Any] = None,
-    ) -> dict:
-        """Train l2hmc Dynamics."""
-        if isinstance(skip, str):
-            skip = [skip]
-
-        if writer is not None:
-            writer.set_as_default()
-
-        if train_dir is None:
-            train_dir = Path(os.getcwd()).joinpath('train')
-
-        manager = self.setup_CheckpointManager(train_dir)
-        gstep = K.get_value(self.optimizer.iterations)
-
-        x = self.draw_x() if xinit is None else tf.constant(xinit, TF_FLOAT)
-        assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
-
-        inputs = (x, tf.constant(self.schedule.beta_init))
-        assert callable(self.train_step)
-        _ = self.train_step(inputs, first_step=True)
-
-        era = 0
-        epoch = 0
-        tables = {}
-        rows = {}
-        metrics = {}
-        summaries = []
-        timer = self.timers['train']
-        history = self.histories['train']
-        record = {'era': 0, 'epoch': 0, 'beta': 0.0, 'dt': 0.0}
-        display = build_layout(
-            steps=self.steps,
-            job_type='train',
-            visible=(self.rank == 0),
-        )
-        layout = display['layout']
-        make_layout = (
-            self.rank == 0
-            and os.getenv('TERM') not in ['dumb', 'DUMB']
-        )
-
-        ctxmgr = (
-            Live(layout, console=console) if make_layout
-            else nullcontext()
-        )
-        assert isinstance(layout, Layout)
-        table = Table(expand=True)
-        estart = time.time()
-        with ctxmgr:  # as live:
-            for era in range(self.steps.nera):
-                beta = tf.constant(self.schedule.betas[str(era)])
-                tstr = f'ERA: {era}/{self.steps.nera} beta: {beta.numpy()}'
-                table = Table(
-                    box=box.HORIZONTALS,
-                    row_styles=['dim', 'none'],
-                    title=tstr,
-                    caption=(
-                        None if era == 0
-                        else self.histories['train'].era_summary(era-1)
-                    ),
-                )
-                if layout is not None:
-                    layout['root']['main'].update(table)
-                if display is not None:
-                    display['job_progress'].reset(display['tasks']['epoch'])
-                if self.rank == 0 and console is not None:
-                    console.rule(', '.join([
-                        f'BETA: {beta}',
-                        f'ERA: {era} / {self.steps.nera}',
-                    ]))
-
-                estart = time.time()
-                for epoch in range(self.steps.nepoch):
-                    timer.start()
-                    x, metrics = self.train_step((x, beta))
-                    dt = timer.stop()
-                    gstep += 1
-                    if display is not None:
-                        display['job_progress'].advance(
-                            display['tasks']['step']
-                        )
-                        display['job_progress'].advance(
-                            display['tasks']['epoch']
-                        )
-                    if self.should_print(epoch) or self.should_log(epoch):
-                        record = {
-                            'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
-                        }
-                        avgs, summary = self.record_metrics(
-                            run=run,
-                            step=gstep,
-                            writer=writer,
-                            record=record,      # template w/ step info, np.arr
-                            metrics=metrics,    # metrics from Dynamics, Tensor
-                            job_type='train',
-                            model=self.dynamics,
-                            optimizer=self.optimizer,
-                        )
-                        rows[gstep] = avgs
-                        summaries.append(summary)
-
-                        if avgs.get('acc', 1.0) <= 1e-5:
-                            self.reset_optimizer()
-                            log.warning('Chains are stuck! Re-drawing x !')
-                            x = self.draw_x()
-
-                        if epoch == 0:
-                            table = add_columns(avgs, table)
-                        else:
-                            table.add_row(*[f'{v}' for _, v in avgs.items()])
-
-                    if layout is not None:
-                        layout['root']['main'].update(table)
-
-            tables[str(era)] = table
-            self.reduce_lr.on_epoch_end((era + 1) * self.steps.nepoch, {
-                'loss': metrics.get('loss', tf.constant(np.Inf)),
-            })
-            if self.rank == 0:
-                # emetrics = self.histories['train'].era_metrics[str(era)]
-                # era_summary = self.histories['train'].era_summary(era)
-                # era_strs = [
-                #     f'{k}={np.mean(v):<.4f}' for k, v in emetrics.items()
-                #     if k not in ['era', 'epoch']
-                # ]
-                # estr = '\n'.join([
-                #     f'Era {era} took: {time.time() - estart:<5f}s'
-                #     f'Saving checkpoint to: {train_dir}',
-                # ])
-                # console.log(estr)
-                if writer is not None:
-                    update_summaries(step=gstep,
-                                     model=self.dynamics,
-                                     optimizer=self.optimizer)
-                st0 = time.time()
-                manager.save()
-                if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
-                    self.dynamics.save_networks(train_dir)
-
-                log.info(f'Era {era} took: {time.time() - estart:<5g}s')
-                log.info(
-                    f'Checkpoint saved to: {manager.latest_checkpoint} '
-                    f'in {time.time() - st0:<5f}s'
-                )
-
-        return {
-            'timer': timer,
-            'rows': rows,
-            'summaries': summaries,
-            'history': history,
-            'tables': tables,
-        }
-
-    def eval_live(
-            self,
-            beta: Optional[Tensor | float] = None,
-            x: Optional[Tensor] = None,
-            skip: Optional[str | list[str]] = None,
-            run: Optional[Any] = None,
-            writer: Optional[Any] = None,
-            job_type: Optional[str] = 'eval',
-            nchains: Optional[int] = None,
-            eps: Optional[Tensor] = None,
-    ) -> dict:
-        """Evaluate model."""
-        if isinstance(skip, str):
-            skip = [skip]
-
-        if beta is None:
-            beta = self.schedule.beta_final
-
-        if eps is None and str(job_type).lower() == 'hmc':
-            eps = tf.constant(0.1)
-            log.warn(
-                'Step size `eps` not specified for HMC! Using default: 0.1'
-            )
-
-        assert job_type in ['eval', 'hmc']
-
-        if x is None:
-            r = self.dynamics.g.random(list(self.xshape))
-            x = tf.reshape(r, (r.shape[0], -1))
-
-        if writer is not None:
-            writer.set_as_default()
-
-        def eval_fn(inputs):
-            if job_type == 'hmc':
-                return self.hmc_step(inputs, eps=eps)  # type: ignore
-            return self.eval_step(inputs)              # type: ignore
-
-        assert isinstance(x, Tensor)  # and x.dtype == TF_FLOAT
-
-        tables = {}
-        rows = {}
-        summaries = []
-        table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
-        # nprint = max((20, self.steps.test // 20))
-        nprint = max(1, self.steps.test // 20)
-        nlog = max((1, min((10, self.steps.test))))
-        if nlog <= self.steps.test:
-            nlog = min(10, max(1, self.steps.test // 100))
-
-        assert job_type in ['eval', 'hmc']
-        timer = self.timers[job_type]
-        history = self.histories[job_type]
-
-        log.warning(f'x.shape (original): {x.shape}')
-        if nchains is not None:
-            if isinstance(nchains, int) and nchains > 0:
-                x = x[:nchains]  # type: ignore
-
-        assert isinstance(x, Tensor)
-        log.warning(f'x[:nchains].shape: {x.shape}')
-
-        if run is not None:
-            run.config.update({
-                job_type: {'beta': beta, 'xshape': x.shape.as_list()}
-            })
-
-        display = build_layout(
-            visible=True,
-            steps=self.steps,
-            job_type=job_type,
-        )
-        step_task = display['tasks']['step']
-        job_progress = display['job_progress']
-        layout = display['layout']  # if self.rank == 0 else None
-        # with Live(table, screen=False, auto_refresh=False) as live:
-        with Live(
-                layout,
-                # screen=False,
-                # auto_refresh=True,
-                console=console,
-        ) as live:
-            # if WIDTH is not None and WIDTH > 0:
-            #     live.console.width = WIDTH
-            if layout is not None:
-                layout['root']['main'].update(table)
-                # layout['left']['right'].update(log)
-
-            for step in range(self.steps.test):
-                timer.start()
-                x, metrics = eval_fn((x, tf.constant(beta)))  # type: ignore
-                dt = timer.stop()
-                job_progress.advance(step_task)
-                if step % nprint == 0 or step % nlog == 0:
-                    record = {
-                        'step': step, 'beta': beta, 'dt': dt,
-                    }
-                    avgs, summary = self.record_metrics(run=run,
-                                                        step=step,
-                                                        record=record,
-                                                        writer=writer,
-                                                        metrics=metrics,
-                                                        job_type=job_type)
-                    rows[step] = avgs
-                    summaries.append(summary)
-                    if step == 0:
-                        table = add_columns(avgs, table)
-                    else:
-                        table.add_row(*[f'{v:5}' for _, v in avgs.items()])
-                        live.refresh()
-
-                    if avgs.get('acc', 1.0) <= 1e-5:
-                        log.warning('Chains are stuck! Re-drawing x !')
-                        x = self.draw_x()
-                    if layout is not None:
-                        layout['root']['main'].update(table)
-
-            tables[str(0)] = table
-
-        return {
-            'timer': timer,
-            'history': history,
-            'rows': rows,
-            'summaries': summaries,
             'tables': tables,
         }
