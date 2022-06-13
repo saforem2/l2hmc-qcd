@@ -13,6 +13,7 @@ from omegaconf import DictConfig
 # import socket
 
 from l2hmc.configs import ExperimentConfig
+from l2hmc.utils.rich import print_config
 
 
 log = logging.getLogger(__name__)
@@ -147,6 +148,9 @@ def main(cfg: DictConfig) -> None:
         raise ValueError(
             'Framework must be specified, one of: [pytorch, tensorflow]'
         )
+
+    if RANK == 0:
+        print_config(cfg, resolve=True)
 
     ex = Experiment(cfg)
     _ = ex.build(init_wandb=(RANK == 0))
