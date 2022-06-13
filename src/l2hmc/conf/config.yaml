@@ -6,9 +6,10 @@ framework: ???          # ML framework to use: one of 'pytorch', 'tensorflow'
 profile: false          # Flag for profiling in pytorch
 precision: 'float32'    # Default floating point precision
 width: 235              # Setting controlling terminal width for printing
-# eps_hmc: 0.1181         # Reasonable default value, determined from sweep
+seed: 9992              # Seed for random number
 compile: True           # Compile network in tensorflow? (True by default)
 nchains:  null          # Number of chains to use when evaluating model
+# optional num_threads: 8
 # optional outdir: outputs/${now:%Y-%m-%d_%H-%M-%S}
 # ----------------------------------------------------------------------------
 
