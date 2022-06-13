@@ -12,7 +12,7 @@ import wandb
 from abc import ABC, abstractmethod
 
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional
 
 from l2hmc.configs import InputSpec, HERE, OUTDIRS_FILE, ExperimentConfig
 from l2hmc.common import get_timestamp, is_interactive
@@ -28,9 +28,10 @@ class BaseExperiment(ABC):
         self.config = instantiate(cfg)
         assert isinstance(self.config, ExperimentConfig)
         assert self.config.framework in ['pytorch', 'tensorflow']
-        self.lattice = self.build_lattice()
+        # self.lattice = self.build_lattice()
         self._is_built = False
         self.run = None
+        self.lattice = None
         self.loss_fn = None
         self.trainer = None
         self.dynamics = None
@@ -58,17 +59,16 @@ class BaseExperiment(ABC):
         pass
 
     @abstractmethod
-    def build_optimizer(self, dynamics: Optional[Any] = None):
+    def build_optimizer(self):
         """Build framework-dependent optimizer. Adam by default."""
+        # assert self.dynamics is not None
         pass
 
     @abstractmethod
     def build_trainer(
             self,
             dynamics,
-            optimizer,
             loss_fn,
-            accelerator: Optional[Any] = None
     ):
         pass
 
@@ -83,7 +83,6 @@ class BaseExperiment(ABC):
     def update_wandb_config(self, run_id: Optional[str] = None) -> None:
         pass
 
-
     @abstractmethod
     def init_wandb(self):
         pass
@@ -92,12 +91,11 @@ class BaseExperiment(ABC):
     def _build(self, init_wandb: bool = True):
         pass
 
-
     def build(self, init_wandb: bool = True):
         return self._build(init_wandb=init_wandb)
 
     def get_input_spec(self) -> InputSpec:
-        assert self.lattice is not None
+        # assert self.lattice is not None
         xdim = self.config.dynamics.xdim
         xshape = self.config.dynamics.xshape
         if self.config.dynamics.group == 'U1':

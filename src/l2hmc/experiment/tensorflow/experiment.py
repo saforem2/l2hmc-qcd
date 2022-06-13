@@ -30,7 +30,9 @@ from l2hmc.experiment.experiment import BaseExperiment
 
 log = logging.getLogger(__name__)
 
+# GLOBAL_RANK = hvd.rank()
 RANK = hvd.rank()
+LOCAL_RANK = hvd.local_rank()
 
 
 class Experiment(BaseExperiment):
@@ -104,13 +106,13 @@ class Experiment(BaseExperiment):
             loss_fn: Callable,
     ) -> Trainer:
         return Trainer(
-            rank=hvd.rank(),
+            rank=RANK,
             loss_fn=loss_fn,
             dynamics=dynamics,
             optimizer=optimizer,
             steps=self.config.steps,
             lr_config=self.config.learning_rate,
-            compile=(not self.config.debug_mode),
+            # compile=(not self.config.debug_mode),
             dynamics_config=self.config.dynamics,
             aux_weight=self.config.loss.aux_weight,
             schedule=self.config.annealing_schedule,
@@ -142,6 +144,7 @@ class Experiment(BaseExperiment):
                 'optimizer': self.optimizer,
                 'loss_fn': self.loss_fn,
             }
+        self.lattice = self.build_lattice()
         loss_fn = self.build_loss()
         dynamics = self.build_dynamics()
         optimizer = self.build_optimizer(dynamics)
@@ -151,11 +154,14 @@ class Experiment(BaseExperiment):
             optimizer=optimizer,
         )
         self.run = None
-        if hvd.local_rank() == 0 and init_wandb:
+        if RANK == 0 and init_wandb:
             if (
                     not hasattr(self, 'run')
                     or getattr(self, 'run', None) is None
             ):
+                local_rank = hvd.local_rank()
+                rank = hvd.rank()
+                log.warning(f'Initializing WandB from {rank}:{local_rank}')
                 self.run = self.init_wandb()
 
         self._is_built = True
@@ -185,11 +191,13 @@ class Experiment(BaseExperiment):
             assert run.isinstance(wandb.run)
 
         writer = None
-        if self.trainer.rank == 0:
+        # if self.trainer.rank == 0:
+        if RANK == 0:
             writer = self.get_summary_writer(job_type='train')
 
         output = self.trainer.train(run=run, writer=writer, train_dir=jobdir)
-        if self.trainer.rank == 0:
+        # if self.trainer.rank == 0:
+        if RANK == 0:
             dset = output['history'].get_dataset()
             nchains = int(
                 min(self.cfg.dynamics.nchains,
@@ -218,7 +226,8 @@ class Experiment(BaseExperiment):
             nleapfrog: Optional[int] = None,
     ) -> dict:
         """Evaluate model."""
-        if self.trainer.rank != 0:
+        # if self.trainer.rank != 0:
+        if RANK != 0:
             return {}
 
         assert job_type in ['eval', 'hmc']
@@ -226,7 +235,7 @@ class Experiment(BaseExperiment):
         writer = self.get_summary_writer(job_type)
 
         output = self.trainer.eval(
-            run=self.run,
+            run=run,
             writer=writer,
             nchains=nchains,
             job_type=job_type,

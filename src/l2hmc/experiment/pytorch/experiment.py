@@ -5,15 +5,23 @@ Implements ptExperiment, a pytorch-specific subclass of the
 Experiment base class.
 """
 from __future__ import absolute_import, annotations, division, print_function
+# import os
 import logging
 from typing import Any, Callable, Optional
-from accelerate.accelerator import Accelerator
+# from accelerate.accelerator import Accelerator
 
 from omegaconf import DictConfig
 import torch
+import horovod.torch as hvd
+from torch import optim
 from torch.utils.tensorboard.writer import SummaryWriter
+# from torch.nn.parallel import DistributedDataParallel as DDP
 import wandb
+# from build.lib.l2hmc.configs import ExperimentConfig
 from l2hmc.common import save_and_analyze_data
+# from mpi4py import MPI
+
+from l2hmc.configs import ExperimentConfig
 
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.experiment.experiment import BaseExperiment
@@ -25,10 +33,18 @@ from l2hmc.trainers.pytorch.trainer import Trainer
 
 log = logging.getLogger(__name__)
 
+# LOCAL_RANK = os.environ.get('OMPI_COMM_WORLD_LOCAL_RANK', '0')
+
+SIZE = hvd.size()
+RANK = hvd.rank()
+LOCAL_RANK = hvd.local_rank()
+
 
 class Experiment(BaseExperiment):
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg=cfg)
+        assert isinstance(self.config, ExperimentConfig)
+        # self.accelerator = self.build_accelerator()
 
     def build_lattice(self):
         group = str(self.config.dynamics.group).upper()
@@ -56,13 +72,13 @@ class Experiment(BaseExperiment):
 
     def build_accelerator(self, **kwargs):
         assert self.config.framework == 'pytorch'
-        from accelerate.accelerator import Accelerator
+        from accelerate import Accelerator
         # return Accelerator(**asdict(self.config.accelerator))
         # return Accelerator(log_with=['all'])
         return Accelerator(**kwargs)
 
-    def build_dynamics(self):
-        assert self.lattice is not None
+    def build_dynamics(self, potential_fn: Callable):
+        # assert self.lattice is not None
         input_spec = self.get_input_spec()
         net_factory = NetworkFactory(
             input_spec=input_spec,
@@ -71,20 +87,23 @@ class Experiment(BaseExperiment):
             net_weights=self.config.net_weights,
         )
         return Dynamics(config=self.config.dynamics,
-                        potential_fn=self.lattice.action,
+                        potential_fn=potential_fn,
                         network_factory=net_factory)
 
-    def build_loss(self):
-        assert (
-            self.lattice is not None
-            and isinstance(self.lattice, (LatticeU1, LatticeSU3))
-        )
+    def build_loss(self, lattice: LatticeU1 | LatticeSU3):
+        # assert (
+        #     self.lattice is not None
+        #     and isinstance(self.lattice, (LatticeU1, LatticeSU3))
+        # )
         return LatticeLoss(
-            lattice=self.lattice,
+            lattice=lattice,
             loss_config=self.config.loss,
         )
 
-    def build_optimizer(self, dynamics: Dynamics) -> torch.optim.Optimizer:
+    def build_optimizer(
+            self,
+            dynamics: Dynamics
+    ) -> torch.optim.Optimizer:
         # TODO: Expand method, re-build LR scheduler, etc
         # TODO: Replace `LearningRateConfig` with `OptimizerConfig`
         # TODO: Optionally, break up in to lrScheduler, OptimizerConfig ?
@@ -94,24 +113,14 @@ class Experiment(BaseExperiment):
     def build_trainer(
             self,
             dynamics: Dynamics,
-            optimizer: torch.optim.Optimizer,
+            optimizer: optim.Optimizer,
             loss_fn: Callable,
-            accelerator: Optional[Accelerator] = None,
     ) -> Trainer:
-        if accelerator is None:
-            accelerator = self.build_accelerator()
-        if torch.cuda.is_available():
-            dynamics.cuda()
-
-        dynamics = dynamics.to(accelerator.device)
-        optimizer = self.build_optimizer(dynamics=dynamics)
-        dynamics, optimizer = accelerator.prepare(dynamics, optimizer)
-
         return Trainer(
             loss_fn=loss_fn,
             dynamics=dynamics,
             optimizer=optimizer,
-            accelerator=accelerator,
+            # accelerator=self.accelerator,
             steps=self.config.steps,
             schedule=self.config.annealing_schedule,
             lr_config=self.config.learning_rate,
@@ -148,6 +157,8 @@ class Experiment(BaseExperiment):
 
     def _build(self, init_wandb: bool = True):
         if self._is_built:
+            # assert self.accelerator is not None
+            assert self.lattice is not None
             assert self.trainer is not None
             assert self.dynamics is not None
             assert self.optimizer is not None
@@ -159,26 +170,36 @@ class Experiment(BaseExperiment):
                 'optimizer': self.optimizer,
                 'loss_fn': self.loss_fn,
             }
-        loss_fn = self.build_loss()
-        dynamics = self.build_dynamics()
-        optimizer = self.build_optimizer(dynamics)
-        accelerator = self.build_accelerator()
+
+        lattice = self.build_lattice()
+        loss_fn = self.build_loss(lattice)
+        dynamics = self.build_dynamics(potential_fn=lattice.action)
+        # if SIZE > 1:
+        #     dynamics = DDP(dynamics, device_ids=[RANK], output_device=RANK)
+
+        optimizer = self.build_optimizer(dynamics=dynamics)
+        # dynamics, optimizer = self.accelerator.prepare(
+        #     dynamics, optimizer
+        # )
+        # accelerator = self.build_accelerator()
         trainer = self.build_trainer(
             dynamics=dynamics,
-            loss_fn=loss_fn,
             optimizer=optimizer,
-            accelerator=accelerator,
+            loss_fn=loss_fn,
         )
+        self.lattice = lattice
         self.loss_fn = loss_fn
         self.trainer = trainer
         self.dynamics = dynamics
         self.optimizer = optimizer
-        self.accelerator = accelerator
+        # self.accelerator = accelerator
         self.run = None
-        if self.trainer.rank == 0 and init_wandb:
+        # self.rank = self.accelerator.local_process_index
+        # if self.trainer.rank == 0 and init_wandb:
+        # if self.accelerator.is_local_main_process and init_wandb:
+        if RANK == 0 and init_wandb:
             if self.run is None:
-                self.run = self.init_wandb(dynamics=dynamics,
-                                           loss_fn=loss_fn)
+                self.run = self.init_wandb(dynamics=dynamics, loss_fn=loss_fn)
 
         self._is_built = True
 
@@ -196,16 +217,19 @@ class Experiment(BaseExperiment):
         nchains: Optional[int] = None,
     ):
         # nchains = 16 if nchains is None else nchains
-        jobdir = self.get_jobdir(job_type='train')  # noqa:F481 type:ignore
+        jobdir = self.get_jobdir(job_type='train')
         if run is not None:
             assert run.isinstance(wandb.run)
 
         writer = None
-        if self.trainer.rank == 0:
+        if RANK == 0:
             writer = self.get_summary_writer(job_type='train')
 
-        output = self.trainer.train(run=run, writer=writer, train_dir=jobdir)
-        if self.trainer.rank == 0:
+        output = self.trainer.train(run=run,
+                                    writer=writer,
+                                    train_dir=jobdir)
+        # if self.trainer.rank == 0:
+        if RANK == 0:
             dset = output['history'].get_dataset()
             nchains = int(
                 min(self.cfg.dynamics.nchains,
@@ -234,15 +258,20 @@ class Experiment(BaseExperiment):
             nleapfrog: Optional[int] = None,
     ):
         """Evaluate model."""
+        if RANK != 0:
+            return
+
         assert job_type in ['eval', 'hmc']
         jobdir = self.get_jobdir(job_type)
-        if self.trainer.rank == 0:
-            writer = self.get_summary_writer(job_type)
-        else:
-            writer = None
-
+        writer = self.get_summary_writer(job_type)
+        # if RANK == 0:
+        #     writer = self.get_summary_writer(job_type)
+        # else:
+        #     writer = None
+        run = self.run if run is None else run
+        assert run is wandb.run
         output = self.trainer.eval(
-            run=self.run,
+            run=run,
             writer=writer,
             nchains=nchains,
             job_type=job_type,
@@ -251,6 +280,7 @@ class Experiment(BaseExperiment):
         )
         dataset = output['history'].get_dataset(therm_frac=therm_frac)
         if run is not None:
+            assert run is wandb.run
             dQint = dataset.data_vars.get('dQint').values
             drop = int(0.1 * len(dQint))
             dQint = dQint[drop:]
