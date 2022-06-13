@@ -435,6 +435,8 @@ class TrainerConfig:
 @dataclass
 class ExperimentConfig:
     framework: str
+    seed: int
+
     steps: Steps
     loss: LossConfig
     network: NetworkConfig
