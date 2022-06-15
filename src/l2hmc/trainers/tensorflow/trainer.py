@@ -10,29 +10,34 @@ from pathlib import Path
 import time
 from typing import Callable, Any, Optional
 
+import tensorflow as tf
+import tensorflow.python.framework.ops as ops
 import horovod.tensorflow as hvd  # type: ignore
+
+import aim
+from aim import Distribution
 
 import numpy as np
 # from rich.layout import Layout
 from rich.live import Live
 from rich.table import Table
 from rich import box
-import tensorflow as tf
 
 from tensorflow.python.keras import backend as K
 
 from l2hmc.configs import (
     AnnealingSchedule, DynamicsConfig, LearningRateConfig, Steps
 )
-# from l2hmc.dynamics.tensorflow.dynamics import Dynamics, to_u1
-import l2hmc.group.tensorflow.group as g
+from l2hmc.group.u1.tensorflow.group import U1Phase
+from l2hmc.group.su3.tensorflow.group import SU3
 from l2hmc.learning_rate.tensorflow.learning_rate import ReduceLROnPlateau
 from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.utils.history import summarize_dict
 from l2hmc.trackers.tensorflow.trackers import update_summaries
 from l2hmc.utils.step_timer import StepTimer
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
-from l2hmc.utils.tensorflow.history import History
+# from l2hmc.utils.tensorflow.history import History
+from l2hmc.utils.history import BaseHistory
 from l2hmc.utils.rich import add_columns, console
 from contextlib import nullcontext
 
@@ -53,6 +58,7 @@ log = logging.getLogger(__name__)
 
 Tensor = tf.Tensor
 TF_FLOAT = tf.keras.backend.floatx()
+NP_INT = (np.int8, np.int16, np.int32, np.int64)
 Model = tf.keras.Model
 Optimizer = tf.keras.optimizers.Optimizer
 TensorLike = tf.types.experimental.TensorLike
@@ -152,18 +158,18 @@ class Trainer:
         self.xshape = self.dynamics_config.xshape
         self.verbose = self.dynamics_config.verbose
         if self.dynamics_config.group == 'U1':
-            self.g = g.U1Phase()
+            self.g = U1Phase()
         elif self.dynamics_config.group == 'SU3':
-            self.g = g.SU3()
+            self.g = SU3()
         else:
             raise ValueError('Unexpected value for dynamics_config.group')
 
-        self.history = History(steps=steps)
+        self.history = BaseHistory(steps=steps)
         self.timer = StepTimer(evals_per_step=self.nlf)
         self.histories = {
             'train': self.history,
-            'eval': History(),
-            'hmc': History()
+            'eval': BaseHistory(),
+            'hmc': BaseHistory()
         }
         self.timers = {
             'train': self.timer,
@@ -277,6 +283,69 @@ class Trainer:
             and self.rank == 0
         )
 
+    def aim_track(
+            self,
+            metrics: dict,
+            step: int,
+            job_type: str,
+            arun: aim.Run,
+            prefix: Optional[str] = None,
+    ) -> None:
+        context = {'subset': job_type}
+        dtype = getattr(step, 'dtype', None)
+        if dtype is not None and dtype in NP_INT:
+            try:
+                step = step.item()  # type:ignore
+            except AttributeError:
+                pass
+
+        for key, val in metrics.items():
+            if prefix is not None:
+                name = f'{prefix}/{key}'
+            else:
+                name = f'{key}'
+
+            if isinstance(val, ops.EagerTensor):
+                val = val.numpy()
+
+            elif isinstance(val, dict):
+                for k, v in val.items():
+                    self.aim_track(
+                        v,
+                        step=step,
+                        arun=arun,
+                        job_type=job_type,
+                        prefix=f'{name}/{k}',
+                    )
+            elif isinstance(val, (Tensor, ops.EagerTensor, np.ndarray)):
+                if isinstance(val, ops.EagerTensor):
+                    val = val.numpy()
+                # check to see if we should track as Distribution
+                is_dist = (
+                    len(val.shape) > 1
+                    or (
+                        len(val.shape) == 1
+                        and val.shape[0] > 1
+                    )
+                )
+                if is_dist:
+                    dist = Distribution(val)
+                    arun.track(dist, step=step, name=name, context=context)
+                    aname = f'{name}/avg'
+                    avg = (
+                        tf.reduce_mean(val) if isinstance(val, Tensor)
+                        else val.mean()
+                    )
+                    arun.track(avg, step=step, name=aname, context=context)
+                else:
+                    arun.track(val, step=step, name=name, context=context)
+
+            else:
+                arun.track(val,
+                           name=name,
+                           # step=step,
+                           context=context)
+
     def record_metrics(
             self,
             metrics: dict,
@@ -284,19 +353,25 @@ class Trainer:
             step: Optional[int] = None,
             record: Optional[dict] = None,
             run: Optional[Any] = None,
+            arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             model: Optional[Model] = None,
             optimizer: Optional[Optimizer] = None,
     ):
         assert job_type in ['train', 'eval', 'hmc']
+        kwargs = {'step': step, 'job_type': job_type, 'arun': arun}
+
         record = {} if record is None else record
         if step is not None:
             record.update({f'{job_type}_step': step})
 
         record.update({
             'loss': metrics.get('loss', None),
-            'dQint': metrics.get('dQint', tf.constant(0.)),
+            'dQint': metrics.get('dQint', None),
         })
+        if job_type == 'train' and step is not None:
+            record['lr'] = K.get_value(self.optimizer.lr)
+
         record.update(self.metrics_to_numpy(metrics))
         avgs = self.histories[job_type].update(record)
         summary = summarize_dict(avgs)
@@ -309,20 +384,36 @@ class Trainer:
             if writer is not None:
                 writer.flush()
 
-        if run is not None:
-            dQint = record.get('dQint', None)
-            if dQint is not None:
-                dQdict = {
-                    f'dQint/{job_type}': {
-                        'val': dQint,
-                        'step': step,
-                        'avg': dQint.mean()
-                    }
-                }
-                run.log(dQdict, commit=False)
+            if run is not None:
+                run.log({f'wandb/{job_type}': record}, commit=False)
+                run.log({f'avgs/wandb.{job_type}': avgs}, commit=False)
+            if arun is not None:
+                try:
+                    self.aim_track(avgs, prefix='avgs', **kwargs)
+                except Exception:
+                    log.warning('Unable to aim_track `avgs` !')
+                try:
+                    self.aim_track(record, prefix='record', **kwargs)
+                except Exception:
+                    log.warning('Unable to aim_track `record` !')
+                # try:
+                #     self.aim_track(metrics, prefix='metrics', **kwargs)
+                # except Exception:
+                #     log.warning('Unable to aim_track `metrics` !')
 
-            run.log({f'wandb/{job_type}': record}, commit=False)
-            run.log({f'avgs/wandb.{job_type}': avgs})
+        dQint = record.get('dQint', None)
+        if dQint is not None:
+            dQdict = {
+                f'dQint/{job_type}': {
+                    'val': dQint,
+                    'step': step,
+                    'avg': dQint.mean(),
+                }
+            }
+            if run is not None:
+                run.log(dQdict)
+            if arun is not None:
+                self.aim_track({'dQint': dQint}, **kwargs)
 
         return avgs, summary
 
@@ -336,14 +427,11 @@ class Trainer:
             nleapfrog: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
         # xi, beta = inputs
-        # inputs = (to_u1(xi), tf.constant(beta))
         xo, metrics = self.dynamics.apply_transition_hmc(
             inputs,
             eps=eps,
             nleapfrog=nleapfrog
         )
-        # xo = self.dynamics.g.compat_proj(xo)
-        # xp = self.dynamics.g.compat_proj(metrics.pop('mc_states').proposed.x)
         xp = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=inputs[0], x_prop=xp, acc=metrics['acc'])
         if self.verbose:
@@ -369,6 +457,7 @@ class Trainer:
             metrics.update(lmetrics)
 
         metrics.update({'loss': loss})
+        assert isinstance(metrics, dict)
 
         return xout, metrics
 
@@ -378,6 +467,7 @@ class Trainer:
             x: Optional[Tensor] = None,
             skip: Optional[str | list[str]] = None,
             run: Optional[Any] = None,
+            arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             job_type: Optional[str] = 'eval',
             nchains: Optional[int] = None,
@@ -456,6 +546,7 @@ class Trainer:
                         'step': step, 'beta': beta, 'dt': dt,
                     }
                     avgs, summary = self.record_metrics(run=run,
+                                                        arun=arun,
                                                         step=step,
                                                         record=record,
                                                         writer=writer,
@@ -544,6 +635,7 @@ class Trainer:
             x: Optional[Tensor] = None,
             step: Optional[int] = None,
             run: Optional[Any] = None,
+            arun: Optional[Any] = None,
             writer: Optional[Any] = None,
     ) -> dict:
         if x is None:
@@ -567,6 +659,7 @@ class Trainer:
                 }
                 avgs_, summary = self.record_metrics(
                     run=run,
+                    arun=arun,
                     step=gstep,
                     writer=writer,
                     record=record,      # template w/ step info, np.arr
@@ -597,6 +690,7 @@ class Trainer:
             skip: Optional[str | list[str]] = None,
             train_dir: Optional[os.PathLike] = None,
             run: Optional[Any] = None,
+            arun: Optional[Any] = None,
             writer: Optional[Any] = None
     ) -> dict:
         """Train l2hmc Dynamics."""
@@ -683,6 +777,7 @@ class Trainer:
                         }
                         avgs, summary = self.record_metrics(
                             run=run,
+                            arun=arun,
                             step=gstep,
                             writer=writer,
                             record=record,      # template w/ step info, np.arr
@@ -709,10 +804,12 @@ class Trainer:
                     'loss': metrics.get('loss', tf.constant(np.Inf)),
                 })
                 if self.rank == 0:
-                    if writer is not None:
-                        update_summaries(step=gstep,
-                                         model=self.dynamics,
-                                         optimizer=self.optimizer)
+                    # if writer is not None:
+                    #     update_summaries(step=gstep,
+                    #                      run=self.run,
+                    #                      arun=self.arun,
+                    #                      model=self.dynamics,
+                    #                      optimizer=self.optimizer)
                     st0 = time.time()
                     manager.save()
                     if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:

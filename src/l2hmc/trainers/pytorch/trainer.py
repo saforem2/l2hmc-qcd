@@ -13,6 +13,9 @@ from pathlib import Path
 import time
 from typing import Any, Callable, Optional
 
+
+import aim
+from aim import Distribution
 # from accelerate import Accelerator
 # from accelerate.utils import extract_model_from_parallel
 import numpy as np
@@ -22,7 +25,10 @@ from rich.table import Table
 import torch
 import horovod.torch as hvd
 from torch import optim
+from torch.optim.lr_scheduler import LambdaLR
 import wandb
+
+from l2hmc.learning_rate.pytorch.learning_rate import rate
 
 from l2hmc.configs import (
     Steps,
@@ -31,11 +37,12 @@ from l2hmc.configs import (
     LearningRateConfig,
 )
 from l2hmc.dynamics.pytorch.dynamics import Dynamics, random_angle
-import l2hmc.group.pytorch.group as g
+from l2hmc.group.u1.pytorch.group import U1Phase
+from l2hmc.group.su3.pytorch.group import SU3
 from l2hmc.loss.pytorch.loss import LatticeLoss
 from l2hmc.trackers.pytorch.trackers import update_summaries
 from l2hmc.utils.history import BaseHistory, summarize_dict
-from l2hmc.utils.rich import add_columns, console
+from l2hmc.utils.rich import add_columns, console, is_interactive
 from l2hmc.utils.step_timer import StepTimer
 
 # from mpi4py import MPI
@@ -57,6 +64,10 @@ RANK = hvd.rank()
 LOCAL_RANK = hvd.local_rank()
 
 WITH_CUDA = torch.cuda.is_available()
+
+
+if is_interactive():
+    console.width = 250
 
 
 def grab(x: Tensor) -> np.ndarray:
@@ -99,20 +110,34 @@ class Trainer:
         self.dynamics = dynamics
         self.optimizer = optimizer
         self.schedule = schedule
+        self.lr_config = lr_config
         self.loss_fn = loss_fn
         self.aux_weight = aux_weight if aux_weight is not None else 0.0
         self.clip_norm = lr_config.clip_norm
         self._with_cuda = torch.cuda.is_available()
+        self._lr_warmup = torch.linspace(
+            self.lr_config.min_lr,
+            self.lr_config.lr_init,
+            2 * self.steps.nepoch
+        )
         if self._with_cuda:
-            dynamics.cuda()
+            self.dynamics.cuda()
 
         hvd.broadcast_parameters(self.dynamics.state_dict(), root_rank=0)
         hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
+        # self.warmup = max(self.lr_config.warmup, self.steps.nepoch)
+        self._factor = 0.7
+        self._model_size = 4 * self.dynamics.xdim
+        self._warmup = (self.steps.nera * self.steps.nepoch) // 4
+        self.lr_schedule = LambdaLR(
+            optimizer=self.optimizer,
+            lr_lambda=lambda step: self.get_lr(step)
+        )
 
         self.optimizer = hvd.DistributedOptimizer(
                 self.optimizer,
                 named_parameters=self.dynamics.named_parameters(),
-                op=hvd.Average,
+                # op=hvd.Average,
                 # op=hvd.Adasum if cfg.use_adasum else hvd.Average,
         )
         # if self.clip_norm:
@@ -138,9 +163,9 @@ class Trainer:
         self.dynamics_config = dynamics_config
         self.verbose = self.dynamics_config.verbose
         if self.dynamics_config.group == 'U1':
-            self.g = g.U1Phase()
+            self.g = U1Phase()
         elif self.dynamics_config.group == 'SU3':
-            self.g = g.SU3()
+            self.g = SU3()
         else:
             raise ValueError('Unexpected value for `dynamics_config.group`')
 
@@ -156,6 +181,16 @@ class Trainer:
             'eval': StepTimer(evals_per_step=self.nlf),
             'hmc': StepTimer(evals_per_step=self.nlf)
         }
+
+    def get_lr(self, step: int) -> float:
+        # return rate(step,
+        #             factor=self._factor,
+        #             warmup=self._warmup,
+        #             model_size=self._model_size)
+        if step < len(self._lr_warmup):
+            return self._lr_warmup[step].item()
+
+        return self.lr_config.lr_init
 
     def draw_x(self) -> Tensor:
         return self.g.random(list(self.xshape)).flatten(1)
@@ -254,6 +289,7 @@ class Trainer:
             x: Optional[Tensor] = None,
             skip: Optional[str | list[str]] = None,
             run: Optional[Any] = None,
+            arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             job_type: Optional[str] = 'eval',
             nchains: Optional[int] = None,
@@ -323,6 +359,7 @@ class Trainer:
                         'step': step, 'beta': beta, 'dt': dt,
                     }
                     avgs, summary = self.record_metrics(run=run,
+                                                        arun=arun,
                                                         step=step,
                                                         record=record,
                                                         writer=writer,
@@ -372,6 +409,7 @@ class Trainer:
             step: Optional[int] = None,
             record: Optional[dict] = None,
             run: Optional[Any] = None,
+            arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             model: Optional[Module] = None,
             optimizer: Optional[optim.Optimizer] = None,
@@ -381,7 +419,10 @@ class Trainer:
         history = self.histories[job_type]
 
         if step is not None:
-            record.update({f'{job_type}_step': step})
+            record.update({
+                f'{job_type}_step': step,
+                'lr': self.get_lr(step),
+            })
 
         record.update({
             'loss': metrics.get('loss', None),
@@ -408,22 +449,72 @@ class Trainer:
                              optimizer=optimizer)
             writer.flush()
 
-        if run is not None and self.verbose:
-            dQint = record.get('dQint', None)
-            if dQint is not None:
-                dQdict = {
-                    f'dQint/{job_type}': {
-                        'val': dQint,
-                        'step': step,
-                        'avg': dQint.mean(),
-                    }
+        dQint = record.get('dQint', None)
+        if dQint is not None:
+            dQdict = {
+                f'dQint/{job_type}': {
+                    'val': dQint,
+                    'step': step,
+                    'avg': dQint.mean(),
                 }
+            }
+            if run is not None:
                 run.log(dQdict, commit=False)
-
-            run.log({f'wandb/{job_type}': record}, commit=False)
-            run.log({f'avgs/wandb.{job_type}': avgs})
+                run.log({f'wandb/{job_type}': record}, commit=False)
+                run.log({f'avgs/wandb.{job_type}': avgs})
+            if arun is not None:
+                kwargs = {
+                    'step': step,
+                    'job_type': job_type,
+                    'arun': arun
+                }
+                self.aim_track(avgs, prefix='avgs', **kwargs)
+                self.aim_track(record, prefix='record', **kwargs)
+                self.aim_track({'dQint': dQint}, prefix='dQ', **kwargs)
 
         return avgs, summary
+
+    def aim_track(
+            self,
+            metrics: dict,
+            step: int,
+            job_type: str,
+            arun: aim.Run,
+            prefix: Optional[str] = None,
+    ) -> None:
+        context = {'subset': job_type}
+        for key, val in metrics.items():
+            if prefix is not None:
+                name = f'{prefix}/{key}'
+            else:
+                name = f'{key}'
+
+            if isinstance(val, dict):
+                for k, v in val.items():
+                    self.aim_track(
+                        v,
+                        step=step,
+                        arun=arun,
+                        job_type=job_type,
+                        prefix=f'{name}/{k}',
+                    )
+
+            if isinstance(val, (Tensor, np.ndarray)):
+                if len(val.shape) > 1:
+                    dist = Distribution(val)
+                    arun.track(dist,
+                               step=step,
+                               name=name,
+                               context=context)
+                    arun.track(val.mean(),
+                               step=step,
+                               name=f'{name}/avg',
+                               context=context,)
+            else:
+                arun.track(val,
+                           name=name,
+                           step=step,
+                           context=context)
 
     def profile_step(
             self,
@@ -460,6 +551,7 @@ class Trainer:
             inputs: tuple[Tensor, Tensor],
     ) -> tuple[Tensor, dict]:
         """Logic for performing a single training step"""
+        self.optimizer.zero_grad()
         xinit, beta = inputs
         xinit = self.g.compat_proj(xinit)
         beta = torch.tensor(beta)
@@ -467,7 +559,6 @@ class Trainer:
         if WITH_CUDA:
             xinit, beta = xinit.cuda(), beta.cuda()
 
-        self.optimizer.zero_grad()
         # ====================================================================
         # -----------------------  Train step  -------------------------------
         # ====================================================================
@@ -479,6 +570,7 @@ class Trainer:
         # --------------------------------------------------------------------
         # [1.] Forward call
         # with self.accelerator.autocast():
+        xinit = self.g.compat_proj(xinit.requires_grad_(True))
         xout, metrics = self.dynamics((xinit, beta))
         xprop = self.g.compat_proj(metrics.pop('mc_states').proposed.x)
 
@@ -502,8 +594,9 @@ class Trainer:
         # self.accelerator.backward(loss)
         # self.optimizer.zero_grad()
         loss.backward()
-        # self.optimizer.synchronize()
         self.optimizer.step()
+        self.lr_schedule.step()
+        # self.optimizer.synchronize()
         # if self.clip_norm > 0.0:
         #     torch.nn.utils.clip_grad_value_(
         #             self.dynamics.parameters(),
@@ -536,13 +629,11 @@ class Trainer:
         if self.rank != 0:
             return
 
-        # unwrapped_model = self.accelerator.unwrap_model(self.dynamics)
         ckpt_dir = Path(train_dir).joinpath('checkpoints')
         ckpt_dir.mkdir(exist_ok=True, parents=True)
         ckpt_file = ckpt_dir.joinpath(f'ckpt-{era}-{epoch}.tar')
         if self.rank == 0:
             log.info(f'Saving checkpoint to: {ckpt_file.as_posix()}')
-        # self.dynamics.save(train_dir)  # type: ignore
         xeps = {
             k: grab(v) for k, v in self.dynamics.xeps.items()
         }
@@ -560,10 +651,8 @@ class Trainer:
         if metrics is not None:
             ckpt.update(metrics)
 
-        # self.accelerator.save(ckpt, ckpt_file)
         torch.save(ckpt, ckpt_file)
         modelfile = ckpt_dir.joinpath('model.pth')
-        # self.accelerator.save(unwrapped_model.state_dict(), modelfile)
         torch.save(self.dynamics.state_dict(), modelfile)
         if run is not None:
             assert run is wandb.run
@@ -587,6 +676,7 @@ class Trainer:
             x: Optional[Tensor] = None,
             # era: Optional[int] = None,
             run: Optional[Any] = None,
+            arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             display: Optional[dict] = None,
     ) -> dict:
@@ -621,6 +711,7 @@ class Trainer:
                 }
                 avgs_, summary = self.record_metrics(
                     run=run,
+                    arun=arun,
                     writer=writer,
                     record=record,
                     metrics=metrics,
@@ -636,7 +727,7 @@ class Trainer:
                 if step == 0:
                     table = add_columns(avgs_, table)
                 else:
-                    table.add_row(*[f'{v}' for _, v in avgs_.items()])
+                    table.add_row(*[v for _, v in avgs_.items()])
             if display is not None:
                 display['job_progress'].advance(display['tasks']['step'])
                 display['job_progress'].advance(display['tasks']['epoch'])
@@ -649,6 +740,7 @@ class Trainer:
             skip: Optional[str | list[str]] = None,
             train_dir: Optional[os.PathLike] = None,
             run: Optional[Any] = None,
+            arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             # extend_last_era: Optional[bool] = True,
             # keep: str | list[str] = None,
@@ -729,6 +821,7 @@ class Trainer:
                         }
                         avgs, summary = self.record_metrics(
                             run=run,
+                            arun=arun,
                             step=gstep,
                             writer=writer,
                             record=record,    # template w/ step info
