@@ -11,7 +11,9 @@ from typing import Optional, Tuple
 import logging
 
 import torch
-from l2hmc.group.pytorch import group as g
+import l2hmc.group.su3.pytorch.group as g
+from l2hmc.lattice.lattice import Lattice
+# from l2hmc.group.pytorch import group as g
 from l2hmc.configs import Charges
 
 log = logging.getLogger(__name__)
@@ -48,14 +50,14 @@ Buffer: Tuple[int, int, int, int, int, int]    # b, t, x, y, z, dim
 #
 # class LatticeSU3(BaseLatticeSU3):
 # ---------------------------------------------------------------
-class LatticeSU3:
+class LatticeSU3(Lattice):
     """4D Lattice with SU(3) links."""
     dim = 4
 
     def __init__(
             self,
-            nb: int,
-            shape: list[int] | tuple[int, int, int, int],
+            nchains: int,
+            shape: list[int],
             c1: float = 0.0,
     ) -> None:
         """4D SU(3) Lattice object for dealing with lattice quantities.
@@ -68,25 +70,35 @@ class LatticeSU3:
          - shape: Lattice shape, list or tuple of 4 ints
          - c1: Constant indicating whether or not to use rectangle terms ?
         """
-        self.dim = 4
-        self.g = g.SU3()
         assert len(shape) == 4  # (nb, nt, nx, dim)
-        self.c1 = c1
-        # self.c1 = torch.tensor(c1)
-        # self.c1 = torch.tensor(c1)
-        self.link_shape = self.g.shape
+        self.g = g.SU3()
         self.nt, self.nx, self.ny, self.nz = shape
-        self.xshape = (self.dim, *shape, *self.g.shape)
-        self._shape = (nb, self.dim, *shape, *self.g.shape)
         self.volume = self.nt * self.nx * self.ny * self.nz
-        self.site_idxs = tuple(
-            [self.nt] + [self.nx for _ in range(self.dim - 1)]
-        )
-        self.nplaqs = self.nt * self.nx
-        self._lattice_shape = shape
-        self.nsites = np.cumprod(shape)[-1]
-        self.nlinks = self.nsites * self.dim
-        self.link_idxs = tuple(list(self.site_idxs) + [self.dim])
+        self.c1 = c1
+        super().__init__(group=self.g, nchains=nchains, shape=shape)
+        # self.dim = 4
+        # self.g = g.SU3()
+        # self.c1 = torch.tensor(c1)
+        # self.c1 = torch.tensor(c1)
+        # self.link_shape = self.g._shape
+        # self.nt, self.nx, self.ny, self.nz = shape
+        # self.xshape = (self.dim, *shape, *self.g._shape)
+        # self._shape = (nchains, self.dim, *shape, *self.g._shape)
+        # self.volume = self.nt * self.nx * self.ny * self.nz
+        # self.site_idxs = tuple(
+        #     [self.nt] + [self.nx for _ in range(self.dim - 1)]
+        # )
+        # self.nplaqs = self.nt * self.nx
+        # self._lattice_shape = shape
+        # self.nsites = np.cumprod(shape)[-1]
+        # self.nlinks = self.nsites * self.dim
+        # self.link_idxs = tuple(list(self.site_idxs) + [self.dim])
+
+    def random(self) -> Tensor:
+        return self.g.random(list(self._shape))
+
+    def random_momentum(self) -> Tensor:
+        return self.g.random_momentum(list(self._shape))
 
     def update_link(
             self,
@@ -239,7 +251,7 @@ class LatticeSU3:
         # NOTE: return psum / (len(ps) * dim(link) * volume)
         return psum / (6 * 3 * self.volume)
 
-    def plaqs(self, wloops: Tensor) -> Tensor:
+    def _plaqs(self, wloops: Tensor) -> Tensor:
         # psum = tf.zeros_like(tf.math.real(wloops[0]))  # type:ignore
         # psum = torch.zeros_like(wloops[0].real)
         psum = wloops.real.sum(tuple(range(2, len(wloops.shape)))).sum(0)
@@ -263,6 +275,12 @@ class LatticeSU3:
         ps, _ = self._wilson_loops(x)
         return self._sin_charges(ps)
 
+    def _charges(self, wloops: Tensor) -> Charges:
+        qsum = wloops.imag.sum(tuple(range(2, len(wloops.shape)))).sum(0)
+        qint = qsum / (32 * (np.pi ** 2))
+        qsin = qsum / (6 * 3 * self.volume)
+        return Charges(intQ=qint, sinQ=qsin)
+
     def _int_charges(self, wloops: Tensor) -> Tensor:
         # TODO: IMPLEMENT
         qsum = wloops.imag.sum(tuple(range(2, len(wloops.shape)))).sum(0)
@@ -277,24 +295,17 @@ class LatticeSU3:
         ps, _ = self._wilson_loops(x=x, needs_rect=False)
         return ps
 
-    def kinetic_energy(
-            self,
-            v: Tensor,
-    ) -> Tensor:
+    def kinetic_energy(self, v: Tensor) -> Tensor:
         return self.g.kinetic_energy(v)
 
-    def potential_energy(
-            self,
-            x: Tensor,
-            beta: Tensor,
-    ) -> Tensor:
+    def potential_energy(self, x: Tensor, beta: Tensor) -> Tensor:
         return self.action(x, beta)
 
     def action(
             self,
             x: Tensor,
             beta: Tensor,
-    ):
+    ) -> Tensor:
         """Returns the action"""
         coeffs = self.coeffs(beta)
         ps, rs = self._wilson_loops(x, needs_rect=(self.c1 != 0))
@@ -309,11 +320,33 @@ class LatticeSU3:
 
         return action * torch.tensor(-1.0 / 3.0)
 
-    def random(self):
-        return self.g.random(list(self._shape))
+    def _action(
+            self,
+            wloops: tuple[Tensor, Tensor],
+            beta: Tensor,
+    ) -> Tensor:
+        coeffs = self.coeffs(beta)
+        ps, rs = wloops
+        # ps, rs = self._wilson_loops(x, needs_rect=(self.c1 != 0))
+        # assert isinstance(x, Tensor)
+        psum = ps.real.sum(tuple(range(2, len(ps.shape)))).sum(0)
+        action = coeffs['plaq'] * psum
+        if self.c1 != 0:
+            rsum = rs.real.sum(tuple(range(2, len(rs.shape)))).sum(0)
+            action = action + coeffs['rect'] * rsum
 
-    def random_momentum(self):
-        return self.g.random_momentum(list(self._shape))
+        return action / 3.0
+
+    def action_with_grad(
+            self,
+            x: Tensor,
+            beta: Tensor,
+    ) -> tuple[Tensor, Tensor]:
+        x.requires_grad_(True)
+        s = self.action(x, beta)
+        identity = torch.ones(x.shape[0], device=x.device, dtype=x.dtype)
+        dsdx, = torch.autograd.grad(s, x, grad_outputs=identity)
+        return s, self.g.projectTAH(dsdx @ x.adjoint())
 
     def grad_action(self, x: Tensor, beta: Tensor) -> Tensor:
         """Returns the derivative of the action"""
@@ -343,6 +376,28 @@ class LatticeSU3:
             metrics['action'] = action
 
         return metrics
+
+    def plaq_loss(
+            self,
+            acc: Tensor,
+            x1: Optional[Tensor] = None,
+            x2: Optional[Tensor] = None,
+            wloops1: Optional[Tensor] = None,
+            wloops2: Optional[Tensor] = None
+    ):
+        log.error('TODO')
+        pass
+
+    def charge_loss(
+            self,
+            acc: Tensor,
+            x1: Optional[Tensor] = None,
+            x2: Optional[Tensor] = None,
+            wloops1: Optional[Tensor] = None,
+            wloops2: Optional[Tensor] = None
+    ):
+        log.error('TODO')
+        pass
 
 
 if __name__ == '__main__':
