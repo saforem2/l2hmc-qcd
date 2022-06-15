@@ -7,6 +7,7 @@ from __future__ import absolute_import, annotations, division, print_function
 import os
 from pathlib import Path
 from typing import Optional
+import shutil
 
 from omegaconf import OmegaConf, DictConfig
 import rich
@@ -34,7 +35,11 @@ import rich.tree
 
 from l2hmc.configs import Steps
 
-WIDTH = max(150, int(os.environ.get('COLUMNS', 150)))
+# WIDTH = max(150, int(os.environ.get('COLUMNS', 150)))
+size = shutil.get_terminal_size()
+WIDTH = size.columns
+HEIGHT = size.lines
+# os.environ['COLUMNS'] = f'{size.columns}'
 
 
 def is_interactive():
@@ -47,7 +52,9 @@ console = Console(record=False,
                   log_path=False,
                   force_jupyter=is_interactive(),
                   width=WIDTH)
-console.width = WIDTH
+
+console.width = max(WIDTH, int(os.environ.get('COLUMNS', 150)))
+# assert console.width == WIDTH == os.environ['COLUMNS']
 
 
 def make_layout(ratio: int = 4, visible: bool = True) -> Layout:

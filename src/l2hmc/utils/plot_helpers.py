@@ -42,13 +42,13 @@ plt.style.use('default')
 plt.rcParams.update({
     'image.cmap': 'viridis',
     'savefig.transparent': True,
-    'text.color': '#9E9E9E',
-    'axes.labelcolor': '#9E9E9E',
-    'xtick.color': '#6f6f6f04',
-    'ytick.color': '#6f6f6f04',
-    'ytick.labelcolor': '#6f6f6f',
-    'xtick.labelcolor': '#6f6f6f',
-    'axes.edgecolor': '#6f6f6f00',
+    'text.color': '#bdbdbd',
+    'axes.labelcolor': '#bdbdbd',
+    'xtick.color': '#bdbdbd04',
+    'ytick.color': '#bdbdbd04',
+    'ytick.labelcolor': '#bdbdbd',
+    'xtick.labelcolor': '#bdbdbd',
+    'axes.edgecolor': '#bdbdbd00',
     'grid.color': (0.434, 0.434, 0.434, 0.434),  # #66666602
     'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
     'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
@@ -171,6 +171,7 @@ def plot_leapfrogs(
         xlabel: Optional[str] = None,
         ylabel: Optional[str] = None,
         outfile: Optional[os.PathLike] = None,
+        line_labels: Optional[bool] = False,
 ) -> FigAxes:
     assert len(y.shape) == 3
 
@@ -190,7 +191,8 @@ def plot_leapfrogs(
     for lf in range(nlf):
         _ = ax.plot(x, yavg[:, lf], color=colors[lf], label=f'{lf}')
 
-    _ = matplotx.line_labels(font_kwargs={'size': 'small'})
+    if line_labels:
+        _ = matplotx.line_labels(font_kwargs={'size': 'small'})
 
     if xlabel is not None:
         _ = ax.set_xlabel(xlabel)
@@ -237,11 +239,13 @@ def plot_combined(
     sns.kdeplot(y=val.values.flatten(), ax=ax2, color=color, shade=True)
     axes = (ax1, ax2)
     ax0 = subfigs[0].subplots(1, 1)
-    val = val.dropna('chain')
+    if 'chain' in val.dims:
+        val = val.dropna('chain')
+        _ = xplt.imshow(val, 'draw', 'chain', ax=ax0,
+                        robust=True, add_colorbar=True)
     # _ = xplt.pcolormesh(val, 'draw', 'chain', ax=ax0,
     #                     robust=True, add_colorbar=True)
-    _ = xplt.imshow(val, 'draw', 'chain', ax=ax0,
-                    robust=True, add_colorbar=True)
+    # sns.despine(ax0)
     nchains = min(num_chains, len(val.coords['chain']))
     label = f'{key}_avg'
     # label = r'$\langle$' + f'{key} ' + r'$\rangle$'
@@ -258,6 +262,7 @@ def plot_combined(
 
     ax2.set_xticks([])
     ax2.set_xticklabels([])
+    # sns.despine(ax=ax0, top=True, right=True, left=True, bottom=True)
     sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
     sns.despine(ax=ax2, top=True, right=True, left=True, bottom=True)
     ax2.set_xlabel('')
@@ -277,7 +282,7 @@ def plot_dataArray(
         outdir: Optional[str | Path] = None,
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
-        line_labels: Optional[bool] = True,
+        line_labels: Optional[bool] = False,
 ) -> tuple:
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
@@ -364,12 +369,13 @@ def plot_dataArray(
 
 
 def plot_array(
-    val: list | np.ndarray,
-    key: Optional[str] = None,
-    xlabel: Optional[str] = None,
-    title: Optional[str] = None,
-    num_chains: Optional[int] = 10,
-    **kwargs,
+        val: list | np.ndarray,
+        key: Optional[str] = None,
+        xlabel: Optional[str] = None,
+        title: Optional[str] = None,
+        num_chains: Optional[int] = 10,
+        outdir: Optional[str | Path] = None,
+        **kwargs,
 ) -> tuple[plt.Figure, plt.Axes]:
     fig, ax = plt.subplots(constrained_layout=True)
     arr = np.array(val)
@@ -406,7 +412,7 @@ def plot_array(
 
     elif len(arr.shape) == 1:
         y = arr
-        x = np.arange(len(y))
+        x = np.arange(y.shape[0])
         _ = ax.plot(x, y, label=key, **kwargs)
 
     else:
@@ -419,6 +425,17 @@ def plot_array(
         ax.set_title(title)
 
     _ = ax.legend(loc='best')
+
+    if outdir is not None:
+        outfile = Path(outdir).joinpath(f'{key}.svg')
+        if outfile.is_file():
+            tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
+            pngdir = Path(outdir).joinpath('pngs')
+            pngdir.mkdir(exist_ok=True, parents=True)
+            pngfile = pngdir.joinpath(f'{key}-{tstamp}.png')
+            svgfile = Path(outdir).joinpath(f'{key}-{tstamp}.svg')
+            plt.savefig(pngfile, dpi=400, bbox_inches='tight')
+            plt.savefig(svgfile, dpi=400, bbox_inches='tight')
 
     return fig, ax
 
@@ -463,6 +480,7 @@ def plot_metric(
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
         ext: Optional[str] = 'png',
+        line_labels: Optional[bool] = False,
 ) -> tuple:
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
@@ -548,7 +566,9 @@ def plot_metric(
             # where arr[:, idx].shape = [ndraws, 1]
             ax.plot(steps, arr[:, idx], alpha=0.5, lw=lw/2., **plot_kwargs)
 
-    matplotx.line_labels(font_kwargs={'size': 'small'})
+    if line_labels:
+        matplotx.line_labels(font_kwargs={'size': 'small'})
+
     ax.set_xlabel('draw')
     if title is not None:
         fig.suptitle(title)
@@ -695,7 +715,7 @@ def make_ridgeplots(
             # Draw the densities in a few steps
             _ = g.map(sns.kdeplot, key, cut=1,
                       shade=True, alpha=0.7, linewidth=1.25)
-            _ = g.map(plt.axhline, y=0, lw=1.5, alpha=0.7, clip_on=False)
+            _ = g.map(plt.axhline, y=0, lw=1.5, alpha=0.9, clip_on=False)
 
             # Define and use a simple function to
             # label the plot in axes coords:
@@ -706,7 +726,6 @@ def make_ridgeplots(
                 ax.set_yticklabels([])
                 ax.text(0, 0.10, label, fontweight='bold', color=color,
                         ha='left', va='center', transform=ax.transAxes)
-                        #fontsize='small')
 
             _ = g.map(label, key)
             # Set the subplots to overlap
