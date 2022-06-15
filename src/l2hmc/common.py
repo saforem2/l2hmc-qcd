@@ -251,7 +251,7 @@ def plot_dataset(
             from aim import Figure, Run
             assert isinstance(arun, Run)
             afig = Figure(fig)
-            arun.track(afig, name=f'{key}_xarr',
+            arun.track(afig, name=f'figures/{key}_xarr',
                        context={'subset': job_type})
 
         fig, _, _ = plot_dataArray(val,
@@ -324,10 +324,15 @@ def analyze_dataset(
                     aimage = Image(
                         Path(f).as_posix(),
                         format='png',
-                        optimize=True,
-                        # quality=100,
+                        # optimize=True,
+                        quality=100,
                     )
-                    arun.track(aimage, name=f'images/{f.stem}', step=0)
+                    arun.track(
+                        aimage,
+                        name=f'images/{f.stem}',
+                        # step=
+                        context={'subset': job_type}
+                    )
 
     return dataset
 
