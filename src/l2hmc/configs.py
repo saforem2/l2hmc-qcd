@@ -29,6 +29,7 @@ HERE = Path(os.path.abspath(__file__)).parent
 PROJECT_DIR = HERE.parent.parent
 CONF_DIR = HERE.joinpath('conf')
 LOGS_DIR = PROJECT_DIR.joinpath('logs')
+AIM_DIR = HERE.joinpath('.aim')
 OUTPUTS_DIR = HERE.joinpath('outputs')
 
 CONF_DIR.mkdir(exist_ok=True, parents=True)
@@ -419,7 +420,7 @@ class InputSpec(BaseConfig):
 
 
 @dataclass
-class TrainerConfig:
+class TrainerConfig1:
     steps: Steps
     lr: LearningRateConfig
     dynamics: DynamicsConfig
@@ -436,7 +437,6 @@ class TrainerConfig:
 class ExperimentConfig:
     framework: str
     seed: int
-
     steps: Steps
     loss: LossConfig
     network: NetworkConfig
@@ -475,19 +475,25 @@ class ExperimentConfig:
         log.warning(f'latvolume: {self.dynamics.latvolume}')
 
 
-def get_experiment(overrides: Optional[list[str]] = None):
+def get_config(overrides: Optional[list[str]] = None):
     from hydra import (
-        # initialize,
-        # initialize_config_module,
         initialize_config_dir,
         compose
     )
     from hydra.core.global_hydra import GlobalHydra
     GlobalHydra.instance().clear()
     overrides = [] if overrides is None else overrides
-    with initialize_config_dir(CONF_DIR.absolute().as_posix()):
+    with initialize_config_dir(
+            CONF_DIR.absolute().as_posix(),
+            version_base=None,
+    ):
         cfg = compose('config', overrides=overrides)
 
+    return cfg
+
+
+def get_experiment(overrides: Optional[list[str]] = None):
+    cfg = get_config(overrides)
     if cfg.framework == 'pytorch':
         from l2hmc.experiment.pytorch.experiment import Experiment
         return Experiment(cfg)
@@ -495,7 +501,10 @@ def get_experiment(overrides: Optional[list[str]] = None):
         from l2hmc.experiment.tensorflow.experiment import Experiment
         return Experiment(cfg)
     else:
-        raise ValueError(f'Unexpected value for `cfg.framework: {cfg.framework}')
+        raise ValueError(
+            f'Unexpected value for `cfg.framework: {cfg.framework}'
+        )
+
 
 defaults = [
     {'backend': MISSING}
@@ -505,4 +514,24 @@ cs = ConfigStore.instance()
 cs.store(
     name='experiment_config',
     node=ExperimentConfig,
+)
+cs.store(
+    name='dynamics_config',
+    node=DynamicsConfig,
+)
+cs.store(
+    name='network_config',
+    node=NetworkConfig
+)
+cs.store(
+    name='loss_config',
+    node=LossConfig,
+)
+cs.store(
+    name='net_weights',
+    node=NetWeights,
+)
+cs.store(
+    name='annealing_schedule',
+    node=AnnealingSchedule,
 )
