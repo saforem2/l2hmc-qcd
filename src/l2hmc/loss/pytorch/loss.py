@@ -8,9 +8,10 @@ from typing import Optional
 
 import torch
 
-import l2hmc.group.pytorch.group as g
 
 from l2hmc.configs import LossConfig
+from l2hmc.group.u1.pytorch.group import U1Phase
+from l2hmc.group.su3.pytorch.group import SU3
 from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
 from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
 
@@ -28,9 +29,9 @@ class LatticeLoss:
         # self.xshape = self.lattice._shape
         self.xshape = self.lattice.xshape
         if isinstance(self.lattice, LatticeU1):
-            self.g = g.U1Phase()
+            self.g = U1Phase()
         elif isinstance(self.lattice, LatticeSU3):
-            self.g = g.SU3()
+            self.g = SU3()
         else:
             raise ValueError(f'Unexpected value for `self.g`: {self.g}')
 
@@ -44,9 +45,9 @@ class LatticeLoss:
     def _plaq_loss(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
         dw = w2 - w1
         dwloops = 2. * (torch.ones_like(w1) - dw.cos())
-        if isinstance(self.g, g.U1Phase):
+        if isinstance(self.g, U1Phase):
             ploss = acc * dwloops.sum((1, 2)) + 1e-4
-        elif isinstance(self.g, g.SU3):
+        elif isinstance(self.g, SU3):
             ploss = acc * dwloops.sum((tuple(range(2, len(w1.shape)))))
         else:
             raise ValueError(f'Unexpected value for `self.g`: {self.g}')
