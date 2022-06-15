@@ -18,6 +18,7 @@ from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
 import tensorflow as tf
 import horovod.tensorflow as hvd
 from l2hmc.loss.tensorflow.loss import LatticeLoss
+import aim
 
 from l2hmc.network.tensorflow.network import NetworkFactory
 from l2hmc.trainers.tensorflow.trainer import Trainer
@@ -184,6 +185,13 @@ class Experiment(BaseExperiment):
             if init_aim:
                 log.warning(f'Initializing Aim from {rank}:{local_rank}')
                 arun = self.init_aim()
+                # assert arun is not None and arun is aim.Run
+                ndevices = hvd.size()
+                gpus = tf.config.experimental.list_physical_devices('GPU')
+                if gpus:
+                    arun['ngpus'] = ndevices
+                else:
+                    arun['ncpus'] = ndevices
 
         self.run = run
         self.arun = arun
@@ -221,21 +229,42 @@ class Experiment(BaseExperiment):
             writer=writer,
             train_dir=jobdir
         )
-        # if self.trainer.rank == 0:
+
+        dataset = output['history'].get_dataset(therm_frac=0.0)
+        dQint = dataset.data_vars.get('dQint', None)
+        if dQint is not None:
+            dQint = dQint.values
+            if self.run is not None:
+                import wandb
+                assert self.run is wandb.run
+                self.run.summary['dQint_train'] = dQint
+                self.run.summary['dQint_train'] = dQint.mean()
+
+            if self.arun is not None:
+                import aim
+                from aim import Distribution
+                assert isinstance(self.arun, aim.Run)
+                dQdist = Distribution(dQint)
+                self.arun.track(dQdist,
+                                name='dQint',
+                                context={'subset': 'train'})
+                self.arun.track(dQint.mean(),
+                                name='dQint.avg',
+                                context={'subset': 'train'})
+
+        nchains = int(
+            min(self.cfg.dynamics.nchains,
+                max(64, self.cfg.dynamics.nchains // 8))
+        )
         if RANK == 0:
-            dset = output['history'].get_dataset()
-            nchains = int(
-                min(self.cfg.dynamics.nchains,
-                    max(64, self.cfg.dynamics.nchains // 8))
-            )
-            _ = save_and_analyze_data(dset,
+            _ = save_and_analyze_data(dataset,
                                       run=self.run,
                                       arun=self.arun,
                                       outdir=jobdir,
                                       output=output,
                                       nchains=nchains,
                                       job_type='train',
-                                      framework='pytorch')
+                                      framework='tensorflow')
 
         if writer is not None:
             writer.close()
@@ -271,12 +300,27 @@ class Experiment(BaseExperiment):
             nleapfrog=nleapfrog,
         )
         dataset = output['history'].get_dataset(therm_frac=therm_frac)
-        if self.run is not None:
-            dQint = dataset.data_vars.get('dQint').values
+        dQint = dataset.data_vars.get('dQint', None)
+        if dQint is not None:
+            dQint = dQint.values
             drop = int(0.1 * len(dQint))
             dQint = dQint[drop:]
-            self.run.summary[f'dQint_{job_type}'] = dQint
-            self.run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
+            if self.run is not None:
+                import wandb
+                assert self.run is wandb.run
+                self.run.summary[f'dQint_{job_type}'] = dQint
+                self.run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
+
+            if self.arun is not None:
+                from aim import Distribution
+                assert isinstance(self.arun, aim.Run)
+                dQdist = Distribution(dQint)
+                self.arun.track(dQdist,
+                                name=f'dQint_{job_type}',
+                                context={'subset': job_type})
+                self.arun.track(dQint.mean(),
+                                name=f'dQint_{job_type}.avg',
+                                context={'subset': job_type})
 
         _ = save_and_analyze_data(
             dataset,
@@ -288,5 +332,8 @@ class Experiment(BaseExperiment):
             job_type=job_type,
             framework='tensorflow',
         )
+
+        if writer is not None:
+            writer.close()
 
         return output

@@ -20,6 +20,7 @@ import wandb
 # from build.lib.l2hmc.configs import ExperimentConfig
 from l2hmc.common import save_and_analyze_data
 # from mpi4py import MPI
+import aim
 from aim import Distribution
 
 from l2hmc.configs import ExperimentConfig
@@ -211,6 +212,13 @@ class Experiment(BaseExperiment):
             if init_aim:
                 log.warning(f'Initializing Aim from {rank}:{local_rank}')
                 arun = self.init_aim()
+                if arun is not None:
+                    # assert arun is aim.Run
+                    # assert arun is not None and arun is aim.Run
+                    if torch.cuda.is_available():
+                        arun['ngpus'] = SIZE
+                    else:
+                        arun['ncpus'] = SIZE
 
         self.run = run
         self.arun = arun
@@ -282,13 +290,35 @@ class Experiment(BaseExperiment):
                                     arun=self.arun,
                                     writer=writer,
                                     train_dir=jobdir)
-        # if self.trainer.rank == 0:
+
+        # dataset = output['history'].get_dataset(therm_frac=0.0)
+        # dataset = self.trainer.histories['train'].get_dataset(therm_frac=0.0)
+        dset = output['history'].get_dataset()
+        dQint = dset.data_vars.get('dQint', None)
+        if dQint is not None:
+            dQint = dQint.values
+            if self.run is not None:
+                import wandb
+                assert self.run is wandb.run
+                self.run.summary['dQint_train'] = dQint
+                self.run.summary['dQint_train'] = dQint.mean()
+
+            if self.arun is not None:
+                from aim import Distribution
+                assert isinstance(self.arun, aim.Run)
+                dQdist = Distribution(dQint)
+                self.arun.track(dQdist,
+                                name='dQint',
+                                context={'subset': 'train'})
+                self.arun.track(dQint.mean(),
+                                name='dQint.avg',
+                                context={'subset': 'train'})
+
+        nchains = int(
+            min(self.cfg.dynamics.nchains,
+                max(64, self.cfg.dynamics.nchains // 8))
+        )
         if RANK == 0:
-            dset = output['history'].get_dataset()
-            nchains = int(
-                min(self.cfg.dynamics.nchains,
-                    max(64, self.cfg.dynamics.nchains // 8))
-            )
             _ = save_and_analyze_data(dset,
                                       run=self.run,
                                       arun=self.arun,
@@ -337,27 +367,30 @@ class Experiment(BaseExperiment):
             nleapfrog=nleapfrog,
         )
         dataset = output['history'].get_dataset(therm_frac=therm_frac)
-        dQint = dataset.data_vars.get('dQint').values
-        drop = int(0.1 * len(dQint))
-        dQint = dQint[drop:]
-        if self.run is not None:
-            assert self.run is wandb.run
-            self.run.summary[f'dQint_{job_type}'] = dQint
-            self.run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
-        if self.arun is not None:
-            import aim
-            assert isinstance(self.arun, aim.Run)
-            self.arun.track(
-                dQint.mean(),
-                name=f'dQint_{job_type}.avg'
-            )
-            dQdist = Distribution(dQint)
-            self.arun.track(dQdist,
-                            name=f'dQint_{job_type}',
-                            context={'subset': job_type})
-            self.arun.track(dQint.mean(),
-                            name=f'dQint_{job_type}_avg',
-                            context={'subset': job_type})
+        dQint = dataset.data_vars.get('dQint', None)
+        if dQint is not None:
+            dQint = dQint.values
+            drop = int(0.1 * len(dQint))
+            dQint = dQint[drop:]
+            if self.run is not None:
+                assert self.run is wandb.run
+                self.run.summary[f'dQint_{job_type}'] = dQint
+                self.run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
+
+            if self.arun is not None:
+                import aim
+                assert isinstance(self.arun, aim.Run)
+                self.arun.track(
+                    dQint.mean(),
+                    name=f'dQint_{job_type}.avg'
+                )
+                dQdist = Distribution(dQint)
+                self.arun.track(dQdist,
+                                name='dQint',
+                                context={'subset': job_type})
+                self.arun.track(dQint.mean(),
+                                name='dQint.avg',
+                                context={'subset': job_type})
 
         _ = save_and_analyze_data(
             dataset,
