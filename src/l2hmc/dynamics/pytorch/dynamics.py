@@ -783,7 +783,7 @@ class Dynamics(nn.Module):
             x = self.g.group_to_vec(x)
 
         # x, v = x.to(self.device), v.to(self.device)
-        if self.cuda.is_available():
+        if torch.cuda.is_available():
             x, v = x.cuda(), v.cuda()
 
         return xnet((x, v))
