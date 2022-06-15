@@ -20,6 +20,7 @@ import wandb
 # from build.lib.l2hmc.configs import ExperimentConfig
 from l2hmc.common import save_and_analyze_data
 # from mpi4py import MPI
+from aim import Distribution
 
 from l2hmc.configs import ExperimentConfig
 
@@ -35,6 +36,7 @@ log = logging.getLogger(__name__)
 
 # LOCAL_RANK = os.environ.get('OMPI_COMM_WORLD_LOCAL_RANK', '0')
 
+Tensor = torch.Tensor
 SIZE = hvd.size()
 RANK = hvd.rank()
 LOCAL_RANK = hvd.local_rank()
@@ -46,17 +48,36 @@ class Experiment(BaseExperiment):
         assert isinstance(self.config, ExperimentConfig)
         # self.accelerator = self.build_accelerator()
 
+    def visualize_model(self, x: Optional[Tensor] = None):
+        from torchviz import make_dot  # type: ignore
+        if x is None:
+            state = self.trainer.dynamics.random_state(1.)
+            x = state.x
+            v = state.v
+        else:
+            v = torch.rand_like(x)
+
+        s, t, q = self.trainer.dynamics._call_xnet(
+            0, inputs=(x, v), first=True
+        )
+        xparams = dict(
+            self.trainer.dynamics.networks['xnet'].named_parameters()
+        )
+        make_dot(s, params=xparams).render('scale-xnet-0', format='png')
+        make_dot(t, params=xparams).render('transl-xnet-0', format='png')
+        make_dot(q, params=xparams).render('transf-xnet-0', format='png')
+
     def build_lattice(self):
         group = str(self.config.dynamics.group).upper()
-        lat_args = (
-            self.config.dynamics.nchains,
-            tuple(self.config.dynamics.latvolume)
-        )
+        lat_args = {
+            'nchains': self.config.dynamics.nchains,
+            'shape': list(self.config.dynamics.latvolume),
+        }
         if group == 'U1':
-            return LatticeU1(*lat_args)
+            return LatticeU1(**lat_args)
         if group == 'SU3':
             c1 = self.config.c1 if self.config.c1 is not None else 0.0
-            return LatticeSU3(*lat_args, c1=c1)
+            return LatticeSU3(c1=c1, **lat_args)
         raise ValueError(
             'Unexpected value for `dynamics.group`: '
             f'{self.config.dynamics.group}'
@@ -65,7 +86,7 @@ class Experiment(BaseExperiment):
     def update_wandb_config(
             self,
             run_id: Optional[str] = None,
-    ):
+    ) -> None:
         device = 'gpu' if torch.cuda.is_available() else 'cpu'
         # size = 'DDP' if torch.cuda.device_count() > 1 else 'local'
         self._update_wandb_config(device=device, run_id=run_id)
@@ -77,7 +98,7 @@ class Experiment(BaseExperiment):
         # return Accelerator(log_with=['all'])
         return Accelerator(**kwargs)
 
-    def build_dynamics(self, potential_fn: Callable):
+    def build_dynamics(self, potential_fn: Callable) -> Dynamics:
         # assert self.lattice is not None
         input_spec = self.get_input_spec()
         net_factory = NetworkFactory(
@@ -90,11 +111,10 @@ class Experiment(BaseExperiment):
                         potential_fn=potential_fn,
                         network_factory=net_factory)
 
-    def build_loss(self, lattice: LatticeU1 | LatticeSU3):
-        # assert (
-        #     self.lattice is not None
-        #     and isinstance(self.lattice, (LatticeU1, LatticeSU3))
-        # )
+    def build_loss(
+            self,
+            lattice: LatticeU1 | LatticeSU3
+    ) -> LatticeLoss:
         return LatticeLoss(
             lattice=lattice,
             loss_config=self.config.loss,
@@ -134,14 +154,6 @@ class Experiment(BaseExperiment):
             loss_fn: Optional[Callable] = None
     ):
         run = super()._init_wandb()
-        if self.config.framework == 'pytorch':
-            run.watch(
-                dynamics,
-                log='all',
-                log_graph=True,
-                criterion=loss_fn,
-                log_freq=self.config.steps.log
-            )
 
         return run
 
@@ -152,10 +164,21 @@ class Experiment(BaseExperiment):
         sdir = super()._get_summary_dir(job_type=job_type)
         return SummaryWriter(sdir)
 
-    def build(self, init_wandb: bool = True):
-        return self._build(init_wandb=init_wandb)
+    def build(
+            self,
+            init_wandb: bool = True,
+            init_aim: bool = True,
+    ):
+        return self._build(
+            init_wandb=init_wandb,
+            init_aim=init_aim,
+        )
 
-    def _build(self, init_wandb: bool = True):
+    def _build(
+            self,
+            init_wandb: bool = True,
+            init_aim: bool = True,
+    ):
         if self._is_built:
             # assert self.accelerator is not None
             assert self.lattice is not None
@@ -164,68 +187,99 @@ class Experiment(BaseExperiment):
             assert self.optimizer is not None
             assert self.loss_fn is not None
             return {
-                'run': self.run,
-                'trainer': self.trainer,
+                'lattice': self.lattice,
+                'loss_fn': self.loss_fn,
                 'dynamics': self.dynamics,
                 'optimizer': self.optimizer,
-                'loss_fn': self.loss_fn,
+                'trainer': self.trainer,
+                'run': getattr(self, 'run', None),
+                'arun': getattr(self, 'arun', None),
             }
 
-        lattice = self.build_lattice()
-        loss_fn = self.build_loss(lattice)
-        dynamics = self.build_dynamics(potential_fn=lattice.action)
+        run = None
+        arun = None
+        # self.rank = self.accelerator.local_process_index
+        # if self.trainer.rank == 0 and init_wandb:
+        # if self.accelerator.is_local_main_process and init_wandb:
+        rank = hvd.rank()
+        local_rank = hvd.local_rank()
+        if RANK == 0:
+            if init_wandb:
+                log.warning(f'Initialize WandB from {rank}:{local_rank}')
+                run = self.init_wandb(dynamics=self.dynamics,
+                                      loss_fn=self.loss_fn)
+            if init_aim:
+                log.warning(f'Initializing Aim from {rank}:{local_rank}')
+                arun = self.init_aim()
+
+        self.run = run
+        self.arun = arun
+        self.lattice = self.build_lattice()
+        self.loss_fn = self.build_loss(self.lattice)
+        self.dynamics = self.build_dynamics(potential_fn=self.lattice.action)
         # if SIZE > 1:
         #     dynamics = DDP(dynamics, device_ids=[RANK], output_device=RANK)
 
-        optimizer = self.build_optimizer(dynamics=dynamics)
+        self.optimizer = self.build_optimizer(dynamics=self.dynamics)
         # dynamics, optimizer = self.accelerator.prepare(
         #     dynamics, optimizer
         # )
         # accelerator = self.build_accelerator()
-        trainer = self.build_trainer(
-            dynamics=dynamics,
-            optimizer=optimizer,
-            loss_fn=loss_fn,
+        self.trainer = self.build_trainer(
+            loss_fn=self.loss_fn,
+            dynamics=self.dynamics,
+            optimizer=self.optimizer,
         )
-        self.lattice = lattice
-        self.loss_fn = loss_fn
-        self.trainer = trainer
-        self.dynamics = dynamics
-        self.optimizer = optimizer
+        if self.run is not None and run is wandb.run:
+            self.run.watch(
+                self.trainer.dynamics,
+                log='all',
+                log_graph=True,
+                criterion=self.trainer.loss_fn,
+                log_freq=self.config.steps.log,
+            )
+        # self.lattice = lattice
+        # self.loss_fn = loss_fn
+        # self.trainer = trainer
+        # self.dynamics = dynamics
+        # self.optimizer = optimizer
         # self.accelerator = accelerator
-        self.run = None
-        # self.rank = self.accelerator.local_process_index
-        # if self.trainer.rank == 0 and init_wandb:
-        # if self.accelerator.is_local_main_process and init_wandb:
-        if RANK == 0 and init_wandb:
-            if self.run is None:
-                self.run = self.init_wandb(dynamics=dynamics, loss_fn=loss_fn)
-
         self._is_built = True
-
+        assert callable(self.loss_fn)
+        assert isinstance(self.trainer, Trainer)
+        assert isinstance(self.dynamics, Dynamics)
+        assert isinstance(self.lattice, (LatticeU1, LatticeSU3))
         return {
-            'run': self.run,
-            'trainer': self.trainer,
+            'lattice': self.lattice,
+            'loss_fn': self.loss_fn,
             'dynamics': self.dynamics,
             'optimizer': self.optimizer,
-            'loss_fn': self.loss_fn,
+            'trainer': self.trainer,
+            'run': self.run,
+            'arun': self.arun,
         }
+
+    def _assert_is_built(self):
+        # assert self.accelerator is not None
+        assert self._is_built
+        assert self.lattice is not None
+        assert self.trainer is not None
+        assert self.dynamics is not None
+        assert self.optimizer is not None
+        assert self.loss_fn is not None
 
     def train(
         self,
-        run: Optional[Any] = None,
         nchains: Optional[int] = None,
     ):
         # nchains = 16 if nchains is None else nchains
         jobdir = self.get_jobdir(job_type='train')
-        if run is not None:
-            assert run.isinstance(wandb.run)
-
         writer = None
         if RANK == 0:
             writer = self.get_summary_writer(job_type='train')
 
-        output = self.trainer.train(run=run,
+        output = self.trainer.train(run=self.run,
+                                    arun=self.arun,
                                     writer=writer,
                                     train_dir=jobdir)
         # if self.trainer.rank == 0:
@@ -236,7 +290,8 @@ class Experiment(BaseExperiment):
                     max(64, self.cfg.dynamics.nchains // 8))
             )
             _ = save_and_analyze_data(dset,
-                                      run=run,
+                                      run=self.run,
+                                      arun=self.arun,
                                       outdir=jobdir,
                                       output=output,
                                       nchains=nchains,
@@ -251,7 +306,8 @@ class Experiment(BaseExperiment):
     def evaluate(
             self,
             job_type: str,
-            run: Optional[Any] = None,
+            # run: Optional[Any] = None,
+            # arun: Optional[Any] = None,
             therm_frac: float = 0.1,
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
@@ -268,10 +324,12 @@ class Experiment(BaseExperiment):
         #     writer = self.get_summary_writer(job_type)
         # else:
         #     writer = None
-        run = self.run if run is None else run
-        assert run is wandb.run
+        # run = self.run if run is None else run
+        # assert run is wandb.run
+        # arun = self.arun if run is None else arun
         output = self.trainer.eval(
-            run=run,
+            run=self.run,
+            arun=self.arun,
             writer=writer,
             nchains=nchains,
             job_type=job_type,
@@ -279,17 +337,32 @@ class Experiment(BaseExperiment):
             nleapfrog=nleapfrog,
         )
         dataset = output['history'].get_dataset(therm_frac=therm_frac)
-        if run is not None:
-            assert run is wandb.run
-            dQint = dataset.data_vars.get('dQint').values
-            drop = int(0.1 * len(dQint))
-            dQint = dQint[drop:]
-            run.summary[f'dQint_{job_type}'] = dQint
-            run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
+        dQint = dataset.data_vars.get('dQint').values
+        drop = int(0.1 * len(dQint))
+        dQint = dQint[drop:]
+        if self.run is not None:
+            assert self.run is wandb.run
+            self.run.summary[f'dQint_{job_type}'] = dQint
+            self.run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
+        if self.arun is not None:
+            import aim
+            assert isinstance(self.arun, aim.Run)
+            self.arun.track(
+                dQint.mean(),
+                name=f'dQint_{job_type}.avg'
+            )
+            dQdist = Distribution(dQint)
+            self.arun.track(dQdist,
+                            name=f'dQint_{job_type}',
+                            context={'subset': job_type})
+            self.arun.track(dQint.mean(),
+                            name=f'dQint_{job_type}_avg',
+                            context={'subset': job_type})
 
         _ = save_and_analyze_data(
             dataset,
-            run=run,
+            run=self.run,
+            arun=self.arun,
             outdir=jobdir,
             output=output,
             nchains=nchains,
