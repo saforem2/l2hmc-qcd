@@ -14,11 +14,17 @@ import matplotlib.pyplot as plt
 import matplotx
 import numpy as np
 import seaborn as sns
+import tensorflow as tf
+import torch
 import xarray as xr
 
 from l2hmc.configs import MonteCarloStates, Steps
 import l2hmc.utils.plot_helpers as hplt
 
+TensorLike = tf.Tensor | torch.Tensor | np.ndarray
+PT_FLOAT = torch.get_default_dtype()
+TF_FLOAT = tf.keras.backend.floatx()
+# Scalar = TF_FLOAT | PT_FLOAT | np.floating | int | bool
 
 log = logging.getLogger(__name__)
 
@@ -53,29 +59,36 @@ class BaseHistory:
         nera = 1 if steps is None else steps.nera
         self.era_metrics = {str(era): {} for era in range(nera)}
 
-    def _update(self, key: str, val: Any) -> float:
-        if val is None:
-            raise ValueError(f'None encountered: {key}: {val}')
-
-        if isinstance(val, list):
-            val = np.array(val)
-
-        try:
-            self.history[key].append(val)
-        except KeyError:
-            self.history[key] = [val]
-
-        if isinstance(val, (float, int)):
-            return val
-
-        return val.mean()
-
     def era_summary(self, era) -> str:
         emetrics = self.era_metrics[str(era)]
         return ', '.join([
             f'{k}={np.mean(v):<5.4g}' for k, v in emetrics.items()
             if k not in ['era', 'epoch']
         ])
+
+    def _update(self, key: str, val: TensorLike) -> float:
+        if val is None:
+            raise ValueError(f'None encountered: {key}: {val}')
+
+        if isinstance(val, list):
+            if isinstance(val[0], np.ndarray):
+                val = np.stack(val)
+            elif isinstance(val[0], torch.Tensor):
+                val = torch.stack(val).detach().cpu().numpy()
+            elif isinstance(val[0], tf.Tensor):
+                val = tf.stack(val).numpy()
+            else:
+                val = np.array(val)
+
+        try:
+            self.history[key].append(val)
+        except KeyError:
+            self.history[key] = [val]
+
+        # if isinstance(val, Scalar):
+        #     return np.array(val).mean()
+
+        return np.array(val).mean()
 
     def update(self, metrics: dict) -> dict:
         avgs = {}
@@ -91,8 +104,8 @@ class BaseHistory:
                         try:
                             avg = self._update(key=key, val=v)
                         # TODO: Figure out how to deal with exception
-                        except Exception:  # some weird tensorflow exception
-                            continue
+                        except tf.errors.InvalidArgumentError as e:
+                            raise e
                 else:
                     avg = self._update(key=key, val=val)
 
