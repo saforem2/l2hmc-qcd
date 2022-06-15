@@ -113,6 +113,7 @@ class ScaledTanh(nn.Module):
             bias=False,
         )
         self.tanh = nn.Tanh()
+        self._with_cuda = False
         if torch.cuda.is_available():
             self._with_cuda = True
             self.coeff = self.coeff.cuda()
