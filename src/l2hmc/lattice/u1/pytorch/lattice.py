@@ -12,11 +12,12 @@ from typing import Optional
 from math import pi as PI
 
 from scipy.special import i0, i1
-import numpy as np
 import torch
 
-from l2hmc.lattice.u1.numpy.lattice import BaseLatticeU1
-import l2hmc.group.pytorch.group as g
+from l2hmc.lattice.lattice import Lattice
+# from l2hmc.lattice.u1.numpy.lattice import BaseLatticeU1
+import l2hmc.group.u1.pytorch.group as g
+# import l2hmc.group.pytorch.group as g
 from l2hmc.configs import Charges, LatticeMetrics
 
 TWOPI = 2. * PI
@@ -36,38 +37,57 @@ def project_angle(x: Tensor) -> Tensor:
     return x - TWOPI * torch.floor((x + PI) / TWOPI)
 
 
-class LatticeU1(BaseLatticeU1):
-    def __init__(self, nchains: int, shape: tuple[int, int]):
-        self.dim = 2
+class LatticeU1(Lattice):
+    def __init__(self, nchains: int, shape: list[int]):
+        assert len(shape) == 2
         self.g = g.U1Phase()
-        self.link_shape = self.g.shape
         self.nt, self.nx, = shape
-        self._shape = (nchains, self.dim, *shape, self.g.shape)
         self.volume = self.nt * self.nx
-        self.site_idxs = tuple(
-            [self.nt]
-            + [self.nx for _ in range(self.dim - 1)]
-        )
         self.nplaqs = self.nt * self.nx
-        self._lattice_shape = shape
-        self.nsites = np.cumprod(shape)[-1]
-        self.nlinks = self.nsites * self.dim
-        self.link_idxs = tuple(list(self.site_idxs) + [self.dim])
+        # self.nsites = np.cumprod(shape)[-1]
+        # self.nlinks = self.nsites * self.g._dim
+        # self.site_idxs = tuple(
+        #     [self.nt]
+        #     + [self.nx for _ in range(self.g._dim - 1)]
+        # )
+        # self.link_idxs = tuple(list(self.site_idxs) + [self.g._dim])
 
-        super().__init__(nchains, shape=shape)
+        super().__init__(group=self.g, nchains=nchains, shape=shape)
 
     def draw_uniform_batch(self, requires_grad=True) -> Tensor:
-        """Draw batch of samples, uniformly from [-pi, pi)."""
+        """Draw batch of samples, uniformly from (-pi, pi)."""
         return TWOPI * (
             torch.rand(self._shape, requires_grad=requires_grad)
         ) - PI
 
-    def unnormalized_log_prob(self, x: Tensor, beta: Tensor) -> Tensor:
-        return self.action(x=x, beta=beta)
+    def kinetic_energy(self, v: Tensor) -> Tensor:
+        return 0.5 * v.flatten(1) ** 2
 
     def action(self, x: Tensor, beta: Tensor) -> Tensor:
+        wloops = self._get_wloops(x)
+        return self._action(wloops, beta)
+
+    def _action(
+            self,
+            wloops: Tensor,
+            beta: Tensor
+    ) -> Tensor:
         """Calculate the Wilson gauge action for a batch of lattices."""
-        return beta * (1. - self.wilson_loops(x).cos()).sum((1, 2))
+        return beta * (1. - wloops.cos()).sum((1, 2))
+
+    def action_with_grad(
+            self,
+            x: Tensor,
+            beta: Tensor
+    ) -> tuple[Tensor, Tensor]:
+        x.requires_grad_(True)
+        s = self.action(x, beta)
+        identity = torch.ones(x.shape[0], device=x.device)
+        assert isinstance(s, Tensor)
+        dsdx, = torch.autograd.grad(s, x,
+                                    retain_graph=True,
+                                    grad_outputs=identity)
+        return s, dsdx
 
     def grad_action(
             self,
@@ -79,8 +99,10 @@ class LatticeU1(BaseLatticeU1):
         x.requires_grad_(True)
         s = self.action(x, beta)
         identity = torch.ones(x.shape[0], device=x.device)
+        assert isinstance(s, Tensor)
         dsdx, = torch.autograd.grad(s, x,
                                     create_graph=create_graph,
+                                    retain_graph=True,
                                     grad_outputs=identity)
         return dsdx
 
@@ -167,6 +189,9 @@ class LatticeU1(BaseLatticeU1):
 
         return wloops.cos().mean((1, 2))
 
+    def _plaqs(self, wloops: Tensor) -> Tensor:
+        return wloops.cos().mean((1, 2))
+
     def _plaqs4x4(self, wloops4x4: Tensor) -> Tensor:
         return wloops4x4.cos().mean((1, 2))
 
@@ -200,8 +225,11 @@ class LatticeU1(BaseLatticeU1):
             raise ValueError('One of `x` or `wloops` must be specified.')
         return self.wilson_loops(x)
 
-    def random(self):
+    def random(self) -> Tensor:
         return self.g.random(list(self._shape))
+
+    def random_momentum(self) -> Tensor:
+        return self.g.random_momentum(list(self._shape))
 
     def sin_charges(
             self,
@@ -232,6 +260,11 @@ class LatticeU1(BaseLatticeU1):
         intQ = self._int_charges(wloops)
         return Charges(intQ=intQ, sinQ=sinQ)
 
+    def _charges(self, wloops: Tensor) -> Charges:
+        sinQ = self._sin_charges(wloops)
+        intQ = self._int_charges(wloops)
+        return Charges(intQ=intQ, sinQ=sinQ)
+
     def plaq_loss(
             self,
             acc: Tensor,
@@ -239,11 +272,12 @@ class LatticeU1(BaseLatticeU1):
             x2: Optional[Tensor] = None,
             wl1: Optional[Tensor] = None,
             wl2: Optional[Tensor] = None,
-    ) -> float:
+    ) -> Tensor:
         wloops1 = self._get_wloops(x1) if wl1 is None else wl1
         wloops2 = self._get_wloops(x2) if wl2 is None else wl2
-        dwloops = 2. * (1. - torch.cos(wloops2 - wloops1))
+        dwloops = 2. * (1. - (wloops2 - wloops1).cos())
         ploss = acc * dwloops.sum((1, 2)) + 1e-4
+        assert isinstance(ploss, Tensor)
 
         return -ploss.mean(0)
 
@@ -254,7 +288,7 @@ class LatticeU1(BaseLatticeU1):
             x2: Optional[Tensor] = None,
             wl1: Optional[Tensor] = None,
             wl2: Optional[Tensor] = None,
-    ):
+    ) -> Tensor:
         wloops1 = self._get_wloops(x1) if wl1 is None else wl1
         wloops2 = self._get_wloops(x2) if wl2 is None else wl2
         q1 = self._sin_charges(wloops=wloops1)
@@ -262,3 +296,12 @@ class LatticeU1(BaseLatticeU1):
         dq = (q2 - q1) ** 2
         qloss = acc * dq + 1e-4
         return -qloss.mean(0)
+
+
+if __name__ == '__main__':
+    lattice = LatticeU1(3, [8, 8])
+    beta = torch.tensor(1.0)
+    x = lattice.random()
+    v = lattice.random_momentum()
+    action = lattice.action(x, beta)
+    kinetic = lattice.kinetic_energy(v)
