@@ -21,6 +21,7 @@ from l2hmc.configs import (
     OUTDIRS_FILE,
     ExperimentConfig
 )
+import aim
 from l2hmc.common import get_timestamp, is_interactive
 # import l2hmc.utils.plot_helpers as hplt
 
@@ -118,7 +119,7 @@ class BaseExperiment(ABC):
     def init_wandb(self):
         pass
 
-    def init_aim(self):
+    def init_aim(self) -> aim.Run:
         return self._init_aim()
 
     @abstractmethod
@@ -126,14 +127,14 @@ class BaseExperiment(ABC):
             self,
             init_wandb: bool = True,
             init_aim: bool = True
-    ):
+    ) -> dict:
         pass
 
     def build(
             self,
             init_wandb: bool = True,
             init_aim: bool = True
-    ):
+    ) -> dict:
         return self._build(init_wandb=init_wandb,
                            init_aim=init_aim)
 
@@ -157,21 +158,22 @@ class BaseExperiment(ABC):
         input_spec = InputSpec(xshape=tuple(xshape), **input_dims)
         return input_spec
 
-    def _init_aim(self):
-        try:
-            from aim import Run  # type:ignore
-            # tstamp = get_timestamp()
-            run = Run(repo=AIM_DIR.as_posix())
-            run['hparams'] = OmegaConf.to_container(self.cfg,
-                                                    resolve=True,
-                                                    throw_on_missing=True)
-            # run['train_dir'] = self.get_jobdir('train')
-            run['outdir'] = self._outdir.as_posix()
-            return run
-
-        except (ImportError, ModuleNotFoundError) as e:
-            log.warning(e)
-            return None
+    def _init_aim(self) -> aim.Run:
+        from aim import Run  # type:ignore
+        # tstamp = get_timestamp()
+        run = Run(
+            repo=AIM_DIR.as_posix(),
+            experiment='l2hmc-qcd',
+            log_system_params=True,
+        )
+        # run['config'] = self.config
+        run['config'] = OmegaConf.to_container(self.cfg,
+                                               resolve=True,
+                                               throw_on_missing=True)
+        run['outdir'] = str(self._outdir.as_posix())
+        run['hostname'] = str(os.environ.get('HOST', 'localhost'))
+        # assert run is Run
+        return run
 
     def _update_wandb_config(
             self,
