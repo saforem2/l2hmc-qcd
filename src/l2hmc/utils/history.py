@@ -7,8 +7,7 @@ from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass
 import logging
 from pathlib import Path
-from typing import Any, Optional
-from typing import Union
+from typing import Any, Optional, Union
 
 import matplotlib.pyplot as plt
 import matplotx
@@ -21,7 +20,8 @@ import xarray as xr
 from l2hmc.configs import MonteCarloStates, Steps
 import l2hmc.utils.plot_helpers as hplt
 
-TensorLike = tf.Tensor | torch.Tensor | np.ndarray
+TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray]
+
 PT_FLOAT = torch.get_default_dtype()
 TF_FLOAT = tf.keras.backend.floatx()
 # Scalar = TF_FLOAT | PT_FLOAT | np.floating | int | bool

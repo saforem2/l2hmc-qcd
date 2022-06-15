@@ -5,7 +5,7 @@ Implements `Lattice`, an ABC for building Lattice subclasses
 """
 from __future__ import absolute_import, annotations, division, print_function
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 import tensorflow as tf
@@ -15,7 +15,7 @@ from l2hmc.group.group import Group
 from l2hmc.configs import Charges
 
 
-TensorLike = torch.Tensor | tf.Tensor | np.ndarray
+TensorLike = Union[torch.Tensor, tf.Tensor, np.ndarray]
 
 
 class Lattice(ABC):
