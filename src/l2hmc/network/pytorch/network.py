@@ -113,8 +113,15 @@ class ScaledTanh(nn.Module):
             bias=False,
         )
         self.tanh = nn.Tanh()
+        if torch.cuda.is_available():
+            self._with_cuda = True
+            self.coeff = self.coeff.cuda()
+            self.layer = self.layer.cuda()
+            self.cuda()
 
     def forward(self, x):
+        if self._with_cuda:
+            x = x.cuda()
         return torch.exp(self.coeff) * self.tanh(self.layer(x))
 
 
@@ -170,10 +177,10 @@ class Network(nn.Module):
 
         self.s_coeff = nn.parameter.Parameter(
             torch.zeros(1, self.xdim, device=self.device)
-        ).to(self.device)
+        )
         self.q_coeff = nn.parameter.Parameter(
             torch.zeros(1, self.xdim, device=self.device)
-        ).to(self.device)
+        )
 
         if conv_config is not None and len(conv_config.filters) > 0:
             self.conv_config = conv_config

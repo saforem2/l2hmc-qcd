@@ -10,12 +10,13 @@ from abc import ABC, abstractmethod
 import torch
 import numpy as np
 import tensorflow as tf
+from typing import Union
 
 tfTensor = tf.Tensor
 ptTensor = torch.Tensor
 
-TensorLike = ptTensor | tfTensor | np.ndarray
-DataType = torch.dtype | tf.DType
+DataType = Union[torch.dtype, tf.DType]
+TensorLike = Union[ptTensor, tfTensor, np.ndarray]
 
 
 class Group(ABC):

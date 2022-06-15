@@ -263,8 +263,8 @@ def get_network(
 
     x_input = Input(input_shapes['x'], name=f'{name}_xinput')
     v_input = Input(input_shapes['v'], name=f'{name}_vinput')
-    log.info(f'xinput: {x_input}')
-    log.info(f'vinput: {v_input}')
+    # log.info(f'xinput: {x_input}')
+    # log.info(f'vinput: {v_input}')
 
     s_coeff = tf.Variable(**coeff_kwargs['scale'])
     q_coeff = tf.Variable(**coeff_kwargs['transf'])
