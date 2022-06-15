@@ -44,12 +44,40 @@ def xy_repr(x: torch.Tensor) -> torch.Tensor:
     return torch.stack((torch.cos(x), torch.sin(x)), dim=1)
 
 
-def init_weights(m: nn.Module, use_zeros: bool = False):
+def init_weights_old(m: nn.Module, use_zeros: bool = False):
     if isinstance(m, nn.Linear):
         if use_zeros:
             torch.nn.init.zeros_(m.weight)
         else:
             torch.nn.init.kaiming_normal_(m.weight)
+
+
+@torch.no_grad()
+def init_weights(m, method='xavier_uniform'):
+    if isinstance(m, nn.Linear):
+        # m.bias.fill_()
+        if method == 'zeros':
+            nn.init.zeros_(m.weight)
+        elif method == 'xavier_normal':
+            nn.init.xavier_normal_(m.weight)
+        elif method == 'kaiming_normal':
+            nn.init.kaiming_normal_(m.weight)
+        else:
+            try:
+                method = getattr(nn.init, method)
+                if method is not None and callable(method):
+                    method(m.weight)
+            except NameError:
+                log.warning('. '.join([
+                    f'Unable to initialize weights with {method}',
+                    'Falling back to default: xavier_uniform_'
+
+                ]))
+
+
+def zero_weights(m):
+    if isinstance(m, nn.Linear):
+        nn.init.zeros_(m.weight)
 
 
 class PeriodicPadding(nn.Module):
@@ -69,6 +97,25 @@ class PeriodicPadding(nn.Module):
         x = torch.concat([y0, x, y1], 3)
 
         return x
+
+
+class ScaledTanh(nn.Module):
+    def __init__(
+            self,
+            in_features: int,
+            out_features: int,
+    ) -> None:
+        super().__init__()
+        self.coeff = torch.zeros(1, out_features, requires_grad=True)
+        self.layer = nn.Linear(
+            in_features=in_features,
+            out_features=out_features,
+            bias=False,
+        )
+        self.tanh = nn.Tanh()
+
+    def forward(self, x):
+        return torch.exp(self.coeff) * self.tanh(self.layer(x))
 
 
 class Network(nn.Module):
@@ -175,14 +222,15 @@ class Network(nn.Module):
             device=self.device
         )
 
-        self.hidden_layers = nn.ModuleList()
+        self.hidden_layers = nn.Sequential()
         for idx, units in enumerate(self.units[1:]):
-            h = nn.Linear(self.units[idx], units, device=self.device)
+            h = nn.Linear(self.units[idx], units)
             self.hidden_layers.append(h)
 
-        self.scale = nn.Linear(self.units[-1], self.xdim, device=self.device)
-        self.transl = nn.Linear(self.units[-1], self.xdim, device=self.device)
-        self.transf = nn.Linear(self.units[-1], self.xdim, device=self.device)
+        self.scale = ScaledTanh(self.units[-1], self.xdim)
+        self.transf = ScaledTanh(self.units[-1], self.xdim)
+        # self.scale = nn.Linear(self.units[-1], self.xdim, device=self.device)
+        self.transl = nn.Linear(self.units[-1], self.xdim)
 
         if self.net_config.dropout_prob > 0:
             self.dropout = nn.Dropout(self.net_config.dropout_prob)
@@ -190,29 +238,13 @@ class Network(nn.Module):
         if self.net_config.use_batch_norm:
             self.batch_norm = nn.BatchNorm1d(self.units[-1],
                                              device=self.device)
-        # if self.device == 'cuda':
-        #     self.x_layer.cuda()
-        #     self.v_layer.cuda()
-        #     for layer in self.hidden_layers:
-        #         layer.cuda()
-        #     self.scale.cuda()
-        #     self.transl.cuda()
-        #     self.transf.cuda()
-        #     try:
-        #         self.dropout.cuda()
-        #     except AttributeError:
-        #         pass
-        #     try:
-        #         self.batch_norm.cuda()
-        #     except AttributeError:
-        #         pass
 
     def forward(
             self,
             inputs: tuple[Tensor, Tensor]
     ) -> tuple[Tensor, Tensor, Tensor]:
-        x, v = inputs
-        x, v = x.to(self.device), v.to(self.device)
+        x = inputs[0].to(self.device)
+        v = inputs[1].to(self.device)
 
         if len(self.conv_stack) > 0:
             try:
@@ -222,8 +254,8 @@ class Network(nn.Module):
 
             for layer in self.conv_stack:
                 x = self.activation_fn(layer(x))
-
-            x = self.batch_norm(x)
+            if self.net_config.use_batch_norm:
+                x = self.batch_norm(x)
 
         v = self.v_layer(v.flatten(1))
         x = self.x_layer(x.flatten(1))
@@ -238,14 +270,17 @@ class Network(nn.Module):
         if self.net_config.use_batch_norm:
             z = self.batch_norm(z)
 
-        scale = torch.tanh(self.scale(z))
-        transl = self.transl(z)
-        transf = torch.tanh(self.transf(z))
-        s = self.nw.s * torch.exp(self.s_coeff) * scale
-        t = self.nw.t * transl
-        q = self.nw.q * torch.exp(self.q_coeff) * transf
+        # scale = torch.tanh(self.scale(z))
+        # transl = self.transl(z)
+        # transf = torch.tanh(self.transf(z))
+        # s = self.nw.s * torch.exp(self.s_coeff) * scale
+        # t = self.nw.t * transl
+        # q = self.nw.q * torch.exp(self.q_coeff) * transf
+        s = (self.nw.s * torch.exp(self.s_coeff)) * F.tanh(self.scale(z))
+        t = (self.nw.t * self.transl(z))
+        q = (self.nw.q * torch.exp(self.q_coeff)) * F.tanh(self.transf(z))
 
-        return (s, t, q)
+        return s, t, q
 
 
 class NetworkFactory(BaseNetworkFactory):
