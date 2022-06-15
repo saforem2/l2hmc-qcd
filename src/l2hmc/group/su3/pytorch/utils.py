@@ -2,15 +2,13 @@
 group/pytorch/utils.py
 
 """
-from __future__ import absolute_import, division, print_function, annotations
+from __future__ import absolute_import, annotations, division, print_function
+from math import pi as PI
+from typing import Optional
+from typing import Callable
 
 import numpy as np
 import torch
-
-from math import pi as PI
-
-
-from typing import Optional
 # from l2hmc.group.pytorch.logm import charpoly3x3, su3_to_eigs, log3x3
 
 
@@ -288,37 +286,36 @@ def vec_to_su3(v: Tensor) -> Tensor:
     ], -1)
 
 
-
 def su3fabc(v: Tensor):
     """
     returns f^{abc} v[..., c]
     [T^a, T^b] = f^abc T^c
     """
-    a01 = f012 * v[..., 2]
-    a02 = (-f012) * v[..., 1]
-    a03 = f036 * v[..., 6]
-    a04 = f045 * v[..., 5]
-    a05 = (-f045) * v[..., 4]
-    a06 = (-f036) * v[...,3]
-    a12 =   f012  * v[...,0]
-    a13 =   f135  * v[...,5]
-    a14 =   f146  * v[...,6]
-    a15 = (-f135) * v[...,3]
-    a16 = (-f146) * v[...,4]
-    a23 =   f234  * v[...,4]
-    a24 = (-f234) * v[...,3]
-    a25 =   f256  * v[...,6]
-    a26 = (-f256) * v[...,5]
-    a34 =   f347  * v[...,7] + f234 * v[...,2]
-    a35 =   f135  * v[...,1]
-    a36 =   f036  * v[...,0]
-    a37 = (-f347) * v[...,4]
-    a45 =   f045  * v[...,0]
-    a46 =   f146  * v[...,1]
-    a47 =   f347  * v[...,3]
-    a56 =   f567  * v[...,7] + f256 * v[...,2]
-    a57 = (-f567) * v[...,6]
-    a67 =   f567  * v[...,5]
+    a01 = +f012 * v[..., 2]
+    a02 = -f012 * v[..., 1]
+    a03 = +f036 * v[..., 6]
+    a04 = +f045 * v[..., 5]
+    a05 = -f045 * v[..., 4]
+    a06 = -f036 * v[..., 3]
+    a12 = +f012 * v[..., 0]
+    a13 = +f135 * v[..., 5]
+    a14 = +f146 * v[..., 6]
+    a15 = -f135 * v[..., 3]
+    a16 = -f146 * v[..., 4]
+    a23 = +f234 * v[..., 4]
+    a24 = -f234 * v[..., 3]
+    a25 = +f256 * v[..., 6]
+    a26 = -f256 * v[..., 5]
+    a34 = +f347 * v[..., 7] + f234 * v[..., 2]
+    a35 = +f135 * v[..., 1]
+    a36 = +f036 * v[..., 0]
+    a37 = -f347 * v[..., 4]
+    a45 = +f045 * v[..., 0]
+    a46 = +f146 * v[..., 1]
+    a47 = +f347 * v[..., 3]
+    a56 = +f567 * v[..., 7] + f256 * v[..., 2]
+    a57 = -f567 * v[..., 6]
+    a67 = +f567 * v[..., 5]
     zii = torch.zeros(v[..., 0].shape, dtype=v[..., 0].dtype)
     return torch.stack([
         torch.stack([+zii, -a01, -a02, -a03, -a04, -a05, -a06, +zii], -1),
@@ -330,3 +327,29 @@ def su3fabc(v: Tensor):
         torch.stack([+a06, +a16, +a26, +a36, +a46, +a56, +zii, -a67], -1),
         torch.stack([+zii, +zii, +zii, +a37, +a47, +a57, +a67, +zii], -1),
     ], dim=-1)
+
+
+def SU3Gradient(
+        f: Callable[[Tensor], Tensor],
+        x: Tensor,
+        create_graph: bool = True,
+) -> tuple[Tensor, Tensor]:
+    """Compute gradient using autograd.
+
+    y = f(x) must be a real scalar value.
+
+    Returns:
+     - (f(x), D), where D = T^a D^a = T^a ∂_a f(x)
+
+    NOTE: Use real vector derivatives, e.g.
+      D^a = ∂_a f(x)
+          = ∂_t f(exp(T^a) x) |_{t=0}
+    """
+    x.requires_grad_(True)
+    y = f(x)
+    identity = torch.ones(x.shape[0], device=x.device)
+    dydx, = torch.autograd.grad(y, x,
+                                create_graph=create_graph,
+                                retain_graph=True,
+                                grad_outputs=identity)
+    return y, dydx
