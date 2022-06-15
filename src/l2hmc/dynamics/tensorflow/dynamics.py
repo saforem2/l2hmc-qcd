@@ -17,7 +17,9 @@ import tensorflow as tf
 
 from l2hmc.configs import DynamicsConfig
 from l2hmc.network.tensorflow.network import NetworkFactory
-import l2hmc.group.tensorflow.group as g
+from l2hmc.group.u1.tensorflow.group import U1Phase
+from l2hmc.group.su3.tensorflow.group import SU3
+# import l2hmc.group.tensorflow.group as g
 
 TWO_PI = 2. * PI
 TWO = tf.constant(2.)
@@ -91,9 +93,9 @@ class Dynamics(Model):
         self.xnet, self.vnet = self._build_networks(network_factory)
         self.masks = self._build_masks()
         if self.config.group == 'U1':
-            self.g = g.U1Phase()
+            self.g = U1Phase()
         elif self.config.group == 'SU3':
-            self.g = g.SU3()
+            self.g = SU3()
         else:
             raise ValueError('Unexpected value for `self.config.group`')
 
@@ -281,7 +283,9 @@ class Dynamics(Model):
         xshape = [x.shape[0], *self.xshape[1:]]
         v = self.g.random_momentum(xshape)
         init = State(x, v, beta)
-        proposed, metrics = self.transition_kernel_hmc(init, eps=eps, nleapfrog=nleapfrog)
+        proposed, metrics = self.transition_kernel_hmc(init,
+                                                       eps=eps,
+                                                       nleapfrog=nleapfrog)
 
         return {'init': init, 'proposed': proposed, 'metrics': metrics}
 
@@ -405,9 +409,15 @@ class Dynamics(Model):
             )
 
         if self.config.merge_directions:
-            nleapfrog = 2 * self.config.nleapfrog if nleapfrog is None else nleapfrog
+            nleapfrog = (
+                2 * self.config.nleapfrog
+                if nleapfrog is None else nleapfrog
+            )
         else:
-            nleapfrog = self.config.nleapfrog if nleapfrog is None else nleapfrog
+            nleapfrog = (
+                self.config.nleapfrog
+                if nleapfrog is None else nleapfrog
+            )
 
         # eps = (1. / nleapfrog) if eps is None else eps
         eps = self.config.eps_hmc if eps is None else eps
@@ -443,10 +453,13 @@ class Dynamics(Model):
         assert isinstance(state.x, Tensor)
         sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
 
-        history = self.update_history(
-            self.get_metrics(state_, sumlogdet, step=0),
-            history={}
-        )
+        history = {}
+        if self.config.verbose:
+            history = self.update_history(
+                self.get_metrics(state_, sumlogdet, step=0),
+                history=history,
+            )
+
         # Forward
         for step in range(self.config.nleapfrog):
             state_, logdet = self._forward_lf(step, state_, training)
@@ -474,8 +487,7 @@ class Dynamics(Model):
                 )
 
         acc = self.compute_accept_prob(state, state_, sumlogdet)
-        history['acc'] = acc
-        history['sumlogdet'] = sumlogdet
+        history.update({'acc': acc, 'sumlogdet': sumlogdet})
         if self.config.verbose:
             for key, val in history.items():
                 if isinstance(val, list) and isinstance(val[0], Tensor):
@@ -500,8 +512,11 @@ class Dynamics(Model):
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         assert isinstance(state.x, Tensor)
         sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
-        metrics = self.get_metrics(state_, sumlogdet)
-        history = self.update_history(metrics, history={})
+
+        history = {}
+        if self.config.verbose:
+            metrics = self.get_metrics(state_, sumlogdet)
+            history = self.update_history(metrics, history=history)
 
         for step in range(self.config.nleapfrog):
             state_, logdet = lf_fn(step, state_, training)
@@ -555,6 +570,12 @@ class Dynamics(Model):
 
         return fwd, bwd
 
+    def _get_mask(self, i: int) -> tuple[Tensor, Tensor]:
+        """Returns mask used for sequentially updating x."""
+        m = self.masks[i]
+        mb = tf.ones_like(m) - m
+        return (m, mb)
+
     def _build_masks(self):
         """Construct different binary masks for different lf steps."""
         masks = []
@@ -569,12 +590,6 @@ class Dynamics(Model):
             masks.append(mask[None, :])
 
         return masks
-
-    def _get_mask(self, i: int) -> tuple[Tensor, Tensor]:
-        """Returns mask used for sequentially updating x."""
-        m = self.masks[i]
-        mb = tf.ones_like(m) - m
-        return (m, mb)
 
     def _get_vnet(self, step: int) -> CallableNetwork:
         """Returns momentum network to be used for updating v."""
@@ -615,9 +630,9 @@ class Dynamics(Model):
         x, force = inputs
         vnet = self._get_vnet(step)
         assert callable(vnet)
-        if isinstance(self.g, g.U1Phase):
+        if isinstance(self.g, U1Phase):
             x = self._stack_as_xy(x)
-        elif isinstance(self.g, g.SU3):
+        elif isinstance(self.g, SU3):
             x = self.g.group_to_vec(x)
 
         return vnet((x, force), training)
@@ -639,10 +654,10 @@ class Dynamics(Model):
         x, v = inputs
         xnet = self._get_xnet(step, first)
         assert callable(xnet)
-        if isinstance(self.g, g.U1Phase):
+        if isinstance(self.g, U1Phase):
             x = self._stack_as_xy(x)
 
-        elif isinstance(self.g, g.SU3):
+        elif isinstance(self.g, SU3):
             x = self.g.group_to_vec(x)
 
         return xnet((x, v), training)
@@ -734,9 +749,9 @@ class Dynamics(Model):
         eps = self.veps[step]
         force = self.grad_potential(state.x, state.beta)
         s, t, q = self._call_vnet(step, (state.x, force), training=training)
-        jac = (-eps * s / 2.)
-        logdet = tf.reduce_sum(jac, axis=1)
-        exp_s = tf.exp(jac)
+        logjac = (-eps * s / 2.)
+        logdet = tf.reduce_sum(logjac, axis=1)
+        exp_s = tf.exp(logjac)
         exp_q = tf.exp(eps * q)
         vb = exp_s * (state.v + 0.5 * eps * (force * exp_q + t))
 
@@ -760,7 +775,7 @@ class Dynamics(Model):
         q = eps * q
         exp_s = tf.exp(s)
         exp_q = tf.exp(q)
-        if isinstance(self.g, g.U1Phase):
+        if isinstance(self.g, U1Phase):
             if self.config.use_ncp:
                 halfx = state.x / TWO
                 _x = TWO * tf.math.atan(tf.math.tan(halfx) * exp_s)
@@ -775,7 +790,7 @@ class Dynamics(Model):
                 xf = xm_init + (mb * xp)
                 logdet = tf.reduce_sum((mb * s), axis=1)
 
-        elif isinstance(self.g, g.SU3):
+        elif isinstance(self.g, SU3):
             x = self.g.group_to_vec(state.x)
             v = self.g.group_to_vec(state.v)
             xm_init = self.g.group_to_vec(xm_init)
@@ -807,7 +822,7 @@ class Dynamics(Model):
         exp_q = tf.exp(q)
         exp_s = tf.exp(s)
 
-        if isinstance(self.g, g.U1Phase):
+        if isinstance(self.g, U1Phase):
             if self.config.use_ncp:
                 halfx = state.x / TWO
                 halfx_scale = exp_s * tf.tan(halfx)
@@ -824,7 +839,7 @@ class Dynamics(Model):
                 xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
                 xb = xm_init + mb * xnew
                 logdet = tf.reduce_sum(mb * s, axis=1)
-        elif isinstance(self.g, g.SU3):
+        elif isinstance(self.g, SU3):
             xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
             xb = xm_init + mb * xnew
             logdet = tf.reduce_sum(mb * s, axis=1)
