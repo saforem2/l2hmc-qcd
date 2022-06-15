@@ -5,7 +5,6 @@ Contains entry point for training Dynamics.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
-import os
 import warnings
 
 import hydra
@@ -46,8 +45,24 @@ def setup_tensorflow(cfg: DictConfig) -> int:
     return RANK
 
 
+def seed_everything(seed: int):
+    import os
+    import random
+    import numpy as np
+    import torch
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = True
+
+
 def setup_torch(cfg: DictConfig) -> int:
     import torch
+    torch.use_deterministic_algorithms(True)
+    # torch.manual_seed(cfg.seed)
     import horovod.torch as hvd
 
     hvd.init()
@@ -55,7 +70,6 @@ def setup_torch(cfg: DictConfig) -> int:
     if cfg.precision == 'float64':
         torch.set_default_dtype(torch.float64)
 
-    torch.manual_seed(cfg.seed)
     if torch.cuda.is_available():
         torch.cuda.set_device(hvd.local_rank())
         torch.cuda.manual_seed(cfg.seed)
@@ -63,6 +77,7 @@ def setup_torch(cfg: DictConfig) -> int:
     #     torch.set_default_dtype(torch.float32)
     RANK = hvd.rank()
     LOCAL_RANK = hvd.local_rank()
+    seed_everything(cfg.seed * (RANK + 1) * (LOCAL_RANK + 1))
     SIZE = hvd.size()
     LOCAL_SIZE = hvd.local_size()
     log.info(f'Global Rank: {RANK} / {SIZE}')
@@ -125,11 +140,15 @@ def train_pytorch(cfg: DictConfig) -> dict:
 
 
 def setup(cfg: DictConfig):
-    width = cfg.get('width', None)
-    if width is not None and os.environ.get('COLUMNS', None) is None:
-        os.environ['COLUMNS'] = str(width)
-    elif os.environ.get('COLUMNS', None) is not None:
-        cfg.update({'width': int(os.environ.get('COLUMNS', 235))})
+    # width = cfg.get('width', None)
+    # if width is not None and os.environ.get('COLUMNS', None) is None:
+    #     os.environ['COLUMNS'] = str(width)
+    # elif os.environ.get('COLUMNS', None) is not None:
+    #     cfg.update({'width': int(os.environ.get('COLUMNS', 235))})
+    # size = shutil.get_terminal_size()
+    # WIDTH = size.columns
+    # HEIGHT = size.lines
+    # cfg.update({})
     if cfg.get('ignore_warnings'):
         warnings.filterwarnings('ignore')
 
@@ -141,9 +160,16 @@ def main(cfg: DictConfig) -> None:
     if framework in ['tf', 'tensorflow']:
         RANK = setup_tensorflow(cfg)
         from l2hmc.experiment.tensorflow.experiment import Experiment
+        ex = Experiment(cfg)
+        init = (RANK == 0)
+        _ = ex.build(init_wandb=init, init_aim=init)
     elif framework in ['pt', 'pytorch', 'torch']:
         RANK = setup_torch(cfg)
         from l2hmc.experiment.pytorch.experiment import Experiment
+        ex = Experiment(cfg)
+        init = (RANK == 0)
+        _ = ex.build(init_wandb=init, init_aim=init)
+        ex.visualize_model()
     else:
         raise ValueError(
             'Framework must be specified, one of: [pytorch, tensorflow]'
@@ -152,8 +178,6 @@ def main(cfg: DictConfig) -> None:
     if RANK == 0:
         print_config(cfg, resolve=True)
 
-    ex = Experiment(cfg)
-    _ = ex.build(init_wandb=(RANK == 0))
     assert isinstance(ex.config, ExperimentConfig)
     should_train = (
         ex.config.steps.nera > 0
