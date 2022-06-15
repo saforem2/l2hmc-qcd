@@ -12,6 +12,7 @@ from typing import Any, Optional
 
 import h5py
 import joblib
+import matplotlib.pyplot as plt
 from omegaconf import DictConfig
 import pandas as pd
 from rich.console import Console
@@ -25,14 +26,6 @@ from l2hmc.utils.rich import is_interactive
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 log = logging.getLogger(__name__)
-
-
-def is_interactive():
-    try:
-        from IPython import get_ipython
-        return get_ipython() is not None
-    except (ImportError, ModuleNotFoundError):
-        return False
 
 
 def get_timestamp(fstr=None):
@@ -209,12 +202,36 @@ def make_subdirs(basedir: os.PathLike):
     return dirs
 
 
+def save_figure(
+        fig: plt.Figure,
+        key: str,
+        outdir: os.PathLike,
+        # run: Optional[Any] = None,
+        # arun: Optional[Any] = None,
+):
+    if fig is None:
+        fig = plt.gcf()
+
+    pngdir = Path(outdir).joinpath('pngs')
+    svgdir = Path(outdir).joinpath('svgs')
+    pngdir.mkdir(parents=True, exist_ok=True)
+    svgdir.mkdir(parents=True, exist_ok=True)
+
+    svgfile = svgdir.joinpath(f'{key}.svg')
+    pngfile = pngdir.joinpath(f'{key}.png')
+    fig.savefig(svgfile.as_posix(), transparent=True, bbox_inches='tight')
+    fig.savefig(pngfile.as_posix(), transparent=True, bbox_inches='tight')
+    return fig
+
+
 def plot_dataset(
         dataset: xr.Dataset,
         nchains: Optional[int] = 10,
         outdir: Optional[os.PathLike] = None,
         title: Optional[str] = None,
         job_type: Optional[str] = None,
+        run: Optional[Any] = None,
+        arun: Optional[Any] = None,
         # run: Any = None,
 ) -> None:
     outdir = Path(outdir) if outdir is not None else Path(os.getcwd())
@@ -225,30 +242,25 @@ def plot_dataset(
         if key == 'x':
             continue
 
-        try:
-            fig, _, _ = plot_dataArray(val,
-                                       key=key,
-                                       outdir=outdir,
-                                       title=title,
-                                       line_labels=False,
-                                       num_chains=nchains)
-        except TypeError:
-            log.error(f'Unable to `plot_dataArray` for {key}')
-            continue
+        fig, ax = plt.subplots()
+        _ = val.plot(ax=ax)  # type: ignore
+        xdir = outdir.joinpath('xarr_plots')
+        xdir.mkdir(exist_ok=True, parents=True)
+        fig = save_figure(fig=fig, key=key, outdir=xdir)
+        if arun is not None:
+            from aim import Figure, Run
+            assert isinstance(arun, Run)
+            afig = Figure(fig)
+            arun.track(afig, name=f'{key}_xarr',
+                       context={'subset': job_type})
 
-        pngdir = outdir.joinpath('pngs')
-        outdir.mkdir(exist_ok=True, parents=True)
-        pngdir.mkdir(exist_ok=True, parents=True)
-
-        fsvg = outdir.joinpath(f'{key}.svg')
-        fpng = pngdir.joinpath(f'{key}.png')
-        if fsvg.is_file():
-            fsvg = outdir.joinpath(f'xarray-{key}.svg')
-        if fpng.is_file():
-            fpng = pngdir.joinpath(f'xarray-{key}.svg')
-
-        fig.savefig(fsvg.as_posix(), dpi=500, bbox_inches='tight')
-        fig.savefig(fpng.as_posix(), dpi=500, bbox_inches='tight')
+        fig, _, _ = plot_dataArray(val,
+                                   key=key,
+                                   outdir=outdir,
+                                   title=title,
+                                   line_labels=False,
+                                   num_chains=nchains)
+        _ = save_figure(fig=fig, key=key, outdir=outdir)
 
     _ = make_ridgeplots(dataset,
                         outdir=outdir,
@@ -265,6 +277,7 @@ def analyze_dataset(
         job_type: Optional[str] = None,
         save: Optional[bool] = True,
         run: Optional[Any] = None,
+        arun: Optional[Any] = None,
         use_hdf5: Optional[bool] = True,
 ):
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
@@ -290,16 +303,31 @@ def analyze_dataset(
                     log.error(f'Unable to `joblib.dump` {key}, skipping!')
 
         artifact = None
-        if job_type is not None and run is not None:
-            name = f'{job_type}-{run.id}'
-            artifact = wandb.Artifact(name=name, type='result')
-            pngdir = Path(dirs['plots']).joinpath('pngs').as_posix()
+        if job_type is not None:
+            pngdir = Path(dirs['plots']).joinpath('pngs')
+            if run is not None:
+                name = f'{job_type}-{run.id}'
+                artifact = wandb.Artifact(name=name, type='result')
 
-            artifact.add_dir(pngdir, name=f'{job_type}/plots')
-            if datafile is not None:
-                artifact.add_file(datafile.as_posix(), name=f'{job_type}/data')
+                artifact.add_dir(pngdir.as_posix(), name=f'{job_type}/plots')
+                if datafile is not None:
+                    artifact.add_file(
+                        datafile.as_posix(),
+                        name=f'{job_type}/data'
+                    )
 
-            run.log_artifact(artifact)
+                run.log_artifact(artifact)
+
+            if arun is not None:
+                from aim import Image
+                for f in list(pngdir.rglob('*.png')):
+                    aimage = Image(
+                        Path(f).as_posix(),
+                        format='png',
+                        optimize=True,
+                        # quality=100,
+                    )
+                    arun.track(aimage, name=f'images/{f.stem}', step=0)
 
     return dataset
 
@@ -309,6 +337,7 @@ def save_and_analyze_data(
         outdir: os.PathLike,
         nchains: Optional[int] = None,
         run: Optional[Any] = None,
+        arun: Optional[Any] = None,
         output: Optional[dict] = None,
         job_type: Optional[str] = None,
         framework: Optional[str] = None,
@@ -322,6 +351,7 @@ def save_and_analyze_data(
 
     dataset = analyze_dataset(dataset,
                               run=run,
+                              arun=arun,
                               save=True,
                               outdir=outdir,
                               nchains=nchains,
