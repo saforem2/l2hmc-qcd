@@ -147,6 +147,12 @@ class Dynamics(nn.Module):
             self.xeps[str(lf)] = xeps
             self.veps[str(lf)] = veps
 
+        if torch.cuda.is_available():
+            self.xeps = self.xeps.cuda()
+            self.veps = self.veps.cuda()
+            self.networks.cuda()
+            self.cuda()
+
     @torch.no_grad()
     def init_weights(self, method='xavier_uniform'):
         for p in self.parameters():
@@ -748,7 +754,10 @@ class Dynamics(nn.Module):
         elif isinstance(self.g, SU3):
             x = self.g.group_to_vec(x)
 
-        x, force = x.to(self.device), force.to(self.device)
+        # x, force = x.to(self.device), force.to(self.device)
+        if torch.cuda.is_available():
+            x, force = x.cuda(), force.cuda()
+
         return vnet((x, force))
 
     def _call_xnet(
@@ -768,12 +777,14 @@ class Dynamics(nn.Module):
         assert callable(xnet)
         x, v = inputs
         if isinstance(self.g, U1Phase):
-            x = self._stack_as_xy(self.g.compat_proj(x))
+            x = self._stack_as_xy(x)
 
         if isinstance(self.g, SU3):
-            x = self.g.group_to_vec(self.g.compat_proj(x))
+            x = self.g.group_to_vec(x)
 
-        x, v = x.to(self.device), v.to(self.device)
+        # x, v = x.to(self.device), v.to(self.device)
+        if self.cuda.is_available():
+            x, v = x.cuda(), v.cuda()
 
         return xnet((x, v))
 
@@ -899,7 +910,7 @@ class Dynamics(nn.Module):
         else:
             raise ValueError('Unexpected value for `self.g`')
 
-        xf = self.g.compat_proj(xf)
+        # xf = self.g.compat_proj(xf)
         return State(x=xf, v=state.v, beta=state.beta), logdet
 
     def _update_x_bwd(
@@ -945,7 +956,7 @@ class Dynamics(nn.Module):
         else:
             raise ValueError('Unexpected value for `self.g`')
 
-        xb = self.g.compat_proj(xb)
+        # xb = self.g.compat_proj(xb)
         return State(x=xb, v=state.v, beta=state.beta), logdet
 
     def hamiltonian(self, state: State) -> Tensor:
