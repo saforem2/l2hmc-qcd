@@ -14,8 +14,15 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
 
-from l2hmc.configs import InputSpec, HERE, OUTDIRS_FILE, ExperimentConfig
+from l2hmc.configs import (
+    AIM_DIR,
+    InputSpec,
+    HERE,
+    OUTDIRS_FILE,
+    ExperimentConfig
+)
 from l2hmc.common import get_timestamp, is_interactive
+# import l2hmc.utils.plot_helpers as hplt
 
 
 log = logging.getLogger(__name__)
@@ -24,6 +31,7 @@ log = logging.getLogger(__name__)
 class BaseExperiment(ABC):
     """Convenience class for running framework independent experiments."""
     def __init__(self, cfg: DictConfig) -> None:
+        self._created = get_timestamp('%Y-%m-%d-%H%M%S')
         self.cfg = cfg
         self.config = instantiate(cfg)
         assert isinstance(self.config, ExperimentConfig)
@@ -36,6 +44,7 @@ class BaseExperiment(ABC):
         self.trainer = None
         self.dynamics = None
         self.optimizer = None
+        self._outdir = self.get_outdir()
         super().__init__()
 
     @abstractmethod
@@ -46,9 +55,31 @@ class BaseExperiment(ABC):
     def evaluate(self):
         pass
 
-    @abstractmethod
     def build_lattice(self):
-        pass
+        group = str(self.config.dynamics.group).upper()
+        lat_args = {
+            'nchains': self.config.dynamics.nchains,
+            'shape': list(self.config.dynamics.latvolume),
+        }
+        if group == 'U1':
+            if self.config.framework in ['tf', 'tensorflow']:
+                from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
+                return LatticeU1(**lat_args)
+            elif self.config.framework in ['pt', 'torch', 'pytorch']:
+                from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
+                return LatticeU1(**lat_args)
+        if group == 'SU3':
+            c1 = self.config.c1 if self.config.c1 is not None else 0.0
+            if self.config.framework in ['tf', 'tensorflow']:
+                from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
+                return LatticeSU3(c1=c1, **lat_args)
+            elif self.config.framework in ['pt', 'torch', 'pytorch']:
+                from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
+                return LatticeSU3(c1=c1, **lat_args)
+        raise ValueError(
+            'Unexpected value for `dynamics.group`: '
+            f'{self.config.dynamics.group}'
+        )
 
     @abstractmethod
     def build_dynamics(self):
@@ -87,12 +118,24 @@ class BaseExperiment(ABC):
     def init_wandb(self):
         pass
 
+    def init_aim(self):
+        return self._init_aim()
+
     @abstractmethod
-    def _build(self, init_wandb: bool = True):
+    def _build(
+            self,
+            init_wandb: bool = True,
+            init_aim: bool = True
+    ):
         pass
 
-    def build(self, init_wandb: bool = True):
-        return self._build(init_wandb=init_wandb)
+    def build(
+            self,
+            init_wandb: bool = True,
+            init_aim: bool = True
+    ):
+        return self._build(init_wandb=init_wandb,
+                           init_aim=init_aim)
 
     def get_input_spec(self) -> InputSpec:
         # assert self.lattice is not None
@@ -113,6 +156,22 @@ class BaseExperiment(ABC):
 
         input_spec = InputSpec(xshape=tuple(xshape), **input_dims)
         return input_spec
+
+    def _init_aim(self):
+        try:
+            from aim import Run  # type:ignore
+            # tstamp = get_timestamp()
+            run = Run(repo=AIM_DIR.as_posix())
+            run['hparams'] = OmegaConf.to_container(self.cfg,
+                                                    resolve=True,
+                                                    throw_on_missing=True)
+            # run['train_dir'] = self.get_jobdir('train')
+            run['outdir'] = self._outdir.as_posix()
+            return run
+
+        except (ImportError, ModuleNotFoundError) as e:
+            log.warning(e)
+            return None
 
     def _update_wandb_config(
             self,
@@ -156,7 +215,7 @@ class BaseExperiment(ABC):
 
         return run
 
-    def get_jobdir(self, job_type: str) -> Path:
+    def get_outdir(self) -> Path:
         outdir = self.cfg.get('outdir', None)
         if outdir is None:
             outdir = Path(os.getcwd())
@@ -164,10 +223,14 @@ class BaseExperiment(ABC):
                 framework = self.cfg.get('framework', None)
                 outdir = outdir.joinpath(
                     'outputs',
-                    get_timestamp('%Y-%m-%d-%H%M%S'),
+                    self._created,
                     framework,
                 )
-        jobdir = outdir.joinpath(job_type)
+
+        return outdir
+
+    def get_jobdir(self, job_type: str) -> Path:
+        jobdir = self._outdir.joinpath(job_type)
         jobdir.mkdir(exist_ok=True, parents=True)
         assert jobdir is not None
         setattr(self, f'{job_type}_dir', jobdir)
