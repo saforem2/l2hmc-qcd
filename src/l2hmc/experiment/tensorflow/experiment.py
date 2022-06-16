@@ -41,6 +41,22 @@ class Experiment(BaseExperiment):
         super().__init__(cfg=cfg)
         assert isinstance(self.config, ExperimentConfig)
 
+    def visualize_model(self) -> None:
+        vnet = self.dynamics._get_vnet(0)
+        xnet = self.dynamics._get_xnet(0, first=True)
+
+        vdot = tf.keras.utils.model_to_dot(vnet,
+                                           show_shapes=True,
+                                           expand_nested=True,
+                                           show_layer_activations=True)
+        xdot = tf.keras.utils.model_to_dot(xnet,
+                                           show_shapes=True,
+                                           expand_nested=True,
+                                           show_layer_activations=True)
+        log.info('Saving model visualizations to: [xnet,vnet].png')
+        xdot.write_png('xnet.png')
+        vdot.write_png('vnet.png')
+
     def build_lattice(self):
         group = str(self.config.dynamics.group).upper()
         lat_args = {
