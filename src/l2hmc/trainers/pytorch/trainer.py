@@ -559,9 +559,8 @@ class Trainer:
     ) -> tuple[Tensor, dict]:
         """Logic for performing a single training step"""
         xinit, beta = inputs
-        # xinit = self.g.compat_proj(xinit)
+        xinit = self.g.compat_proj(xinit)
         beta = torch.tensor(beta)
-        loss = 0.0
         if WITH_CUDA:
             xinit, beta = xinit.cuda(), beta.cuda()
 
@@ -577,13 +576,12 @@ class Trainer:
         # [1.] Forward call
         # with self.accelerator.autocast():
         # xinit = self.g.compat_proj(xinit.requires_grad_(True))
-        self.optimizer.zero_grad()
         xinit.requires_grad_(True)
         xout, metrics = self.dynamics((xinit, beta))
         xprop = metrics.pop('mc_states').proposed.x
 
         # [2.] Calc loss
-        loss += self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
+        loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
 
         if self.aux_weight > 0:
             yinit = self.g.random(xout.shape)
@@ -601,7 +599,7 @@ class Trainer:
 
         # [3.] Backpropagate gradients
         # self.accelerator.backward(loss)
-        # self.optimizer.zero_grad()
+        self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
         self.lr_schedule.step()
