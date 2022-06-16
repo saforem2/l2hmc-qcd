@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Optional
 
 from l2hmc.configs import (
-    AIM_DIR,
     InputSpec,
+    AIM_DIR,
     HERE,
     OUTDIRS_FILE,
     ExperimentConfig
