@@ -28,7 +28,7 @@ from torch import optim
 from torch.optim.lr_scheduler import LambdaLR
 import wandb
 
-from l2hmc.learning_rate.pytorch.learning_rate import rate
+# from l2hmc.learning_rate.pytorch.learning_rate import rate
 
 from l2hmc.configs import (
     Steps,
@@ -42,14 +42,14 @@ from l2hmc.group.su3.pytorch.group import SU3
 from l2hmc.loss.pytorch.loss import LatticeLoss
 from l2hmc.trackers.pytorch.trackers import update_summaries
 from l2hmc.utils.history import BaseHistory, summarize_dict
-from l2hmc.utils.rich import add_columns, console, is_interactive
+from l2hmc.utils.rich import add_columns, get_console
 from l2hmc.utils.step_timer import StepTimer
 
 # from mpi4py import MPI
 # from torchinfo import summary as model_summary
 
 
-WIDTH = int(os.environ.get('COLUMNS', 150))
+# WIDTH = int(os.environ.get('COLUMNS', 150))
 
 log = logging.getLogger(__name__)
 
@@ -66,8 +66,8 @@ LOCAL_RANK = hvd.local_rank()
 WITH_CUDA = torch.cuda.is_available()
 
 
-if is_interactive():
-    console.width = 250
+# if is_interactive():
+#     console.width = 250
 
 
 def grab(x: Tensor) -> np.ndarray:
@@ -123,9 +123,6 @@ class Trainer:
         if self._with_cuda:
             self.dynamics.cuda()
 
-        hvd.broadcast_parameters(self.dynamics.state_dict(), root_rank=0)
-        hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
-        # self.warmup = max(self.lr_config.warmup, self.steps.nepoch)
         self._factor = 0.7
         self._model_size = 4 * self.dynamics.xdim
         self._warmup = (self.steps.nera * self.steps.nepoch) // 4
@@ -140,6 +137,9 @@ class Trainer:
                 # op=hvd.Average,
                 # op=hvd.Adasum if cfg.use_adasum else hvd.Average,
         )
+        hvd.broadcast_parameters(self.dynamics.state_dict(), root_rank=0)
+        hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
+        # self.warmup = max(self.lr_config.warmup, self.steps.nepoch)
         # if self.clip_norm:
         #     clamp_grad_backward_hook(self.dynamics, clip=self.clip_norm)
         # self.accelerator = accelerator
@@ -181,6 +181,7 @@ class Trainer:
             'eval': StepTimer(evals_per_step=self.nlf),
             'hmc': StepTimer(evals_per_step=self.nlf)
         }
+        self.console = get_console(record=False)
 
     def get_lr(self, step: int) -> float:
         # return rate(step,
@@ -348,7 +349,13 @@ class Trainer:
         if run is not None:
             run.config.update({job_type: {'beta': beta, 'xshape': x.shape}})
 
-        with Live(console=console) as live:
+        with Live(
+            console=self.console,
+            vertical_overflow='visible',
+                # table,
+                # console=self.console,
+                # vertical_overflow='visible',
+        ) as live:
             live.update(table)
             for step in range(self.steps.test):
                 timer.start()
@@ -551,9 +558,8 @@ class Trainer:
             inputs: tuple[Tensor, Tensor],
     ) -> tuple[Tensor, dict]:
         """Logic for performing a single training step"""
-        self.optimizer.zero_grad()
         xinit, beta = inputs
-        xinit = self.g.compat_proj(xinit)
+        # xinit = self.g.compat_proj(xinit)
         beta = torch.tensor(beta)
         loss = 0.0
         if WITH_CUDA:
@@ -571,6 +577,8 @@ class Trainer:
         # [1.] Forward call
         # with self.accelerator.autocast():
         # xinit = self.g.compat_proj(xinit.requires_grad_(True))
+        self.optimizer.zero_grad()
+        xinit.requires_grad_(True)
         xout, metrics = self.dynamics((xinit, beta))
         xprop = metrics.pop('mc_states').proposed.x
 
@@ -579,11 +587,12 @@ class Trainer:
 
         if self.aux_weight > 0:
             yinit = self.g.random(xout.shape)
+            yinit.requires_grad_(True)
             if WITH_CUDA:
                 yinit = yinit.cuda()
 
             _, metrics_ = self.dynamics((yinit, beta))
-            yprop = self.g.compat_proj((metrics_.pop('mc_states').proposed.x))
+            yprop = metrics_.pop('mc_states').proposed.x
             aux_loss = self.aux_weight * self.loss_fn(x_init=yinit,
                                                       x_prop=yprop,
                                                       acc=metrics_['acc'])
@@ -616,7 +625,7 @@ class Trainer:
             lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
             metrics.update(lmetrics)
 
-        return xout.detach(), metrics
+        return xout, metrics
 
     def save_ckpt(
             self,
@@ -755,8 +764,11 @@ class Trainer:
         if x is None:
             x = self.g.random(list(self.xshape)).flatten(1)
 
-        if WIDTH is not None and WIDTH > 0:
-            console.width = WIDTH
+        # if WIDTH is not None and WIDTH > 0:
+        #     console.width = WIDTH
+        # width = int(os.environ.get('COLUMNS', '150'))
+        # console.width = width
+        # console._width = width
 
         self.dynamics.train()
         # log.warning(f'x.dtype: {x.dtype}')
@@ -787,7 +799,7 @@ class Trainer:
 
             if self.rank == 0:
                 ctxmgr = Live(table,
-                              console=console,
+                              console=self.console,
                               vertical_overflow='visible')
             else:
                 ctxmgr = nullcontext()
