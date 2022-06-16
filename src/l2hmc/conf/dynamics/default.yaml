@@ -3,8 +3,8 @@ _target_: l2hmc.configs.DynamicsConfig
 eps: 0.1
 group: 'U1'
 verbose: true
-nleapfrog: 8
 nchains: 1024
+nleapfrog: 8
 eps_hmc: null
 use_ncp: true
 eps_fixed: false
