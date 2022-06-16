@@ -800,7 +800,7 @@ class Dynamics(Model):
         else:
             raise ValueError('Unexpected value for `self.g`')
 
-        # xf = self.g.compat_proj(xf)
+        xf = self.g.compat_proj(xf)
         return State(x=xf, v=state.v, beta=state.beta), logdet
 
     def _update_x_bwd(
@@ -846,7 +846,7 @@ class Dynamics(Model):
         else:
             raise ValueError('Unexpected value for `self.g`')
 
-        # xb = self.g.compat_proj(xb)
+        xb = self.g.compat_proj(xb)
         return State(x=xb, v=state.v, beta=state.beta), logdet
 
     def hamiltonian(self, state: State) -> Tensor:
