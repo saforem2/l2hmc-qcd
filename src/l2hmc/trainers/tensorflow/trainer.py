@@ -38,7 +38,7 @@ from l2hmc.utils.step_timer import StepTimer
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 # from l2hmc.utils.tensorflow.history import History
 from l2hmc.utils.history import BaseHistory
-from l2hmc.utils.rich import add_columns, console
+from l2hmc.utils.rich import add_columns, get_console
 from contextlib import nullcontext
 
 # from rich.layout import Layout
@@ -176,6 +176,7 @@ class Trainer:
             'eval': StepTimer(evals_per_step=evals_per_step),
             'hmc': StepTimer(evals_per_step=evals_per_step)
         }
+        self.console = get_console(record=False)
 
     def draw_x(self, shape: Optional[list[int]] = None) -> Tensor:
         """Draw `x` """
@@ -535,8 +536,11 @@ class Trainer:
             })
 
         # with Live(table) as live:
-        with Live(console=console) as live:
-            live.update(table)
+        with Live(
+                table,
+                console=self.console,
+                vertical_overflow='visible',
+        ) as live:
             for step in range(self.steps.test):
                 timer.start()
                 x, metrics = eval_fn((x, tf.constant(beta)))  # type: ignore
@@ -580,7 +584,7 @@ class Trainer:
             inputs: tuple[Tensor, Tensor],
     ) -> tuple[Tensor, dict]:
         xinit, beta = inputs
-        xinit = self.dynamics.g.compat_proj(xinit)
+        # xinit = self.dynamics.g.compat_proj(xinit)
         # should_clip = (
         #     (self.lr_config.clip_norm > 0)
         #     if clip_grads is None else clip_grads
@@ -588,25 +592,28 @@ class Trainer:
         with tf.GradientTape() as tape:
             tape.watch(xinit)
             xout, metrics = self.dynamics((xinit, beta), training=True)
-            xprop = self.dynamics.g.compat_proj(
-                metrics.pop('mc_states').proposed.x
-            )
+            # xprop = self.dynamics.g.compat_proj(
+            #     metrics.pop('mc_states').proposed.x
+            # )
+            xprop = metrics.pop('mc_states').proposed.x
             loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
-            xout = self.dynamics.g.compat_proj(xout)
+            # xout = self.dynamics.g.compat_proj(xout)
             # xout = to_u1(xout)
 
             if self.aux_weight > 0:
                 # yinit = to_u1(self.draw_x())
-                yinit = self.dynamics.g.compat_proj(self.draw_x())
+                yinit = self.draw_x()
                 _, metrics_ = self.dynamics((yinit, beta), training=True)
                 # yprop = to_u1(metrics_.pop('mc_states').proposed.x)
-                yprop = self.dynamics.g.compat_proj(
-                    metrics_.pop('mc_states').proposed.x
-                )
+                # yprop = self.dynamics.g.compat_proj(
+                #     metrics_.pop('mc_states').proposed.x
+                # )
+                yprop = metrics_.pop('mc_states').proposed.x
                 aux_loss = self.aux_weight * self.loss_fn(x_init=yinit,
                                                           x_prop=yprop,
                                                           acc=metrics_['acc'])
-                loss = (loss + aux_loss) / (1. + self.aux_weight)
+                loss += self.aux_weight * aux_loss
+                # loss = (loss + aux_loss) / (1. + self.aux_weight)
 
         tape = hvd.DistributedGradientTape(tape, compression=self.compression)
         grads = tape.gradient(loss, self.dynamics.trainable_variables)
@@ -745,7 +752,7 @@ class Trainer:
 
             if self.rank == 0:
                 ctxmgr = Live(table,
-                              console=console,
+                              console=self.console,
                               vertical_overflow='visible')
             else:
                 ctxmgr = nullcontext()
