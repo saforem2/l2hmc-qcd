@@ -15,14 +15,14 @@ import joblib
 import matplotlib.pyplot as plt
 from omegaconf import DictConfig
 import pandas as pd
-from rich.console import Console
+# from rich.console import Console
 from rich.table import Table
 import wandb
 import xarray as xr
 
 from l2hmc.configs import AnnealingSchedule, Steps
 from l2hmc.utils.plot_helpers import make_ridgeplots, plot_dataArray
-from l2hmc.utils.rich import is_interactive
+from l2hmc.utils.rich import get_console, is_interactive
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 log = logging.getLogger(__name__)
@@ -158,7 +158,7 @@ def save_logs(
     tfile.parent.mkdir(exist_ok=True, parents=True)
 
     data = {}
-    console = Console(record=True)
+    console = get_console(record=True)
     for idx, table in tables.items():
         if idx == 0:
             data = table_to_dict(table)
@@ -324,13 +324,11 @@ def analyze_dataset(
                     aimage = Image(
                         Path(f).as_posix(),
                         format='png',
-                        # optimize=True,
                         quality=100,
                     )
                     arun.track(
                         aimage,
                         name=f'images/{f.stem}',
-                        # step=
                         context={'subset': job_type}
                     )
 

@@ -47,13 +47,35 @@ def is_interactive():
     return get_ipython() is not None
 
 
-console = Console(record=False,
-                  color_system='truecolor',
-                  log_path=False,
-                  force_jupyter=is_interactive(),
-                  width=WIDTH)
+def get_console(width: Optional[int] = None, *args, **kwargs) -> Console:
+    interactive = is_interactive()
+    console = Console(
+        force_jupyter=interactive,
+        log_path=False,
+        color_system='truecolor',
+        *args,
+        **kwargs)
+    if width is None:
+        columns = int(os.environ.get('COLUMNS', '235'))
+        # if not interactive:
+        #     size = shutil.get_terminal_size()
+        #     columns = size.columns
+        # else:
+        #     columns = 120
 
-console.width = max(WIDTH, int(os.environ.get('COLUMNS', 150)))
+        console.width = columns
+        console._width = columns
+
+    return console
+
+
+# console = Console(record=False,
+#                   color_system='truecolor',
+#                   log_path=False,
+#                   force_jupyter=is_interactive(),
+#                   width=WIDTH)
+
+# console.width = max(WIDTH, int(os.environ.get('COLUMNS', 150)))
 # assert console.width == WIDTH == os.environ['COLUMNS']
 
 
