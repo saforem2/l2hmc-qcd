@@ -169,13 +169,13 @@ def main(cfg: DictConfig) -> None:
         ex = Experiment(cfg)
         init = (RANK == 0)
         _ = ex.build(init_wandb=init, init_aim=init)
-        ex.visualize_model()
     else:
         raise ValueError(
             'Framework must be specified, one of: [pytorch, tensorflow]'
         )
 
     if RANK == 0:
+        ex.visualize_model()
         print_config(cfg, resolve=True)
 
     assert isinstance(ex.config, ExperimentConfig)
