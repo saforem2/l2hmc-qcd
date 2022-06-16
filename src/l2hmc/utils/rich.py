@@ -4,12 +4,13 @@ rich.py
 Contains utils for textual layouts using Rich
 """
 from __future__ import absolute_import, annotations, division, print_function
+import logging
 import os
 from pathlib import Path
-from typing import Optional
 import shutil
+from typing import Optional
 
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import DictConfig, OmegaConf
 import rich
 from rich.console import Console
 from rich.layout import Layout
@@ -20,11 +21,16 @@ from rich.progress import (
     SpinnerColumn,
     TextColumn,
     TimeElapsedColumn,
-    TimeRemainingColumn
+    TimeRemainingColumn,
 )
 import rich.syntax
 from rich.table import Table
 import rich.tree
+
+from l2hmc.configs import Steps
+
+
+log = logging.getLogger(__name__)
 
 # from typing import Any, Callable, Optional
 # from rich import box
@@ -33,7 +39,6 @@ import rich.tree
 # import time
 # import numpy as np
 
-from l2hmc.configs import Steps
 
 # WIDTH = max(150, int(os.environ.get('COLUMNS', 150)))
 size = shutil.get_terminal_size()
@@ -254,7 +259,9 @@ def print_config(
     with outfile.open('wt') as f:
         console = rich.console.Console(file=f)
         console.print(tree)
-    # rich.print(tree)
+
+    rich.print(tree)
+    # log.info(tree)
 
     # with outfile.open('w') as f:
     #     rich.print(tree, file=f)
