@@ -42,6 +42,11 @@ class Experiment(BaseExperiment):
         assert isinstance(self.config, ExperimentConfig)
 
     def visualize_model(self) -> None:
+        state = self.dynamics.random_state(1.)
+        x = self.dynamics.flatten(state.x)
+        v = self.dynamics.flatten(state.v)
+        _ = self.dynamics._call_vnet(0, (x, v), training=True)
+        _ = self.dynamics._call_xnet(0, (x, v), first=True, training=True)
         vnet = self.dynamics._get_vnet(0)
         xnet = self.dynamics._get_xnet(0, first=True)
 
