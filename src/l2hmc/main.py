@@ -5,11 +5,13 @@ Contains entry point for training Dynamics.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
+import os
+import random
 import warnings
 
 import hydra
+import numpy as np
 from omegaconf import DictConfig
-# import socket
 
 from l2hmc.configs import ExperimentConfig
 from l2hmc.utils.rich import print_config
@@ -46,21 +48,19 @@ def setup_tensorflow(cfg: DictConfig) -> int:
 
 
 def seed_everything(seed: int):
-    import os
-    import random
-    import numpy as np
     import torch
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = True
 
 
 def setup_torch(cfg: DictConfig) -> int:
+    os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     import torch
+    torch.backends.cudnn.deterministic = True   # type:ignore
+    torch.backends.cudnn.benchmark = True       # type:ignore
     torch.use_deterministic_algorithms(True)
     # torch.manual_seed(cfg.seed)
     import horovod.torch as hvd
@@ -175,8 +175,11 @@ def main(cfg: DictConfig) -> None:
         )
 
     if RANK == 0:
-        ex.visualize_model()
         print_config(cfg, resolve=True)
+        try:
+            ex.visualize_model()
+        except AttributeError as e:
+            log.exception(e)
 
     assert isinstance(ex.config, ExperimentConfig)
     should_train = (
