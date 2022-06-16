@@ -12,7 +12,7 @@ from l2hmc.group.group import Group
 
 Tensor = tf.Tensor
 TF_FLOAT = tf.keras.backend.floatx()
-PI = tf.constant(np.pi, dtype=TF_FLOAT)
+PI = tf.cast(np.pi, TF_FLOAT)
 
 
 class U1Phase(Group):
@@ -63,13 +63,16 @@ class U1Phase(Group):
     def compat_proj(self, x: Tensor) -> Tensor:
         # return tf.math.floormod(x + PI, 2 * PI) - PI
         # return (x + PI % (2 * PI)) - PI
-        return self.floormod(x + PI, tf.constant(2.*np.pi)) - PI
+        return self.floormod(x + PI, (2 * PI)) - PI
 
     def random(self, shape: list[int]):
-        return self.compat_proj(tf.random.uniform(shape, *(-4, 4)))
+        runif = tf.random.uniform(shape, *(-4, 4), dtype=TF_FLOAT)
+        return self.compat_proj(
+            tf.random.uniform(shape, *(-4, 4), dtype=TF_FLOAT)
+        )
 
     def random_momentum(self, shape: list[int]) -> Tensor:
-        return tf.random.normal(shape)
+        return tf.random.normal(shape, dtype=TF_FLOAT)
 
     def kinetic_energy(self, p: Tensor) -> Tensor:
         return 0.5 * tf.reduce_sum(
