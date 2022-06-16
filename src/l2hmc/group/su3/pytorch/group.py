@@ -93,8 +93,8 @@ class SU3(Group):
 
     def random(self, shape: list[int]) -> Tensor:
         """Returns (batched) random SU(3) matrices."""
-        r = torch.randn(shape)
-        i = torch.randn(shape)
+        r = torch.randn(shape, requires_grad=True)
+        i = torch.randn(shape, requires_grad=True)
         return projectSU(torch.complex(r, i))
 
     def random_momentum(self, shape: list[int]) -> Tensor:
