@@ -215,7 +215,7 @@ class LatticeU1(Lattice):
 
     def _int_charges(self, wloops: Tensor) -> Tensor:
         """Calculate intQ from Wilson loops."""
-        return project_angle(wloops).sum((1, 2)) / TWOPI
+        return (project_angle(wloops)).sum((1, 2)) / TWOPI
 
     def _get_wloops(
             self,
