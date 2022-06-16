@@ -84,7 +84,7 @@ class U1Phase(Group):
         return (x + PI % TWO_PI) - PI
 
     def random(self, shape: list[int]) -> Tensor:
-        return self.compat_proj(random_angle(shape))
+        return self.compat_proj(random_angle(shape, requires_grad=True))
         # return self.compat_proj(torch.rand(shape, *(-4, 4)))
 
     def random_momentum(self, shape: list[int]) -> Tensor:
