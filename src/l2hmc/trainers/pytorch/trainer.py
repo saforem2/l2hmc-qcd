@@ -272,7 +272,7 @@ class Trainer:
             xinit, beta = xinit.cuda(), torch.tensor(beta).cuda()
         # xinit = xinit.to(self.device)
         xout, metrics = self.dynamics((xinit, beta))
-        xout = self.g.compat_proj(xout)
+        # xout = self.g.compat_proj(xout)
         xprop = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
         if self.verbose:
@@ -570,9 +570,9 @@ class Trainer:
         # --------------------------------------------------------------------
         # [1.] Forward call
         # with self.accelerator.autocast():
-        xinit = self.g.compat_proj(xinit.requires_grad_(True))
+        # xinit = self.g.compat_proj(xinit.requires_grad_(True))
         xout, metrics = self.dynamics((xinit, beta))
-        xprop = self.g.compat_proj(metrics.pop('mc_states').proposed.x)
+        xprop = metrics.pop('mc_states').proposed.x
 
         # [2.] Calc loss
         loss += self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
