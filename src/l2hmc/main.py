@@ -125,6 +125,10 @@ def train_pytorch(cfg: DictConfig) -> dict:
         and ex.config.steps.nepoch > 0
     )
     if should_train:
+        from l2hmc.network.pytorch.network import zero_weights
+        log.warning('Zeroing network weights...')
+        ex.dynamics.networks.apply(zero_weights)
+
         outputs['train'] = ex.train()
         # Evaluate trained model
         if RANK == 0 and ex.config.steps.test > 0:
@@ -165,21 +169,22 @@ def main(cfg: DictConfig) -> None:
         _ = ex.build(init_wandb=init, init_aim=init)
     elif framework in ['pt', 'pytorch', 'torch']:
         RANK = setup_torch(cfg)
+        from l2hmc.network.pytorch.network import zero_weights, init_weights
         from l2hmc.experiment.pytorch.experiment import Experiment
         ex = Experiment(cfg)
         init = (RANK == 0)
         _ = ex.build(init_wandb=init, init_aim=init)
+        # log.warning('Initializing network weights...')
+        # ex.dynamics.networks['xnet'].apply(init_weights)
+        # ex.dynamics.networks['vnet'].apply(init_weights)
+
     else:
         raise ValueError(
             'Framework must be specified, one of: [pytorch, tensorflow]'
         )
 
     if RANK == 0:
-        print_config(cfg, resolve=True)
-        try:
-            ex.visualize_model()
-        except AttributeError as e:
-            log.exception(e)
+        print_config(ex.cfg, resolve=True)
 
     assert isinstance(ex.config, ExperimentConfig)
     should_train = (
@@ -192,6 +197,11 @@ def main(cfg: DictConfig) -> None:
         if RANK == 0 and ex.config.steps.test > 0:
             log.warning('Evaluating trained model')
             _ = ex.evaluate(job_type='eval')
+
+            try:
+                ex.visualize_model()
+            except AttributeError as e:
+                log.exception(e)
 
     # Run generic HMC for baseline comparison
     if RANK == 0 and ex.config.steps.test > 0:
