@@ -24,6 +24,8 @@ def setup_tensorflow(cfg: DictConfig) -> int:
     import tensorflow as tf
     # tf.config.run_functions_eagerly(True)
     tf.keras.backend.set_floatx(cfg.precision)
+    TF_FLOAT = tf.keras.backend.floatx()
+    log.warning(f'Using: {TF_FLOAT} precision')
     # assert tf.keras.backend.floatx() == tf.float32
     import horovod.tensorflow as hvd
     hvd.init()
