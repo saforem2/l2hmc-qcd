@@ -145,7 +145,7 @@ class BaseExperiment(ABC):
         if self.config.dynamics.group == 'U1':
             input_dims = {
                 'xnet': {'x': [xdim, 2], 'v': [xdim, ]},
-                'vnet': {'x': [xdim, 2], 'v': [xdim, ]},
+                'vnet': {'x': [xdim], 'v': [xdim, ]},
             }
         elif self.config.dynamics.group == 'SU3':
             input_dims = {
@@ -199,12 +199,12 @@ class BaseExperiment(ABC):
 
     def _init_wandb(self):
         from wandb.util import generate_id
-        from l2hmc.utils.rich import print_config
+        # from l2hmc.utils.rich import print_config
 
         run_id = generate_id()
         self.update_wandb_config(run_id=run_id)
         log.warning(f'os.getcwd(): {os.getcwd()}')
-        # wandb.tensorboard.patch(root_logdir=os.getcwd())
+        wandb.tensorboard.patch(root_logdir=os.getcwd())
         run = wandb.init(dir=os.getcwd(), **self.config.wandb.setup)
         assert run is wandb.run and run is not None
         wandb.define_metric('dQint_eval', summary='mean')
@@ -213,7 +213,7 @@ class BaseExperiment(ABC):
                                           resolve=True,
                                           throw_on_missing=False)
         run.config.update(cfg_dict)
-        print_config(DictConfig(self.config), resolve=True)
+        # print_config(DictConfig(self.config), resolve=True)
 
         return run
 
