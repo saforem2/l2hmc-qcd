@@ -41,26 +41,37 @@ TWO_PI = 2. * PI
 
 TF_FLOAT = tf.keras.backend.floatx()
 
-
-def to_u1(x: Tensor) -> Tensor:
-    return (tf.add(x, PI) % TWO_PI) - PI
+ACTIVATIONS = {
+    'relu': tf.keras.activations.relu,
+    'tanh': tf.keras.activations.tanh,
+    'swish': tf.keras.activations.swish,
+    'linear': lambda x: x,
+}
 
 
 def linear_activation(x: Tensor) -> Tensor:
     return x
 
-
-ACTIVATIONS = {
-    'relu': tf.keras.activations.relu,
-    'tanh': tf.keras.activations.tanh,
-    'swish': tf.keras.activations.swish,
-    'linear': linear_activation,
-}
-
 # FUNCTIONAL_ACTIVATIONS = {
 #     'relu': tf.keras.layers.ReLU,
 #     'tanh': tf.keras.layers.T
 # }
+
+
+def zero_weights(model: Model) -> Model:
+    for layer in model.layers:
+        if isinstance(layer, Model):
+            zero_weights(layer)
+        else:
+            weights = layer.get_weights()
+            zeros = []
+            for w in weights:
+                log.info(f'Zeroing layer: {layer}')
+                zeros.append(np.zeros_like(w))
+
+            layer.set_weights(zeros)
+
+    return model
 
 
 class NetworkFactory(BaseNetworkFactory):
@@ -254,7 +265,8 @@ def get_network(
 
     if input_shapes is None:
         input_shapes = {
-            'x': (int(xdim), int(2)), 'v': (int(xdim), int(2)),
+            'x': (int(xdim), int(2)),
+            'v': (int(xdim), int(2)),
         }
 
     kwargs = setup(xdim=xdim, name=name, network_config=network_config)
