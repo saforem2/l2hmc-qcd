@@ -57,6 +57,7 @@ WIDTH = int(os.environ.get('COLUMNS', 150))
 log = logging.getLogger(__name__)
 
 Tensor = tf.Tensor
+Array = np.ndarray
 TF_FLOAT = tf.keras.backend.floatx()
 NP_INT = (np.int8, np.int16, np.int32, np.int64)
 Model = tf.keras.Model
@@ -359,16 +360,18 @@ class Trainer:
             model: Optional[Model] = None,
             optimizer: Optional[Optimizer] = None,
     ):
+        record = {} if record is None else record
         assert job_type in ['train', 'eval', 'hmc']
         kwargs = {'step': step, 'job_type': job_type, 'arun': arun}
+        history = self.histories[job_type]
 
-        record = {} if record is None else record
         if step is not None:
             record.update({f'{job_type}_step': step})
 
         record.update({
             'loss': metrics.get('loss', None),
             'dQint': metrics.get('dQint', None),
+            'dQsin': metrics.get('dQsin', None),
         })
         if job_type == 'train' and step is not None:
             record['lr'] = K.get_value(self.optimizer.lr)
@@ -376,7 +379,8 @@ class Trainer:
         record.update(self.metrics_to_numpy(metrics))
         avgs = self.histories[job_type].update(record)
         summary = summarize_dict(avgs)
-        if step is not None:
+        # if step is not None:
+        if writer is not None and self.verbose and step is not None:
             update_summaries(step=step,
                              prefix=job_type,
                              model=model,
@@ -480,12 +484,14 @@ class Trainer:
             skip = [skip]
 
         if beta is None:
-            beta = self.schedule.beta_final
+            beta = tf.constant(self.schedule.beta_final, dtype=TF_FLOAT)
 
         if eps is None and str(job_type).lower() == 'hmc':
-            eps = tf.constant(0.1)
+            # eps = tf.constant(0.1, dtype=TF_FLOAT)
+            eps = tf.constant(self.dynamics.config.eps_hmc, dtype=TF_FLOAT)
             log.warn(
-                'Step size `eps` not specified for HMC! Using default: 0.1'
+                'Step size `eps` not specified for HMC! '
+                f'Using default: {self.dynamics.config.eps_hmc:.3f}'
             )
 
         assert job_type in ['eval', 'hmc']
@@ -497,7 +503,7 @@ class Trainer:
         if writer is not None:
             writer.set_as_default()
 
-        def eval_fn(inputs):
+        def eval_fn(inputs: tuple[Tensor, Tensor]) -> tuple[Tensor, dict]:
             if job_type == 'eval':
                 return self.eval_step(inputs)  # type:ignore
 
@@ -536,6 +542,8 @@ class Trainer:
             })
 
         # with Live(table) as live:
+        assert x is not None and isinstance(x, Tensor)
+        assert beta is not None and isinstance(beta, Tensor)
         with Live(
                 table,
                 console=self.console,
@@ -543,7 +551,7 @@ class Trainer:
         ) as live:
             for step in range(self.steps.test):
                 timer.start()
-                x, metrics = eval_fn((x, tf.constant(beta)))  # type: ignore
+                x, metrics = eval_fn((x, beta))
                 dt = timer.stop()
                 if step % nprint == 0 or step % nlog == 0:
                     record = {
@@ -578,10 +586,16 @@ class Trainer:
 
     # @tf.function(experimental_follow_type_hints=True,
     #         jit_compile=JIT_COMPILE)
-    @tf.function
+    @tf.function(
+        experimental_follow_type_hints=True,
+        # input_signature=[
+        #     tf.TensorSpec(shape=None, dtype=TF_FLOAT),
+        #     tf.TensorSpec(shape=None, dtype=TF_FLOAT),
+        # ],
+    )
     def train_step(
             self,
-            inputs: tuple[Tensor, Tensor],
+            inputs: tuple[Tensor, Tensor]
     ) -> tuple[Tensor, dict]:
         xinit, beta = inputs
         # xinit = self.dynamics.g.compat_proj(xinit)
@@ -636,11 +650,27 @@ class Trainer:
 
         return xout, metrics
 
+    @staticmethod
+    def update_record(
+        record: dict,
+        updates: dict[str, float | int | Tensor | Array | None],
+        reset: Optional[bool] = False,
+    ) -> dict:
+        if reset:
+            record = {}
+
+        for key, val in updates.items():
+            if val is not None:
+                record[key] = val
+
+        return record
+
     def train_epoch(
             self,
             beta: float | Tensor,
             x: Optional[Tensor] = None,
             step: Optional[int] = None,
+            era: Optional[int] = None,
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
@@ -654,6 +684,8 @@ class Trainer:
         avgs = {}
         summaries = []
         table = Table(expand=True)
+        beta = tf.cast(beta, TF_FLOAT)
+        record = {}
         for step in range(self.steps.nepoch):
             self.timers['train'].start()
             x, metrics = self.train_step((x, beta))  # type: ignore
@@ -661,9 +693,12 @@ class Trainer:
             gstep += 1
 
             if self.should_print(step) or self.should_log(step):
-                record = {
-                    'epoch': step, 'beta': beta, 'dt': dt,
-                }
+                record = self.update_record(
+                    record=record,
+                    updates=(
+                        {'era': era, 'epoch': step, 'beta': beta, 'dt': dt}
+                    )
+                )
                 avgs_, summary = self.record_metrics(
                     run=run,
                     arun=arun,
@@ -672,9 +707,8 @@ class Trainer:
                     record=record,      # template w/ step info, np.arr
                     metrics=metrics,    # metrics from Dynamics, Tensor
                     job_type='train',
-                    # model=self.dynamics,
-                    # optimizer=self.optimizer,
-                    # history=self.histories['train'],
+                    model=self.dynamics,
+                    optimizer=self.optimizer,
                 )
                 avgs[gstep] = avgs_
                 summaries.append(summary)
@@ -723,9 +757,9 @@ class Trainer:
         x = self.draw_x() if xinit is None else tf.constant(xinit, TF_FLOAT)
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
 
-        inputs = (x, tf.constant(self.schedule.beta_init))
-        assert callable(self.train_step)
-        _ = self.train_step(inputs)
+        # inputs = (x, tf.constant(self.schedule.beta_init))
+        # assert callable(self.train_step)
+        # _ = self.train_step(inputs)
 
         era = 0
         epoch = 0
@@ -744,7 +778,7 @@ class Trainer:
             nepoch_last_era *= extend
 
         for era in range(self.steps.nera):
-            beta = tf.constant(self.schedule.betas[str(era)])
+            beta = tf.constant(self.schedule.betas[str(era)], dtype=TF_FLOAT)
             table = Table(
                 box=box.HORIZONTALS,
                 row_styles=['dim', 'none'],
@@ -768,13 +802,13 @@ class Trainer:
                     ])
                     live.console.clear_live()
                     live.console.rule(tstr)
-                    live.update(table)
+                    live.update(table, refresh=True)
 
                 epoch_start = time.time()
                 for epoch in range(nepoch):
                     timer.start()
                     x, metrics = self.train_step(   # type:ignore
-                        (x, tf.constant(beta))
+                        (x, beta)
                     )
                     dt = timer.stop()
                     gstep += 1
