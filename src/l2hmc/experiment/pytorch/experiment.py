@@ -8,6 +8,7 @@ from __future__ import absolute_import, annotations, division, print_function
 # import os
 import logging
 from typing import Any, Callable, Optional
+import os
 # from accelerate.accelerator import Accelerator
 
 from omegaconf import DictConfig
@@ -162,7 +163,8 @@ class Experiment(BaseExperiment):
             self,
             job_type: str,
     ):
-        sdir = super()._get_summary_dir(job_type=job_type)
+        # sdir = super()._get_summary_dir(job_type=job_type)
+        sdir = os.getcwd()
         return SummaryWriter(sdir)
 
     def build(

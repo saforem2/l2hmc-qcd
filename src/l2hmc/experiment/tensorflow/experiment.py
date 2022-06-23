@@ -8,6 +8,7 @@ from __future__ import absolute_import, division, print_function, annotations
 
 import logging
 from omegaconf import DictConfig
+import os
 
 from typing import Optional, Callable
 from l2hmc.configs import ExperimentConfig
@@ -151,7 +152,8 @@ class Experiment(BaseExperiment):
             self,
             job_type: str,
     ):
-        sdir = super()._get_summary_dir(job_type=job_type)
+        # sdir = super()._get_summary_dir(job_type=job_type)
+        sdir = os.getcwd()
         return tf.summary.create_file_writer(sdir)  # type:ignore
 
     def build(
