@@ -21,7 +21,7 @@ import wandb
 import xarray as xr
 
 from l2hmc.configs import AnnealingSchedule, Steps
-from l2hmc.utils.plot_helpers import make_ridgeplots, plot_dataArray
+from l2hmc.utils.plot_helpers import make_ridgeplots, plot_dataArray, set_plot_style
 from l2hmc.utils.rich import get_console, is_interactive
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
@@ -352,6 +352,7 @@ def save_and_analyze_data(
         else ': '.join([jstr, f'{framework}'])
     )
 
+    set_plot_style()
     dataset = analyze_dataset(dataset,
                               run=run,
                               arun=arun,
