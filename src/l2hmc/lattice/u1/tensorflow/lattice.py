@@ -16,8 +16,8 @@ import l2hmc.group.u1.tensorflow.group as g
 from l2hmc.configs import Charges, LatticeMetrics
 
 TF_FLOAT = tf.keras.backend.floatx()
-PI = tf.constant(np.pi)
-TWO_PI = 2. * PI
+PI = tf.constant(np.pi, dtype=TF_FLOAT)
+TWO_PI = tf.constant(2. * PI, dtype=TF_FLOAT)
 
 Tensor = tf.Tensor
 
@@ -83,7 +83,9 @@ class LatticeU1(Lattice):
 
     def _action(self, wloops: Tensor, beta: Tensor) -> Tensor:
         local_action = tf.ones_like(wloops) - tf.math.cos(wloops)
-        return beta * tf.reduce_sum(local_action, (1, 2))
+        return (
+            tf.cast(beta, wloops.dtype) * tf.reduce_sum(local_action, (1, 2))
+        )
 
     def action_with_grad(
             self,
