@@ -28,6 +28,10 @@ class LatticeLoss:
         self.config = loss_config
         # self.xshape = self.lattice._shape
         self.xshape = self.lattice.xshape
+        self.plaq_weight = torch.tensor(self.config.plaq_weight,
+                                        dtype=torch.float)
+        self.charge_weight = torch.tensor(self.config.charge_weight,
+                                          dtype=torch.float)
         if isinstance(self.lattice, LatticeU1):
             self.g = U1Phase()
         elif isinstance(self.lattice, LatticeSU3):
@@ -36,17 +40,17 @@ class LatticeLoss:
             raise ValueError(f'Unexpected value for `self.g`: {self.g}')
 
     def __call__(self, x_init: Tensor, x_prop: Tensor, acc: Tensor) -> Tensor:
-        return self.calc_loss(x_init, x_prop, acc)
+        return self.calc_loss(x_init=x_init, x_prop=x_prop, acc=acc)
 
     @staticmethod
-    def mixed_loss(loss: Tensor, weight: float) -> Tensor:
+    def mixed_loss(loss: Tensor, weight: Tensor) -> Tensor:
         return (weight / loss) - (loss / weight)
 
     def _plaq_loss(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
         dw = w2 - w1
         dwloops = 2. * (torch.ones_like(w1) - dw.cos())
         if isinstance(self.g, U1Phase):
-            ploss = acc * dwloops.sum((1, 2)) + 1e-4
+            ploss = acc * dwloops.sum((1, 2))
         elif isinstance(self.g, SU3):
             ploss = acc * dwloops.sum((tuple(range(2, len(w1.shape)))))
         else:
@@ -54,18 +58,21 @@ class LatticeLoss:
 
         # dwloops = 2. * (1. - torch.cos(w2 - w1))
         if self.config.use_mixed_loss:
-            return self.mixed_loss(ploss, self.config.plaq_weight).mean(0)
+            ploss += 1e-4
+            return self.mixed_loss(ploss, self.plaq_weight).mean()
 
-        return (-ploss / self.config.plaq_weight).mean(0)
+        return (-ploss / self.plaq_weight).mean()
 
     def _charge_loss(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
         q1 = self.lattice._sin_charges(wloops=w1)  # type:ignore
         q2 = self.lattice._sin_charges(wloops=w2)  # type:ignore
-        qloss = (acc * (q2 - q1) ** 2) + 1e-4
+        dqsq = (q2 - q1) ** 2
+        qloss = acc * dqsq
         if self.config.use_mixed_loss:
-            return self.mixed_loss(qloss, self.config.charge_weight).mean(0)
+            qloss += 1e-4
+            return self.mixed_loss(qloss, self.charge_weight).mean()
 
-        return (-qloss / self.config.charge_weight).mean(0)
+        return (-qloss / self.charge_weight).mean()
 
     def lattice_metrics(
             self,
@@ -89,12 +96,12 @@ class LatticeLoss:
         wl_init = self.lattice.wilson_loops(x=x_init)
         wl_prop = self.lattice.wilson_loops(x=x_prop)
 
-        plaq_loss = torch.tensor(0.)
-        if self.config.plaq_weight > 0:
+        plaq_loss = torch.tensor(0., dtype=torch.float)
+        if self.plaq_weight > 0:
             plaq_loss = self._plaq_loss(w1=wl_init, w2=wl_prop, acc=acc)
 
-        charge_loss = torch.tensor(0.)
-        if self.config.charge_weight > 0:
+        charge_loss = torch.tensor(0., dtype=torch.float)
+        if self.charge_weight > 0:
             charge_loss = self._charge_loss(w1=wl_init, w2=wl_prop, acc=acc)
 
         return plaq_loss + charge_loss
