@@ -77,7 +77,9 @@ def init_weights(m, method='xavier_uniform'):
 
 def zero_weights(m):
     if isinstance(m, nn.Linear):
-        nn.init.zeros_(m.weight)
+        nn.init.zeros_(m.weight.data)
+        if m.bias is not None:
+            nn.init.constant_(m.bias.data, 0)
 
 
 class PeriodicPadding(nn.Module):
