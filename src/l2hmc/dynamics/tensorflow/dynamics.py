@@ -5,7 +5,7 @@ Tensorflow implementation of Dynamics object for training L2HMC sampler.
 """
 from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass
-from math import pi as PI
+from math import pi
 import os
 from pathlib import Path
 from typing import Callable, Optional
@@ -15,20 +15,22 @@ import logging
 import numpy as np
 import tensorflow as tf
 
-from l2hmc.configs import DynamicsConfig
+# from l2hmc.configs import DynamicsConfig
+from l2hmc import configs as cfgs
 from l2hmc.network.tensorflow.network import NetworkFactory
 from l2hmc.group.u1.tensorflow.group import U1Phase
 from l2hmc.group.su3.tensorflow.group import SU3
 # import l2hmc.group.tensorflow.group as g
 
-TWO_PI = 2. * PI
-TWO = tf.constant(2.)
 
 Tensor = tf.Tensor
 Model = tf.keras.Model
 TensorLike = tf.types.experimental.TensorLike
 TF_FLOAT = tf.keras.backend.floatx()
 
+PI = tf.constant(pi, dtype=TF_FLOAT)
+TWO = tf.constant(2., dtype=TF_FLOAT)
+TWO_PI = TWO * PI
 
 log = logging.getLogger(__name__)
 
@@ -46,10 +48,23 @@ class State:
     v: Tensor
     beta: Tensor
 
+    def flatten(self):
+        x = tf.reshape(self.x, (self.x.shape[0], -1))
+        v = tf.reshape(self.v, (self.v.shape[0], -1))
+        beta = tf.cast(self.beta, x.dtype)
+        return State(x, v, beta)
+
     def __post_init__(self):
         assert isinstance(self.x, Tensor)
         assert isinstance(self.v, Tensor)
         assert isinstance(self.beta, Tensor)
+
+    def to_numpy(self):
+        return {
+            'x': self.x.numpy(),  # type:ignore
+            'v': self.v.numpy(),  # type:ignore
+            'beta': self.beta.numpy(),  # type:ignore
+        }
 
 
 @dataclass
@@ -77,7 +92,7 @@ class Dynamics(Model):
     def __init__(
             self,
             potential_fn: Callable,
-            config: DynamicsConfig,
+            config: cfgs.DynamicsConfig,
             network_factory: NetworkFactory,
     ):
         """Initialization."""
@@ -89,7 +104,7 @@ class Dynamics(Model):
         self.xshape = tuple(network_factory.input_spec.xshape)
         self.potential_fn = potential_fn
         self.nlf = self.config.nleapfrog
-        self.midpt = self.config.nleapfrog // 2
+        # self.midpt = self.config.nleapfrog // 2
         self.xnet, self.vnet = self._build_networks(network_factory)
         self.masks = self._build_masks()
         if self.config.group == 'U1':
@@ -98,6 +113,8 @@ class Dynamics(Model):
             self.g = SU3()
         else:
             raise ValueError('Unexpected value for `self.config.group`')
+
+        assert isinstance(self.g, (U1Phase, SU3))
 
         self.xeps = []
         self.veps = []
@@ -134,9 +151,9 @@ class Dynamics(Model):
 
     def random_state(self, beta: float = 1.) -> State:
         """Returns a random State."""
-        x = self.g.random(list(self.xshape))
-        v = self.g.random_momentum(list(self.xshape))
-        return State(x=x, v=v, beta=tf.constant(beta))
+        x = self.flatten(self.g.random(list(self.xshape)))
+        v = self.flatten(self.g.random_momentum(list(self.xshape)))
+        return State(x=x, v=v, beta=tf.constant(beta, dtype=TF_FLOAT))
 
     def test_reversibility(self) -> dict[str, Tensor]:
         """Test reversibility i.e. backward(forward(state)) = state"""
@@ -630,11 +647,7 @@ class Dynamics(Model):
         x, force = inputs
         vnet = self._get_vnet(step)
         assert callable(vnet)
-        if isinstance(self.g, U1Phase):
-            x = self._stack_as_xy(x)
-        elif isinstance(self.g, SU3):
-            x = self.g.group_to_vec(x)
-
+        # x = self.g.group_to_vec(x)
         return vnet((x, force), training)
 
     def _call_xnet(
@@ -654,12 +667,7 @@ class Dynamics(Model):
         x, v = inputs
         xnet = self._get_xnet(step, first)
         assert callable(xnet)
-        if isinstance(self.g, U1Phase):
-            x = self._stack_as_xy(x)
-
-        elif isinstance(self.g, SU3):
-            x = self.g.group_to_vec(x)
-
+        x = self.g.group_to_vec(x)
         return xnet((x, v), training)
 
     def _forward_lf(
