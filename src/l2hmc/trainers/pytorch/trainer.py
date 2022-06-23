@@ -426,27 +426,22 @@ class Trainer:
         history = self.histories[job_type]
 
         if step is not None:
-            record.update({
-                f'{job_type}_step': step,
-                'lr': self.get_lr(step),
-            })
+            record.update({f'{job_type}_step': step})
 
         record.update({
             'loss': metrics.get('loss', None),
-            # 'dQint': metrics.get('dQint', None),
-            # 'dQsin': metrics.get('dQsin', None),
+            'dQint': metrics.get('dQint', None),
+            'dQsin': metrics.get('dQsin', None),
         })
+        if job_type == 'train' and step is not None:
+            record['lr'] = self.get_lr(step)
 
         record.update(self.metrics_to_numpy(metrics))
-        # if history is not None:
-        #     avgs = history.update(record)
-        # else:
-        #     avgs = {k: v.mean() for k, v in record.items() if v is not None}
-
         avgs = history.update(record)
         summary = summarize_dict(avgs)
         # if step is not None:
-        if writer is not None and self.verbose:
+        # if writer is not None and self.verbose:
+        if writer is not None and self.verbose and step is not None:
             assert step is not None
             update_summaries(step=step,
                              model=model,
