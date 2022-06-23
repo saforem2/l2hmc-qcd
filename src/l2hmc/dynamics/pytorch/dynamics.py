@@ -16,7 +16,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from l2hmc.configs import DynamicsConfig
+import l2hmc.configs as cfgs
 from l2hmc.group.u1.pytorch.group import U1Phase
 from l2hmc.group.su3.pytorch.group import SU3
 # import l2hmc.group.u1.pytorch.group as gU1
@@ -51,9 +51,19 @@ class State:
         self.nb = self.x.shape[0]
         self.xshape = self.x.shape
 
-    @staticmethod
-    def flatten(x: Tensor) -> Tensor:
-        return x.reshape(x.shape[0], -1)
+    def flatten(self) -> State:
+        return State(
+            x=self.x.flatten(1),
+            v=self.v.flatten(1),
+            beta=self.beta,
+        )
+
+    def to_numpy(self):
+        return {
+            'x': self.x.detach().numpy(),  # type:ignore
+            'v': self.v.detach().numpy(),  # type:ignore
+            'beta': self.beta.detach().numpy(),  # type:ignore
+        }
 
 
 @dataclass
@@ -104,7 +114,7 @@ class Dynamics(nn.Module):
     def __init__(
             self,
             potential_fn: Callable,
-            config: DynamicsConfig,
+            config: cfgs.DynamicsConfig,
             network_factory: NetworkFactory
     ):
         """Initialization method."""
@@ -749,10 +759,10 @@ class Dynamics(nn.Module):
         vnet = self._get_vnet(step)
         assert callable(vnet)
         x, force = inputs
-        if isinstance(self.g, U1Phase):
-            x = self._stack_as_xy(x)
-        elif isinstance(self.g, SU3):
-            x = self.g.group_to_vec(x)
+        # if isinstance(self.g, U1Phase):
+        # x = self._stack_as_xy(x)
+        # elif isinstance(self.g, SU3):
+        # x = self.g.group_to_vec(x)
 
         # x, force = x.to(self.device), force.to(self.device)
         if torch.cuda.is_available():
@@ -776,11 +786,7 @@ class Dynamics(nn.Module):
         xnet = self._get_xnet(step, first)
         assert callable(xnet)
         x, v = inputs
-        if isinstance(self.g, U1Phase):
-            x = self._stack_as_xy(x)
-
-        if isinstance(self.g, SU3):
-            x = self.g.group_to_vec(x)
+        x = self.g.group_to_vec(x)
 
         # x, v = x.to(self.device), v.to(self.device)
         if torch.cuda.is_available():
