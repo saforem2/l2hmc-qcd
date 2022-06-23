@@ -42,17 +42,20 @@ plt.style.use('default')
 plt.rcParams.update({
     'image.cmap': 'viridis',
     'savefig.transparent': True,
-    'text.color': '#bdbdbd',
-    'axes.labelcolor': '#bdbdbd',
-    'xtick.color': '#bdbdbd04',
-    'ytick.color': '#bdbdbd04',
-    'ytick.labelcolor': '#bdbdbd',
-    'xtick.labelcolor': '#bdbdbd',
-    'axes.edgecolor': '#bdbdbd00',
-    'grid.color': (0.434, 0.434, 0.434, 0.434),  # #66666602
+    'text.color': '#666666',
+    'xtick.color': '#66666604',
+    'ytick.color': '#66666604',
+    'ytick.labelcolor': '#666666',
+    'xtick.labelcolor': '#666666',
+    'axes.edgecolor': '#66666600',
+    'axes.labelcolor': '#666666',
+    # 'axes.labelcolor': (189, 189, 189, 1.0),
+    'grid.color': (0.434, 0.434, 0.434, 0.2),  # #66666602
     'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
     'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
 })
+
+plt.rcParams['axes.labelcolor'] = '#bdbdbd'
 # sns.set_palette(list(colors.values()))
 # sns.set_context('notebook', font_scale=0.8)
 # plt.rcParams.update({
@@ -64,6 +67,27 @@ plt.rcParams.update({
 #     'figure.dpi': plt.rcParamsDefault['figure.dpi'],
 #     'figure.figsize': plt.rcParamsDefault['figure.figsize'],
 # })
+
+
+def set_plot_style():
+    plt.style.use('default')
+    plt.rcParams.update({
+        'image.cmap': 'viridis',
+        'savefig.transparent': True,
+        'text.color': '#666666',
+        'xtick.color': '#66666604',
+        'ytick.color': '#66666604',
+        'ytick.labelcolor': '#666666',
+        'xtick.labelcolor': '#666666',
+        'axes.edgecolor': '#66666600',
+        'axes.labelcolor': '#666666',
+        # 'axes.labelcolor': (189, 189, 189, 1.0),
+        'grid.color': (0.434, 0.434, 0.434, 0.2),  # #66666602
+        'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
+        'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
+    })
+
+    plt.rcParams['axes.labelcolor'] = '#bdbdbd'
 
 
 def get_timestamp(fstr=None):
@@ -540,6 +564,9 @@ def plot_metric(
             cmap = plt.get_cmap('viridis', lut=arr.shape[1])
             _ = plot_kwargs.pop('color', None)
             for idx in range(arr.shape[1]):
+                label = plot_kwargs.pop('label', None)
+                if label is not None:
+                    label = f'{label}-{idx}'
                 y = arr[:, idx]
                 color = cmap(idx / y.shape[1])
                 if len(y.shape) == 2:
@@ -550,10 +577,11 @@ def plot_metric(
                                     lw=LW/4., alpha=0.7, **plot_kwargs)
 
                     ax.plot(steps, y.mean(-1), color=color,
-                            label=f'{idx}', **plot_kwargs)
+                            label=label, **plot_kwargs)
                 else:
+
                     ax.plot(steps, y, color=color,
-                            label=f'{idx}', **plot_kwargs)
+                            label=label, **plot_kwargs)
             axes = ax
         else:
             raise ValueError('Unexpected shape encountered')
@@ -675,79 +703,87 @@ def make_ridgeplots(
     """Make ridgeplots."""
     data = {}
     # with sns.axes_style('white', rc={'axes.facecolor': (0, 0, 0, 0)}):
-    sns.set(style='white', palette='bright', context='paper')
-    plt.rcParams['axes.facecolor'] = (0, 0, 0, 0.0)
-    plt.rcParams['figure.facecolor'] = (0, 0, 0, 0.0)
-    for key, val in dataset.data_vars.items():
-        if 'leapfrog' in val.coords.dims:
-            lf_data = {
-                key: [],
-                'lf': [],
-            }
-            for lf in val.leapfrog.values:
-                # val.shape = (chain, leapfrog, draw)
-                # x.shape = (chain, draw);  selects data for a single lf
-                x = val[{'leapfrog': lf}].values
-                # if num_chains is not None, keep `num_chains` for plotting
-                if num_chains is not None:
-                    x = x[:num_chains, :]
+    # sns.set(style='white', palette='bright', context='paper')
+    # with sns.set_style(style='white'):
+    with sns.plotting_context(
+            context='paper',
+    ):
+        sns.set(
+            style='white',
+            palette='bright',
+        )
+        plt.rcParams['axes.facecolor'] = (0, 0, 0, 0.0)
+        plt.rcParams['figure.facecolor'] = (0, 0, 0, 0.0)
+        for key, val in dataset.data_vars.items():
+            if 'leapfrog' in val.coords.dims:
+                lf_data = {
+                    key: [],
+                    'lf': [],
+                }
+                for lf in val.leapfrog.values:
+                    # val.shape = (chain, leapfrog, draw)
+                    # x.shape = (chain, draw);  selects data for a single lf
+                    x = val[{'leapfrog': lf}].values
+                    # if num_chains is not None, keep `num_chains` for plotting
+                    if num_chains is not None:
+                        x = x[:num_chains, :]
 
-                x = x.flatten()
-                if drop_zeros:
-                    x = x[x != 0]
-                #  x = val[{'leapfrog': lf}].values.flatten()
-                if drop_nans:
-                    x = x[np.isfinite(x)]
+                    x = x.flatten()
+                    if drop_zeros:
+                        x = x[x != 0]
+                    #  x = val[{'leapfrog': lf}].values.flatten()
+                    if drop_nans:
+                        x = x[np.isfinite(x)]
 
-                lf_arr = np.array(len(x) * [f'{lf}'])
-                lf_data[key].extend(x)
-                lf_data['lf'].extend(lf_arr)
+                    lf_arr = np.array(len(x) * [f'{lf}'])
+                    lf_data[key].extend(x)
+                    lf_data['lf'].extend(lf_arr)
 
-            lfdf = pd.DataFrame(lf_data)
-            data[key] = lfdf
+                lfdf = pd.DataFrame(lf_data)
+                data[key] = lfdf
 
-            # Initialize the FacetGrid object
-            ncolors = len(val.leapfrog.values)
-            pal = sns.color_palette(cmap, n_colors=ncolors)
-            g = sns.FacetGrid(lfdf, row='lf', hue='lf',
-                              aspect=15, height=0.25, palette=pal)
+                # Initialize the FacetGrid object
+                ncolors = len(val.leapfrog.values)
+                pal = sns.color_palette(cmap, n_colors=ncolors)
+                g = sns.FacetGrid(lfdf, row='lf', hue='lf',
+                                  aspect=15, height=0.25, palette=pal)
 
-            # Draw the densities in a few steps
-            _ = g.map(sns.kdeplot, key, cut=1,
-                      shade=True, alpha=0.7, linewidth=1.25)
-            _ = g.map(plt.axhline, y=0, lw=1.5, alpha=0.9, clip_on=False)
+                # Draw the densities in a few steps
+                _ = g.map(sns.kdeplot, key, cut=1,
+                          shade=True, alpha=0.7, linewidth=1.25)
+                _ = g.map(plt.axhline, y=0, lw=1.5, alpha=0.9, clip_on=False)
 
-            # Define and use a simple function to
-            # label the plot in axes coords:
-            def label(x, color, label):  # type:ignore #noqa
-                ax = plt.gca()
-                ax.set_ylabel('')
-                ax.set_yticks([])
-                ax.set_yticklabels([])
-                ax.text(0, 0.10, label, fontweight='bold', color=color,
-                        ha='left', va='center', transform=ax.transAxes)
+                # Define and use a simple function to
+                # label the plot in axes coords:
+                def label(_, color, label):  # type:ignore #noqa
+                    ax = plt.gca()
+                    ax.set_ylabel('')
+                    ax.set_yticks([])
+                    ax.set_yticklabels([])
+                    ax.text(0, 0.10, label, fontweight='bold', color=color,
+                            ha='left', va='center', transform=ax.transAxes)
 
-            _ = g.map(label, key)
-            # Set the subplots to overlap
-            _ = g.fig.subplots_adjust(hspace=-0.75)
-            # Remove the axes details that don't play well with overlap
-            _ = g.set_titles('')
-            _ = g.set(yticks=[])
-            _ = g.set(yticklabels=[])
-            _ = g.set(xlabel=f'{key}')
-            _ = g.despine(bottom=True, left=True)
-            if outdir is not None:
-                outdir = Path(outdir)
-                pngdir = outdir.joinpath('pngs')
-                fsvg = Path(outdir).joinpath(f'{key}_ridgeplot.svg')
-                fpng = Path(pngdir).joinpath(f'{key}_ridgeplot.png')
+                _ = g.map(label, key)
+                # Set the subplots to overlap
+                _ = g.fig.subplots_adjust(hspace=-0.75)
+                # Remove the axes details that don't play well with overlap
+                _ = g.set_titles('')
+                _ = g.set(yticks=[])
+                _ = g.set(yticklabels=[])
+                _ = g.set(xlabel=f'{key}')
+                _ = g.despine(bottom=True, left=True)
+                if outdir is not None:
+                    outdir = Path(outdir)
+                    pngdir = outdir.joinpath('pngs')
+                    fsvg = Path(outdir).joinpath(f'{key}_ridgeplot.svg')
+                    fpng = Path(pngdir).joinpath(f'{key}_ridgeplot.png')
 
-                outdir.mkdir(exist_ok=True, parents=True)
-                pngdir.mkdir(exist_ok=True, parents=True)
+                    outdir.mkdir(exist_ok=True, parents=True)
+                    pngdir.mkdir(exist_ok=True, parents=True)
 
-                log.info(f'Saving figure to: {fsvg.as_posix()}')
-                plt.savefig(fsvg.as_posix(), dpi=500, bbox_inches='tight')
-                plt.savefig(fpng.as_posix(), dpi=500, bbox_inches='tight')
+                    log.info(f'Saving figure to: {fsvg.as_posix()}')
+                    plt.savefig(fsvg.as_posix(), dpi=500, bbox_inches='tight')
+                    plt.savefig(fpng.as_posix(), dpi=500, bbox_inches='tight')
 
         # plt.close('all')
 
