@@ -15,7 +15,7 @@ import logging
 log = logging.getLogger(__name__)
 
 PI = torch.pi
-TWO_PI = 2. * PI
+TWO_PI = torch.pi * 2.
 Tensor = torch.Tensor
 PT_FLOAT = torch.get_default_dtype()
 
@@ -31,7 +31,7 @@ def rand_unif(
 
 
 def random_angle(shape: list[int], requires_grad: bool = True) -> Tensor:
-    """Returns random angle with `shape` and values in [-pi, pi)."""
+    """Returns random angle with `shape` and values in (-pi, pi)."""
     return rand_unif(shape, -PI, PI, requires_grad=requires_grad)
 
 
@@ -80,11 +80,22 @@ class U1Phase(Group):
     def diff2trace(self, x: Tensor) -> Tensor:
         return (-torch.cos(x))
 
+    @torch.no_grad()
+    def floormod(self, x: Tensor | float, y: Tensor | float) -> Tensor:
+        return (x - torch.floor_divide(x, y) * y)
+
+    @staticmethod
+    def group_to_vec(x):
+        return torch.stack([x.cos(), x.sin()], dim=-1)
+
     def compat_proj(self, x: Tensor) -> Tensor:
-        return (x + PI % TWO_PI) - PI
+        # return (x + PI % TWO_PI) - PI
+        # return self.floormod(x + PI, TWO_PI) - PI
+        return ((x + PI) % TWO_PI) - PI
 
     def random(self, shape: list[int]) -> Tensor:
-        return self.compat_proj(random_angle(shape, requires_grad=True))
+        # return self.compat_proj(random_angle(shape, requires_grad=True))
+        return self.compat_proj(TWO_PI * torch.rand(shape))
         # return self.compat_proj(torch.rand(shape, *(-4, 4)))
 
     def random_momentum(self, shape: list[int]) -> Tensor:
