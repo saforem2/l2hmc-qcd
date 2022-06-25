@@ -15,14 +15,17 @@ import joblib
 import matplotlib.pyplot as plt
 from omegaconf import DictConfig
 import pandas as pd
-# from rich.console import Console
 from rich.table import Table
 import wandb
 import xarray as xr
 
 from l2hmc.configs import AnnealingSchedule, Steps
-from l2hmc.utils.plot_helpers import make_ridgeplots, plot_dataArray, set_plot_style
 from l2hmc.utils.rich import get_console, is_interactive
+from l2hmc.utils.plot_helpers import (
+    make_ridgeplots,
+    plot_dataArray,
+    set_plot_style
+)
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 log = logging.getLogger(__name__)
@@ -242,17 +245,17 @@ def plot_dataset(
         if key == 'x':
             continue
 
-        fig, ax = plt.subplots()
-        _ = val.plot(ax=ax)  # type: ignore
-        xdir = outdir.joinpath('xarr_plots')
-        xdir.mkdir(exist_ok=True, parents=True)
-        fig = save_figure(fig=fig, key=key, outdir=xdir)
-        if arun is not None:
-            from aim import Figure, Run
-            assert isinstance(arun, Run)
-            afig = Figure(fig)
-            arun.track(afig, name=f'figures/{key}_xarr',
-                       context={'subset': job_type})
+        # fig, ax = plt.subplots()
+        # _ = val.plot(ax=ax)  # type: ignore
+        # xdir = outdir.joinpath('xarr_plots')
+        # xdir.mkdir(exist_ok=True, parents=True)
+        # fig = save_figure(fig=fig, key=key, outdir=xdir)
+        # if arun is not None:
+        #     from aim import Figure, Run
+        #     assert isinstance(arun, Run)
+        #     afig = Figure(fig)
+        #     arun.track(afig, name=f'figures/{key}_xarr',
+        #                context={'subset': job_type})
 
         fig, _, _ = plot_dataArray(val,
                                    key=key,
@@ -272,7 +275,7 @@ def plot_dataset(
 def analyze_dataset(
         dataset: xr.Dataset,
         outdir: os.PathLike,
-        nchains: Optional[int] = 16,
+        nchains: Optional[int] = None,
         title: Optional[str] = None,
         job_type: Optional[str] = None,
         save: Optional[bool] = True,
@@ -282,6 +285,12 @@ def analyze_dataset(
 ):
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
     dirs = make_subdirs(outdir)
+    if nchains is not None and nchains > 1024:
+        nchains_ = nchains // 4
+        log.warning(
+            f'Reducing `nchains` from: {nchains} -> {nchains_} for plotting'
+        )
+
     plot_dataset(dataset,
                  nchains=nchains,
                  title=title,
