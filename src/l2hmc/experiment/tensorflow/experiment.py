@@ -7,6 +7,7 @@ a subclass of the base `l2hmc/Experiment` object.
 from __future__ import absolute_import, division, print_function, annotations
 
 import logging
+from pathlib import Path
 from omegaconf import DictConfig
 import os
 
@@ -289,6 +290,10 @@ class Experiment(BaseExperiment):
                                       job_type='train',
                                       framework='tensorflow')
 
+        _ = self.trainer.timers['train'].save_and_write(
+            outdir=Path(os.getcwd()),
+        )
+
         if writer is not None:
             writer.close()
 
@@ -354,6 +359,9 @@ class Experiment(BaseExperiment):
             nchains=nchains,
             job_type=job_type,
             framework='tensorflow',
+        )
+        _ = self.trainer.timers[job_type].save_and_write(
+            outdir=Path(os.getcwd()),
         )
 
         if writer is not None:
