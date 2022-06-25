@@ -5,27 +5,22 @@ Implements ptExperiment, a pytorch-specific subclass of the
 Experiment base class.
 """
 from __future__ import absolute_import, annotations, division, print_function
-# import os
 import logging
-from typing import Any, Callable, Optional
 import os
-# from accelerate.accelerator import Accelerator
+from pathlib import Path
+from typing import Any, Callable, Optional
 
-from omegaconf import DictConfig
-import torch
-import horovod.torch as hvd
-from torch import optim
-from torch.utils.tensorboard.writer import SummaryWriter
-# from torch.nn.parallel import DistributedDataParallel as DDP
-import wandb
-# from build.lib.l2hmc.configs import ExperimentConfig
-from l2hmc.common import save_and_analyze_data
-# from mpi4py import MPI
 import aim
 from aim import Distribution
+import horovod.torch as hvd
+from omegaconf import DictConfig
+import torch
+from torch import optim
+from torch.utils.tensorboard.writer import SummaryWriter
+import wandb
 
+from l2hmc.common import save_and_analyze_data
 from l2hmc.configs import ExperimentConfig
-
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.experiment.experiment import BaseExperiment
 from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
@@ -321,6 +316,10 @@ class Experiment(BaseExperiment):
                 max(64, self.cfg.dynamics.nchains // 8))
         )
         if RANK == 0:
+            timing = self.trainer.timers['train'].save_and_write(
+                outdir=Path(os.getcwd()),
+            )
+
             _ = save_and_analyze_data(dset,
                                       run=self.run,
                                       arun=self.arun,
@@ -393,6 +392,10 @@ class Experiment(BaseExperiment):
                 self.arun.track(dQint.mean(),
                                 name='dQint.avg',
                                 context={'subset': job_type})
+
+        _ = self.trainer.timers[job_type].save_and_write(
+            outdir=Path(os.getcwd()),
+        )
 
         _ = save_and_analyze_data(
             dataset,
