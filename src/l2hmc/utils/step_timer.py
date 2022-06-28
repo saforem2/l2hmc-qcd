@@ -78,9 +78,11 @@ class StepTimer:
             self,
             outdir: os.PathLike,
             mode: str = 'a',
+            fname: Optional[str] = None,
             evals_per_step: Optional[int] = None,
     ) -> dict:
-        outfile = Path(outdir).joinpath('step_timer.csv')
+        fname = 'step_timer' if fname is None else fname
+        outfile = Path(outdir).joinpath(f'{fname}.csv')
         df = self.save_data(outfile=outfile, mode=mode)
         data = self.write_eval_rate(outdir=outdir,
                                     evals_per_step=evals_per_step)
