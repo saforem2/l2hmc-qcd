@@ -7,7 +7,6 @@ Experiment base class.
 from __future__ import absolute_import, annotations, division, print_function
 import logging
 import os
-from pathlib import Path
 from typing import Any, Callable, Optional
 
 import aim
@@ -20,7 +19,6 @@ from torch.utils.tensorboard.writer import SummaryWriter
 import wandb
 
 from l2hmc.common import save_and_analyze_data
-from l2hmc.configs import ExperimentConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.experiment.experiment import BaseExperiment
 from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
@@ -42,8 +40,9 @@ LOCAL_RANK = hvd.local_rank()
 class Experiment(BaseExperiment):
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg=cfg)
-        assert isinstance(self.config, ExperimentConfig)
-        # self.accelerator = self.build_accelerator()
+        # if not isinstance(self.cfg, ExperimentConfig):
+        #     self.cfg = hydra.utils.instantiate(cfg)
+        #     assert isinstance(self.config, ExperimentConfig)
 
     def visualize_model(self, x: Optional[Tensor] = None):
         from torchviz import make_dot  # type: ignore
@@ -151,6 +150,13 @@ class Experiment(BaseExperiment):
             loss_fn: Optional[Callable] = None
     ):
         run = super()._init_wandb()
+        run.watch(
+            self.dynamics if dynamics is None else dynamics,
+            criterion=self.loss_fn if loss_fn is None else loss_fn,
+            log="all",
+            log_graph=True,
+        )
+        run.config['hvd_size'] = SIZE
 
         return run
 
@@ -194,13 +200,29 @@ class Experiment(BaseExperiment):
                 'arun': getattr(self, 'arun', None),
             }
 
-        run = None
-        arun = None
+        rank = hvd.rank()
+        local_rank = hvd.local_rank()
         # self.rank = self.accelerator.local_process_index
         # if self.trainer.rank == 0 and init_wandb:
         # if self.accelerator.is_local_main_process and init_wandb:
-        rank = hvd.rank()
-        local_rank = hvd.local_rank()
+        self.lattice = self.build_lattice()
+        self.loss_fn = self.build_loss(self.lattice)
+        self.dynamics = self.build_dynamics(potential_fn=self.lattice.action)
+        # if SIZE > 1:
+        #     dynamics = DDP(dynamics, device_ids=[RANK], output_device=RANK)
+
+        self.optimizer = self.build_optimizer(dynamics=self.dynamics)
+        # dynamics, optimizer = self.accelerator.prepare(
+        #     dynamics, optimizer
+        # )
+        # accelerator = self.build_accelerator()
+        self.trainer = self.build_trainer(
+            loss_fn=self.loss_fn,
+            dynamics=self.dynamics,
+            optimizer=self.optimizer,
+        )
+        run = None
+        arun = None
         if RANK == 0:
             if init_wandb:
                 log.warning(f'Initialize WandB from {rank}:{local_rank}')
@@ -219,30 +241,6 @@ class Experiment(BaseExperiment):
 
         self.run = run
         self.arun = arun
-        self.lattice = self.build_lattice()
-        self.loss_fn = self.build_loss(self.lattice)
-        self.dynamics = self.build_dynamics(potential_fn=self.lattice.action)
-        # if SIZE > 1:
-        #     dynamics = DDP(dynamics, device_ids=[RANK], output_device=RANK)
-
-        self.optimizer = self.build_optimizer(dynamics=self.dynamics)
-        # dynamics, optimizer = self.accelerator.prepare(
-        #     dynamics, optimizer
-        # )
-        # accelerator = self.build_accelerator()
-        self.trainer = self.build_trainer(
-            loss_fn=self.loss_fn,
-            dynamics=self.dynamics,
-            optimizer=self.optimizer,
-        )
-        if self.run is not None and run is wandb.run:
-            self.run.watch(
-                self.trainer.dynamics,
-                log='all',
-                log_graph=True,
-                criterion=self.trainer.loss_fn,
-                log_freq=self.config.steps.log,
-            )
         # self.lattice = lattice
         # self.loss_fn = loss_fn
         # self.trainer = trainer
@@ -299,6 +297,7 @@ class Experiment(BaseExperiment):
                 assert self.run is wandb.run
                 self.run.summary['dQint_train'] = dQint
                 self.run.summary['dQint_train'] = dQint.mean()
+                # run.unwatch(self.dynamics)
 
             if self.arun is not None:
                 from aim import Distribution
@@ -316,8 +315,9 @@ class Experiment(BaseExperiment):
                 max(64, self.cfg.dynamics.nchains // 8))
         )
         if RANK == 0:
-            timing = self.trainer.timers['train'].save_and_write(
-                outdir=Path(os.getcwd()),
+            _ = self.trainer.timers['train'].save_and_write(
+                outdir=jobdir,
+                fname=f'step_timer-train-{RANK}:{LOCAL_RANK}'
             )
 
             _ = save_and_analyze_data(dset,
@@ -394,7 +394,8 @@ class Experiment(BaseExperiment):
                                 context={'subset': job_type})
 
         _ = self.trainer.timers[job_type].save_and_write(
-            outdir=Path(os.getcwd()),
+            outdir=jobdir,
+            fname=f'step_timer-{job_type}-{RANK}:{LOCAL_RANK}'
         )
 
         _ = save_and_analyze_data(
