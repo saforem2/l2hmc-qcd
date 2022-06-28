@@ -7,12 +7,10 @@ a subclass of the base `l2hmc/Experiment` object.
 from __future__ import absolute_import, division, print_function, annotations
 
 import logging
-from pathlib import Path
 from omegaconf import DictConfig
 import os
 
 from typing import Optional, Callable
-from l2hmc.configs import ExperimentConfig
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
 from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
@@ -41,7 +39,9 @@ LOCAL_RANK = hvd.local_rank()
 class Experiment(BaseExperiment):
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg=cfg)
-        assert isinstance(self.config, ExperimentConfig)
+        # if not isinstance(self.cfg, ExperimentConfig):
+        #     self.cfg = hydra.utils.instantiate(cfg)
+        #     assert isinstance(self.config, ExperimentConfig)
 
     def visualize_model(self) -> None:
         state = self.dynamics.random_state(1.)
@@ -291,7 +291,8 @@ class Experiment(BaseExperiment):
                                       framework='tensorflow')
 
         _ = self.trainer.timers['train'].save_and_write(
-            outdir=Path(os.getcwd()),
+            outdir=jobdir,
+            fname=f'step_timer-train-{RANK}:{LOCAL_RANK}'
         )
 
         if writer is not None:
@@ -361,7 +362,8 @@ class Experiment(BaseExperiment):
             framework='tensorflow',
         )
         _ = self.trainer.timers[job_type].save_and_write(
-            outdir=Path(os.getcwd()),
+            outdir=jobdir,
+            fname=f'step_timer-{job_type}-{RANK}:{LOCAL_RANK}'
         )
 
         if writer is not None:

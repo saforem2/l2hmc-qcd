@@ -28,6 +28,21 @@ from l2hmc.common import get_timestamp, is_interactive
 
 log = logging.getLogger(__name__)
 
+SYNONYMS = {
+    'pytorch': [
+        'p'
+        'pt',
+        'torch',
+        'pytorch',
+    ],
+    'tensorflow': [
+        't'
+        'tf',
+        'tflow',
+        'tensorflow',
+    ],
+}
+
 
 class BaseExperiment(ABC):
     """Convenience class for running framework independent experiments."""
@@ -36,7 +51,11 @@ class BaseExperiment(ABC):
         self.cfg = cfg
         self.config = instantiate(cfg)
         assert isinstance(self.config, ExperimentConfig)
-        assert self.config.framework in ['pytorch', 'tensorflow']
+        assert self.config.framework in [
+            'pytorch',
+            'tensorflow',
+            'torch',
+        ]
         # self.lattice = self.build_lattice()
         self._is_built = False
         self.run = None
@@ -49,38 +68,40 @@ class BaseExperiment(ABC):
         super().__init__()
 
     @abstractmethod
-    def train(self):
+    def train(self) -> dict:
         pass
 
     @abstractmethod
-    def evaluate(self):
+    def evaluate(self, job_type: str) -> dict:
         pass
 
+    @abstractmethod
     def build_lattice(self):
-        group = str(self.config.dynamics.group).upper()
-        lat_args = {
-            'nchains': self.config.dynamics.nchains,
-            'shape': list(self.config.dynamics.latvolume),
-        }
-        if group == 'U1':
-            if self.config.framework in ['tf', 'tensorflow']:
-                from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
-                return LatticeU1(**lat_args)
-            elif self.config.framework in ['pt', 'torch', 'pytorch']:
-                from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
-                return LatticeU1(**lat_args)
-        if group == 'SU3':
-            c1 = self.config.c1 if self.config.c1 is not None else 0.0
-            if self.config.framework in ['tf', 'tensorflow']:
-                from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
-                return LatticeSU3(c1=c1, **lat_args)
-            elif self.config.framework in ['pt', 'torch', 'pytorch']:
-                from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
-                return LatticeSU3(c1=c1, **lat_args)
-        raise ValueError(
-            'Unexpected value for `dynamics.group`: '
-            f'{self.config.dynamics.group}'
-        )
+        pass
+        # group = str(self.config.dynamics.group).upper()
+        # lat_args = {
+        #     'nchains': self.config.dynamics.nchains,
+        #     'shape': list(self.config.dynamics.latvolume),
+        # }
+        # if group == 'U1':
+        #     if self.config.framework in ['tf', 'tensorflow']:
+        #         from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
+        #         return LatticeU1(**lat_args)
+        #     elif self.config.framework in ['pt', 'torch', 'pytorch']:
+        #         from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
+        #         return LatticeU1(**lat_args)
+        # if group == 'SU3':
+        #     c1 = self.config.c1 if self.config.c1 is not None else 0.0
+        #     if self.config.framework in ['tf', 'tensorflow']:
+        #         from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
+        #         return LatticeSU3(c1=c1, **lat_args)
+        #     elif self.config.framework in ['pt', 'torch', 'pytorch']:
+        #         from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
+        #         return LatticeSU3(c1=c1, **lat_args)
+        # raise ValueError(
+        #     'Unexpected value for `dynamics.group`: '
+        #     f'{self.config.dynamics.group}'
+        # )
 
     @abstractmethod
     def build_dynamics(self):
@@ -93,7 +114,6 @@ class BaseExperiment(ABC):
     @abstractmethod
     def build_optimizer(self):
         """Build framework-dependent optimizer. Adam by default."""
-        # assert self.dynamics is not None
         pass
 
     @abstractmethod
@@ -198,6 +218,9 @@ class BaseExperiment(ABC):
         })
 
     def _init_wandb(self):
+        if self.run is not None and self.run is wandb.run:
+            raise ValueError('WandB already initialized!')
+
         from wandb.util import generate_id
         # from l2hmc.utils.rich import print_config
 
@@ -211,7 +234,7 @@ class BaseExperiment(ABC):
         run.log_code(HERE.as_posix())
         cfg_dict = OmegaConf.to_container(self.cfg,
                                           resolve=True,
-                                          throw_on_missing=False)
+                                          throw_on_missing=True)
         run.config.update(cfg_dict)
         # print_config(DictConfig(self.config), resolve=True)
 
