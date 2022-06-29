@@ -197,6 +197,7 @@ def setup(cfg: DictConfig):
 def main(cfg: DictConfig) -> None:
     setup(cfg)
     framework = cfg.get('framework', None)
+    os.environ['RUNDIR'] = str(os.getcwd())
     if framework in ['tf', 'tensorflow']:
         RANK = setup_tensorflow(cfg)
         from l2hmc.experiment.tensorflow.experiment import Experiment
