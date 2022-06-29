@@ -61,7 +61,7 @@ def list_to_str(x: list) -> str:
     if isinstance(x[0], int):
         return '-'.join([str(int(i)) for i in x])
     elif isinstance(x[0], float):
-        return '-'.join([f'{i:2.1g}' for i in x])
+        return '-'.join([f'{i:2.1f}' for i in x])
     else:
         return '-'.join([str(i) for i in x])
 
@@ -192,7 +192,7 @@ class NetWeight(BaseConfig):
         return {'s': self.s, 't': self.t, 'q': self.q}
 
     def to_str(self):
-        return f's{self.s:2.1g}t{self.t:2.1g}q{self.t:2.1g}'
+        return f's{self.s:2.1f}t{self.t:2.1f}q{self.t:2.1f}'
 
 
 @dataclass
@@ -235,7 +235,7 @@ class LearningRateConfig(BaseConfig):
     # patience: int = 5
 
     def to_str(self):
-        return f'lr-{self.lr_init:3.2g}'
+        return f'lr-{self.lr_init:3.2f}'
 
 
 @dataclass
@@ -298,7 +298,7 @@ class NetworkConfig(BaseConfig):
         ustr = ''.join([str(int(i)) for i in self.units])
         outstr = [f'nh-{ustr}_act-{self.activation_fn}']
         if self.dropout_prob > 0:
-            outstr.append(f'dp-{self.dropout_prob:2.1g}')
+            outstr.append(f'dp-{self.dropout_prob:2.1f}')
         if self.use_batch_norm:
             outstr.append('bNorm')
 
@@ -315,11 +315,11 @@ class DynamicsConfig(BaseConfig):
     eps: float = 0.01
     eps_hmc: float = 0.01
     use_ncp: bool = True
-    verbose: bool = False
+    verbose: bool = True
     eps_fixed: bool = False
     use_split_xnets: bool = True
     use_separate_networks: bool = True
-    merge_directions: bool = False
+    merge_directions: bool = True
 
     def __post_init__(self):
         assert self.group.upper() in ['U1', 'SU3']
