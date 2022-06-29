@@ -16,19 +16,50 @@ from omegaconf import DictConfig
 from l2hmc.configs import ExperimentConfig
 from l2hmc.utils.rich import print_config
 
+log = logging.getLogger()
 
-log = logging.getLogger(__name__)
+
+def seed_everything(seed: int):
+    import torch
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+
+
+def setup_logger(rank: int) -> None:
+    fh = logging.FileHandler(f'main-{rank}.log')
+    fh.setLevel(logging.DEBUG)
+
+    prefix = ':'.join([
+        '%(asctime)s',
+        '%(relativeCreated)6d',
+        '%(levelname)s',
+        '%(process)s',
+        '%(thread)s',
+        '%(threadName)s',
+        ('%05d' % rank),
+    ])
+    formatter = logging.Formatter(
+        ' '.join([
+            prefix,
+            '%(name)s',
+            '%(message)s',
+        ])
+    )
+    fh.setFormatter(formatter)
+    log.addHandler(fh)
 
 
 def setup_tensorflow(cfg: DictConfig) -> int:
     import tensorflow as tf
-    # tf.config.run_functions_eagerly(True)
-    tf.keras.backend.set_floatx(cfg.precision)
-    TF_FLOAT = tf.keras.backend.floatx()
-    log.warning(f'Using: {TF_FLOAT} precision')
-    # assert tf.keras.backend.floatx() == tf.float32
     import horovod.tensorflow as hvd
     hvd.init()
+    tf.keras.backend.set_floatx(cfg.precision)
+    TF_FLOAT = tf.keras.backend.floatx()
+    # tf.config.run_functions_eagerly(True)
+    # assert tf.keras.backend.floatx() == tf.float32
     gpus = tf.config.experimental.list_physical_devices('GPU')
     for gpu in gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
@@ -40,22 +71,14 @@ def setup_tensorflow(cfg: DictConfig) -> int:
 
     # from l2hmc.scripts.tensorflow.main import main as main_tf
     RANK = hvd.rank()
-    LOCAL_RANK = hvd.local_rank()
     SIZE = hvd.size()
+    LOCAL_RANK = hvd.local_rank()
     LOCAL_SIZE = hvd.local_size()
-    log.warning(f'Global {RANK} / {SIZE}')
-    log.warning(f'[{RANK}] local: {LOCAL_RANK} / {LOCAL_SIZE}')
-    # if cfg.get('debug_mode', False):
+
+    log.warning(f'Using: {TF_FLOAT} precision')
+    log.info(f'Global Rank: {RANK} / {SIZE-1}')
+    log.info(f'[{RANK}]: Local rank: {LOCAL_RANK} / {LOCAL_SIZE-1}')
     return RANK
-
-
-def seed_everything(seed: int):
-    import torch
-    random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
 
 
 def setup_torch(cfg: DictConfig) -> int:
@@ -69,6 +92,9 @@ def setup_torch(cfg: DictConfig) -> int:
 
     hvd.init()
 
+    nthreads = os.environ.get('OMP_NUM_THREADS', '1')
+    torch.set_num_threads(int(nthreads))
+
     if cfg.precision == 'float64':
         torch.set_default_dtype(torch.float64)
 
@@ -79,11 +105,13 @@ def setup_torch(cfg: DictConfig) -> int:
     #     torch.set_default_dtype(torch.float32)
     RANK = hvd.rank()
     LOCAL_RANK = hvd.local_rank()
-    seed_everything(cfg.seed * (RANK + 1) * (LOCAL_RANK + 1))
     SIZE = hvd.size()
     LOCAL_SIZE = hvd.local_size()
-    log.info(f'Global Rank: {RANK} / {SIZE}')
-    log.info(f'[{RANK}]: Local rank: {LOCAL_RANK} / {LOCAL_SIZE}')
+    setup_logger(RANK)
+
+    log.info(f'Global Rank: {RANK} / {SIZE+1}')
+    log.info(f'[{RANK}]: Local rank: {LOCAL_RANK} / {LOCAL_SIZE+1}')
+    seed_everything(cfg.seed * (RANK + 1) * (LOCAL_RANK + 1))
     return RANK
 
 
@@ -92,7 +120,10 @@ def train_tensorflow(cfg: DictConfig) -> dict:
     from l2hmc.experiment.tensorflow.experiment import Experiment
     outputs = {}
     ex = Experiment(cfg)
-    _ = ex.build(init_wandb=(RANK == 0))
+    _ = ex.build(
+        init_wandb=(RANK == 0),
+        init_aim=(RANK == 0),
+    )
     assert isinstance(ex.config, ExperimentConfig)
     should_train = (
         ex.config.steps.nera > 0
@@ -120,16 +151,19 @@ def train_pytorch(cfg: DictConfig) -> dict:
 
     outputs = {}
     ex = Experiment(cfg)
-    _ = ex.build(init_wandb=(RANK == 0))
+    _ = ex.build(
+        init_wandb=(RANK == 0),
+        init_aim=(RANK == 0),
+    )
     assert isinstance(ex.config, ExperimentConfig)
     should_train = (
         ex.config.steps.nera > 0
         and ex.config.steps.nepoch > 0
     )
     if should_train:
-        from l2hmc.network.pytorch.network import zero_weights
-        log.warning('Zeroing network weights...')
-        ex.dynamics.networks.apply(zero_weights)
+        # from l2hmc.network.pytorch.network import zero_weights
+        # log.warning('Zeroing network weights...')
+        # ex.dynamics.networks.apply(zero_weights)
 
         outputs['train'] = ex.train()
         # Evaluate trained model
@@ -171,7 +205,7 @@ def main(cfg: DictConfig) -> None:
         _ = ex.build(init_wandb=init, init_aim=init)
     elif framework in ['pt', 'pytorch', 'torch']:
         RANK = setup_torch(cfg)
-        from l2hmc.network.pytorch.network import zero_weights, init_weights
+        # from l2hmc.network.pytorch.network import zero_weights, init_weights
         from l2hmc.experiment.pytorch.experiment import Experiment
         ex = Experiment(cfg)
         init = (RANK == 0)
