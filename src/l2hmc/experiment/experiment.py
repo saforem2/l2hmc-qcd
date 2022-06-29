@@ -3,26 +3,23 @@ experiment.py
 
 Contains implementation of Experiment object, defined by a static config.
 """
-import logging
-from omegaconf import DictConfig, OmegaConf
-from hydra.utils import instantiate
-import os
-import wandb
-
 from abc import ABC, abstractmethod
-
+import logging
+import os
 from pathlib import Path
 from typing import Optional
 
-from l2hmc.configs import (
-    InputSpec,
-    AIM_DIR,
-    HERE,
-    OUTDIRS_FILE,
-    ExperimentConfig
-)
 import aim
-from l2hmc.common import get_timestamp, is_interactive
+from hydra.utils import instantiate
+from omegaconf import DictConfig, OmegaConf
+import wandb
+import xarray as xr
+
+from l2hmc.common import get_timestamp, is_interactive, save_and_analyze_data
+from l2hmc.configs import (
+    AIM_DIR, ExperimentConfig, HERE, InputSpec, OUTDIRS_FILE
+)
+from l2hmc.utils.step_timer import StepTimer
 # import l2hmc.utils.plot_helpers as hplt
 
 
@@ -59,6 +56,7 @@ class BaseExperiment(ABC):
         # self.lattice = self.build_lattice()
         self._is_built = False
         self.run = None
+        self.arun = None
         self.lattice = None
         self.loss_fn = None
         self.trainer = None
@@ -276,3 +274,59 @@ class BaseExperiment(ABC):
         sdir = jobdir.joinpath('summaries')
         sdir.mkdir(exist_ok=True, parents=True)
         return sdir.as_posix()
+
+    def save_dataset(
+            self,
+            output: dict,
+            # dset: xr.Dataset,
+            job_type: str,
+            outdir: os.PathLike,
+            fname: Optional[str] = None,
+            therm_frac: Optional[float] = None,
+    ) -> xr.Dataset:
+        history = output.get('history', None)
+        assert history is not None
+        therm_frac = 0.1 if therm_frac is None else therm_frac
+        dset = history.get_dataset(therm_frac=therm_frac)
+        assert isinstance(dset, xr.Dataset)
+        dQint = dset.data_vars.get('dQint', None)
+        if dQint is not None:
+            dQint = dQint.values
+            if self.run is not None:
+                import wandb
+                assert self.run is wandb.run
+                self.run.summary[f'dQint_{job_type}'] = dQint
+                self.run.summary[f'dQint_{job_type}'] = dQint.mean()
+
+            if self.arun is not None:
+                from aim import Distribution
+                assert isinstance(self.arun, aim.Run)
+                dQdist = Distribution(dQint)
+                self.arun.track(dQdist,
+                                name='dQint',
+                                context={'subset': job_type})
+                self.arun.track(dQdist,
+                                name='dQint',
+                                context={'subset': job_type})
+        nchains = int(
+            min(self.cfg.dynamics.nchains,
+                max(64, self.cfg.dynamics.nchains // 8))
+        )
+        timers = getattr(self.trainer, 'timers', None)
+        if timers is not None:
+            timer = timers.get(job_type, None)
+            if timer is not None:
+                assert isinstance(timer, StepTimer)
+                fname = f'step-timer-{job_type}' if fname is None else fname
+                timer.save_and_write(outdir=outdir, fname=fname)
+
+        framework = self.config.framework
+        _ = save_and_analyze_data(dset,
+                                  run=self.run,
+                                  arun=self.arun,
+                                  outdir=outdir,
+                                  output=output,
+                                  nchains=nchains,
+                                  job_type=job_type,
+                                  framework=framework)
+        return dset
