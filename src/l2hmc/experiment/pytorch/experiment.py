@@ -9,16 +9,12 @@ import logging
 import os
 from typing import Any, Callable, Optional
 
-import aim
-from aim import Distribution
 import horovod.torch as hvd
 from omegaconf import DictConfig
 import torch
 from torch import optim
 from torch.utils.tensorboard.writer import SummaryWriter
-import wandb
 
-from l2hmc.common import save_and_analyze_data
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.experiment.experiment import BaseExperiment
 from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
@@ -285,49 +281,12 @@ class Experiment(BaseExperiment):
                                     arun=self.arun,
                                     writer=writer,
                                     train_dir=jobdir)
-
-        # dataset = output['history'].get_dataset(therm_frac=0.0)
-        # dataset = self.trainer.histories['train'].get_dataset(therm_frac=0.0)
-        dset = output['history'].get_dataset()
-        dQint = dset.data_vars.get('dQint', None)
-        if dQint is not None:
-            dQint = dQint.values
-            if self.run is not None:
-                import wandb
-                assert self.run is wandb.run
-                self.run.summary['dQint_train'] = dQint
-                self.run.summary['dQint_train'] = dQint.mean()
-                # run.unwatch(self.dynamics)
-
-            if self.arun is not None:
-                from aim import Distribution
-                assert isinstance(self.arun, aim.Run)
-                dQdist = Distribution(dQint)
-                self.arun.track(dQdist,
-                                name='dQint',
-                                context={'subset': 'train'})
-                self.arun.track(dQint.mean(),
-                                name='dQint.avg',
-                                context={'subset': 'train'})
-
-        nchains = int(
-            min(self.cfg.dynamics.nchains,
-                max(64, self.cfg.dynamics.nchains // 8))
-        )
         if RANK == 0:
-            _ = self.trainer.timers['train'].save_and_write(
-                outdir=jobdir,
-                fname=f'step_timer-train-{RANK}:{LOCAL_RANK}'
+            output['dataset'] = self.save_dataset(
+                output=output,
+                job_type='train',
+                outdir=jobdir
             )
-
-            _ = save_and_analyze_data(dset,
-                                      run=self.run,
-                                      arun=self.arun,
-                                      outdir=jobdir,
-                                      output=output,
-                                      nchains=nchains,
-                                      job_type='train',
-                                      framework='pytorch')
 
         if writer is not None:
             writer.close()
@@ -367,46 +326,56 @@ class Experiment(BaseExperiment):
             eps=eps,
             nleapfrog=nleapfrog,
         )
-        dataset = output['history'].get_dataset(therm_frac=therm_frac)
-        dQint = dataset.data_vars.get('dQint', None)
-        if dQint is not None:
-            dQint = dQint.values
-            drop = int(0.1 * len(dQint))
-            dQint = dQint[drop:]
-            if self.run is not None:
-                assert self.run is wandb.run
-                self.run.summary[f'dQint_{job_type}'] = dQint
-                self.run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
 
-            if self.arun is not None:
-                import aim
-                assert isinstance(self.arun, aim.Run)
-                self.arun.track(
-                    dQint.mean(),
-                    name=f'dQint_{job_type}.avg'
-                )
-                dQdist = Distribution(dQint)
-                self.arun.track(dQdist,
-                                name='dQint',
-                                context={'subset': job_type})
-                self.arun.track(dQint.mean(),
-                                name='dQint.avg',
-                                context={'subset': job_type})
-
-        _ = self.trainer.timers[job_type].save_and_write(
-            outdir=jobdir,
-            fname=f'step_timer-{job_type}-{RANK}:{LOCAL_RANK}'
-        )
-
-        _ = save_and_analyze_data(
-            dataset,
-            run=self.run,
-            arun=self.arun,
-            outdir=jobdir,
+        output['dataset'] = self.save_dataset(
             output=output,
-            nchains=nchains,
             job_type=job_type,
-            framework='pytorch',
+            outdir=jobdir,
+            therm_frac=therm_frac,
         )
+        if writer is not None:
+            writer.close()
+
+        # dataset = output['history'].get_dataset(therm_frac=therm_frac)
+        # dQint = dataset.data_vars.get('dQint', None)
+        # if dQint is not None:
+        #     dQint = dQint.values
+        #     drop = int(0.1 * len(dQint))
+        #     dQint = dQint[drop:]
+        #     if self.run is not None:
+        #         assert self.run is wandb.run
+        #         self.run.summary[f'dQint_{job_type}'] = dQint
+        #         self.run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
+
+        #     if self.arun is not None:
+        #         import aim
+        #         assert isinstance(self.arun, aim.Run)
+        #         self.arun.track(
+        #             dQint.mean(),
+        #             name=f'dQint_{job_type}.avg'
+        #         )
+        #         dQdist = Distribution(dQint)
+        #         self.arun.track(dQdist,
+        #                         name='dQint',
+        #                         context={'subset': job_type})
+        #         self.arun.track(dQint.mean(),
+        #                         name='dQint.avg',
+        #                         context={'subset': job_type})
+
+        # _ = self.trainer.timers[job_type].save_and_write(
+        #     outdir=jobdir,
+        #     fname=f'step_timer-{job_type}-{RANK}:{LOCAL_RANK}'
+        # )
+
+        # _ = save_and_analyze_data(
+        #     dataset,
+        #     run=self.run,
+        #     arun=self.arun,
+        #     outdir=jobdir,
+        #     output=output,
+        #     nchains=nchains,
+        #     job_type=job_type,
+        #     framework='pytorch',
+        # )
 
         return output
