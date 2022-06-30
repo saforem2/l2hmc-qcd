@@ -13,7 +13,9 @@ import scipy
 import scipy.linalg
 import numpy as np
 
-from l2hmc.group.pytorch.logm import su3_to_eigs
+from l2hmc.group.su3.pytorch.logm import su3_to_eigs
+
+# from l2hmc.group.pytorch.logm import su3_to_eigs
 
 Tensor = torch.Tensor
 
