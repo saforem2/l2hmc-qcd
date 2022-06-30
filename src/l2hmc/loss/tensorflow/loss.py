@@ -48,6 +48,16 @@ class LatticeLoss:
         w = tf.constant(weight, dtype=TF_FLOAT)
         return (w / loss) - (loss / w)
 
+    def plaq_loss(self, x1: Tensor, x2: Tensor, acc: Tensor) -> Tensor:
+        w1 = self.lattice.wilson_loops(x=x1)
+        w2 = self.lattice.wilson_loops(x=x2)
+        return self._plaq_loss(w1=w1, w2=w2, acc=acc)
+
+    def charge_loss(self, x1: Tensor, x2: Tensor, acc: Tensor) -> Tensor:
+        w1 = self.lattice.wilson_loops(x=x1)
+        w2 = self.lattice.wilson_loops(x=x2)
+        return self._charge_loss(w1=w1, w2=w2, acc=acc)
+
     def _plaq_loss(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
         dw = tf.subtract(w2, w1)
         dwloops = 2. * (tf.ones_like(w1) - tf.math.cos(dw))
@@ -55,7 +65,7 @@ class LatticeLoss:
             ploss = acc * tf.reduce_sum(dwloops, axis=(1, 2))
         elif isinstance(self.g, SU3):
             ploss = acc * tf.reduce_sum(
-                dwloops, tuple(range(2, len(w1.shape)))
+                dwloops, tuple(range(2, 3, len(w1.shape)))
             )
         else:
             raise ValueError(f'Unexpected value for self.g: {self.g}')
