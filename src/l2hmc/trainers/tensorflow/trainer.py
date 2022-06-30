@@ -6,9 +6,9 @@ from __future__ import absolute_import, annotations, division, print_function
 import logging
 import os
 from pathlib import Path
-# import wandb
 import time
-from typing import Callable, Any, Optional
+from typing import Any, Callable, Optional
+from omegaconf import DictConfig
 
 import tensorflow as tf
 import tensorflow.python.framework.ops as ops
@@ -22,30 +22,30 @@ import numpy as np
 from rich.live import Live
 from rich.table import Table
 from rich import box
+from tensorflow._api.v2.train import CheckpointManager
 
 from tensorflow.python.keras import backend as K
 
 from l2hmc.configs import (
-    AnnealingSchedule, DynamicsConfig, LearningRateConfig, Steps
+    ExperimentConfig
 )
+from contextlib import nullcontext
+from l2hmc.common import get_timestamp
+
+from l2hmc.learning_rate.tensorflow.learning_rate import ReduceLROnPlateau
+
+from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.group.u1.tensorflow.group import U1Phase
 from l2hmc.group.su3.tensorflow.group import SU3
-from l2hmc.learning_rate.tensorflow.learning_rate import ReduceLROnPlateau
+from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
+from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
 from l2hmc.loss.tensorflow.loss import LatticeLoss
-from l2hmc.utils.history import summarize_dict
+from l2hmc.network.tensorflow.network import NetworkFactory
 from l2hmc.trackers.tensorflow.trackers import update_summaries
+from l2hmc.trainers.trainer import BaseTrainer
+from l2hmc.utils.history import summarize_dict
+from l2hmc.utils.rich import add_columns
 from l2hmc.utils.step_timer import StepTimer
-from l2hmc.dynamics.tensorflow.dynamics import Dynamics
-# from l2hmc.utils.tensorflow.history import History
-from l2hmc.utils.history import BaseHistory
-from l2hmc.utils.rich import add_columns, get_console
-from contextlib import nullcontext
-
-# from rich.layout import Layout
-# from rich.columns import  SpinnerColumn, BarColumn, TextColumn
-# SpinnerColumn(),
-# BarColumn(),
-# TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
 
 
 WIDTH = int(os.environ.get('COLUMNS', 150))
@@ -108,90 +108,102 @@ def reset_optimizer(optimizer: Optimizer):
     return optimizer
 
 
+def flatten(x: Tensor):
+    return tf.reshape(x, (x.shape[0], -1))
+
+
 # TODO: Replace arguments in __init__ call below with configs.TrainerConfig
-class Trainer:
+class Trainer(BaseTrainer):
     def __init__(
             self,
-            steps: Steps,
-            dynamics: Dynamics,
-            optimizer: Optimizer,
-            schedule: AnnealingSchedule,
-            lr_config: LearningRateConfig,
-            rank: int = 0,
-            loss_fn: Callable = LatticeLoss,
-            aux_weight: float = 0.0,
+            cfg: DictConfig | ExperimentConfig,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
-            compression: Optional[str] = 'none',
-            evals_per_step: int = 1,
-            dynamics_config: Optional[DynamicsConfig] = None,
-            # compile: Optional[bool] = True,
     ) -> None:
-        self.rank = rank
-        self.steps = steps
-        self.loss_fn = loss_fn
-        self.dynamics = dynamics
-        self.schedule = schedule
-        self.lr_config = lr_config
-        self.optimizer = optimizer
-        self.aux_weight = aux_weight
-        self.clip_norm = lr_config.clip_norm
-        self.keep = [keep] if isinstance(keep, str) else keep
-        self.skip = [skip] if isinstance(skip, str) else skip
-        assert compression in ['none', 'fp16']
-        self.compression = HVD_FP_MAP[compression]
-        # self.compression = hvd.Compression.fp16
-        self.reduce_lr = ReduceLROnPlateau(lr_config)
-        # if compile:
-        #     self.dynamics.compile(
-        #             optimizer=self.optimizer,
-        #             loss=self.loss_fn
-        #     )
-
+        super().__init__(cfg=cfg, keep=keep, skip=skip)
+        assert isinstance(self.config, ExperimentConfig)
+        self._gstep = 0
+        self.lattice = self.build_lattice()
+        self.loss_fn = self.build_loss_fn()
+        self.dynamics = self.build_dynamics()
+        self.optimizer = self.build_optimizer()
+        # self.lr_schedule = self.build_lr_schedule()
+        assert isinstance(self.dynamics, Dynamics)
+        skip_tracking = os.environ.get('SKIP_TRACKING', False)
+        self.verbose = not skip_tracking
+        self.clip_norm = self.config.learning_rate.clip_norm
+        # compression = 'fp16'
+        self.compression = HVD_FP_MAP['fp16']
+        self.reduce_lr = ReduceLROnPlateau(self.config.learning_rate)
         self.reduce_lr.set_model(self.dynamics)
         self.reduce_lr.set_optimizer(self.optimizer)
-
-        self.dynamics_config = (
-            dynamics_config if dynamics_config is not None
-            else self.dynamics.config
-        )
-        self.nlf = self.dynamics_config.nleapfrog
-        self.xshape = self.dynamics_config.xshape
-        self.verbose = self.dynamics_config.verbose
-        if self.dynamics_config.group == 'U1':
+        self.rank = hvd.local_rank()
+        if self.config.dynamics.group == 'U1':
             self.g = U1Phase()
-        elif self.dynamics_config.group == 'SU3':
+        elif self.config.dynamics.group == 'SU3':
             self.g = SU3()
         else:
-            raise ValueError('Unexpected value for dynamics_config.group')
+            raise ValueError
 
-        self.history = BaseHistory(steps=steps)
-        self.timer = StepTimer(evals_per_step=self.nlf)
-        self.histories = {
-            'train': self.history,
-            'eval': BaseHistory(),
-            'hmc': BaseHistory()
-        }
-        self.timers = {
-            'train': self.timer,
-            'eval': StepTimer(evals_per_step=evals_per_step),
-            'hmc': StepTimer(evals_per_step=evals_per_step)
-        }
-        self.console = get_console(record=False)
-
-    def draw_x(self, shape: Optional[list[int]] = None) -> Tensor:
-        """Draw `x` """
-        shape = list(self.dynamics.xshape) if shape is None else shape
-        x = self.dynamics.g.random(shape)
-        x = tf.reshape(x, (x.shape[0], -1))
-
-        return x
+    def draw_x(self):
+        return flatten(self.g.random(
+            list(self.config.dynamics.xshape)
+        ))
 
     def reset_optimizer(self) -> None:
         if len(self.optimizer.variables()) > 0:
             log.warning('Resetting optimizer state!')
             for var in self.optimizer.variables():
                 var.assign(tf.zeros_like(var))
+
+    def build_lattice(self):
+        group = str(self.config.dynamics.group).upper()
+        kwargs = {
+            'nchains': self.config.dynamics.nchains,
+            'shape': list(self.config.dynamics.latvolume),
+        }
+        if group == 'U1':
+            return LatticeU1(**kwargs)
+        if group == 'SU3':
+            c1 = (
+                self.config.c1
+                if self.config.c1 is not None
+                else 0.0
+            )
+
+            return LatticeSU3(c1=c1, **kwargs)
+
+        raise ValueError('Unexpected value in `config.dynamics.group`')
+
+    def build_loss_fn(self) -> Callable:
+        assert isinstance(self.lattice, (LatticeU1, LatticeSU3))
+        return LatticeLoss(
+            lattice=self.lattice,
+            loss_config=self.config.loss,
+        )
+
+    def build_dynamics(self) -> Dynamics:
+        input_spec = self.get_input_spec()
+        net_factory = NetworkFactory(
+            input_spec=input_spec,
+            conv_config=self.config.conv,
+            network_config=self.config.network,
+            net_weights=self.config.net_weights,
+        )
+        return Dynamics(config=self.config.dynamics,
+                        potential_fn=self.lattice.action,
+                        network_factory=net_factory)
+
+    def build_optimizer(
+            self,
+    ) -> Optimizer:
+        # TODO: Expand method, re-build LR scheduler, etc
+        # TODO: Replace `LearningRateConfig` with `OptimizerConfig`
+        # TODO: Optionally, break up in to lrScheduler, OptimizerConfig ?
+        return tf.keras.optimizers.Adam(self.config.learning_rate.lr_init)
+
+    def get_lr(self) -> float:
+        return K.get_value(self.optimizer.lr)
 
     def setup_CheckpointManager(self, outdir: os.PathLike):
         ckptdir = Path(outdir).joinpath('checkpoints')
@@ -216,62 +228,16 @@ class Trainer:
 
         return manager
 
-    def metric_to_numpy(
+    def save_ckpt(
             self,
-            metric: Tensor | list | np.ndarray,
-            # key: str = '',
-    ) -> np.ndarray:
-        """Consistently convert `metric` to np.ndarray."""
-        if isinstance(metric, np.ndarray):
-            return metric
+            manager: CheckpointManager,
+            train_dir: os.PathLike,
+    ) -> None:
+        if self.rank != 0:
+            return
 
-        if (
-                isinstance(metric, Tensor)
-                and hasattr(metric, 'numpy')
-                and isinstance(metric.numpy, Callable)
-        ):
-            return metric.numpy()
-
-        elif isinstance(metric, list):
-            if isinstance(metric[0], np.ndarray):
-                return np.stack(metric)
-
-            if isinstance(metric[0], Tensor):
-                stack = tf.stack(metric)
-                if (
-                        hasattr(stack, 'numpy')
-                        and isinstance(stack.numpy, Callable)
-                ):
-                    return stack.numpy()
-            else:
-                return np.array(metric)
-
-            return np.array(metric)
-
-        else:
-            raise ValueError(
-                f'Unexpected type for metric: {type(metric)}'
-            )
-
-    def metrics_to_numpy(
-            self,
-            metrics: dict[str, Tensor | list | np.ndarray]
-    ) -> dict:
-        m = {}
-        for key, val in metrics.items():
-            if isinstance(val, dict):
-                for k, v in val.items():
-                    m[f'{key}/{k}'] = self.metric_to_numpy(v)
-            else:
-                try:
-                    m[key] = self.metric_to_numpy(val)
-                except (ValueError, tf.errors.InvalidArgumentError):
-                    log.warning(
-                        f'Error converting metrics[{key}] to numpy. Skipping!'
-                    )
-                    continue
-
-        return m
+        manager.save()
+        self.dynamics.save_networks(train_dir)
 
     def should_log(self, epoch):
         return (
@@ -284,69 +250,6 @@ class Trainer:
             epoch % self.steps.print == 0
             and self.rank == 0
         )
-
-    def aim_track(
-            self,
-            metrics: dict,
-            step: int,
-            job_type: str,
-            arun: aim.Run,
-            prefix: Optional[str] = None,
-    ) -> None:
-        context = {'subset': job_type}
-        dtype = getattr(step, 'dtype', None)
-        if dtype is not None and dtype in NP_INT:
-            try:
-                step = step.item()  # type:ignore
-            except AttributeError:
-                pass
-
-        for key, val in metrics.items():
-            if prefix is not None:
-                name = f'{prefix}/{key}'
-            else:
-                name = f'{key}'
-
-            if isinstance(val, ops.EagerTensor):
-                val = val.numpy()
-
-            elif isinstance(val, dict):
-                for k, v in val.items():
-                    self.aim_track(
-                        v,
-                        step=step,
-                        arun=arun,
-                        job_type=job_type,
-                        prefix=f'{name}/{k}',
-                    )
-            elif isinstance(val, (Tensor, ops.EagerTensor, np.ndarray)):
-                if isinstance(val, ops.EagerTensor):
-                    val = val.numpy()
-                # check to see if we should track as Distribution
-                is_dist = (
-                    len(val.shape) > 1
-                    or (
-                        len(val.shape) == 1
-                        and val.shape[0] > 1
-                    )
-                )
-                if is_dist:
-                    dist = Distribution(val)
-                    arun.track(dist, step=step, name=name, context=context)
-                    aname = f'{name}/avg'
-                    avg = (
-                        tf.reduce_mean(val) if isinstance(val, Tensor)
-                        else val.mean()
-                    )
-                    arun.track(avg, step=step, name=aname, context=context)
-                else:
-                    arun.track(val, step=step, name=name, context=context)
-
-            else:
-                arun.track(val,
-                           name=name,
-                           # step=step,
-                           context=context)
 
     def record_metrics(
             self,
@@ -362,8 +265,10 @@ class Trainer:
     ):
         record = {} if record is None else record
         assert job_type in ['train', 'eval', 'hmc']
-        kwargs = {'step': step, 'job_type': job_type, 'arun': arun}
-        history = self.histories[job_type]
+        if step is None:
+            timer = self.timers.get(job_type, None)
+            if isinstance(timer, StepTimer):
+                step = timer.iterations
 
         if step is not None:
             record.update({f'{job_type}_step': step})
@@ -376,54 +281,76 @@ class Trainer:
         if job_type == 'train' and step is not None:
             record['lr'] = K.get_value(self.optimizer.lr)
 
-        record.update(self.metrics_to_numpy(metrics))
+        if job_type in ['eval', 'hmc']:
+            _ = record.pop('xeps', None)
+            _ = record.pop('veps', None)
+
         avgs = self.histories[job_type].update(record)
         summary = summarize_dict(avgs)
-        # if step is not None:
+
         if writer is not None and self.verbose and step is not None:
             update_summaries(step=step,
-                             prefix=job_type,
                              model=model,
                              metrics=record,
+                             prefix=job_type,
                              optimizer=optimizer)
-            if writer is not None:
-                writer.flush()
+            writer.flush()
 
-            if run is not None:
-                run.log({f'wandb/{job_type}': record}, commit=False)
-                run.log({f'avgs/wandb.{job_type}': avgs}, commit=False)
-            if arun is not None:
-                try:
-                    self.aim_track(avgs, prefix='avgs', **kwargs)
-                except Exception:
-                    log.warning('Unable to aim_track `avgs` !')
-                try:
-                    self.aim_track(record, prefix='record', **kwargs)
-                except Exception:
-                    log.warning('Unable to aim_track `record` !')
-                # try:
-                #     self.aim_track(metrics, prefix='metrics', **kwargs)
-                # except Exception:
-                #     log.warning('Unable to aim_track `metrics` !')
+        self.track_metrics(
+            record=record,
+            avgs=avgs,
+            job_type=job_type,
+            step=step,
+            run=run,
+            arun=arun,
+        )
 
+        return avgs, summary
+
+    def track_metrics(
+            self,
+            record: dict[str, Tensor],
+            avgs: dict[str, Tensor],
+            job_type: str,
+            step: Optional[int],
+            run: Optional[Any] = None,
+            arun: Optional[Any] = None,
+    ) -> None:
+        dQdict = None
         dQint = record.get('dQint', None)
         if dQint is not None:
             dQdict = {
                 f'dQint/{job_type}': {
                     'val': dQint,
                     'step': step,
-                    'avg': dQint.mean(),
+                    'avg': tf.reduce_mean(dQint),
                 }
             }
-            if run is not None:
-                run.log(dQdict)
-            if arun is not None:
-                self.aim_track({'dQint': dQint}, **kwargs)
 
-        return avgs, summary
+        if run is not None:
+            run.log({f'wandb/{job_type}': record}, commit=False)
+            run.log({f'avgs/wandb.{job_type}': avgs})
+            if dQdict is not None:
+                run.log(dQdict, commit=False)
+        if arun is not None:
+            kwargs = {
+                'step': step,
+                'job_type': job_type,
+                'arun': arun
+            }
 
-    # @tf.function(experimental_follow_type_hints=True,
-    #         jit_compile=JIT_COMPILE)
+            if dQdict is not None:
+                self.aim_track({'dQint': dQint}, prefix='dQ', **kwargs)
+
+            try:
+                self.aim_track(avgs, prefix='avgs', **kwargs)
+            except Exception:
+                log.warning('Unable to aim_track `avgs` !')
+            try:
+                self.aim_track(record, prefix='record', **kwargs)
+            except Exception:
+                log.warning('Unable to aim_track `record` !')
+
     @tf.function
     def hmc_step(
             self,
@@ -484,7 +411,10 @@ class Trainer:
             skip = [skip]
 
         if beta is None:
-            beta = tf.constant(self.schedule.beta_final, dtype=TF_FLOAT)
+            beta = tf.constant(
+                self.config.annealing_schedule.beta_final,
+                dtype=TF_FLOAT
+            )
 
         if eps is None and str(job_type).lower() == 'hmc':
             # eps = tf.constant(0.1, dtype=TF_FLOAT)
@@ -548,10 +478,10 @@ class Trainer:
                 table,
                 console=self.console,
                 vertical_overflow='visible',
-        ) as live:
+        ):
             for step in range(self.steps.test):
                 timer.start()
-                x, metrics = eval_fn((x, beta))
+                x, metrics = eval_fn((x, beta))  # type:ignore
                 dt = timer.stop()
                 if step % nprint == 0 or step % nlog == 0:
                     record = {
@@ -571,9 +501,9 @@ class Trainer:
                         table.add_row(*[f'{v}' for _, v in avgs.items()])
 
                     if avgs.get('acc', 1.0) <= 1e-5:
-                        live.console.log('Chains are stuck! Re-drawing x !')
+                        self.console.log('Chains are stuck! Re-drawing x !')
                         assert isinstance(x, Tensor)
-                        x = self.g.random(list(x.shape))
+                        x = self.draw_x()
 
         tables[str(0)] = table
 
@@ -586,13 +516,14 @@ class Trainer:
 
     # @tf.function(experimental_follow_type_hints=True,
     #         jit_compile=JIT_COMPILE)
-    @tf.function(
-        experimental_follow_type_hints=True,
-        # input_signature=[
-        #     tf.TensorSpec(shape=None, dtype=TF_FLOAT),
-        #     tf.TensorSpec(shape=None, dtype=TF_FLOAT),
-        # ],
-    )
+    # @tf.function(
+    #     experimental_follow_type_hints=True,
+    #     # input_signature=[
+    #     #     tf.TensorSpec(shape=None, dtype=TF_FLOAT),
+    #     #     tf.TensorSpec(shape=None, dtype=TF_FLOAT),
+    #     # ],
+    # )
+    @tf.function(experimental_follow_type_hints=True)
     def train_step(
             self,
             inputs: tuple[Tensor, Tensor]
@@ -603,6 +534,7 @@ class Trainer:
         #     (self.lr_config.clip_norm > 0)
         #     if clip_grads is None else clip_grads
         # )
+        aw = self.config.loss.aux_weight
         with tf.GradientTape() as tape:
             tape.watch(xinit)
             xout, metrics = self.dynamics((xinit, beta), training=True)
@@ -614,7 +546,7 @@ class Trainer:
             # xout = self.dynamics.g.compat_proj(xout)
             # xout = to_u1(xout)
 
-            if self.aux_weight > 0:
+            if aw > 0:
                 # yinit = to_u1(self.draw_x())
                 yinit = self.draw_x()
                 _, metrics_ = self.dynamics((yinit, beta), training=True)
@@ -623,10 +555,10 @@ class Trainer:
                 #     metrics_.pop('mc_states').proposed.x
                 # )
                 yprop = metrics_.pop('mc_states').proposed.x
-                aux_loss = self.aux_weight * self.loss_fn(x_init=yinit,
-                                                          x_prop=yprop,
-                                                          acc=metrics_['acc'])
-                loss += self.aux_weight * aux_loss
+                aux_loss = aw * self.loss_fn(x_init=yinit,
+                                             x_prop=yprop,
+                                             acc=metrics_['acc'])
+                loss += aw * aux_loss
                 # loss = (loss + aux_loss) / (1. + self.aux_weight)
 
         tape = hvd.DistributedGradientTape(tape, compression=self.compression)
@@ -650,231 +582,255 @@ class Trainer:
 
         return xout, metrics
 
-    @staticmethod
-    def update_record(
-        record: dict,
-        updates: dict[str, float | int | Tensor | Array | None],
-        reset: Optional[bool] = False,
-    ) -> dict:
-        if reset:
-            record = {}
-
-        for key, val in updates.items():
-            if val is not None:
-                record[key] = val
-
-        return record
-
     def train_epoch(
             self,
+            x: Tensor,
             beta: float | Tensor,
-            x: Optional[Tensor] = None,
-            step: Optional[int] = None,
             era: Optional[int] = None,
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
-    ) -> dict:
-        if x is None:
-            x = self.draw_x()
-        if isinstance(beta, float):
-            beta = tf.constant(beta)
-
-        gstep = 0
-        avgs = {}
+            extend: Optional[int] = None,
+    ) -> tuple[Tensor, dict]:
+        rows = {}
         summaries = []
-        table = Table(expand=True)
-        beta = tf.cast(beta, TF_FLOAT)
-        record = {}
-        for step in range(self.steps.nepoch):
-            self.timers['train'].start()
-            x, metrics = self.train_step((x, beta))  # type: ignore
-            dt = self.timers['train'].stop()
-            gstep += 1
+        extend = 1 if extend is None else extend
+        record = {'era': 0, 'epoch': 0, 'beta': 0.0, 'dt': 0.0}
+        table = Table(
+            box=box.HORIZONTALS,
+            row_styles=['dim', 'none'],
+        )
 
-            if self.should_print(step) or self.should_log(step):
-                record = self.update_record(
-                    record=record,
-                    updates=(
-                        {'era': era, 'epoch': step, 'beta': beta, 'dt': dt}
+        nepoch = self.steps.nepoch * extend
+        if self.rank == 0:
+            ctxmgr = Live(table,
+                          console=self.console,
+                          vertical_overflow='visible')
+        else:
+            ctxmgr = nullcontext()
+
+        with ctxmgr as live:
+            if live is not None:
+                tstr = ' '.join([
+                    f'ERA: {era}/{self.steps.nera}',
+                    f'BETA: {beta:.3f}',
+                ])
+                live.console.clear_live()
+                live.console.rule(tstr)
+                live.update(table)
+
+            for epoch in range(nepoch):
+                self.timers['train'].start()
+                x, metrics = self.train_step((x, beta))  # type:ignore
+                dt = self.timers['train'].stop()
+                self._gstep += 1
+                if self.should_print(epoch) or self.should_log(epoch):
+                    record = {
+                        'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
+                    }
+                    avgs, summary = self.record_metrics(
+                        run=run,
+                        arun=arun,
+                        step=self._gstep,
+                        writer=writer,
+                        record=record,    # template w/ step info
+                        metrics=metrics,  # metrics from Dynamics
+                        job_type='train',
+                        model=self.dynamics,
+                        optimizer=self.optimizer,
                     )
-                )
-                avgs_, summary = self.record_metrics(
-                    run=run,
-                    arun=arun,
-                    step=gstep,
-                    writer=writer,
-                    record=record,      # template w/ step info, np.arr
-                    metrics=metrics,    # metrics from Dynamics, Tensor
-                    job_type='train',
-                    model=self.dynamics,
-                    optimizer=self.optimizer,
-                )
-                avgs[gstep] = avgs_
-                summaries.append(summary)
+                    rows[self._gstep] = avgs
+                    summaries.append(summary)
 
-                if step == 0:
-                    table = add_columns(avgs_, table)
-                else:
-                    table.add_row(*[f'{v}' for _, v in avgs_.items()])
+                    if epoch == 0:
+                        table = add_columns(avgs, table)
+                    else:
+                        table.add_row(*[f'{v}' for _, v in avgs.items()])
 
-                if avgs_.get('acc', 1.0) <= 1e-5:
-                    self.reset_optimizer()
-                    log.warning('Chains are stuck! Re-drawing x !')
-                    x = self.draw_x()
+                    if avgs.get('acc', 1.0) < 1e-5:
+                        self.reset_optimizer()
+                        log.warning('Chains are stuck! Re-drawing x !')
+                        x = self.draw_x()
+                        # x = random_angle(self.xshape)
+                        # x = x.reshape(x.shape[0], -1)
 
-        return {'avgs': avgs, 'summaries': summaries}
+        data = {
+            'rows': rows,
+            'table': table,
+            'summaries': summaries,
+        }
+
+        return x, data
 
     def train(
             self,
-            xinit: Optional[Tensor] = None,
+            x: Optional[Tensor] = None,
             skip: Optional[str | list[str]] = None,
             train_dir: Optional[os.PathLike] = None,
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
-            writer: Optional[Any] = None
+            writer: Optional[Any] = None,
+            # extend_last_era: Optional[bool] = True,
+            # keep: str | list[str] = None,
     ) -> dict:
-        """Train l2hmc Dynamics."""
-        if isinstance(skip, str):
-            skip = [skip]
+        """Perform training and return dictionary of results."""
+        skip = [skip] if isinstance(skip, str) else skip
+
+        if x is None:
+            x = flatten(self.g.random(list(self.xshape)))
 
         if writer is not None:
             writer.set_as_default()
 
         if train_dir is None:
-            train_dir = Path(os.getcwd()).joinpath('train')
-
-        try:
-            model_dir = Path(os.getcwd()).joinpath('plots', 'models')
-            model_dir.mkdir(exist_ok=True, parents=True)
-            plot_models(self.dynamics, train_dir)
-        except Exception:
-            pass
+            train_dir = Path(os.getcwd()).joinpath(
+                get_timestamp(), 'train'
+            )
+            train_dir.mkdir(exist_ok=True, parents=True)
 
         manager = self.setup_CheckpointManager(train_dir)
-        gstep = K.get_value(self.optimizer.iterations)
+        self._gstep = K.get_value(self.optimizer.iterations)
 
-        x = self.draw_x() if xinit is None else tf.constant(xinit, TF_FLOAT)
-        assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
-
-        # inputs = (x, tf.constant(self.schedule.beta_init))
-        # assert callable(self.train_step)
-        # _ = self.train_step(inputs)
-
-        era = 0
-        epoch = 0
-        rows = {}
-        tables = {}
-        metrics = {}
-        summaries = []
-        table = Table(expand=True)
-        nepoch = self.steps.nepoch
-        timer = self.timers['train']
-        history = self.histories['train']
         extend = self.steps.extend_last_era
-        nepoch_last_era = self.steps.nepoch
-        record = {'era': 0, 'epoch': 0, 'beta': 0.0, 'dt': 0.0}
-        if extend is not None and isinstance(extend, int) and extend > 1:
-            nepoch_last_era *= extend
-
+        assert x is not None
         for era in range(self.steps.nera):
-            beta = tf.constant(self.schedule.betas[str(era)], dtype=TF_FLOAT)
-            table = Table(
-                box=box.HORIZONTALS,
-                row_styles=['dim', 'none'],
+            beta = self.config.annealing_schedule.betas[str(era)]
+            extend = (
+                self.steps.extend_last_era
+                if era == self.steps.nera - 1
+                else 1
             )
 
+            epoch_start = time.time()
+            x, edata = self.train_epoch(
+                x=x,
+                beta=beta,
+                era=era,
+                run=run,
+                arun=arun,
+                writer=writer,
+                extend=extend,
+            )
+
+            self.rows['train'][str(era)] = edata['rows']
+            self.tables['train'][str(era)] = edata['table']
+            self.summaries['train'][str(era)] = edata['summaries']
+
+            st0 = time.time()
+            if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
+                self.save_ckpt(manager, train_dir)
+
             if self.rank == 0:
-                ctxmgr = Live(table,
-                              console=self.console,
-                              vertical_overflow='visible')
-            else:
-                ctxmgr = nullcontext()
-
-            if era == self.steps.nera - 1:
-                nepoch = nepoch_last_era
-
-            with ctxmgr as live:
-                if live is not None:
-                    tstr = ' '.join([
-                        f'ERA: {era}/{self.steps.nera}',
-                        f'BETA: {beta.numpy():.3f}',
-                    ])
-                    live.console.clear_live()
-                    live.console.rule(tstr)
-                    live.update(table, refresh=True)
-
-                epoch_start = time.time()
-                for epoch in range(nepoch):
-                    timer.start()
-                    x, metrics = self.train_step(   # type:ignore
-                        (x, beta)
-                    )
-                    dt = timer.stop()
-                    gstep += 1
-                    if self.should_print(epoch) or self.should_log(epoch):
-                        record = {
-                            'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
-                        }
-                        avgs, summary = self.record_metrics(
-                            run=run,
-                            arun=arun,
-                            step=gstep,
-                            writer=writer,
-                            record=record,      # template w/ step info, np.arr
-                            metrics=metrics,    # metrics from Dynamics, Tensor
-                            job_type='train',
-                            model=self.dynamics,
-                            optimizer=self.optimizer,
-                        )
-                        rows[gstep] = avgs
-                        summaries.append(summary)
-
-                        if epoch == 0:
-                            table = add_columns(avgs, table)
-                        else:
-                            table.add_row(*[f'{v}' for _, v in avgs.items()])
-
-                        if avgs.get('acc', 1.0) < 1e-5:
-                            self.reset_optimizer()
-                            log.warning('Chains are stuck! Re-drawing x !')
-                            x = self.g.random(list(x.shape))
-
-                tables[str(era)] = table
-                self.reduce_lr.on_epoch_end((era + 1) * self.steps.nepoch, {
-                    'loss': metrics.get('loss', tf.constant(np.Inf)),
-                })
-                if self.rank == 0:
-                    # if writer is not None:
-                    #     update_summaries(step=gstep,
-                    #                      run=self.run,
-                    #                      arun=self.arun,
-                    #                      model=self.dynamics,
-                    #                      optimizer=self.optimizer)
-                    st0 = time.time()
-                    manager.save()
-                    if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
-                        self.dynamics.save_networks(train_dir)
-
-                    # ckptstr = '\n'.join([
-                    if live is not None:
-                        dts = time.time() - st0
-                        savestr = ' '.join([
-                            'Checkpoint saved to:',
-                            f'{manager.latest_checkpoint}',
-                            f'in {dts:<5f}s'
-                        ])
-                        estr = ' '.join([
-                            f'Era {era} took:',
-                            f'{time.time() - epoch_start:4f}s'
-                        ])
-                        ckptstr = '\n'.join([savestr, estr])
-                        live.console.log(ckptstr)
+                ckptstr = '\n'.join([
+                    f'Saving took: {time.time() - st0:<5g}s',
+                    f'Era {era} took: {time.time() - epoch_start:<5g}s',
+                ])
+                self.console.log(ckptstr)
 
         return {
-            'timer': timer,
-            'rows': rows,
-            'summaries': summaries,
-            'history': history,
-            'tables': tables,
+            'timer': self.timers['train'],
+            'rows': self.rows['train'],
+            'summaries': self.summaries['train'],
+            'history': self.histories['train'],
+            'tables': self.tables['train'],
         }
+
+    def metric_to_numpy(
+            self,
+            metric: Tensor | list | np.ndarray,
+            # key: str = '',
+    ) -> np.ndarray:
+        """Consistently convert `metric` to np.ndarray."""
+        if isinstance(metric, np.ndarray):
+            return metric
+
+        if (
+                isinstance(metric, Tensor)
+                and hasattr(metric, 'numpy')
+                and isinstance(metric.numpy, Callable)
+        ):
+            return metric.numpy()
+
+        elif isinstance(metric, list):
+            if isinstance(metric[0], np.ndarray):
+                return np.stack(metric)
+
+            if isinstance(metric[0], Tensor):
+                stack = tf.stack(metric)
+                if (
+                        hasattr(stack, 'numpy')
+                        and isinstance(stack.numpy, Callable)
+                ):
+                    return stack.numpy()
+            else:
+                return np.array(metric)
+
+            return np.array(metric)
+
+        else:
+            raise ValueError(
+                f'Unexpected type for metric: {type(metric)}'
+            )
+
+    def aim_track(
+            self,
+            metrics: dict,
+            step: int,
+            job_type: str,
+            arun: aim.Run,
+            prefix: Optional[str] = None,
+    ) -> None:
+        context = {'subset': job_type}
+        dtype = getattr(step, 'dtype', None)
+        if dtype is not None and dtype in NP_INT:
+            try:
+                step = step.item()  # type:ignore
+            except AttributeError:
+                pass
+
+        for key, val in metrics.items():
+            if prefix is not None:
+                name = f'{prefix}/{key}'
+            else:
+                name = f'{key}'
+
+            if isinstance(val, ops.EagerTensor):
+                val = val.numpy()
+
+            elif isinstance(val, dict):
+                for k, v in val.items():
+                    self.aim_track(
+                        v,
+                        step=step,
+                        arun=arun,
+                        job_type=job_type,
+                        prefix=f'{name}/{k}',
+                    )
+            elif isinstance(val, (Tensor, ops.EagerTensor, np.ndarray)):
+                if isinstance(val, ops.EagerTensor):
+                    val = val.numpy()
+                # check to see if we should track as Distribution
+                is_dist = (
+                    len(val.shape) > 1
+                    or (
+                        len(val.shape) == 1
+                        and val.shape[0] > 1
+                    )
+                )
+                if is_dist:
+                    dist = Distribution(val)
+                    arun.track(dist, step=step, name=name, context=context)
+                    aname = f'{name}/avg'
+                    avg = (
+                        tf.reduce_mean(val) if isinstance(val, Tensor)
+                        else val.mean()
+                    )
+                    arun.track(avg, step=step, name=aname, context=context)
+                else:
+                    arun.track(val, step=step, name=name, context=context)
+
+            else:
+                arun.track(val,
+                           name=name,
+                           # step=step,
+                           context=context)
