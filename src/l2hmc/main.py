@@ -109,8 +109,8 @@ def setup_torch(cfg: DictConfig) -> int:
     LOCAL_SIZE = hvd.local_size()
     setup_logger(RANK)
 
-    log.info(f'Global Rank: {RANK} / {SIZE+1}')
-    log.info(f'[{RANK}]: Local rank: {LOCAL_RANK} / {LOCAL_SIZE+1}')
+    log.info(f'Global Rank: {RANK} / {SIZE-1}')
+    log.info(f'[{RANK}]: Local rank: {LOCAL_RANK} / {LOCAL_SIZE-1}')
     seed_everything(cfg.seed * (RANK + 1) * (LOCAL_RANK + 1))
     return RANK
 
