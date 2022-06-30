@@ -286,10 +286,12 @@ class Trainer(BaseTrainer):
             _ = record.pop('xeps', None)
             _ = record.pop('veps', None)
 
+        record.update(self.metrics_to_numpy(metrics))
         avgs = self.histories[job_type].update(record)
         summary = summarize_dict(avgs)
 
-        if writer is not None and self.verbose and step is not None:
+        # if writer is not None and self.verbose and step is not None:
+        if step is not None and writer is not None:
             update_summaries(step=step,
                              model=model,
                              metrics=record,
@@ -330,9 +332,9 @@ class Trainer(BaseTrainer):
 
         if run is not None:
             run.log({f'wandb/{job_type}': record}, commit=False)
-            run.log({f'avgs/wandb.{job_type}': avgs})
+            run.log({f'avgs/wandb.{job_type}': avgs}, commit=False)
             if dQdict is not None:
-                run.log(dQdict, commit=False)
+                run.log(dQdict, commit=True)
         if arun is not None:
             kwargs = {
                 'step': step,
@@ -524,7 +526,7 @@ class Trainer(BaseTrainer):
     #     #     tf.TensorSpec(shape=None, dtype=TF_FLOAT),
     #     # ],
     # )
-    @tf.function(experimental_follow_type_hints=True)
+    @tf.function
     def train_step(
             self,
             inputs: tuple[Tensor, Tensor]
@@ -578,6 +580,12 @@ class Trainer(BaseTrainer):
 
         metrics['loss'] = loss
         if self.verbose:
+            # lmetrics = self.lattice.calc_metrics(
+            #     x=xout,
+            #     xinit=xinit,
+            # )
+            # lmetrics = self.lattice.calc_loss(xinit)
+            # lmetrics = self.loss_fn.lattice_metrics(xinit=inputs[0], xout=xo)
             lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
             metrics.update(lmetrics)
 
@@ -610,11 +618,13 @@ class Trainer(BaseTrainer):
         else:
             ctxmgr = nullcontext()
 
+        bfloat = self.config.annealing_schedule.betas[str(era)]
+
         with ctxmgr as live:
             if live is not None:
                 tstr = ' '.join([
                     f'ERA: {era}/{self.steps.nera}',
-                    f'BETA: {beta:.3f}',
+                    f'BETA: {bfloat:.3f}',
                 ])
                 live.console.clear_live()
                 live.console.rule(tstr)
@@ -703,7 +713,7 @@ class Trainer(BaseTrainer):
             )
 
             epoch_start = time.time()
-            x, edata = self.train_epoch(
+            x, edata = self.train_epoch(  # type:ignore
                 x=x,
                 beta=beta,
                 era=era,
@@ -738,7 +748,7 @@ class Trainer(BaseTrainer):
 
     def metric_to_numpy(
             self,
-            metric: Tensor | list | np.ndarray,
+            metric: TensorLike | list | np.ndarray,
             # key: str = '',
     ) -> np.ndarray:
         """Consistently convert `metric` to np.ndarray."""
