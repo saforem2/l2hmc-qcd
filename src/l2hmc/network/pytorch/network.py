@@ -178,12 +178,12 @@ class Network(nn.Module):
 
         self.units = self.net_config.units
 
-        self.s_coeff = nn.parameter.Parameter(
-            torch.zeros(1, self.xdim, device=self.device)
-        )
-        self.q_coeff = nn.parameter.Parameter(
-            torch.zeros(1, self.xdim, device=self.device)
-        )
+        # self.s_coeff = nn.parameter.Parameter(
+        #     torch.zeros(1, self.xdim, device=self.device)
+        # )
+        # self.q_coeff = nn.parameter.Parameter(
+        #     torch.zeros(1, self.xdim, device=self.device)
+        # )
 
         if conv_config is not None and len(conv_config.filters) > 0:
             self.conv_config = conv_config
@@ -220,7 +220,7 @@ class Network(nn.Module):
         else:
             self.conv_stack = []
 
-        self.flatten = nn.Flatten(1)
+        # self.flatten = nn.Flatten(-1)
         self.x_layer = nn.Linear(
             self.input_shapes['x'],  # input
             self.units[0],           # output
@@ -286,9 +286,11 @@ class Network(nn.Module):
         # s = self.nw.s * torch.exp(self.s_coeff) * scale
         # t = self.nw.t * transl
         # q = self.nw.q * torch.exp(self.q_coeff) * transf
-        s = (self.nw.s * torch.exp(self.s_coeff)) * F.tanh(self.scale(z))
-        t = (self.nw.t * self.transl(z))
-        q = (self.nw.q * torch.exp(self.q_coeff)) * F.tanh(self.transf(z))
+        # s = (self.nw.s * torch.exp(self.s_coeff)) * F.tanh(self.scale(z))
+        # q = (self.nw.q * torch.exp(self.q_coeff)) * F.tanh(self.transf(z))
+        s = self.nw.s * self.scale(z)
+        t = self.nw.t * self.transl(z)
+        q = self.nw.q * self.transf(z)
 
         return s, t, q
 
