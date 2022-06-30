@@ -91,8 +91,9 @@ class Trainer(BaseTrainer):
         self.lr_schedule = self.build_lr_schedule()
         assert isinstance(self.dynamics, nn.Module)
         assert isinstance(self.dynamics, Dynamics)
-        skip_tracking = os.environ.get('SKIP_TRACKING', False)
-        self.verbose = not skip_tracking
+        self.verbose = self.config.dynamics.verbose
+        # skip_tracking = os.environ.get('SKIP_TRACKING', False)
+        # self.verbose = not skip_tracking
         self.clip_norm = self.config.learning_rate.clip_norm
         if self._with_cuda:
             self.dynamics.cuda()
