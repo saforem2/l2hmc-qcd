@@ -397,15 +397,27 @@ class Dynamics(Model):
             eps: float,
     ) -> State:
         """Perform standard HMC leapfrog update."""
-        x = tf.reshape(state.x, state.v.shape)
-        force1 = self.grad_potential(x, state.beta)        # f = dU / dx
-        # dt = tf.cast(eps, dtype=force1.dtype)
-        # halfeps = tf.constant(0.5 * eps, dtype=state.v.dtype)
-        v1 = state.v - tf.multiply(0.5 * eps, force1)
+        x = tf.reshape(state.x, self.xshape)
+        xflat = tf.reshape(state.x, state.v.shape)
+        force1 = self.grad_potential(xflat, state.beta)        # f = dU / dx
+        # halfeps = tf.constant(0.5 * eps, dtype=force1.dtype)
+        halfeps = tf.cast(eps / 2.0, dtype=force1.dtype)
+        eps = tf.cast(eps, dtype=force1.dtype)
+        # dt = 0.5 * eps
+        v1 = state.v - halfeps * force1
         # xp = x + dt * v1                                 # x += xeps * v
-        xp = self.g.update_gauge(x, eps * v1)              # x += eps * v
+        xp = tf.reshape(
+            self.g.update_gauge(
+                tf.reshape(state.x, self.xshape),
+                tf.reshape(eps * v1, self.xshape)
+            ),
+            state.v.shape
+        )
+        # xp = tf.reshape(xp, state.v.shape)
         force2 = self.grad_potential(xp, state.beta)       # calc force, again
-        v2 = v1 - tf.multiply(0.5 * eps, force2)           # v -= ½ veps * f
+        v1 = tf.reshape(v1, [v1.shape[0], -1])
+        force2 = tf.reshape(force2, v1.shape)
+        v2 = v1 - halfeps * force2                         # v -= ½ veps * f
         return State(x=xp, v=v2, beta=state.beta)          # output: (x', v')
 
     def transition_kernel_hmc(
@@ -865,7 +877,9 @@ class Dynamics(Model):
 
     def kinetic_energy(self, v: Tensor) -> Tensor:
         """Returns the kinetic energy, KE = 0.5 * v ** 2."""
-        return self.g.kinetic_energy(v)
+        return self.g.kinetic_energy(
+            tf.reshape(v, self.xshape)
+        )
         # return tf.reduce_sum(tf.math.square(v), axis=range(1, len(v.shape)))
 
     def potential_energy(self, x: Tensor, beta: Tensor) -> Tensor:

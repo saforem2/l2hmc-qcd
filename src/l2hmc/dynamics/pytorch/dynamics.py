@@ -118,7 +118,7 @@ class Dynamics(nn.Module):
             network_factory: NetworkFactory
     ):
         """Initialization method."""
-        super(Dynamics, self).__init__()
+        super().__init__()
         self.config = config
         self.xdim = self.config.xdim
         self.xshape = tuple(network_factory.input_spec.xshape)
@@ -145,17 +145,28 @@ class Dynamics(nn.Module):
             # xeps = torch.tensor(self.config.eps)#.clamp_min_(self.config.eps)
             # xeps = torch.tensor(self.config.eps, dtype=torch.float).log()
             # veps = torch.tensor(self.config.eps, dtype=torch.float).log()
-            xeps = nn.parameter.Parameter(
-                torch.tensor(self.config.eps,
-                             dtype=torch.float).clamp_min_(float(0.0))
+            # self.xeps[str(lf)] = xeps
+            # self.veps[str(lf)] = veps
+            # alpha = torch.log(
+            #     torch.tensor(self.config.eps, dtype=torch.float).exp()
+            # )
+            self.xeps[str(lf)] = nn.parameter.Parameter(
+                torch.log(
+                    torch.exp(
+                        torch.tensor(self.config.eps, dtype=torch.float)
+                    )
+                )
             )
-            veps = nn.parameter.Parameter(
-                torch.tensor(self.config.eps,
-                             dtype=torch.float).clamp_min_(float(0.0))
-                # veps.exp()  # .clamp_min_(self.config.eps / 4.)
+            self.veps[str(lf)] = nn.parameter.Parameter(
+                torch.log(
+                    torch.exp(
+                        torch.tensor(self.config.eps, dtype=torch.float)
+                    )
+                )
             )
-            self.xeps[str(lf)] = xeps
-            self.veps[str(lf)] = veps
+            # torch.exp(torch.tensor(self.config.eps, dtype=torch.float))
+            # torch.tensor(self.config.eps, dtype=torch.float)
+            # veps.exp()  # .clamp_min_(self.config.eps / 4.)
 
         if torch.cuda.is_available():
             self.xeps = self.xeps.cuda()
@@ -164,34 +175,58 @@ class Dynamics(nn.Module):
             self.cuda()
 
     @torch.no_grad()
-    def init_weights(self, method='xavier_uniform'):
+    def init_weights(
+            self,
+            method='xavier_uniform',
+            rval: Optional[float] = None,
+            constant: Optional[float] = None,
+            bias: Optional[float] = None,
+            min: Optional[float] = None,
+            max: Optional[float] = None,
+            mean: Optional[float] = None,
+            std: Optional[float] = None,
+    ):
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
         for m in self.modules():
             if isinstance(m, nn.Linear):
-                if method == 'zeros':
-                    nn.init.zeros_(m.weight)
-                elif method == 'xavier_uniform':
-                    nn.init.xavier_uniform_(m.weight)
-                elif method == 'kaiming_uniform':
-                    nn.init.kaiming_uniform_(m.weight)
-                elif method == 'xavier_normal':
-                    nn.init.xavier_normal_(m.weight)
-                elif method == 'kaiming_normal':
-                    nn.init.kaiming_normal_(m.weight)
+                if bias is not None:
+                    if m.bias is not None:
+                        nn.init.constant_(m.bias.data, bias)
+                if constant is not None:
+                    nn.init.constant_(m.weight, constant)
                 else:
-                    try:
-                        method = getattr(nn.init, method)
-                        if method is not None and callable(method):
-                            method(m.weight)
-                    except NameError:
-                        log.warning('. '.join([
-                            f'Unable to initialize weights with {method}',
-                            'Falling back to default: xavier_uniform_'
-                        ]))
-                        nn.init.xavier_uniform_(m.weight)
+                    if method == 'zeros':
+                        nn.init.zeros_(m.weight.data)
+                    elif method == 'uniform':
+                        a = 0.0 if min is None else min
+                        b = 1.0 if max is None else max
+                        nn.init.uniform_(m.weight.data, a=a, b=b)
+                    elif method == 'normal':
+                        mean = 0.0 if mean is None else mean
+                        std = 1.0 if std is None else std
+                        nn.init.normal_(m.weight.data, mean=mean, std=std)
+                    elif method == 'xavier_uniform':
+                        nn.init.xavier_uniform_(m.weight.data)
+                    elif method == 'kaiming_uniform':
+                        nn.init.kaiming_uniform_(m.weight.data)
+                    elif method == 'xavier_normal':
+                        nn.init.xavier_normal_(m.weight.data)
+                    elif method == 'kaiming_normal':
+                        nn.init.kaiming_normal_(m.weight.data)
+                    else:
+                        try:
+                            method = getattr(nn.init, method)
+                            if method is not None and callable(method):
+                                method(m.weight)
+                        except NameError:
+                            log.warning('. '.join([
+                                f'Unable to initialize weights with {method}',
+                                'Falling back to default: xavier_uniform_'
+                            ]))
+                            nn.init.xavier_uniform_(m.weight)
 
     def save(self, outdir: os.PathLike) -> None:
         netdir = Path(outdir).joinpath('networks')
@@ -335,6 +370,8 @@ class Dynamics(nn.Module):
         ma = ma_[:, None]
         mr = mr_[:, None]
 
+        # NOTE: We construct output states by combining
+        #   output = (acc_mask * proposed) + (reject_mask * init)
         v_out = ma * data['proposed'].v + mr * data['init'].v
         x_out = ma * data['proposed'].x + mr * data['init'].x
 
@@ -351,7 +388,7 @@ class Dynamics(nn.Module):
             'mc_states': mc_states,
         })
 
-        return x_out.detach(), data['metrics']
+        return x_out, data['metrics']
 
     def apply_transition(
             self,
@@ -421,7 +458,7 @@ class Dynamics(nn.Module):
         # metrics.update(**{f'fwd/{key}': val for key, val in mfwd.items()})
         # metrics.update(**{f'bwd/{key}': val for key, val in mbwd.items()})
 
-        return x_out.detach(), metrics
+        return x_out, metrics
 
     def random_state(self, beta: float) -> State:
         x = self.g.random(list(self.xshape)).to(self.device)
@@ -605,9 +642,9 @@ class Dynamics(nn.Module):
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
                 # Reverse step count to correctly order metrics at each step
-                step = self.config.nleapfrog - step - 1
+                step_r = self.config.nleapfrog - step - 1
                 history = self.update_history(
-                    self.get_metrics(state_, sumlogdet, step=step),
+                    self.get_metrics(state_, sumlogdet, step=step_r),
                     history=history,
                 )
 
