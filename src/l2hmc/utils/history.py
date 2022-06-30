@@ -56,15 +56,22 @@ class BaseHistory:
     def __init__(self, steps: Optional[Steps] = None):
         self.steps = steps
         self.history = {}
-        nera = 1 if steps is None else steps.nera
-        self.era_metrics = {str(era): {} for era in range(nera)}
+        self.era_metrics = {}
+        if steps is not None:
+            self.era_metrics = {
+                str(era): {} for era in range(steps.nera)
+            }
+        # nera = 1 if steps is None else steps.nera
+        # self.era_metrics = {str(era): {} for era in range(nera)}
 
     def era_summary(self, era) -> str:
-        emetrics = self.era_metrics[str(era)]
-        return ', '.join([
-            f'{k}={np.mean(v):<5.4f}' for k, v in emetrics.items()
-            if k not in ['era', 'epoch']
-        ])
+        emetrics = self.era_metrics.get(str(era), None)
+        if emetrics is not None:
+            return ', '.join([
+                f'{k}={np.mean(v):<5.4f}' for k, v in emetrics.items()
+                if k not in ['era', 'epoch']
+            ])
+        raise ValueError
 
     def _update(self, key: str, val: TensorLike) -> float:
         if val is None:
@@ -111,6 +118,9 @@ class BaseHistory:
 
             if avg is not None:
                 avgs[key] = avg
+                if str(era) not in self.era_metrics.keys():
+                    self.era_metrics[str(era)] = {}
+
                 try:
                     self.era_metrics[str(era)][key].append(avg)
                 except KeyError:

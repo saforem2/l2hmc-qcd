@@ -61,27 +61,21 @@ def get_console(width: Optional[int] = None, *args, **kwargs) -> Console:
         *args,
         **kwargs)
     if width is None:
-        columns = int(os.environ.get('COLUMNS', '235'))
-        # if not interactive:
-        #     size = shutil.get_terminal_size()
-        #     columns = size.columns
-        # else:
-        #     columns = 120
+        columns = os.environ.get('COLUMNS', os.environ.get('WIDTH', None))
+        if columns is None:
+            if not interactive:
+                size = shutil.get_terminal_size()
+                columns = size.columns
+            else:
+                columns = 120
+        else:
+            columns = int(columns)
 
-        console.width = columns
-        console._width = columns
+        width = int(max(columns, 120))
+        console.width = width
+        console._width = width
 
     return console
-
-
-# console = Console(record=False,
-#                   color_system='truecolor',
-#                   log_path=False,
-#                   force_jupyter=is_interactive(),
-#                   width=WIDTH)
-
-# console.width = max(WIDTH, int(os.environ.get('COLUMNS', 150)))
-# assert console.width == WIDTH == os.environ['COLUMNS']
 
 
 def make_layout(ratio: int = 4, visible: bool = True) -> Layout:
@@ -190,8 +184,18 @@ def build_layout(
     }
 
 
-def add_columns(avgs: dict, table: Table) -> Table:
+def add_columns(
+    avgs: dict,
+    table: Table,
+    skip: Optional[str | list[str]] = None,
+    keep: Optional[str | list[str]] = None,
+) -> Table:
     for key in avgs.keys():
+        if skip is not None and key in skip:
+            continue
+        if keep is not None and key not in keep:
+            continue
+
         if key == 'loss':
             table.add_column(str(key),
                              justify='center',
@@ -260,8 +264,8 @@ def print_config(
         console = rich.console.Console(file=f)
         console.print(tree)
 
-    rich.print(tree)
     # log.info(tree)
 
     # with outfile.open('w') as f:
     #     rich.print(tree, file=f)
+    rich.print(tree)
