@@ -77,6 +77,27 @@ def norm2(x: Tensor, axis=[-2, -1]) -> Tensor:
     return tf.math.reduce_sum(n, axis=axis)
 
 
+def norm2_new(
+        x: Tensor,
+        axis: Optional[list[int]] = None,
+        # allreduce: Optional[bool] = True,
+        exclude: Optional[list[int]] = None,
+) -> Tensor:
+    """No reduction if axis is empty"""
+    axis = [-2, -1] if axis is None else axis
+    if x.dtype in [tf.complex64, tf.complex128]:
+        x = tf.abs(x)
+    n = tf.math.square(x)
+    if exclude is None:
+        if len(axis) == 0:
+            return n
+        return tf.math.reduce_sum(n, axis=axis)
+    return tf.math.reduce_sum(
+        n,
+        axis=[i for i in range(len(n.shape)) if i not in exclude]
+    )
+
+
 # Converted from qex/src/maths/matrixFunctions.nim
 # Last two dims in a tensor contain matrices.
 # WARNING: below only works for SU3 for now
@@ -162,7 +183,12 @@ def rsqrtPHM3(x: Tensor) -> Tensor:
     c0_ = tf.reshape(c0, c0.shape + [1, 1])
     c1_ = tf.reshape(c1, c1.shape + [1, 1])
     c2_ = tf.reshape(c2, c2.shape + [1, 1])
-    term0 = tf.cast(c0_ * tf.eye(3, batch_shape=[1] * len(c0.shape)), x.dtype)
+    e3 = tf.eye(3, batch_shape=[1] * len(c0.shape), dtype=c0_.dtype)
+    term0 = tf.cast(c0_ * e3, x.dtype)
+    # term0 = tf.cast(
+    #     c0_ * tf.eye(3, batch_shape=[1] * len(c0.shape)),
+    #     x.dtype
+    # )
     term1 = tf.multiply(x, tf.cast(c1_, x.dtype))
     term2 = tf.multiply(x, tf.cast(c2_, x.dtype))
     return term0 + term1 + term2
@@ -177,15 +203,6 @@ def projectU(x: Tensor) -> Tensor:
 
 
 def projectSU(x: Tensor) -> Tensor:
-    nc = tf.constant(x.shape[-1], TF_FLOAT)
-    m = projectU(x)
-    d = tf.linalg.det(m)
-    # tmp = tf.math.atan2(tf.math.imag(d), tf.math.real(d))
-    p = (1.0 / (-nc)) * tf.math.atan2(tf.math.imag(d), tf.math.real(d))
-    return m * tf.reshape(
-        tf.complex(tf.math.cos(p), tf.math.sin(p)),
-        p.shape + [1, 1]
-    )
     # p = tmp * tf.constant(-1.0) / nc
     # p = -(1.0 / nc) * tf.math.atan2(tf.math.imag(d), tf.math.real(d))
     # p = tf.math.multiply(tf.math.negative(tf.constant(1.0) / nc),
@@ -193,6 +210,32 @@ def projectSU(x: Tensor) -> Tensor:
     # pr = tf.math.real(p)
     # pi = tf.math.imag(p)
     # p_ = tf.reshape(tf.dtypes.complex(pr, pi), p.shape + [1, 1])
+    nc = tf.constant(x.shape[-1], TF_FLOAT)
+    m = projectU(x)
+    d = tf.linalg.det(m)
+    # tmp = tf.math.atan2(tf.math.imag(d), tf.math.real(d))
+    const = (1.0 / (-nc))
+    at2 = tf.cast(
+        tf.math.atan2(
+            tf.math.imag(d),
+            tf.math.real(d),
+        ),
+        TF_FLOAT
+    )
+    p = const * at2
+    # p = (1.0 / (-nc)) * tf.math.atan2(tf.math.imag(d), tf.math.real(d))
+    y = m * tf.cast(
+        tf.reshape(
+            tf.complex(
+                tf.math.cos(p),
+                tf.math.sin(p)
+            ),
+            p.shape + [1, 1]
+        ),
+        m.dtype
+    )
+
+    return tf.cast(y, TF_COMPLEX)
 
 
 def projectTAH(x: Tensor) -> Tensor:
@@ -228,9 +271,18 @@ def checkSU(x: Tensor) -> tuple[Tensor, Tensor]:
     nc = tf.constant(x.shape[-1], dtype=TF_FLOAT)
     d = norm2(tf.linalg.matmul(x, x, adjoint_a=True) - eyeOf(x))
     d += norm2(-1 + tf.linalg.det(x), axis=[])  # type: ignore
-    a = tf.math.reduce_mean(d, axis=range(1, len(d.shape)))
-    b = tf.math.reduce_max(d, axis=range(1, len(d.shape)))
-    c = 2.0 * (nc * nc + 1)
+    a = tf.cast(
+        tf.math.reduce_mean(d, axis=range(1, len(d.shape))),
+        TF_FLOAT
+    )
+    b = tf.cast(
+        tf.math.reduce_max(d, axis=range(1, len(d.shape))),
+        TF_FLOAT
+    )
+    c = tf.cast(
+        2.0 * (nc * nc + 1),
+        TF_FLOAT
+    )
     return tf.math.sqrt(a / c), tf.math.sqrt(b / c)
 
 
@@ -271,13 +323,38 @@ def vec_to_su3(v: Tensor) -> Tensor:
     """
     s3 = 0.577350269189625751  # sqrt(1/3)
     c = -0.5
-    zero = tf.zeros(v[..., 0].shape, dtype=v[..., 0].dtype)  # type:ignore
-    x01 = c * tf.dtypes.complex(v[..., 1], v[..., 0])        # type:ignore
-    x02 = c * tf.dtypes.complex(v[..., 4], v[..., 3])        # type:ignore
-    x12 = c * tf.dtypes.complex(v[..., 6], v[..., 5])        # type:ignore
-    x2i = s3 * v[..., 7]                                     # type:ignore
-    x0i = c * (x2i + v[..., 2])                              # type:ignore
-    x1i = c * (x2i - v[..., 2])                              # type:ignore
+    # vT = v.T
+    # assert vT is not None and len(vT.shape) > 0
+    # vT = {str(idx): v.T for idx, v in enumerate(vT)}
+    # zero = tf.zeros(vT['0'].shape, dtype=vt['0'].dtype)
+    # zero = tf.zeros(vT['0'].shape, dtype=vT[0].dtype)
+    # x01 = c * tf.dtypes.complex(vT[1].T, vT[0])
+    # x02 = c * tf.dtypes.complex()
+    assert len(v.shape) > 1
+    vT = tf.transpose(v)
+    v0 = vT[0].T
+    v1 = vT[1].T
+    v2 = vT[2].T
+    v3 = vT[3].T
+    v4 = vT[4].T
+    v5 = vT[5].T
+    v6 = vT[6].T
+    v7 = vT[7].T
+    zero = tf.zeros(v0.shape, dtype=v0.dtype)
+    x01 = c * tf.dtypes.complex(v1, v0)
+    x02 = c * tf.dtypes.complex(v4, v3)
+    x12 = c * tf.dtypes.complex(v6, v5)
+    x2i = s3 * v7
+    x0i = c * (x2i + v2)
+    x1i = c * (x2i - v2)
+
+    # zero = tf.zeros(v[..., 0].shape, dtype=v[..., 0].dtype)
+    # x01 = c * tf.dtypes.complex(v[..., 1], v[..., 0])        # type:ignore
+    # x02 = c * tf.dtypes.complex(v[..., 4], v[..., 3])        # type:ignore
+    # x12 = c * tf.dtypes.complex(v[..., 6], v[..., 5])        # type:ignore
+    # x2i = s3 * v[..., 7]                                     # type:ignore
+    # x0i = c * (x2i + v[..., 2])                              # type:ignore
+    # x1i = c * (x2i - v[..., 2])                              # type:ignore
 
     def neg_conj(x: Tensor) -> Tensor:
         return tf.math.negative(tf.math.conj(x))
@@ -322,33 +399,32 @@ def su3fabc(v: tf.Tensor) -> Tensor:
     [T^a, T^b] = f^abc T^c
     """
     vT = tf.transpose(v)
-    a01 = f012 * vT[2]
-
-    a01 = f012 * vT[2]
+    a01 = (+f012) * vT[2]
+    a01 = (+f012) * vT[2]
     a02 = (-f012) * vT[1]
-    a03 = f036 * vT[6]
-    a04 = f045 * vT[5]
+    a03 = (+f036) * vT[6]
+    a04 = (+f045) * vT[5]
     a05 = (-f045) * vT[4]
     a06 = (-f036) * vT[3]
-    a12 =   f012  * vT[0]
-    a13 =   f135  * vT[5]
-    a14 =   f146  * vT[6]
+    a12 = (+f012) * vT[0]
+    a13 = (+f135) * vT[5]
+    a14 = (+f146) * vT[6]
     a15 = (-f135) * vT[3]
     a16 = (-f146) * vT[4]
-    a23 =   f234  * vT[4]
+    a23 = (+f234) * vT[4]
     a24 = (-f234) * vT[3]
-    a25 =   f256  * vT[6]
+    a25 = (+f256) * vT[6]
     a26 = (-f256) * vT[5]
-    a34 =   f347  * vT[7] + f234 * vT[2]
-    a35 =   f135  * vT[1]
-    a36 =   f036  * vT[0]
+    a34 = (+f347) * vT[7] + f234 * vT[2]
+    a35 = (+f135) * vT[1]
+    a36 = (+f036) * vT[0]
     a37 = (-f347) * vT[4]
-    a45 =   f045  * vT[0]
-    a46 =   f146  * vT[1]
-    a47 =   f347  * vT[3]
-    a56 =   f567  * vT[7] + f256 * vT[2]
+    a45 = (+f045) * vT[0]
+    a46 = (+f146) * vT[1]
+    a47 = (+f347) * vT[3]
+    a56 = (+f567) * vT[7] + f256 * vT[2]
     a57 = (-f567) * vT[6]
-    a67 =   f567  * vT[5]
+    a67 = (+f567) * vT[5]
     zii = tf.zeros(vT[0].shape, dtype=vT[0].dtype)
     return tf.stack([
         tf.stack([+zii, -a01, -a02, -a03, -a04, -a05, -a06, +zii], -1),
@@ -360,7 +436,6 @@ def su3fabc(v: tf.Tensor) -> Tensor:
         tf.stack([+a06, +a16, +a26, +a36, +a46, +a56, +zii, -a67], -1),
         tf.stack([+zii, +zii, +zii, +a37, +a47, +a57, +a67, +zii], -1),
     ], -1).T
-
 
 
 def su3dabc(v: Tensor) -> Tensor:
@@ -421,7 +496,13 @@ def SU3Ad(x: Tensor) -> Tensor:
     AdX^bc = - 2 tr[T^b X T^c X†] = - 2 tr[T^c X† T^b X]
     """
     y = tf.expand_dims(x, -3)
-    return su3_to_vec(tf.linalg.matmul(y, tf.linalg.matmul(su3gen(), y), adjoint_a=True))
+    return su3_to_vec(
+        tf.linalg.matmul(
+            y, tf.linalg.matmul(su3gen(), y),
+            adjoint_a=True
+        )
+    )
+
 
 def su3ad(x: Tensor) -> Tensor:
     """
@@ -433,29 +514,86 @@ def su3ad(x: Tensor) -> Tensor:
 
 def su3adapply(adx: Tensor, y: Tensor) -> Tensor:
     """
-    adX(Y) = [X, Y]
-    adX(T^b) = T^a adX^{ab} = - T^a f^{abc} X^c = X^c f^{cba} T^a = X^c [T^c, T^b] = [X, T^b]
-    adX(Y) = T^a adX^{ab} Y^b = T^a adX^{ab} (-2) tr{T^b Y}
+    Note:
+        adX(Y) = [X, Y]
+        adX(T^b) = T^a adX^{ab}
+                 = - T^a f^{abc} X^c
+                 = X^c f^{cba} T^a
+                 = X^c [T^c, T^b]
+                 = [X, T^b]
+    and
+        adX(Y) = T^a adX^{ab} Y^b
+               = T^a adX^{ab} (-2) tr{T^b Y}
     """
     return vec_to_su3(tf.linalg.matvec(adx, su3_to_vec(y)))
 
 
 def gellMann() -> Tensor:
     s3 = 0.57735026918962576451    # sqrt(1/3)
-    zero3 = tf.zeros([3,3], dtype=tf.float64)
+    zero3 = tf.zeros([3, 3], dtype=tf.float64)
     return tf.stack([
-        tf.dtypes.complex(tf.reshape(tf.constant([0,1,0,1,0,0,0,0,0],dtype=tf.float64),[3,3]), zero3),
-        tf.dtypes.complex(zero3, tf.reshape(tf.constant([0,-1,0,1,0,0,0,0,0],dtype=tf.float64),[3,3])),
-        tf.dtypes.complex(tf.reshape(tf.constant([1,0,0,0,-1,0,0,0,0],dtype=tf.float64),[3,3]), zero3),
-        tf.dtypes.complex(tf.reshape(tf.constant([0,0,1,0,0,0,1,0,0],dtype=tf.float64),[3,3]), zero3),
-        tf.dtypes.complex(zero3, tf.reshape(tf.constant([0,0,-1,0,0,0,1,0,0],dtype=tf.float64),[3,3])),
-        tf.dtypes.complex(tf.reshape(tf.constant([0,0,0,0,0,1,0,1,0],dtype=tf.float64),[3,3]), zero3),
-        tf.dtypes.complex(zero3, tf.reshape(tf.constant([0,0,0,0,0,-1,0,1,0],dtype=tf.float64),[3,3])),
-        s3*tf.dtypes.complex(tf.reshape(tf.constant([1,0,0,0,1,0,0,0,-2],dtype=tf.float64),[3,3]), zero3)
+        tf.dtypes.complex(
+            tf.reshape(
+                tf.constant([0, 1, 0, 1, 0, 0, 0, 0, 0], dtype=tf.float64),
+                [3, 3]
+            ),
+            zero3
+        ),
+        tf.dtypes.complex(
+            zero3,
+            tf.reshape(
+                tf.constant([0, -1, 0, 1, 0, 0, 0, 0, 0], dtype=tf.float64),
+                [3, 3]
+            )
+        ),
+        tf.dtypes.complex(
+            tf.reshape(
+                tf.constant([1, 0, 0, 0, -1, 0, 0, 0, 0], dtype=tf.float64),
+                [3, 3]
+            ),
+            zero3
+        ),
+        tf.dtypes.complex(
+            tf.reshape(
+                tf.constant([0, 0, 1, 0, 0, 0, 1, 0, 0], dtype=tf.float64),
+                [3, 3]
+            ),
+            zero3
+        ),
+        tf.dtypes.complex(
+            zero3,
+            tf.reshape(
+                tf.constant([0, 0, -1, 0, 0, 0, 1, 0, 0], dtype=tf.float64),
+                [3, 3]
+            )
+        ),
+        tf.dtypes.complex(
+            tf.reshape(
+                tf.constant([0, 0, 0, 0, 0, 1, 0, 1, 0], dtype=tf.float64),
+                [3, 3]
+            ),
+            zero3
+        ),
+        tf.dtypes.complex(
+            zero3,
+            tf.reshape(
+                tf.constant([0, 0, 0, 0, 0, -1, 0, 1, 0], dtype=tf.float64),
+                [3, 3]
+            )
+        ),
+        s3*tf.dtypes.complex(
+            tf.reshape(
+                tf.constant([1, 0, 0, 0, 1, 0, 0, 0, -2], dtype=tf.float64),
+                [3, 3]
+            ),
+            zero3
+        )
     ])
 
 
 _su3gen_private_global_cache_ = None
+
+
 def su3gen() -> Tensor:
     """
     T[a,i,j] = T^a_ij
@@ -463,9 +601,11 @@ def su3gen() -> Tensor:
     """
     global _su3gen_private_global_cache_
     if _su3gen_private_global_cache_ is None:
-        _su3gen_private_global_cache_ = tf.dtypes.complex(tf.constant(0,dtype=tf.float64),tf.constant(-0.5,dtype=tf.float64)) * gellMann()
+        _su3gen_private_global_cache_ = tf.dtypes.complex(
+            tf.constant(0, dtype=tf.float64),
+            tf.constant(-0.5, dtype=tf.float64)
+        ) * gellMann()
     return _su3gen_private_global_cache_
-
 
 
 def diffprojectTAH(m: Tensor, p: Optional[Tensor] = None) -> Tensor:
@@ -487,10 +627,17 @@ def diffprojectTAH(m: Tensor, p: Optional[Tensor] = None) -> Tensor:
     mhalfadP = su3ad(tf.constant(-0.5) * p)
     Ms = m+tf.linalg.adjoint(m)
     trMs = tf.math.real(tf.linalg.trace(Ms))/6.0
-    I = tf.dtypes.complex(tf.constant(0,dtype=tf.float64), tf.constant(1,dtype=tf.float64))
-    # return su3dabc(0.25*su3_to_vec(I*Ms)) + tf.reshape(trMs,trMs.shape+[1,1])*eyeOf(mhalfadP) + mhalfadP
+    eye = tf.dtypes.complex(
+        tf.constant(0, dtype=tf.float64),
+        tf.constant(1, dtype=tf.float64)
+    )
+    # return (
+    #     su3dabc(0.25*su3_to_vec(I*Ms))
+    #     + tf.reshape(trMs,trMs.shape+[1,1])*eyeOf(mhalfadP)
+    #     + mhalfadP
+    # )
     return (
-        su3dabc(tf.constant(0.25) * su3_to_vec(I * Ms)) 
+        su3dabc(tf.constant(0.25) * su3_to_vec(eye * Ms))
         + tf.reshape(trMs, trMs.shape + [1, 1]) * eyeOf(mhalfadP)
         + mhalfadP
     )
@@ -503,7 +650,12 @@ def diffprojectTAHCross(
         p: Optional[Tensor] = None
 ) -> Tensor:
     """
-    returns R^ac = ∇_c p^a = ∇_c projectTAH(X Y)^a = - ∇_c ∂_a tr[X Y + Y† X†], where M = X Y
+    returns
+        R^ac = ∇_c p^a
+             = ∇_c projectTAH(X Y)^a
+             = - ∇_c ∂_a tr[X Y + Y† X†],
+    where M = X Y
+
     The derivatives ∂ is on X and ∇ is on Y.
     ∇_c P^a = - 2 ReTr[T^a X T^c Y]
             = - tr[T^a (X T^c X† X Y + Y† X† X T^c X†)]
@@ -511,15 +663,24 @@ def diffprojectTAHCross(
     """
     if Adx is None:
         if x is None:
-            raise ValueError(f'diffprojectTAHCross must either provide x or Adx.')
+            raise ValueError(
+                'diffprojectTAHCross must either provide x or Adx.'
+            )
         Adx = SU3Ad(x)
     return tf.linalg.matmul(diffprojectTAH(m, p), Adx)
 
 
 def diffexp(adX: Tensor, order: int = 13) -> Tensor:
     """
-    return J(X) = (1-exp{-adX})/adX = Σ_{k=0}^{∞} 1/(k+1)! (-adX)^k  upto k=order
-    [exp{-X(t)} d/dt exp{X(t)}]_ij = [J(X) d/dt X(t)]_ij = T^a_ij J(X)^ab (-2) T^b_kl [d/dt X(t)]_lk
+    return
+        J(X) = (1-exp{-adX})/adX
+             = Σ_{k=0}^{∞} 1/(k+1)! (-adX)^k
+    up to k=order
+
+    [exp{-X(t)} d/dt exp{X(t)}]_ij
+        = [J(X) d/dt X(t)]_ij
+        = T^a_ij J(X)^ab (-2) T^b_kl [d/dt X(t)]_lk
+
     J(X) = 1 + 1/2 (-adX) (1 + 1/3 (-adX) (1 + 1/4 (-adX) (1 + ...)))
     J(x) ∂_t x
         = T^a J(x)^ab (-2) tr[T^b ∂_t x]
@@ -527,7 +688,8 @@ def diffexp(adX: Tensor, order: int = 13) -> Tensor:
     J(s x) ∂_t x = exp(-s x) ∂_t exp(s x)
     ∂_s J(s x) ∂_t x
         = - exp(-s x) x ∂_t exp(s x) + exp(-s x) ∂_t x exp(s x)
-        = - exp(-s x) x ∂_t exp(s x) + exp(-s x) [∂_t x] exp(s x) + exp(-s x) x ∂_t exp(s x)
+        = (- exp(-s x) x ∂_t exp(s x) + exp(-s x) [∂_t x] exp(s x)
+           + exp(-s x) x ∂_t exp(s x))
         = exp(-s x) [∂_t x] exp(s x)
         = exp(-s adx) ∂_t x
         = Σ_k 1/k! (-1)^k s^k (adx)^k ∂_t x
@@ -540,7 +702,7 @@ def diffexp(adX: Tensor, order: int = 13) -> Tensor:
     eye = eyeOf(m)
     x = eye + 1.0 / (order + 1.0) * m
     for i in tf.range(order, 1, -1):
-        x = eye + 1.0 / tf.cast(i,m.dtype)*tf.linalg.matmul(m,x)
+        x = eye + 1.0 / tf.cast(i, m.dtype)*tf.linalg.matmul(m, x)
     return x
 
 
@@ -569,6 +731,7 @@ def SU3GradientTF(
 
     return y, d
 
+
 def SU3GradientTFMat(f: Callable, x: Tensor) -> tuple[Tensor, Tensor]:
     """
     Compute gradient using TensorFlow GradientTape.
@@ -589,12 +752,19 @@ def SU3GradientTFMat(f: Callable, x: Tensor) -> tuple[Tensor, Tensor]:
     return r, d
 
 
-def SU3JacobianTF(f: Callable, x: Tensor, is_SU3: bool = True) -> tuple[Tensor, Tensor]:
+def SU3JacobianTF(
+        f: Callable,
+        x: Tensor,
+        is_SU3: bool = True
+) -> tuple[Tensor, Tensor]:
     """
-    Compute Jacobian using TensorFlow GradientTape with real vector derivatives.
+    Compute Jacobian using TensorFlow GradientTape with real vector
+    derivatives.
     Note for TensorFlow,
         ∇_z f = (∂_z f + ∂_z f†)†
-    In order to have the proper gradient info, we always project the result to su(3).
+
+    In order to have the proper gradient info, we always project the result to
+    su(3).
     If is_SU3 is True, we multiply the result by its adjoint before projecting.
     Otherwise we assume the result is su3 and project it directly.
     The input x must be in SU(3).
@@ -619,8 +789,8 @@ def SU3JacobianTF(f: Callable, x: Tensor, is_SU3: bool = True) -> tuple[Tensor, 
             z = Z
         z = su3_to_vec(z)
         # z = su3vec(z)
-    tj = t.jacobian(z,v,experimental_use_pfor=False)
-    return Z,tj
+    tj = t.jacobian(z, v, experimental_use_pfor=False)
+    return Z, tj
 
 
 def SU3JacobianTFMat(f, x, is_SU3=True):
@@ -628,7 +798,10 @@ def SU3JacobianTFMat(f, x, is_SU3=True):
     Compute Jacobian using TensorFlow GradientTape with matrix derivatives.
     Note for TensorFlow,
         ∇_z f = (∂_z f + ∂_z f†)†
-    In order to have the proper gradient info, we always project the result to su(3).
+
+    In order to have the proper gradient info,
+    we always project the result to su(3).
+
     If is_SU3 is True, we multiply the result by its adjoint before projecting.
     Otherwise we assume the result is su3 and project it directly.
     The input x must be in SU(3).
@@ -645,13 +818,18 @@ def SU3JacobianTFMat(f, x, is_SU3=True):
         t.watch(x)
         Z = f(x)
         if is_SU3:
-            z = tf.linalg.matmul(Z,tf.stop_gradient(Z),adjoint_b=True)
+            z = tf.linalg.matmul(
+                Z, tf.stop_gradient(Z), adjoint_b=True
+            )
         else:
             z = Z
         z = tf.cast(su3_to_vec(z), TF_COMPLEX)
         # z = tf.cast(su3vec(z), tf.complex128)
     jzx = t.jacobian(z, x, experimental_use_pfor=False)
-    tj = tf.math.real(tf.einsum('aik,kj,bij->ba', su3gen(), x, tf.math.conj(jzx)))
+    tj = tf.math.real(
+        tf.einsum(
+            'aik,kj,bij->ba', su3gen(),
+            x, tf.math.conj(jzx)
+        )
+    )
     return Z, tj
-
-

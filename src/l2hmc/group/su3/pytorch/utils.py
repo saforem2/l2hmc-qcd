@@ -212,8 +212,12 @@ def checkU(x: Tensor) -> tuple[Tensor, Tensor]:
     """Returns the average and maximum of the sum of the deviations of X†X"""
     nc = torch.tensor(x.shape[-1]).to(x.dtype)
     d = norm2(torch.matmul(x.adjoint(), x) - eyeOf(x))
-    a = d.mean(*range(1, len(d.shape)))
-    b = d.max(*range(1, len(d.shape)))
+    d_ = d.flatten(1)
+    a = d_.mean(-1)
+    b, _ = d_.max(-1)
+    # a = d.mean(*range(1, len(d.shape)))
+    # b, _ = d.
+    # b = d.max(*range(1, len(d.shape)))
     c = 2 * (nc * nc + 1)
 
     return (a / c).sqrt(), (b / c).sqrt()
@@ -228,8 +232,11 @@ def checkSU(x: Tensor) -> tuple[Tensor, Tensor]:
     nc = torch.tensor(x.shape[-1]).to(x.dtype)
     d = norm2(x.adjoint() @ x - eyeOf(x))
     d += norm2(-1 + x.det(), axis=[])
-    a = d.mean(*range(1, len(d.shape)))
-    b = d.max(*range(1, len(d.shape)))
+    d_ = d.flatten(1)
+    a = d_.mean(-1)
+    b, _ = d_.max(-1)
+    # a = d.mean(dim=tuple(range(1, len(d.shape))))
+    # b = d.max(dim=tuple(range(1, len(d.shape))))
     c = 2 * (nc * nc + 1)
 
     return (a / c).sqrt(), (b / c).sqrt()
