@@ -12,6 +12,8 @@ from typing import Any, Optional
 
 import h5py
 import joblib
+
+import numpy as np
 import matplotlib.pyplot as plt
 from omegaconf import DictConfig
 import pandas as pd
@@ -225,6 +227,46 @@ def save_figure(
     fig.savefig(svgfile.as_posix(), transparent=True, bbox_inches='tight')
     fig.savefig(pngfile.as_posix(), transparent=True, bbox_inches='tight')
     return fig
+
+
+def make_dataset(metrics: dict) -> xr.Dataset:
+    dset = {}
+    for key, val in metrics.items():
+        if isinstance(val, list):
+            import torch
+            import tensorflow as tf
+            if isinstance(val[0], torch.Tensor):
+                val = torch.stack(val).detach().numpy()
+            elif isinstance(val[0], tf.Tensor):
+                import tensorflow as tf
+                val = tf.stack(val).numpy()
+
+        assert isinstance(val, np.ndarray)
+        assert len(val.shape) in [1, 2, 3]
+        dims = ()
+        coords = ()
+        if len(val.shape) == 1:
+            ndraws = val.shape[0]
+            dims = ['draw']
+            coords = (np.arange(len(val)))
+        elif len(val.shape) == 2:
+            val = val.T
+            nchains, ndraws = val.shape
+            dims = ('chain', 'draw')
+            coords = (np.arange(nchains), np.arange(ndraws))
+        elif len(val.shape) == 3:
+            val = val.T
+            nchains, nlf, ndraws = val.shape
+            dims = ('chain', 'leapfrog', 'draw')
+            coords = (np.arange(nchains), np.arange(nlf), np.arange(ndraws))
+        else:
+            print(f'val.shape: {val.shape}')
+            raise ValueError('Invalid shape encountered')
+
+        assert coords is not None and dims is not None
+        dset[key] = xr.DataArray(val, dims=dims, coords=tuple(coords))
+
+    return xr.Dataset(dset)
 
 
 def plot_dataset(
