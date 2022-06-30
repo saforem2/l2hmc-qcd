@@ -42,13 +42,18 @@ class Experiment(BaseExperiment):
         #     assert isinstance(self.config, ExperimentConfig)
 
     def visualize_model(self) -> None:
-        state = self.dynamics.random_state(1.)
-        x = self.dynamics.flatten(state.x)
-        v = self.dynamics.flatten(state.v)
-        _ = self.dynamics._call_vnet(0, (x, v), training=True)
-        _ = self.dynamics._call_xnet(0, (x, v), first=True, training=True)
-        vnet = self.dynamics._get_vnet(0)
-        xnet = self.dynamics._get_xnet(0, first=True)
+        state = self.trainer.dynamics.random_state(1.)
+        x = self.trainer.dynamics.flatten(state.x)
+        v = self.trainer.dynamics.flatten(state.v)
+        _ = self.trainer.dynamics._call_vnet(0, (x, v), training=True)
+        _ = self.trainer.dynamics._call_xnet(
+            0,
+            (x, v),
+            first=True,
+            training=True
+        )
+        vnet = self.trainer.dynamics._get_vnet(0)
+        xnet = self.trainer.dynamics._get_xnet(0, first=True)
 
         vdot = tf.keras.utils.model_to_dot(vnet,
                                            show_shapes=True,
@@ -62,22 +67,6 @@ class Experiment(BaseExperiment):
         xdot.write_png('xnet.png')
         vdot.write_png('vnet.png')
 
-    def build_lattice(self):
-        group = str(self.config.dynamics.group).upper()
-        lat_args = {
-            'nchains': self.config.dynamics.nchains,
-            'shape': list(self.config.dynamics.latvolume),
-        }
-        if group == 'U1':
-            return LatticeU1(**lat_args)
-        if group == 'SU3':
-            c1 = self.config.c1 if self.config.c1 is not None else 0.0
-            return LatticeSU3(c1=c1, **lat_args)
-        raise ValueError(
-            'Unexpected value for `dynamics.group`: '
-            f'{self.config.dynamics.group}'
-        )
-
     def update_wandb_config(
             self,
             run_id: Optional[str] = None,
@@ -89,56 +78,12 @@ class Experiment(BaseExperiment):
         # size = 'horovod' if hvd.size() > 1 else 'local'
         self._update_wandb_config(device=device, run_id=run_id)
 
-    def build_dynamics(self, potential_fn: Callable):
-        # assert self.lattice is not None
-        input_spec = self.get_input_spec()
-        net_factory = NetworkFactory(
-            input_spec=input_spec,
-            conv_config=self.config.conv,
-            network_config=self.config.network,
-            net_weights=self.config.net_weights,
-        )
-        return Dynamics(config=self.config.dynamics,
-                        potential_fn=potential_fn,
-                        network_factory=net_factory)
-
-    def build_loss(self, lattice: LatticeU1 | LatticeSU3):
-        # assert (
-        #     self.lattice is not None
-        #     and isinstance(self.lattice, (LatticeU1, LatticeSU3))
-        # )
-        return LatticeLoss(
-            lattice=lattice,
-            loss_config=self.config.loss,
-        )
-
-    def build_optimizer(
-            self,
-            dynamics: Optional[Dynamics] = None  # pyright: ignore type:ignore
-    ) -> None:
-        # TODO: Expand method, re-build LR scheduler, etc
-        # TODO: Replace `LearningRateConfig` with `OptimizerConfig`
-        # TODO: Optionally, break up in to lrScheduler, OptimizerConfig ?
-        return tf.keras.optimizers.Adam(self.config.learning_rate.lr_init)
-
     def build_trainer(
             self,
-            dynamics: Dynamics,
-            optimizer: tf.keras.optimizers.Optimizer,
-            loss_fn: Callable,
+            keep: Optional[str | list[str]] = None,
+            skip: Optional[str | list[str]] = None,
     ) -> Trainer:
-        return Trainer(
-            rank=RANK,
-            loss_fn=loss_fn,
-            dynamics=dynamics,
-            optimizer=optimizer,
-            steps=self.config.steps,
-            lr_config=self.config.learning_rate,
-            # compile=(not self.config.debug_mode),
-            dynamics_config=self.config.dynamics,
-            aux_weight=self.config.loss.aux_weight,
-            schedule=self.config.annealing_schedule,
-        )
+        return Trainer(self.cfg, skip=skip, keep=keep)
 
     def init_wandb(self):
         return super()._init_wandb()
@@ -169,31 +114,20 @@ class Experiment(BaseExperiment):
             self,
             init_wandb: bool = True,
             init_aim: bool = True,
+            keep: Optional[str | list[str]] = None,
+            skip: Optional[str | list[str]] = None,
     ):
         if self._is_built:
-            assert self.lattice is not None
             assert self.trainer is not None
-            assert self.dynamics is not None
-            assert self.optimizer is not None
-            assert self.loss_fn is not None
             return {
-                'lattice': self.lattice,
-                'loss_fn': self.loss_fn,
-                'dynamics': self.dynamics,
-                'optimizer': self.optimizer,
                 'trainer': self.trainer,
                 'run': getattr(self, 'run', None),
                 'arun': getattr(self, 'arun', None),
             }
 
-        self.lattice = self.build_lattice()
-        self.loss_fn = self.build_loss(self.lattice)
-        self.dynamics = self.build_dynamics(potential_fn=self.lattice.action)
-        self.optimizer = self.build_optimizer(dynamics=self.dynamics)
         self.trainer = self.build_trainer(
-            loss_fn=self.loss_fn,
-            dynamics=self.dynamics,
-            optimizer=self.optimizer,
+            keep=keep,
+            skip=skip,
         )
 
         run = None
@@ -217,16 +151,17 @@ class Experiment(BaseExperiment):
 
         self.run = run
         self.arun = arun
-        assert callable(self.loss_fn)
         assert isinstance(self.trainer, Trainer)
-        assert isinstance(self.dynamics, Dynamics)
-        assert isinstance(self.lattice, (LatticeU1, LatticeSU3))
+        assert callable(self.trainer.loss_fn)
+        assert isinstance(self.trainer, Trainer)
+        assert isinstance(self.trainer.dynamics, Dynamics)
+        assert isinstance(self.trainer.lattice, (LatticeU1, LatticeSU3))
         self._is_built = True
         return {
-            'lattice': self.lattice,
-            'loss_fn': self.loss_fn,
-            'dynamics': self.dynamics,
-            'optimizer': self.optimizer,
+            'lattice': self.trainer.lattice,
+            'loss_fn': self.trainer.loss_fn,
+            'dynamics': self.trainer.dynamics,
+            'optimizer': self.trainer.optimizer,
             'trainer': self.trainer,
             'run': self.run,
             'arun': self.arun,

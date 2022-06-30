@@ -12,15 +12,13 @@ from typing import Any, Callable, Optional
 import horovod.torch as hvd
 from omegaconf import DictConfig
 import torch
-from torch import optim
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.experiment.experiment import BaseExperiment
 from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
 from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
-from l2hmc.loss.pytorch.loss import LatticeLoss
-from l2hmc.network.pytorch.network import NetworkFactory
+# from l2hmc.trainers.pytorch.trainer import Trainer
 from l2hmc.trainers.pytorch.trainer import Trainer
 
 log = logging.getLogger(__name__)
@@ -59,22 +57,6 @@ class Experiment(BaseExperiment):
         make_dot(t, params=xparams).render('transl-xnet-0', format='png')
         make_dot(q, params=xparams).render('transf-xnet-0', format='png')
 
-    def build_lattice(self):
-        group = str(self.config.dynamics.group).upper()
-        lat_args = {
-            'nchains': self.config.dynamics.nchains,
-            'shape': list(self.config.dynamics.latvolume),
-        }
-        if group == 'U1':
-            return LatticeU1(**lat_args)
-        if group == 'SU3':
-            c1 = self.config.c1 if self.config.c1 is not None else 0.0
-            return LatticeSU3(c1=c1, **lat_args)
-        raise ValueError(
-            'Unexpected value for `dynamics.group`: '
-            f'{self.config.dynamics.group}'
-        )
-
     def update_wandb_config(
             self,
             run_id: Optional[str] = None,
@@ -90,55 +72,12 @@ class Experiment(BaseExperiment):
         # return Accelerator(log_with=['all'])
         return Accelerator(**kwargs)
 
-    def build_dynamics(self, potential_fn: Callable) -> Dynamics:
-        # assert self.lattice is not None
-        input_spec = self.get_input_spec()
-        net_factory = NetworkFactory(
-            input_spec=input_spec,
-            conv_config=self.config.conv,
-            network_config=self.config.network,
-            net_weights=self.config.net_weights,
-        )
-        return Dynamics(config=self.config.dynamics,
-                        potential_fn=potential_fn,
-                        network_factory=net_factory)
-
-    def build_loss(
-            self,
-            lattice: LatticeU1 | LatticeSU3
-    ) -> LatticeLoss:
-        return LatticeLoss(
-            lattice=lattice,
-            loss_config=self.config.loss,
-        )
-
-    def build_optimizer(
-            self,
-            dynamics: Dynamics
-    ) -> torch.optim.Optimizer:
-        # TODO: Expand method, re-build LR scheduler, etc
-        # TODO: Replace `LearningRateConfig` with `OptimizerConfig`
-        # TODO: Optionally, break up in to lrScheduler, OptimizerConfig ?
-        lr = self.config.learning_rate.lr_init
-        return torch.optim.Adam(dynamics.parameters(), lr=lr)
-
     def build_trainer(
             self,
-            dynamics: Dynamics,
-            optimizer: optim.Optimizer,
-            loss_fn: Callable,
+            keep: Optional[str | list[str]] = None,
+            skip: Optional[str | list[str]] = None,
     ) -> Trainer:
-        return Trainer(
-            loss_fn=loss_fn,
-            dynamics=dynamics,
-            optimizer=optimizer,
-            # accelerator=self.accelerator,
-            steps=self.config.steps,
-            schedule=self.config.annealing_schedule,
-            lr_config=self.config.learning_rate,
-            dynamics_config=self.config.dynamics,
-            aux_weight=self.config.loss.aux_weight,
-        )
+        return Trainer(self.cfg, skip=skip, keep=keep)
 
     def init_wandb(
             self,
@@ -147,8 +86,8 @@ class Experiment(BaseExperiment):
     ):
         run = super()._init_wandb()
         run.watch(
-            self.dynamics if dynamics is None else dynamics,
-            criterion=self.loss_fn if loss_fn is None else loss_fn,
+            self.trainer.dynamics if dynamics is None else dynamics,
+            criterion=self.trainer.loss_fn if loss_fn is None else loss_fn,
             log="all",
             log_graph=True,
         )
@@ -178,19 +117,21 @@ class Experiment(BaseExperiment):
             self,
             init_wandb: bool = True,
             init_aim: bool = True,
+            keep: Optional[str | list[str]] = None,
+            skip: Optional[str | list[str]] = None,
     ):
         if self._is_built:
             # assert self.accelerator is not None
-            assert self.lattice is not None
+            # assert self.lattice is not None
             assert self.trainer is not None
-            assert self.dynamics is not None
-            assert self.optimizer is not None
-            assert self.loss_fn is not None
+            # assert self.dynamics is not None
+            # assert self.optimizer is not None
+            # assert self.loss_fn is not None
             return {
-                'lattice': self.lattice,
-                'loss_fn': self.loss_fn,
-                'dynamics': self.dynamics,
-                'optimizer': self.optimizer,
+                # 'lattice': self.lattice,
+                # 'loss_fn': self.loss_fn,
+                # 'dynamics': self.dynamics,
+                # 'optimizer': self.optimizer,
                 'trainer': self.trainer,
                 'run': getattr(self, 'run', None),
                 'arun': getattr(self, 'arun', None),
@@ -198,38 +139,23 @@ class Experiment(BaseExperiment):
 
         rank = hvd.rank()
         local_rank = hvd.local_rank()
-        # self.rank = self.accelerator.local_process_index
-        # if self.trainer.rank == 0 and init_wandb:
-        # if self.accelerator.is_local_main_process and init_wandb:
-        self.lattice = self.build_lattice()
-        self.loss_fn = self.build_loss(self.lattice)
-        self.dynamics = self.build_dynamics(potential_fn=self.lattice.action)
-        # if SIZE > 1:
-        #     dynamics = DDP(dynamics, device_ids=[RANK], output_device=RANK)
-
-        self.optimizer = self.build_optimizer(dynamics=self.dynamics)
-        # dynamics, optimizer = self.accelerator.prepare(
-        #     dynamics, optimizer
-        # )
-        # accelerator = self.build_accelerator()
         self.trainer = self.build_trainer(
-            loss_fn=self.loss_fn,
-            dynamics=self.dynamics,
-            optimizer=self.optimizer,
+            keep=keep,
+            skip=skip,
         )
         run = None
         arun = None
         if RANK == 0:
             if init_wandb:
                 log.warning(f'Initialize WandB from {rank}:{local_rank}')
-                run = self.init_wandb(dynamics=self.dynamics,
-                                      loss_fn=self.loss_fn)
+                run = self.init_wandb(
+                    dynamics=self.trainer.dynamics,
+                    loss_fn=self.trainer.loss_fn
+                )
             if init_aim:
                 log.warning(f'Initializing Aim from {rank}:{local_rank}')
                 arun = self.init_aim()
                 if arun is not None:
-                    # assert arun is aim.Run
-                    # assert arun is not None and arun is aim.Run
                     if torch.cuda.is_available():
                         arun['ngpus'] = SIZE
                     else:
@@ -237,22 +163,16 @@ class Experiment(BaseExperiment):
 
         self.run = run
         self.arun = arun
-        # self.lattice = lattice
-        # self.loss_fn = loss_fn
-        # self.trainer = trainer
-        # self.dynamics = dynamics
-        # self.optimizer = optimizer
-        # self.accelerator = accelerator
         self._is_built = True
-        assert callable(self.loss_fn)
+        assert callable(self.trainer.loss_fn)
         assert isinstance(self.trainer, Trainer)
-        assert isinstance(self.dynamics, Dynamics)
-        assert isinstance(self.lattice, (LatticeU1, LatticeSU3))
+        assert isinstance(self.trainer.dynamics, Dynamics)
+        assert isinstance(self.trainer.lattice, (LatticeU1, LatticeSU3))
         return {
-            'lattice': self.lattice,
-            'loss_fn': self.loss_fn,
-            'dynamics': self.dynamics,
-            'optimizer': self.optimizer,
+            'lattice': self.trainer.lattice,
+            'loss_fn': self.trainer.loss_fn,
+            'dynamics': self.trainer.dynamics,
+            'optimizer': self.trainer.optimizer,
             'trainer': self.trainer,
             'run': self.run,
             'arun': self.arun,
@@ -260,12 +180,14 @@ class Experiment(BaseExperiment):
 
     def _assert_is_built(self):
         # assert self.accelerator is not None
-        assert self._is_built
-        assert self.lattice is not None
         assert self.trainer is not None
-        assert self.dynamics is not None
-        assert self.optimizer is not None
-        assert self.loss_fn is not None
+        assert isinstance(self.trainer, Trainer)
+        assert self._is_built
+        # assert self.lattice is not None
+        # assert self.trainer is not None
+        # assert self.dynamics is not None
+        # assert self.optimizer is not None
+        # assert self.loss_fn is not None
 
     def train(
         self,

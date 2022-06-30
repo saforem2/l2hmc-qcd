@@ -17,7 +17,7 @@ import xarray as xr
 
 from l2hmc.common import get_timestamp, is_interactive, save_and_analyze_data
 from l2hmc.configs import (
-    AIM_DIR, ExperimentConfig, HERE, InputSpec, OUTDIRS_FILE
+    AIM_DIR, ExperimentConfig, HERE, OUTDIRS_FILE
 )
 from l2hmc.utils.step_timer import StepTimer
 # import l2hmc.utils.plot_helpers as hplt
@@ -57,11 +57,11 @@ class BaseExperiment(ABC):
         self._is_built = False
         self.run = None
         self.arun = None
-        self.lattice = None
-        self.loss_fn = None
+        # self.lattice = None
+        # self.loss_fn = None
         self.trainer = None
-        self.dynamics = None
-        self.optimizer = None
+        # self.dynamics = None
+        # self.optimizer = None
         self._outdir = self.get_outdir()
         super().__init__()
 
@@ -71,47 +71,6 @@ class BaseExperiment(ABC):
 
     @abstractmethod
     def evaluate(self, job_type: str) -> dict:
-        pass
-
-    @abstractmethod
-    def build_lattice(self):
-        pass
-        # group = str(self.config.dynamics.group).upper()
-        # lat_args = {
-        #     'nchains': self.config.dynamics.nchains,
-        #     'shape': list(self.config.dynamics.latvolume),
-        # }
-        # if group == 'U1':
-        #     if self.config.framework in ['tf', 'tensorflow']:
-        #         from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
-        #         return LatticeU1(**lat_args)
-        #     elif self.config.framework in ['pt', 'torch', 'pytorch']:
-        #         from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
-        #         return LatticeU1(**lat_args)
-        # if group == 'SU3':
-        #     c1 = self.config.c1 if self.config.c1 is not None else 0.0
-        #     if self.config.framework in ['tf', 'tensorflow']:
-        #         from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
-        #         return LatticeSU3(c1=c1, **lat_args)
-        #     elif self.config.framework in ['pt', 'torch', 'pytorch']:
-        #         from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
-        #         return LatticeSU3(c1=c1, **lat_args)
-        # raise ValueError(
-        #     'Unexpected value for `dynamics.group`: '
-        #     f'{self.config.dynamics.group}'
-        # )
-
-    @abstractmethod
-    def build_dynamics(self):
-        pass
-
-    @abstractmethod
-    def build_loss(self):
-        pass
-
-    @abstractmethod
-    def build_optimizer(self):
-        """Build framework-dependent optimizer. Adam by default."""
         pass
 
     @abstractmethod
@@ -155,26 +114,6 @@ class BaseExperiment(ABC):
     ) -> dict:
         return self._build(init_wandb=init_wandb,
                            init_aim=init_aim)
-
-    def get_input_spec(self) -> InputSpec:
-        # assert self.lattice is not None
-        xdim = self.config.dynamics.xdim
-        xshape = self.config.dynamics.xshape
-        if self.config.dynamics.group == 'U1':
-            input_dims = {
-                'xnet': {'x': [xdim, 2], 'v': [xdim, ]},
-                'vnet': {'x': [xdim], 'v': [xdim, ]},
-            }
-        elif self.config.dynamics.group == 'SU3':
-            input_dims = {
-                'xnet': {'x': [xdim, ], 'v': [xdim, ]},
-                'vnet': {'x': [xdim, ], 'v': [xdim, ]},
-            }
-        else:
-            raise ValueError('Unexpected value for `config.dynamics.group`')
-
-        input_spec = InputSpec(xshape=tuple(xshape), **input_dims)
-        return input_spec
 
     def _init_aim(self) -> aim.Run:
         from aim import Run  # type:ignore

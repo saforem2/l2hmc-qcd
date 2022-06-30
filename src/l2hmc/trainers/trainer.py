@@ -4,50 +4,103 @@ trainer.py
 Contains BaseTrainer (ABC) object for training L2HMC dynamics
 """
 from __future__ import absolute_import, division, print_function, annotations
-# import time
-# from typing import Callable
-# import numpy as np
-# from src.l2hmc.configs import Steps
-# from src.l2hmc.dynamics.pytorch.dynamics import Dynamics, to_u1, random_angle
-# from src.l2hmc.loss.pytorch.loss import LatticeLoss
-# from src.l2hmc.utils.history import StateHistory
+
+import os
+import logging
 
 from abc import ABC, abstractmethod
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
+import aim
 
+import numpy as np
 from omegaconf.dictconfig import DictConfig
-from l2hmc.configs import ExperimentConfig, Steps
+from l2hmc.configs import ExperimentConfig, InputSpec
 from hydra.utils import instantiate
 
 from l2hmc.utils.history import BaseHistory
+from l2hmc.utils.rich import get_console
 from l2hmc.utils.step_timer import StepTimer
 
-# steps
-# dynamics
-# optimizer
-# schedule
-# lr_config
-# loss_fn
-# aux_weight
-# keep
-# skip
+
+log = logging.getLogger(__name__)
+
 
 class BaseTrainer(ABC):
     def __init__(
-        self,
-        cfg: DictConfig,
-        keep: Optional[str | list[str]] = None,
-        skip: Optional[str | list[str]] = None,
+            self,
+            cfg: DictConfig | ExperimentConfig,
+            keep: Optional[str | list[str]] = None,
+            skip: Optional[str | list[str]] = None,
     ):
-        self.cfg = cfg
-        self.config = instantiate(cfg)
+        if isinstance(cfg, DictConfig):
+            self.config = instantiate(cfg)
+        else:
+            self.config = cfg
+
         assert isinstance(self.config, ExperimentConfig)
-        self.steps = self.build_steps()
-        self.loss_fn = self.build_loss_fn()
-        self.dynamics = self.build_dynamics()
-        self.optimizer = self.build_optimizer()
-        self.lr_schedule = self.build_lr_schedule()
-        self.schedule = self.build_annealing_schedule()
+        assert self.config.framework in [
+            'pt',
+            'tf',
+            'torch',
+            'pytorch',
+            'tensorflow',
+        ]
+        self._is_built = False
+        self.loss_fn = None
+        self.lattice = None
+        self.dynamics = None
+        self.schedule = None
+        self.optimizer = None
+        self.lr_schedule = None
+        # self.lattice = self.build_lattice()
+        # self.loss_fn = self.build_loss_fn()
+        # self.dynamics = self.build_dynamics()
+        # self.optimizer = self.build_optimizer()
+        # self.lr_schedule = self.build_lr_schedule()
+        self.steps = self.config.steps
+        self.console = get_console(record=False)
+        self.xshape = self.config.dynamics.xshape
+        self.keep = [keep] if isinstance(keep, str) else keep
+        self.skip = [skip] if isinstance(skip, str) else skip
+        self.rows = {
+            'train': {},
+            'eval': {},
+            'hmc': {},
+        }
+        self.tables = {
+            'train': {},
+            'eval': {},
+            'hmc': {},
+        }
+        self.summaries = {
+            'train': {},
+            'eval': {},
+            'hmc': {},
+        }
+        self.histories = {
+            'train': BaseHistory(),
+            'eval': BaseHistory(),
+            'hmc': BaseHistory()
+        }
+        self._nlf = self.config.dynamics.nleapfrog
+        if self.config.dynamics.merge_directions:
+            self._nlf *= 2
+
+        self.timers = {
+            'train': StepTimer(evals_per_step=self._nlf),
+            'eval': StepTimer(evals_per_step=self._nlf),
+            'hmc': StepTimer(evals_per_step=self._nlf),
+        }
+
+        # self.steps = self.config.steps
+        # self.lattice = self.build_lattice()
+        # self.loss_fn = self.build_loss_fn()
+        # self.dynamics = self.build_dynamics()
+        # self.optimizer = self.build_optimizer()
+        # self.lr_schedule = self.build_lr_schedule()
+        # self.schedule = self.build_annealing_schedule()
+        # self.console = get_console(record=False)
+        # self.xshape = self.config.dynamics.xshape
         self.keep = [keep] if isinstance(keep, str) else keep
         self.skip = [skip] if isinstance(skip, str) else skip
         self.histories = {
@@ -66,11 +119,19 @@ class BaseTrainer(ABC):
         }
 
     @abstractmethod
-    def build_steps(self) -> Steps:
+    def draw_x(self):
         pass
 
     @abstractmethod
-    def build_loss_fn(self) -> Callable:
+    def reset_optimizer(self):
+        pass
+
+    @abstractmethod
+    def build_lattice(self):
+        pass
+
+    @abstractmethod
+    def build_loss_fn(self):
         pass
 
     @abstractmethod
@@ -81,10 +142,138 @@ class BaseTrainer(ABC):
     def build_optimizer(self):
         pass
 
+    # @abstractmethod
+    # def build_lr_schedule(self):
+    #     pass
+
     @abstractmethod
-    def build_lr_schedule(self):
+    def save_ckpt(self) -> None:
         pass
 
     @abstractmethod
-    def build_annealing_schedule(self):
+    def should_log(self, epoch):
         pass
+
+    @abstractmethod
+    def should_print(self, epoch):
+        pass
+
+    @abstractmethod
+    def record_metrics(
+            self,
+            metrics: dict,
+            job_type: str,
+            step: Optional[int] = None,
+            record: Optional[dict] = None,
+            run: Optional[Any] = None,
+            arun: Optional[Any] = None,
+            writer: Optional[Any] = None,
+            model: Optional[Any] = None,
+            optimizer: Optional[Any] = None,
+    ):
+        pass
+
+    @abstractmethod
+    def hmc_step(
+            self,
+            inputs: tuple[Any, float],
+            eps: float,
+            nleapfrog: Optional[int] = None,
+    ):
+        pass
+
+    @abstractmethod
+    def eval_step(
+            self,
+            inputs: tuple[Any, float],
+    ):
+        pass
+
+    @abstractmethod
+    def eval(
+            self,
+            beta: Optional[float] = None,
+            x: Optional[Any] = None,
+            skip: Optional[str | list[str]] = None,
+            run: Optional[Any] = None,
+            arun: Optional[Any] = None,
+            writer: Optional[Any] = None,
+            job_type: Optional[str] = 'eval',
+            nchains: Optional[int] = None,
+            eps: Optional[float] = None,
+            nleapfrog: Optional[int] = None,
+    ) -> dict:
+        pass
+
+    @abstractmethod
+    def train_step(
+            self,
+            inputs: tuple[Any, float],
+    ):
+        pass
+
+    @abstractmethod
+    def train_epoch(
+            self,
+            inputs: tuple[Any, float],
+    ):
+        pass
+
+    @abstractmethod
+    def train(self):
+        pass
+
+    @abstractmethod
+    def metric_to_numpy(self, metric: Any):
+        pass
+
+    def metrics_to_numpy(
+            self,
+            metrics: dict[str, Any]
+    ) -> dict[str, list[np.ndarray]]:
+        m = {}
+        for key, val in metrics.items():
+            if isinstance(val, dict):
+                for k, v in val.items():
+                    m[f'{key}/{k}'] = self.metric_to_numpy(v)
+
+            else:
+                try:
+                    m[key] = self.metric_to_numpy(val)
+                except ValueError as e:
+                    log.exception(e)
+                    log.error(
+                        f'Error converting metrics[{key}] to numpy. Skipping!'
+                    )
+                    continue
+
+        return m
+
+    @abstractmethod
+    def aim_track(
+            self,
+            metrics: dict,
+            step: int,
+            job_type: str,
+            arun: aim.Run,
+            prefix: Optional[str] = None,
+    ) -> None:
+        pass
+
+    def get_input_spec(self) -> InputSpec:
+        xdim = self.config.dynamics.xdim
+        xshape = self.config.dynamics.xshape
+        if self.config.dynamics.group == 'U1':
+            input_dims = {
+                'xnet': {'x': [xdim, 2], 'v': [xdim, ]},
+                'vnet': {'x': [xdim, ], 'v': [xdim, ]},
+            }
+        elif self.config.dynamics.group == 'SU3':
+            input_dims = {
+                'xnet': {'x': [xdim, ], 'v': [xdim, ]},
+                'vnet': {'x': [xdim, ], 'v': [xdim, ]},
+            }
+        else:
+            raise ValueError('Unexpected value for `config.dynamics.group`')
+
+        return InputSpec(xshape=tuple(xshape), **input_dims)
