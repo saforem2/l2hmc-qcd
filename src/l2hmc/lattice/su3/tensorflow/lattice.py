@@ -26,6 +26,7 @@ TWO_PI = 2. * np.pi
 
 Tensor = tf.Tensor
 TensorLike = tf.types.experimental.TensorLike
+TF_FLOAT = tf.keras.backend.floatx()
 
 
 def pbc(tup: tuple[int], shape: tuple[int]) -> list:
@@ -222,7 +223,9 @@ class LatticeSU3(Lattice):
         return ps
 
     def kinetic_energy(self, v: Tensor) -> Tensor:
-        return self.g.kinetic_energy(v)
+        return self.g.kinetic_energy(
+            tf.reshape(v, self._shape)
+        )
 
     def potential_energy(self, x: Tensor, beta: Tensor) -> Tensor:
         return self.action(x, beta)
@@ -240,7 +243,7 @@ class LatticeSU3(Lattice):
             tf.math.real(ps),
             axis=range(2, len(ps.shape))
         )
-        psum = tf.reduce_sum(plaqs, axis=0)
+        psum = tf.cast(tf.reduce_sum(plaqs, axis=0), TF_FLOAT)
 
         action = tf.math.multiply(coeffs['plaq'], psum)
 
@@ -313,38 +316,137 @@ class LatticeSU3(Lattice):
             x: Tensor,
             beta: Optional[Tensor] = None,
     ) -> dict[str, Tensor]:
-        wloops = self.wilson_loops(x)
-        plaqs = self.plaqs(wloops)
-        qsin = self._sin_charges(wloops)
-        qint = self._int_charges(wloops)
+        # wloops = self.wilson_loops(x)
+        # wloops = tf.reduce_sum(wloops, 0)
+        plaqs = self._plaquettes(x)
+        q = self.charges(x)
+        # qsin = self._sin_charges(wloops)
+        # qint = self._int_charges(wloops)
         # TODO: FIX ME
-        metrics = {'plaqs': plaqs,  'sinQ': qsin, 'intQ': qint}
+        metrics = {'plaqs': plaqs,  'sinQ': q.sinQ, 'intQ': q.intQ}
         if beta is not None:
             action = self.action(x, beta)
             metrics['action'] = action
         return metrics
 
+    @staticmethod
+    def mixed_loss(loss: Tensor, weight: float) -> Tensor:
+        w = tf.constant(weight, dtype=TF_FLOAT)
+        return (w / loss) - (loss / w)
+
     def plaq_loss(
             self,
             acc: Tensor,
-            x1: Optional[Tensor] = None,
-            x2: Optional[Tensor] = None,
-            wloops1: Optional[Tensor] = None,
-            wloops2: Optional[Tensor] = None
-    ):
-        log.error('TODO')
-        pass
+            x1: Tensor,
+            x2: Tensor,
+            use_mixed_loss: Optional[bool] = None,
+            weight: Optional[float] = 0.0,
+    ) -> Tensor:
+        wloops1 = self.wilson_loops(x1)
+        wloops2 = self.wilson_loops(x2)
+        return self._plaq_loss(
+            acc=acc,
+            wloops1=wloops1,
+            wloops2=wloops2,
+            weight=weight,
+            use_mixed_loss=use_mixed_loss,
+        )
 
     def charge_loss(
             self,
             acc: Tensor,
-            x1: Optional[Tensor] = None,
-            x2: Optional[Tensor] = None,
-            wloops1: Optional[Tensor] = None,
-            wloops2: Optional[Tensor] = None
-    ):
-        log.error('TODO')
-        pass
+            x1: Tensor,
+            x2: Tensor,
+            use_mixed_loss: Optional[bool] = None,
+            weight: Optional[float] = 0.0,
+    ) -> Tensor:
+        wloops1 = self.wilson_loops(x1)
+        wloops2 = self.wilson_loops(x2)
+        return self._charge_loss(
+            acc=acc,
+            wloops1=wloops1,
+            wloops2=wloops2,
+            weight=weight,
+            use_mixed_loss=use_mixed_loss,
+        )
+
+    def _plaq_loss(
+            self,
+            acc: Tensor,
+            wloops1: Tensor,
+            wloops2: Tensor,
+            use_mixed_loss: Optional[bool] = None,
+            weight: Optional[float] = None,
+    ) -> Tensor:
+        weight = 1.0 if weight is None else weight
+        dw = tf.reduce_sum(tf.subtract(wloops2, wloops1), axis=0)
+        # calculate squared plaquette diff. as
+        #   dwilson_loops = 2. * (1. - cos(w2 - w1))
+        ploss = acc * tf.reduce_sum(
+            2. * (tf.ones_like(wloops1) - tf.math.cos(dw)),
+            axis=tuple(range(2, len(wloops1.shape)))
+        )
+        if use_mixed_loss:
+            ploss += 1e-4  # to prevent division by zero in mixed_loss
+            return tf.reduce_mean(self.mixed_loss(ploss, weight))
+
+        return tf.reduce_mean(-ploss / weight)
+
+    def _charge_loss(
+            self,
+            acc: Tensor,
+            wloops1: Tensor,
+            wloops2: Tensor,
+            use_mixed_loss: Optional[bool] = None,
+            weight: Optional[float] = None,
+    ) -> Tensor:
+        """Calculate the charge loss from initial and proposed Wilson loops."""
+        weight = 1.0 if weight is None else weight
+        qloss = acc * tf.math.square(
+            tf.subtract(
+                self._sin_charges(wloops=wloops2),
+                self._sin_charges(wloops=wloops1),
+            )
+        )
+        if use_mixed_loss:
+            qloss += 1e-4
+            return tf.reduce_mean(self.mixed_loss(qloss, weight))
+        return tf.reduce_mean(-qloss / weight)
+
+    def calc_loss(
+            self,
+            xinit: Tensor,
+            xprop: Tensor,
+            acc: Tensor,
+            use_mixed_loss: Optional[bool] = True,
+            charge_weight: Optional[float] = None,
+            plaq_weight: Optional[float] = None,
+    ) -> Tensor:
+        plaq_weight = 1.0 if plaq_weight is None else plaq_weight
+        charge_weight = 1.0 if charge_weight is None else charge_weight
+
+        w1 = self.wilson_loops(x=xinit)
+        w2 = self.wilson_loops(x=xprop)
+
+        loss = tf.constant(0.0, dtype=TF_FLOAT)
+        if plaq_weight > 0.0:
+            loss += self._plaq_loss(
+                acc=acc,
+                wloops1=w1,
+                wloops2=w2,
+                weight=plaq_weight,
+                use_mixed_loss=use_mixed_loss,
+            )
+        if charge_weight > 0.0:
+            loss += self._charge_loss(
+                acc=acc,
+                wloops1=w1,
+                wloops2=w2,
+                weight=charge_weight,
+                use_mixed_loss=use_mixed_loss,
+            )
+
+        return loss
 
 
 if __name__ == '__main__':
