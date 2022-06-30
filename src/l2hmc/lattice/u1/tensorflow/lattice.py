@@ -118,21 +118,40 @@ class LatticeU1(Lattice):
     def calc_metrics(
             self,
             x: Tensor,
-            # beta: Optional[Tensor] = None,
+            xinit: Optional[Tensor] = None,
+            beta: Optional[Tensor] = None,
     ) -> dict[str, Tensor]:
         wloops = self.wilson_loops(x)
         plaqs = self.plaqs(wloops=wloops)
         charges = self.charges(wloops=wloops)
-        metrics = {'plaqs': plaqs}
-        # if beta is not None:
-        #     pexact = plaq_exact(beta) * tf.ones_like(plaqs)
-        #     metrics.update({
-        #        'plaqs_err': pexact - plaqs
-        #     })
+        metrics = {
+            'plaqs': plaqs,
+            'intQ': charges.intQ,
+            'sinQ': charges.sinQ
+        }
 
-        metrics.update({
-            'intQ': charges.intQ, 'sinQ': charges.sinQ
-        })
+        if beta is not None:
+            pexact = plaq_exact(beta) * tf.ones_like(plaqs)
+            metrics.update({
+               'plaqs_err': pexact - plaqs,
+               'action': self.action(x, beta),
+            })
+
+        if xinit is not None:
+            wloops_ = self.wilson_loops(xinit)
+            plaqs_ = self.plaqs(wloops=wloops_)
+            charges_ = self.charges(wloops=wloops_)
+            metrics.update({
+                'dplaqs': tf.abs(tf.subtract(plaqs, plaqs_)),
+                'dQint': tf.abs(charges.intQ - charges_.intQ),
+                'dQsin': tf.abs(charges.sinQ - charges_.sinQ),
+            })
+            # if beta is not None:
+            #     action_ = self.action(xinit, beta)
+            #     metrics.update({
+            #         'daction': tf.abs(metrics['action'] - action_),
+            #     })
+
         return metrics
 
     def observables(self, x: Tensor) -> LatticeMetrics:
