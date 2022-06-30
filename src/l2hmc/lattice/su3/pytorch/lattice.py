@@ -362,13 +362,16 @@ class LatticeSU3(Lattice):
             x: Tensor,
             beta: Optional[Tensor] = None,
     ) -> dict[str, Tensor]:
-        wloops = self.wilson_loops(x)
-        plaqs = self.plaqs(wloops)
-        qsin = self._sin_charges(wloops)
-        qint = self._int_charges(wloops)
+        plaqs = self._plaquettes(x)
+        q = self.charges(x)
+        # wloops = self.wilson_loops(x)
+        # wloops = wloops.sum(0)
+        # plaqs = self._plaqs(wloops.sum(0))
+        # qsin = self._sin_charges(wloops)
+        # qint = self._int_charges(wloops)
         metrics = {
-            'sinQ': qsin,
-            'intQ': qint,
+            'sinQ': q.sinQ,
+            'intQ': q.intQ,
             'plaqs': plaqs,
         }
         if beta is not None:
