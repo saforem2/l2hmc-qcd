@@ -129,8 +129,9 @@ class Trainer(BaseTrainer):
         self.optimizer = self.build_optimizer()
         # self.lr_schedule = self.build_lr_schedule()
         assert isinstance(self.dynamics, Dynamics)
-        skip_tracking = os.environ.get('SKIP_TRACKING', False)
-        self.verbose = not skip_tracking
+        self.verbose = self.config.dynamics.verbose
+        # skip_tracking = os.environ.get('SKIP_TRACKING', False)
+        # self.verbose = not skip_tracking
         self.clip_norm = self.config.learning_rate.clip_norm
         # compression = 'fp16'
         self.compression = HVD_FP_MAP['fp16']
