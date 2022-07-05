@@ -1,11 +1,12 @@
 _target_: l2hmc.configs.DynamicsConfig
 
 group: 'SU3'
-nchains: 4
+nchains: 1
 latvolume: [4, 4, 4, 4]
 # xshape: [256, 16, 16, 2]
 # xshape: [2, 4, 4, 4, 4]
 eps: 0.01
+eps_hmc: null
 nleapfrog: 8
 eps_fixed: false
 use_ncp: true

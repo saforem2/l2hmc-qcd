@@ -4,11 +4,13 @@ rich.py
 Contains utils for textual layouts using Rich
 """
 from __future__ import absolute_import, annotations, division, print_function
+import logging
 import os
 from pathlib import Path
+import shutil
 from typing import Optional
 
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import DictConfig, OmegaConf
 import rich
 from rich.console import Console
 from rich.layout import Layout
@@ -19,11 +21,16 @@ from rich.progress import (
     SpinnerColumn,
     TextColumn,
     TimeElapsedColumn,
-    TimeRemainingColumn
+    TimeRemainingColumn,
 )
 import rich.syntax
 from rich.table import Table
 import rich.tree
+
+from l2hmc.configs import Steps
+
+
+log = logging.getLogger(__name__)
 
 # from typing import Any, Callable, Optional
 # from rich import box
@@ -32,9 +39,12 @@ import rich.tree
 # import time
 # import numpy as np
 
-from l2hmc.configs import Steps
 
-WIDTH = max(150, int(os.environ.get('COLUMNS', 150)))
+# WIDTH = max(150, int(os.environ.get('COLUMNS', 150)))
+size = shutil.get_terminal_size()
+WIDTH = size.columns
+HEIGHT = size.lines
+# os.environ['COLUMNS'] = f'{size.columns}'
 
 
 def is_interactive():
@@ -42,11 +52,30 @@ def is_interactive():
     return get_ipython() is not None
 
 
-console = Console(record=False,
-                  color_system='truecolor',
-                  log_path=False,
-                  width=WIDTH)
-console.width = WIDTH
+def get_console(width: Optional[int] = None, *args, **kwargs) -> Console:
+    interactive = is_interactive()
+    console = Console(
+        force_jupyter=interactive,
+        log_path=False,
+        color_system='truecolor',
+        *args,
+        **kwargs)
+    if width is None:
+        columns = os.environ.get('COLUMNS', os.environ.get('WIDTH', None))
+        if columns is None:
+            if not interactive:
+                size = shutil.get_terminal_size()
+                columns = size.columns
+            else:
+                columns = 120
+        else:
+            columns = int(columns)
+
+        width = int(max(columns, 120))
+        console.width = width
+        console._width = width
+
+    return console
 
 
 def make_layout(ratio: int = 4, visible: bool = True) -> Layout:
@@ -155,8 +184,18 @@ def build_layout(
     }
 
 
-def add_columns(avgs: dict, table: Table) -> Table:
+def add_columns(
+    avgs: dict,
+    table: Table,
+    skip: Optional[str | list[str]] = None,
+    keep: Optional[str | list[str]] = None,
+) -> Table:
     for key in avgs.keys():
+        if skip is not None and key in skip:
+            continue
+        if keep is not None and key not in keep:
+            continue
+
         if key == 'loss':
             table.add_column(str(key),
                              justify='center',
@@ -219,8 +258,14 @@ def print_config(
 
         branch.add(rich.syntax.Syntax(branch_content, "yaml"))
 
-    rich.print(tree)
-
     outfile = Path(os.getcwd()).joinpath('config_tree.log')
-    with outfile.open('w') as f:
-        rich.print(tree, file=f)
+    # with open(outfile, 'wt') as f:
+    with outfile.open('wt') as f:
+        console = rich.console.Console(file=f)
+        console.print(tree)
+
+    # log.info(tree)
+
+    # with outfile.open('w') as f:
+    #     rich.print(tree, file=f)
+    rich.print(tree)

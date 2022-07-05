@@ -12,16 +12,22 @@ from typing import Any, Optional
 
 import h5py
 import joblib
+
+import numpy as np
+import matplotlib.pyplot as plt
 from omegaconf import DictConfig
 import pandas as pd
-from rich.console import Console
 from rich.table import Table
 import wandb
 import xarray as xr
 
 from l2hmc.configs import AnnealingSchedule, Steps
-from l2hmc.utils.plot_helpers import make_ridgeplots, plot_dataArray
-from l2hmc.utils.rich import is_interactive
+from l2hmc.utils.rich import get_console, is_interactive
+from l2hmc.utils.plot_helpers import (
+    make_ridgeplots,
+    plot_dataArray,
+    set_plot_style
+)
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 log = logging.getLogger(__name__)
@@ -157,7 +163,7 @@ def save_logs(
     tfile.parent.mkdir(exist_ok=True, parents=True)
 
     data = {}
-    console = Console(record=True)
+    console = get_console(record=True)
     for idx, table in tables.items():
         if idx == 0:
             data = table_to_dict(table)
@@ -174,20 +180,20 @@ def save_logs(
 
     df = pd.DataFrame.from_dict(data)
     dfile = Path(logdir).joinpath(f'{job_type}_table.csv')
-    df.to_csv(dfile.as_posix())
+    df.to_csv(dfile.as_posix(), mode='a')
 
     if run is not None:
         with open(hfile.as_posix(), 'r') as f:
             html = f.read()
 
-        run.log({f'Media/{job_type}': wandb.Html(html)})
+        # run.log({f'Media/{job_type}': wandb.Html(html)})
         run.log({
             f'DataFrames/{job_type}': wandb.Table(data=df)
         })
 
     if summaries is not None:
         sfile = logdir.joinpath('summaries.txt').as_posix()
-        with open(sfile, 'w') as f:
+        with open(sfile, 'a') as f:
             f.writelines(summaries)
 
 
@@ -201,12 +207,76 @@ def make_subdirs(basedir: os.PathLike):
     return dirs
 
 
+def save_figure(
+        fig: plt.Figure,
+        key: str,
+        outdir: os.PathLike,
+        # run: Optional[Any] = None,
+        # arun: Optional[Any] = None,
+):
+    if fig is None:
+        fig = plt.gcf()
+
+    pngdir = Path(outdir).joinpath('pngs')
+    svgdir = Path(outdir).joinpath('svgs')
+    pngdir.mkdir(parents=True, exist_ok=True)
+    svgdir.mkdir(parents=True, exist_ok=True)
+
+    svgfile = svgdir.joinpath(f'{key}.svg')
+    pngfile = pngdir.joinpath(f'{key}.png')
+    fig.savefig(svgfile.as_posix(), transparent=True, bbox_inches='tight')
+    fig.savefig(pngfile.as_posix(), transparent=True, bbox_inches='tight')
+    return fig
+
+
+def make_dataset(metrics: dict) -> xr.Dataset:
+    dset = {}
+    for key, val in metrics.items():
+        if isinstance(val, list):
+            import torch
+            import tensorflow as tf
+            if isinstance(val[0], torch.Tensor):
+                val = torch.stack(val).detach().numpy()
+            elif isinstance(val[0], tf.Tensor):
+                import tensorflow as tf
+                val = tf.stack(val).numpy()
+
+        assert isinstance(val, np.ndarray)
+        assert len(val.shape) in [1, 2, 3]
+        dims = ()
+        coords = ()
+        if len(val.shape) == 1:
+            ndraws = val.shape[0]
+            dims = ['draw']
+            coords = (np.arange(len(val)))
+        elif len(val.shape) == 2:
+            val = val.T
+            nchains, ndraws = val.shape
+            dims = ('chain', 'draw')
+            coords = (np.arange(nchains), np.arange(ndraws))
+        elif len(val.shape) == 3:
+            val = val.T
+            nchains, nlf, ndraws = val.shape
+            dims = ('chain', 'leapfrog', 'draw')
+            coords = (np.arange(nchains), np.arange(nlf), np.arange(ndraws))
+        else:
+            print(f'val.shape: {val.shape}')
+            raise ValueError('Invalid shape encountered')
+
+        assert coords is not None and dims is not None
+        dset[key] = xr.DataArray(val, dims=dims, coords=tuple(coords))
+
+    return xr.Dataset(dset)
+
+
 def plot_dataset(
         dataset: xr.Dataset,
         nchains: Optional[int] = 10,
         outdir: Optional[os.PathLike] = None,
         title: Optional[str] = None,
         job_type: Optional[str] = None,
+        run: Optional[Any] = None,
+        arun: Optional[Any] = None,
         # run: Any = None,
 ) -> None:
     outdir = Path(outdir) if outdir is not None else Path(os.getcwd())
@@ -217,29 +287,25 @@ def plot_dataset(
         if key == 'x':
             continue
 
-        try:
-            fig, _, _ = plot_dataArray(val,
-                                       key=key,
-                                       title=title,
-                                       line_labels=False,
-                                       num_chains=nchains)
-        except TypeError:
-            log.error(f'Unable to `plot_dataArray` for {key}')
-            continue
+        # fig, ax = plt.subplots()
+        # _ = val.plot(ax=ax)  # type: ignore
+        # xdir = outdir.joinpath('xarr_plots')
+        # xdir.mkdir(exist_ok=True, parents=True)
+        # fig = save_figure(fig=fig, key=key, outdir=xdir)
+        # if arun is not None:
+        #     from aim import Figure, Run
+        #     assert isinstance(arun, Run)
+        #     afig = Figure(fig)
+        #     arun.track(afig, name=f'figures/{key}_xarr',
+        #                context={'subset': job_type})
 
-        pngdir = outdir.joinpath('pngs')
-        outdir.mkdir(exist_ok=True, parents=True)
-        pngdir.mkdir(exist_ok=True, parents=True)
-
-        fsvg = outdir.joinpath(f'{key}.svg')
-        fpng = pngdir.joinpath(f'{key}.png')
-        if fsvg.is_file():
-            fsvg = outdir.joinpath(f'xarray-{key}.svg')
-        if fpng.is_file():
-            fpng = pngdir.joinpath(f'xarray-{key}.svg')
-
-        fig.savefig(fsvg.as_posix(), dpi=500, bbox_inches='tight')
-        fig.savefig(fpng.as_posix(), dpi=500, bbox_inches='tight')
+        fig, _, _ = plot_dataArray(val,
+                                   key=key,
+                                   outdir=outdir,
+                                   title=title,
+                                   line_labels=False,
+                                   num_chains=nchains)
+        _ = save_figure(fig=fig, key=key, outdir=outdir)
 
     _ = make_ridgeplots(dataset,
                         outdir=outdir,
@@ -251,15 +317,22 @@ def plot_dataset(
 def analyze_dataset(
         dataset: xr.Dataset,
         outdir: os.PathLike,
-        nchains: Optional[int] = 16,
+        nchains: Optional[int] = None,
         title: Optional[str] = None,
         job_type: Optional[str] = None,
         save: Optional[bool] = True,
         run: Optional[Any] = None,
+        arun: Optional[Any] = None,
         use_hdf5: Optional[bool] = True,
 ):
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
     dirs = make_subdirs(outdir)
+    if nchains is not None and nchains > 1024:
+        nchains_ = nchains // 4
+        log.warning(
+            f'Reducing `nchains` from: {nchains} -> {nchains_} for plotting'
+        )
+
     plot_dataset(dataset,
                  nchains=nchains,
                  title=title,
@@ -281,16 +354,34 @@ def analyze_dataset(
                     log.error(f'Unable to `joblib.dump` {key}, skipping!')
 
         artifact = None
-        if job_type is not None and run is not None:
-            name = f'{job_type}-{run.id}'
-            artifact = wandb.Artifact(name=name, type='result')
-            pngdir = Path(dirs['plots']).joinpath('pngs').as_posix()
+        if job_type is not None:
+            pngdir = Path(dirs['plots']).joinpath('pngs')
+            if run is not None:
+                name = f'{job_type}-{run.id}'
+                artifact = wandb.Artifact(name=name, type='result')
 
-            artifact.add_dir(pngdir, name=f'{job_type}/plots')
-            if datafile is not None:
-                artifact.add_file(datafile.as_posix(), name=f'{job_type}/data')
+                artifact.add_dir(pngdir.as_posix(), name=f'{job_type}/plots')
+                if datafile is not None:
+                    artifact.add_file(
+                        datafile.as_posix(),
+                        name=f'{job_type}/data'
+                    )
 
-            run.log_artifact(artifact)
+                run.log_artifact(artifact)
+
+            if arun is not None:
+                from aim import Image
+                for f in list(pngdir.rglob('*.png')):
+                    aimage = Image(
+                        Path(f).as_posix(),
+                        format='png',
+                        quality=100,
+                    )
+                    arun.track(
+                        aimage,
+                        name=f'images/{f.stem}',
+                        context={'subset': job_type}
+                    )
 
     return dataset
 
@@ -298,9 +389,10 @@ def analyze_dataset(
 def save_and_analyze_data(
         dataset: xr.Dataset,
         outdir: os.PathLike,
+        nchains: Optional[int] = None,
         run: Optional[Any] = None,
+        arun: Optional[Any] = None,
         output: Optional[dict] = None,
-        nchains: Optional[int] = -1,
         job_type: Optional[str] = None,
         framework: Optional[str] = None,
 ) -> xr.Dataset:
@@ -311,8 +403,10 @@ def save_and_analyze_data(
         else ': '.join([jstr, f'{framework}'])
     )
 
+    set_plot_style()
     dataset = analyze_dataset(dataset,
                               run=run,
+                              arun=arun,
                               save=True,
                               outdir=outdir,
                               nchains=nchains,

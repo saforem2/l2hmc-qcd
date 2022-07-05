@@ -7,18 +7,24 @@ from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass
 import logging
 from pathlib import Path
-from typing import Any, Optional
-from typing import Union
+from typing import Any, Optional, Union
 
 import matplotlib.pyplot as plt
 import matplotx
 import numpy as np
 import seaborn as sns
+import tensorflow as tf
+import torch
 import xarray as xr
 
 from l2hmc.configs import MonteCarloStates, Steps
 import l2hmc.utils.plot_helpers as hplt
 
+TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray]
+
+PT_FLOAT = torch.get_default_dtype()
+TF_FLOAT = tf.keras.backend.floatx()
+# Scalar = TF_FLOAT | PT_FLOAT | np.floating | int | bool
 
 log = logging.getLogger(__name__)
 
@@ -50,32 +56,49 @@ class BaseHistory:
     def __init__(self, steps: Optional[Steps] = None):
         self.steps = steps
         self.history = {}
-        nera = 1 if steps is None else steps.nera
-        self.era_metrics = {str(era): {} for era in range(nera)}
+        self.era_metrics = {}
+        if steps is not None:
+            self.era_metrics = {
+                str(era): {} for era in range(steps.nera)
+            }
+        # nera = 1 if steps is None else steps.nera
+        # self.era_metrics = {str(era): {} for era in range(nera)}
 
-    def _update(self, key: str, val: Any) -> float:
+    def era_summary(self, era) -> str:
+        emetrics = self.era_metrics.get(str(era), None)
+        if emetrics is not None:
+            return ', '.join([
+                f'{k}={np.mean(v):<5.4f}' for k, v in emetrics.items()
+                if k not in ['era', 'epoch']
+            ])
+        raise ValueError
+
+    def _update(self, key: str, val: TensorLike) -> float:
         if val is None:
             raise ValueError(f'None encountered: {key}: {val}')
 
         if isinstance(val, list):
-            val = np.array(val)
+            if isinstance(val[0], np.ndarray):
+                val = np.stack(val)
+            elif isinstance(val[0], torch.Tensor):
+                val = torch.stack(val).detach().cpu().numpy()
+            elif isinstance(val[0], tf.Tensor):
+                val = tf.stack(val).numpy()
+            else:
+                val = np.array(val)
+
+        if isinstance(val, tf.Tensor):
+            val = val.numpy()
 
         try:
             self.history[key].append(val)
         except KeyError:
             self.history[key] = [val]
 
-        if isinstance(val, (float, int)):
-            return val
+        # if isinstance(val, Scalar):
+        #     return np.array(val).mean()
 
-        return val.mean()
-
-    def era_summary(self, era) -> str:
-        emetrics = self.era_metrics[str(era)]
-        return ', '.join([
-            f'{k}={np.mean(v):<5.4g}' for k, v in emetrics.items()
-            if k not in ['era', 'epoch']
-        ])
+        return np.array(val).mean()
 
     def update(self, metrics: dict) -> dict:
         avgs = {}
@@ -91,13 +114,16 @@ class BaseHistory:
                         try:
                             avg = self._update(key=key, val=v)
                         # TODO: Figure out how to deal with exception
-                        except Exception:  # some weird tensorflow exception
-                            continue
+                        except tf.errors.InvalidArgumentError as e:
+                            raise e
                 else:
                     avg = self._update(key=key, val=val)
 
             if avg is not None:
                 avgs[key] = avg
+                if str(era) not in self.era_metrics.keys():
+                    self.era_metrics[str(era)] = {}
+
                 try:
                     self.era_metrics[str(era)][key].append(avg)
                 except KeyError:
@@ -109,8 +135,8 @@ class BaseHistory:
             self,
             val: xr.DataArray,
             key: Optional[str] = None,
-            therm_frac: Optional[float] = 0.,
-            num_chains: Optional[int] = 0,
+            therm_frac: float = 0.,
+            num_chains: int = 16,
             title: Optional[str] = None,
             outdir: Optional[str] = None,
             subplots_kwargs: Optional[dict[str, Any]] = None,
@@ -120,7 +146,6 @@ class BaseHistory:
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
         figsize = subplots_kwargs.get('figsize', hplt.set_size())
-        num_chains = 16 if num_chains is None else num_chains
         subplots_kwargs.update({'figsize': figsize})
         subfigs = None
 
@@ -300,8 +325,17 @@ class BaseHistory:
             fig.suptitle(title)
 
         if outdir is not None:
-            plt.savefig(Path(outdir).joinpath(f'{key}.svg'),
-                        dpi=400, bbox_inches='tight')
+            # plt.savefig(Path(outdir).joinpath(f'{key}.svg'),
+            #             dpi=400, bbox_inches='tight')
+            outfile = Path(outdir).joinpath(f'{key}.svg')
+            if outfile.is_file():
+                tstamp = hplt.get_timestamp('%Y-%m-%d-%H%M%S')
+                pngdir = Path(outdir).joinpath('pngs')
+                pngdir.mkdir(exist_ok=True, parents=True)
+                pngfile = pngdir.joinpath(f'{key}-{tstamp}.png')
+                svgfile = Path(outdir).joinpath(f'{key}-{tstamp}.svg')
+                plt.savefig(pngfile, dpi=400, bbox_inches='tight')
+                plt.savefig(svgfile, dpi=400, bbox_inches='tight')
 
         return fig, subfigs, axes
 
@@ -399,7 +433,6 @@ class BaseHistory:
             #         tmp = invert
             #      data_vars[key] = dataset = self.get_dataset(val)
             name = key.replace('/', '_')
-
             try:
                 data_vars[name] = self.to_DataArray(val, therm_frac)
             except ValueError:

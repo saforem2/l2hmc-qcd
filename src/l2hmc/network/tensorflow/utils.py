@@ -5,9 +5,22 @@ Contains helper functions for dealing with tensorflow Networks.
 """
 from __future__ import absolute_import, print_function, annotations, division
 import tensorflow as tf
+import numpy as np
 
 Tensor = tf.Tensor
 Layer = tf.keras.layers.Layer
+
+
+def zero_weights(model: tf.keras.Model):
+    for layer in model.layers:
+        weights = layer.get_weights()
+        zeros = []
+        for w in weights:
+            zeros.append(np.zeros_like(w))
+
+        layer.set_weights(zeros)
+
+    return model
 
 
 def periodic_padding(x: Tensor, padding: int = 1) -> Tensor:

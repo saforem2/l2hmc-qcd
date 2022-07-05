@@ -29,6 +29,7 @@ HERE = Path(os.path.abspath(__file__)).parent
 PROJECT_DIR = HERE.parent.parent
 CONF_DIR = HERE.joinpath('conf')
 LOGS_DIR = PROJECT_DIR.joinpath('logs')
+AIM_DIR = HERE.joinpath('.aim')
 OUTPUTS_DIR = HERE.joinpath('outputs')
 
 CONF_DIR.mkdir(exist_ok=True, parents=True)
@@ -44,6 +45,7 @@ MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
 
 def add_to_outdirs_file(outdir: os.PathLike):
     with open(OUTDIRS_FILE, 'a') as f:
+        f.write('\n')
         f.write(Path(outdir).resolve().as_posix())
 
 
@@ -59,7 +61,7 @@ def list_to_str(x: list) -> str:
     if isinstance(x[0], int):
         return '-'.join([str(int(i)) for i in x])
     elif isinstance(x[0], float):
-        return '-'.join([f'{i:2.1g}' for i in x])
+        return '-'.join([f'{i:2.1f}' for i in x])
     else:
         return '-'.join([str(i) for i in x])
 
@@ -88,6 +90,46 @@ class BaseConfig:
                 config = json.load(f)
 
         self.__init__(**config)
+
+    def __getitem__(self, key):
+        return super().__getattribute__(key)
+
+
+@dataclass
+class Charges:
+    intQ: Any
+    sinQ: Any
+
+
+@dataclass
+class LatticeMetrics:
+    plaqs: Any
+    charges: Charges
+    p4x4: Any
+
+    def asdict(self) -> dict:
+        return {
+            'plaqs': self.plaqs,
+            'sinQ': self.charges.sinQ,
+            'intQ': self.charges.intQ,
+            'p4x4': self.p4x4,
+        }
+
+
+@dataclass
+class AcceleratorConfig(BaseConfig):
+    device_placement: Optional[bool] = True
+    split_batches: Optional[bool] = False
+    mixed_precision: Optional[str] = 'no'
+    cpu: Optional[bool] = False
+    deepspeed_plugin: Optional[Any] = None
+    # fsdp_plugin: Optional[Any] = None
+    rng_types: Optional[list[str]] = None
+    log_with: Optional[list[str]] = None
+    logging_dir: Optional[str | os.PathLike] = None
+    dispatch_batches: Optional[bool] = False
+    step_scheduler_with_optimizer: Optional[bool] = True
+    kwargs_handlers: Optional[list[Any]] = None
 
 
 @dataclass
@@ -129,7 +171,7 @@ class U1Config(BaseConfig):
         self.input_spec = InputSpec(
             xshape=self.dynamics.xshape,  # type:ignore
             xnet={'x': [xdim, int(2)], 'v': [xdim, ]},
-            vnet={'x': [xdim, ], 'v': [xdim, ]}
+            vnet={'x': [xdim, int(2)], 'v': [xdim, ]}
         )
 
 
@@ -150,7 +192,7 @@ class NetWeight(BaseConfig):
         return {'s': self.s, 't': self.t, 'q': self.q}
 
     def to_str(self):
-        return f's{self.s:2.1g}t{self.t:2.1g}q{self.t:2.1g}'
+        return f's{self.s:2.1f}t{self.t:2.1f}q{self.t:2.1f}'
 
 
 @dataclass
@@ -170,10 +212,6 @@ class NetWeights(BaseConfig):
             self.x = NetWeight(**self.x)
         if not isinstance(self.v, NetWeight):
             self.v = NetWeight(**self.v)
-        # if self.x is None:
-        #     self.x = NetWeight(s=1., t=1., q=1.)
-        # if self.v is None:
-        #     self.v = NetWeight(s=1., t=1., q=1.)
 
 
 @dataclass
@@ -197,7 +235,7 @@ class LearningRateConfig(BaseConfig):
     # patience: int = 5
 
     def to_str(self):
-        return f'lr-{self.lr_init:3.2g}'
+        return f'lr-{self.lr_init:3.2f}'
 
 
 @dataclass
@@ -260,7 +298,7 @@ class NetworkConfig(BaseConfig):
         ustr = ''.join([str(int(i)) for i in self.units])
         outstr = [f'nh-{ustr}_act-{self.activation_fn}']
         if self.dropout_prob > 0:
-            outstr.append(f'dp-{self.dropout_prob:2.1g}')
+            outstr.append(f'dp-{self.dropout_prob:2.1f}')
         if self.use_batch_norm:
             outstr.append('bNorm')
 
@@ -275,25 +313,30 @@ class DynamicsConfig(BaseConfig):
     # xshape: List[int]
     nleapfrog: int
     eps: float = 0.01
+    eps_hmc: float = 0.01
     use_ncp: bool = True
-    verbose: bool = False
+    verbose: bool = True
     eps_fixed: bool = False
     use_split_xnets: bool = True
     use_separate_networks: bool = True
-    merge_directions: bool = False
+    merge_directions: bool = True
 
     def __post_init__(self):
         assert self.group.upper() in ['U1', 'SU3']
+        if self.eps_hmc is None:
+            # if not specified, use a trajectory length of 1
+            self.eps_hmc = 1.0 / self.nleapfrog
         if self.group.upper() == 'U1':
             self.dim = 2
             self.nt, self.nx = self.latvolume
             self.xshape = (self.nchains, self.dim, *self.latvolume)
             assert len(self.xshape) == 4
             assert len(self.latvolume) == 2
+            self.xdim = int(np.cumprod(self.xshape[1:])[-1])
         elif self.group.upper() == 'SU3':
             self.dim = 4
             self.link_shape = (3, 3)
-            self.nt, self.nt, self.ny, self.nz = self.latvolume
+            self.nt, self.nx, self.ny, self.nz = self.latvolume
             self.xshape = (
                 self.nchains,
                 self.dim,
@@ -302,10 +345,9 @@ class DynamicsConfig(BaseConfig):
             )
             assert len(self.xshape) == 8
             assert len(self.latvolume) == 4
+            self.xdim = self.nt * self.nx * self.ny * self.nz * self.dim * 8
         else:
             raise ValueError('Expected `group` to be one of `"U1", "SU3"`')
-
-        self.xdim = int(np.cumprod(self.xshape[1:])[-1])
 
     # def get_xshape(self):
     #     if self.group.upper() == 'U1':
@@ -334,8 +376,11 @@ class Steps:
     test: int
     log: Optional[int] = None
     print: Optional[int] = None
+    extend_last_era: Optional[int] = None
 
     def __post_init__(self):
+        if self.extend_last_era is None:
+            self.extend_last_era = 1
         self.total = self.nera * self.nepoch
         if self.total < 1000:
             self.log = 5
@@ -375,8 +420,23 @@ class InputSpec(BaseConfig):
 
 
 @dataclass
+class TrainerConfig1:
+    steps: Steps
+    lr: LearningRateConfig
+    dynamics: DynamicsConfig
+    schedule: AnnealingSchedule
+    compile: bool = True
+    aux_weight: float = 0.0
+    evals_per_step: int = 1
+    compression: Optional[str] = 'none'
+    keep: Optional[str | list[str]] = None
+    skip: Optional[str | list[str]] = None
+
+
+@dataclass
 class ExperimentConfig:
     framework: str
+    seed: int
     steps: Steps
     loss: LossConfig
     network: NetworkConfig
@@ -386,12 +446,12 @@ class ExperimentConfig:
     learning_rate: LearningRateConfig
     wandb: Any
     # ----- optional below -------------------
+    # outdir: Optional[Any] = None
     conv: Optional[ConvolutionConfig] = None
-    c1: Optional[float] = 0.0
+    c1: Optional[float] = 0.0                # rectangle coefficient for SU3
     width: Optional[int] = None
     nchains: Optional[int] = None
     profile: Optional[bool] = False
-    eps_hmc: Optional[float] = 0.1181
     debug_mode: Optional[bool] = False
     default_mode: Optional[bool] = True
     print_config: Optional[bool] = True
@@ -401,6 +461,9 @@ class ExperimentConfig:
     name: Optional[str] = None
 
     def __post_init__(self):
+        if self.debug_mode:
+            self.compile = False
+
         self.annealing_schedule.setup(self.steps)
         w = int(os.environ.get('COLUMNS', 235))
         self.width = w if self.width is None else self.width
@@ -412,12 +475,63 @@ class ExperimentConfig:
         log.warning(f'latvolume: {self.dynamics.latvolume}')
 
 
+def get_config(overrides: Optional[list[str]] = None):
+    from hydra import (
+        initialize_config_dir,
+        compose
+    )
+    from hydra.core.global_hydra import GlobalHydra
+    GlobalHydra.instance().clear()
+    overrides = [] if overrides is None else overrides
+    with initialize_config_dir(
+            CONF_DIR.absolute().as_posix(),
+            version_base=None,
+    ):
+        cfg = compose('config', overrides=overrides)
+
+    return cfg
+
+
+def get_experiment(overrides: Optional[list[str]] = None):
+    cfg = get_config(overrides)
+    if cfg.framework == 'pytorch':
+        from l2hmc.experiment.pytorch.experiment import Experiment
+        return Experiment(cfg)
+    elif cfg.framework == 'tensorflow':
+        from l2hmc.experiment.tensorflow.experiment import Experiment
+        return Experiment(cfg)
+    else:
+        raise ValueError(
+            f'Unexpected value for `cfg.framework: {cfg.framework}'
+        )
+
+
 defaults = [
     {'backend': MISSING}
 ]
 
-cs = ConfigStore()
+cs = ConfigStore.instance()
 cs.store(
-    name='config',
+    name='experiment_config',
     node=ExperimentConfig,
+)
+cs.store(
+    name='dynamics_config',
+    node=DynamicsConfig,
+)
+cs.store(
+    name='network_config',
+    node=NetworkConfig
+)
+cs.store(
+    name='loss_config',
+    node=LossConfig,
+)
+cs.store(
+    name='net_weights',
+    node=NetWeights,
+)
+cs.store(
+    name='annealing_schedule',
+    node=AnnealingSchedule,
 )

@@ -8,6 +8,7 @@ used to train the L2HMC model.
 from __future__ import absolute_import, annotations, division, print_function
 from typing import Callable, Optional
 
+import logging
 import numpy as np
 import torch
 from torch import nn
@@ -21,6 +22,8 @@ from l2hmc.configs import (
 )
 
 from l2hmc.network.factory import BaseNetworkFactory
+
+log = logging.getLogger(__name__)
 
 Tensor = torch.Tensor
 
@@ -41,12 +44,42 @@ def xy_repr(x: torch.Tensor) -> torch.Tensor:
     return torch.stack((torch.cos(x), torch.sin(x)), dim=1)
 
 
-def init_weights(m: nn.Module, use_zeros: bool = False):
+def init_weights_old(m: nn.Module, use_zeros: bool = False):
     if isinstance(m, nn.Linear):
         if use_zeros:
             torch.nn.init.zeros_(m.weight)
         else:
             torch.nn.init.kaiming_normal_(m.weight)
+
+
+@torch.no_grad()
+def init_weights(m, method='xavier_uniform'):
+    if isinstance(m, nn.Linear):
+        # m.bias.fill_()
+        if method == 'zeros':
+            nn.init.zeros_(m.weight)
+        elif method == 'xavier_normal':
+            nn.init.xavier_normal_(m.weight)
+        elif method == 'kaiming_normal':
+            nn.init.kaiming_normal_(m.weight)
+        else:
+            try:
+                method = getattr(nn.init, method)
+                if method is not None and callable(method):
+                    method(m.weight)
+            except NameError:
+                log.warning('. '.join([
+                    f'Unable to initialize weights with {method}',
+                    'Falling back to default: xavier_uniform_'
+
+                ]))
+
+
+def zero_weights(m):
+    if isinstance(m, nn.Linear):
+        nn.init.zeros_(m.weight.data)
+        if m.bias is not None:
+            nn.init.constant_(m.bias.data, 0)
 
 
 class PeriodicPadding(nn.Module):
@@ -68,12 +101,39 @@ class PeriodicPadding(nn.Module):
         return x
 
 
+class ScaledTanh(nn.Module):
+    def __init__(
+            self,
+            in_features: int,
+            out_features: int,
+    ) -> None:
+        super().__init__()
+        self.coeff = torch.zeros(1, out_features, requires_grad=True)
+        self.layer = nn.Linear(
+            in_features=in_features,
+            out_features=out_features,
+            bias=False,
+        )
+        self.tanh = nn.Tanh()
+        self._with_cuda = False
+        if torch.cuda.is_available():
+            self._with_cuda = True
+            self.coeff = self.coeff.cuda()
+            self.layer = self.layer.cuda()
+            self.cuda()
+
+    def forward(self, x):
+        if self._with_cuda:
+            x = x.cuda()
+        return torch.exp(self.coeff) * self.tanh(self.layer(x))
+
+
 class Network(nn.Module):
     def __init__(
             self,
             xshape: tuple[int],
             network_config: NetworkConfig,
-            input_shapes: Optional[dict[str, int]] = None,
+            input_shapes: Optional[dict[str, tuple[int, int]]] = None,
             net_weight: Optional[NetWeight] = None,
             conv_config: Optional[ConvolutionConfig] = None,
             name: Optional[str] = None,
@@ -83,14 +143,18 @@ class Network(nn.Module):
             net_weight = NetWeight(1., 1., 1.)
 
         self.name = name if name is not None else 'network'
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.xshape = xshape
         self.net_config = network_config
         self.nw = net_weight
 
-        self.xdim = np.cumprod(xshape[1:])[-1]
+        self.xdim = int(np.cumprod(xshape[1:])[-1])
 
         if input_shapes is None:
-            input_shapes = {'x': self.xdim, 'v': self.xdim}
+            input_shapes = {
+                'x': (int(self.xdim), int(2)),
+                'v': (int(self.xdim), int(2)),
+            }
 
         self.input_shapes = {}
         for key, val in input_shapes.items():
@@ -114,15 +178,19 @@ class Network(nn.Module):
 
         self.units = self.net_config.units
 
-        self.s_coeff = nn.parameter.Parameter(torch.zeros(1, self.xdim))
-        self.q_coeff = nn.parameter.Parameter(torch.zeros(1, self.xdim))
+        # self.s_coeff = nn.parameter.Parameter(
+        #     torch.zeros(1, self.xdim, device=self.device)
+        # )
+        # self.q_coeff = nn.parameter.Parameter(
+        #     torch.zeros(1, self.xdim, device=self.device)
+        # )
 
         if conv_config is not None and len(conv_config.filters) > 0:
             self.conv_config = conv_config
             if len(xshape) == 3:
-                nt, nx, d = xshape[0], xshape[1], xshape[2]
+                d, nt, nx = xshape[0], xshape[1], xshape[2]
             elif len(xshape) == 4:
-                _, nt, nx, d = xshape[0], xshape[1], xshape[2], xshape[3]
+                _, d, nt, nx = xshape[0], xshape[1], xshape[2], xshape[3]
             else:
                 raise ValueError(f'Invalid value for `xshape`: {xshape}')
 
@@ -143,7 +211,7 @@ class Network(nn.Module):
                 if (idx + 1) % 2 == 0:
                     conv_stack.append(nn.MaxPool2d(conv_config.pool[idx]))
 
-            conv_stack.append(nn.Flatten())
+            conv_stack.append(nn.Flatten(1))
             if network_config.use_batch_norm:
                 conv_stack.append(nn.BatchNorm1d(-1))
 
@@ -152,29 +220,42 @@ class Network(nn.Module):
         else:
             self.conv_stack = []
 
-        self.x_layer = nn.Linear(self.input_shapes['x'], self.units[0])
-        self.v_layer = nn.Linear(self.input_shapes['v'], self.units[0])
+        # self.flatten = nn.Flatten(-1)
+        self.x_layer = nn.Linear(
+            self.input_shapes['x'],  # input
+            self.units[0],           # output
+            device=self.device
+        )
+        self.v_layer = nn.Linear(
+            self.input_shapes['v'],
+            self.units[0],
+            device=self.device
+        )
 
-        self.hidden_layers = nn.ModuleList()
+        self.hidden_layers = nn.Sequential()
         for idx, units in enumerate(self.units[1:]):
             h = nn.Linear(self.units[idx], units)
             self.hidden_layers.append(h)
 
-        self.scale = nn.Linear(self.units[-1], self.xdim)
+        self.scale = ScaledTanh(self.units[-1], self.xdim)
+        self.transf = ScaledTanh(self.units[-1], self.xdim)
+        # self.scale = nn.Linear(self.units[-1], self.xdim, device=self.device)
         self.transl = nn.Linear(self.units[-1], self.xdim)
-        self.transf = nn.Linear(self.units[-1], self.xdim)
 
         if self.net_config.dropout_prob > 0:
             self.dropout = nn.Dropout(self.net_config.dropout_prob)
 
         if self.net_config.use_batch_norm:
-            self.batch_norm = nn.BatchNorm1d(self.units[-1])
+            self.batch_norm = nn.BatchNorm1d(self.units[-1],
+                                             device=self.device)
 
     def forward(
             self,
             inputs: tuple[Tensor, Tensor]
     ) -> tuple[Tensor, Tensor, Tensor]:
-        x, v = inputs
+        x = inputs[0].to(self.device)
+        v = inputs[1].to(self.device)
+
         if len(self.conv_stack) > 0:
             try:
                 x = x.reshape(-1, self.d + 2, self.nt, self.nx)
@@ -183,10 +264,12 @@ class Network(nn.Module):
 
             for layer in self.conv_stack:
                 x = self.activation_fn(layer(x))
+            if self.net_config.use_batch_norm:
+                x = self.batch_norm(x)
 
-        v = self.v_layer(v)
-        x = self.x_layer(flatten(x))
-
+        v = self.v_layer(v.flatten(1))
+        x = self.x_layer(x.flatten(1))
+        # v = self.v_layer(self.flatten(v))
         z = self.activation_fn(x + v)
         for layer in self.hidden_layers:
             z = self.activation_fn(layer(z))
@@ -197,15 +280,19 @@ class Network(nn.Module):
         if self.net_config.use_batch_norm:
             z = self.batch_norm(z)
 
-        scale = torch.exp(self.s_coeff) * torch.tanh(self.scale(z))
-        transl = self.transl(z)
-        transf = torch.exp(self.q_coeff) * torch.tanh(self.transf(z))
+        # scale = torch.tanh(self.scale(z))
+        # transl = self.transl(z)
+        # transf = torch.tanh(self.transf(z))
+        # s = self.nw.s * torch.exp(self.s_coeff) * scale
+        # t = self.nw.t * transl
+        # q = self.nw.q * torch.exp(self.q_coeff) * transf
+        # s = (self.nw.s * torch.exp(self.s_coeff)) * F.tanh(self.scale(z))
+        # q = (self.nw.q * torch.exp(self.q_coeff)) * F.tanh(self.transf(z))
+        s = self.nw.s * self.scale(z)
+        t = self.nw.t * self.transl(z)
+        q = self.nw.q * self.transf(z)
 
-        s = torch.mul(self.nw.s, scale)
-        t = torch.mul(self.nw.t, transl)
-        q = torch.mul(self.nw.q, transf)
-
-        return (s, t, q)
+        return s, t, q
 
 
 class NetworkFactory(BaseNetworkFactory):
