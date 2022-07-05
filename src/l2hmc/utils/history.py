@@ -87,6 +87,9 @@ class BaseHistory:
             else:
                 val = np.array(val)
 
+        if isinstance(val, tf.Tensor):
+            val = val.numpy()
+
         try:
             self.history[key].append(val)
         except KeyError:
