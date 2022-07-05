@@ -5,12 +5,19 @@ Contains implementation of StepTimer to automatically track timing data.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import time
+from typing import Optional
 
 import numpy as np
 import os
 from pathlib import Path
 import json
 import pandas as pd
+
+
+class TrainTimer:
+    def __init__(self) -> None:
+        self.step_timer = StepTimer
+        self.epoch_timer = StepTimer
 
 
 class StepTimer:
@@ -29,7 +36,7 @@ class StepTimer:
         self.iterations += 1
         return dt
 
-    def get_eval_rate(self, evals_per_step: int = None) -> dict:
+    def get_eval_rate(self, evals_per_step: Optional[int] = None) -> dict:
         if evals_per_step is None:
             evals_per_step = self.evals_per_step
 
@@ -49,8 +56,8 @@ class StepTimer:
     def write_eval_rate(
             self,
             outdir: os.PathLike,
-            mode: str = 'w',
-            evals_per_step: int = None,
+            mode: str = 'a',
+            evals_per_step: Optional[int] = None,
     ) -> dict:
         eval_rate = self.get_eval_rate(evals_per_step)
         outfile = Path(outdir).joinpath('step_timer_output.json')
@@ -59,7 +66,7 @@ class StepTimer:
 
         return eval_rate
 
-    def save_data(self, outfile: os.PathLike, mode: str = 'w') -> pd.DataFrame:
+    def save_data(self, outfile: os.PathLike, mode: str = 'a') -> pd.DataFrame:
         df = pd.DataFrame(self.data)
         fpath = Path(outfile).resolve()
         fpath.parent.mkdir(parents=True, exist_ok=True)
@@ -70,10 +77,12 @@ class StepTimer:
     def save_and_write(
             self,
             outdir: os.PathLike,
-            mode: str = 'w',
-            evals_per_step: int = None,
+            mode: str = 'a',
+            fname: Optional[str] = None,
+            evals_per_step: Optional[int] = None,
     ) -> dict:
-        outfile = Path(outdir).joinpath('step_timer.csv')
+        fname = 'step_timer' if fname is None else fname
+        outfile = Path(outdir).joinpath(f'{fname}.csv')
         df = self.save_data(outfile=outfile, mode=mode)
         data = self.write_eval_rate(outdir=outdir,
                                     evals_per_step=evals_per_step)

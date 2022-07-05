@@ -8,6 +8,7 @@ from typing import Optional
 
 import numpy as np
 import tensorflow as tf
+import logging
 
 from tensorflow.python.types.core import Callable
 
@@ -33,31 +34,44 @@ Activation = tf.keras.layers.Activation
 MaxPooling2D = tf.keras.layers.MaxPooling2D
 BatchNormalization = tf.keras.layers.BatchNormalization
 
+log = logging.getLogger(__name__)
+
 PI = np.pi
 TWO_PI = 2. * PI
 
 TF_FLOAT = tf.keras.backend.floatx()
 
-
-def to_u1(x: Tensor) -> Tensor:
-    return (tf.add(x, PI) % TWO_PI) - PI
+ACTIVATIONS = {
+    'relu': tf.keras.activations.relu,
+    'tanh': tf.keras.activations.tanh,
+    'swish': tf.keras.activations.swish,
+    'linear': lambda x: x,
+}
 
 
 def linear_activation(x: Tensor) -> Tensor:
     return x
 
-
-ACTIVATIONS = {
-    'relu': tf.keras.activations.relu,
-    'tanh': tf.keras.activations.tanh,
-    'swish': tf.keras.activations.swish,
-    'linear': linear_activation,
-}
-
 # FUNCTIONAL_ACTIVATIONS = {
 #     'relu': tf.keras.layers.ReLU,
 #     'tanh': tf.keras.layers.T
 # }
+
+
+def zero_weights(model: Model) -> Model:
+    for layer in model.layers:
+        if isinstance(layer, Model):
+            zero_weights(layer)
+        else:
+            weights = layer.get_weights()
+            zeros = []
+            for w in weights:
+                log.info(f'Zeroing layer: {layer}')
+                zeros.append(np.zeros_like(w))
+
+            layer.set_weights(zeros)
+
+    return model
 
 
 class NetworkFactory(BaseNetworkFactory):
@@ -225,7 +239,7 @@ def setup(
 def get_network(
         xshape: tuple,
         network_config: NetworkConfig,
-        input_shapes: Optional[dict[str, tuple[int]]] = None,
+        input_shapes: Optional[dict[str, tuple[int, int]]] = None,
         net_weight: Optional[NetWeight] = None,
         conv_config: Optional[ConvolutionConfig] = None,
         # factor: float = 1.,
@@ -251,19 +265,23 @@ def get_network(
 
     if input_shapes is None:
         input_shapes = {
-            'x': (xdim,), 'v': (xdim,),
+            'x': (int(xdim), int(2)),
+            'v': (int(xdim), int(2)),
         }
 
     kwargs = setup(xdim=xdim, name=name, network_config=network_config)
     coeff_kwargs = kwargs['coeff']
     layer_kwargs = kwargs['layer']
 
-    x_input = Input(input_shapes['x'], name=f'{name}_xinput', dtype=TF_FLOAT)
-    v_input = Input(input_shapes['v'], name=f'{name}_vinput', dtype=TF_FLOAT)
+    x_input = Input(input_shapes['x'], name=f'{name}_xinput')
+    v_input = Input(input_shapes['v'], name=f'{name}_vinput')
+    # log.info(f'xinput: {x_input}')
+    # log.info(f'vinput: {v_input}')
 
     s_coeff = tf.Variable(**coeff_kwargs['scale'])
     q_coeff = tf.Variable(**coeff_kwargs['transf'])
 
+    v = Flatten()(v_input)
     if conv_config is None or len(conv_config.filters) == 0:
         x = Flatten()(x_input)
 
@@ -292,19 +310,18 @@ def get_network(
                 x = MaxPooling2D((p, p), name=f'{name}/xPool{idx}')(x)
 
         x = Flatten()(x)
+        if network_config.use_batch_norm:
+            x = BatchNormalization(-1)(x)
 
     else:
         raise ValueError('Unable to build network.')
 
-    if network_config.use_batch_norm:
-        x = BatchNormalization(-1)(x)
-
     x = Dense(**layer_kwargs['x'])(x)
-    v = Dense(**layer_kwargs['v'])(v_input)
+    v = Dense(**layer_kwargs['v'])(v)
     z = act_fn(Add()([x, v]))
     for idx, units in enumerate(network_config.units[1:]):
         z = Dense(units,
-                  dtype=TF_FLOAT,
+                  # dtype=TF_FLOAT,
                   activation=act_fn,
                   name=f'{name}_hLayer{idx}')(z)
 

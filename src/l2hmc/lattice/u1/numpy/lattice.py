@@ -52,13 +52,13 @@ def project_angle(x: Array) -> Array:
 
 
 class BaseLatticeU1:
-    def __init__(self, nb: int, shape: tuple[int, int]):
-        self.nb = nb
+    def __init__(self, nchains: int, shape: tuple[int, int]):
+        self.nchains = nchains
         self._dim = 2
         assert len(shape) == 2
         self.nt, self.nx = shape
         self.xshape = (self._dim, *shape)
-        self._shape = (nb, *self.xshape)
+        self._shape = (nchains, *self.xshape)
 
         self.nplaqs = self.nt * self.nx
         self.nlinks = self.nplaqs * self._dim

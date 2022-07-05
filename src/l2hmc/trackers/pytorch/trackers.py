@@ -22,28 +22,25 @@ def log_item(
         tag: str,
         val: ArrayLike,
         writer: SummaryWriter,
-        step: Optional[int],
+        step: Optional[int] = None,
 ):
-    if isinstance(val, Tensor):
-        val = val.detach().cpu().numpy()
-
     if step is not None:
         iter_tag = '/'.join([tag.split('/')[0]] + ['iter'])
         writer.add_scalar(tag=iter_tag, scalar_value=step, global_step=step)
 
-    if (
-            'dt' in tag
-            or 'beta' in tag
-            or 'era' in tag
-            or 'epoch' in tag
-            or isinstance(val, (float, int, bool))
-    ):
-        writer.add_scalar(tag=tag, scalar_value=val, global_step=step)
-    else:
-        writer.add_histogram(tag=tag, values=val, global_step=step)
-        writer.add_scalar(tag=f'{tag}/avg',
-                          global_step=step,
-                          scalar_value=val.mean())
+    if isinstance(val, (Tensor, Array)):
+        if isinstance(val, Tensor):
+            val = val.detach()
+
+        if len(val.shape) > 0:
+            writer.add_histogram(tag=tag, values=val, global_step=step)
+            writer.add_scalar(f'{tag}/avg', val.mean())
+
+        elif isinstance(val, (int, float, bool)) or len(val.shape) == 0:
+            writer.add_scalar(tag=tag, scalar_value=val, global_step=step)
+        else:
+            log.warning(f'Unexpected type encountered for: {tag}')
+            log.warning(f'{tag}.type: {type(val)}')
 
 
 def log_dict(
@@ -54,10 +51,11 @@ def log_dict(
 ):
     """Create TensorBoard summaries for all items in `d`."""
     for key, val in d.items():
+        pre = key if prefix is None else f'{prefix}/{key}'
         if isinstance(val, dict):
-            log_dict(writer=writer, d=val, step=step, prefix=f'{prefix}/{key}')
+            log_dict(writer=writer, d=val, step=step, prefix=pre)
         else:
-            log_item(writer=writer, val=val, step=step, tag=f'{prefix}/{key}')
+            log_item(writer=writer, val=val, step=step, tag=pre)
 
 
 def log_list(
@@ -71,8 +69,9 @@ def log_list(
         if isinstance(t, Tensor):
             t = t.detach().numpy()
 
-        name = getattr(t, 'name', None)
-        tag = f'{prefix}/{name}' if name is not None else prefix
+        name = getattr(t, 'name', getattr(t, '__name__', None))
+        tag = name if prefix is None else f'{prefix}/{name}'
+        assert tag is not None
         log_item(writer=writer, val=t, step=step, tag=tag)
 
 

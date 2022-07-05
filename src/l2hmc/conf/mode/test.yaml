@@ -2,7 +2,7 @@
 
 # debug mode sets name of the logging folder to 'logs/debug/...'
 # enables trainer debug options
-# also sets level od command line logger to DEBUG
+# also sets level of command line logger to DEBUG
 # example usage:
 # `python run.py mode=debug`
 
@@ -12,30 +12,13 @@ defaults:
   - override /network: debug.yaml
   - override /dynamics: debug.yaml
   - override /annealing_schedule: constant.yaml
+  - override /logdir: default.yaml
 
 debug_mode: True
 
 hydra:
   # sets level of all command line loggers to 'DEBUG'
-  # verbose: True
-  verbose: ['l2hmc']
-  run:
-    dir: "outputs/debug/runs\
-      /${dynamics.latvolume[0]}x${dynamics.latvolume[1]}\
-      /nlf-${dynamics.nleapfrog}\
-      /beta-${annealing_schedule.beta_final}\
-      /merge_directions-${dynamics.merge_directions}\
-      /${framework}\
-      /${now:%Y-%m-%d}\
-      /${now:%H-%M-%S}"
-  sweep:
-    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}"
-    subdir: ${hydra.job.override_dirname}
-  # run:
-  #   dir: outputs/debug/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}
-  # sweep:
-  #   dir: outputs/debug/multiruns
-  #   subdir: ${hydra.job.num}
+  verbose: ['l2hmc', 'tensorflow', 'pytorch', 'numpy']
 
   # https://hydra.cc/docs/tutorials/basic/running_your_app/logging/
   # use this to set level of only chosen command line loggers to 'DEBUG'
@@ -48,4 +31,4 @@ hydra:
   #   subdir: ${hydra.job.num}
 
 # disable rich config printing, since it will be already printed by hydra when `verbose: True`
-print_config: True
+print_config: False

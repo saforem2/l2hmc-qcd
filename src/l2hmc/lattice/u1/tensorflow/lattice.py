@@ -4,43 +4,22 @@ lattice.py
 TensorFlow implementation of the Lattice object.
 """
 from __future__ import absolute_import, annotations, division, print_function
-from dataclasses import asdict, dataclass
+# from dataclasses import asdict, dataclass
 
 import numpy as np
 import tensorflow as tf
 from typing import Optional
 
-from l2hmc.lattice.u1.numpy.lattice import BaseLatticeU1
+# from l2hmc.lattice.u1.numpy.lattice import BaseLatticeU1
+from l2hmc.lattice.lattice import Lattice
+import l2hmc.group.u1.tensorflow.group as g
+from l2hmc.configs import Charges, LatticeMetrics
 
 TF_FLOAT = tf.keras.backend.floatx()
-PI = tf.constant(np.pi)
-TWO_PI = 2. * PI
+PI = tf.constant(np.pi, dtype=TF_FLOAT)
+TWO_PI = tf.constant(2. * PI, dtype=TF_FLOAT)
 
 Tensor = tf.Tensor
-
-
-@dataclass
-class Charges:
-    intQ: Tensor
-    sinQ: Tensor
-
-    def asdict(self):
-        return asdict(self)
-
-
-@dataclass
-class LatticeMetrics:
-    plaqs: Tensor
-    charges: Charges
-    p4x4: Tensor
-
-    def asdict(self):
-        return {
-            'plaqs': self.plaqs,
-            'sinQ': self.charges.sinQ,
-            'intQ': self.charges.intQ,
-            'p4x4': self.p4x4,
-        }
 
 
 def area_law(beta: float, num_plaqs: int) -> float:
@@ -60,13 +39,33 @@ def project_angle(x):
     return x - TWO_PI * tf.math.floor((x + PI) / TWO_PI)
 
 
-class LatticeU1(BaseLatticeU1):
-    def __init__(self, nb: int, shape: tuple[int, int]):
-        super().__init__(nb, shape=shape)
+class LatticeU1(Lattice):
+    def __init__(self, nchains: int, shape: list[int]):
+        assert len(shape) == 2
+        self.g = g.U1Phase()
+        self.nt, self.nx = shape
+        self.volume = self.nt * self.nx
+        self.nplaqs = self.nt * self.nx
+        super().__init__(group=self.g, nchains=nchains, shape=shape)
+
+        # self.nt, self.nx, = shape
+        # self._shape = (nchains, self.dim, *shape, self.g.shape)
+        # self.volume = self.nt * self.nx
+        # self.nplaqs = self.nt * self.nx
+        # self._lattice_shape = shape
+        # self.nsites = np.cumprod(shape)[-1]
+        # self.nlinks = self.nsites * self.dim
+        # self.site_idxs = tuple(
+        #     [self.nt] + [self.nx for _ in range(self.dim - 1)]
+        # )
+        # self.link_idxs = tuple(list(self.site_idxs) + [self.dim])
 
     def draw_uniform_batch(self) -> Tensor:
-        """Draw batch of samples, uniformly from [-pi, pi)."""
+        """Draw batch of samples, uniformly from (-pi, pi)."""
         return tf.random.uniform(self._shape, *(-PI, PI), dtype=TF_FLOAT)
+
+    def kinetic_energy(self, v: Tensor) -> Tensor:
+        return 0.5 * tf.reshape(v, (v.shape[0], -1)) ** 2
 
     def unnormalized_log_prob(
             self,
@@ -80,8 +79,29 @@ class LatticeU1(BaseLatticeU1):
     def action(self, x: Tensor, beta: Tensor) -> Tensor:
         """Calculate the Wilson gauge action for a batch of lattices."""
         wloops = self._get_wloops(x)
+        return self._action(wloops, beta)
+
+    def _action(self, wloops: Tensor, beta: Tensor) -> Tensor:
         local_action = tf.ones_like(wloops) - tf.math.cos(wloops)
-        return beta * tf.reduce_sum(local_action, (1, 2))
+        return (
+            tf.cast(beta, wloops.dtype) * tf.reduce_sum(local_action, (1, 2))
+        )
+
+    def action_with_grad(
+            self,
+            x: Tensor,
+            beta: Tensor
+    ) -> tuple[Tensor, Tensor]:
+        if tf.executing_eagerly():
+            with tf.GradientTape() as tape:
+                tape.watch(x)
+                s = self.action(x, beta)
+            dsdx = tape.gradient(s, x)
+        else:
+            s = self.action(x, beta)
+            dsdx = tf.gradients(s, [x])[0]
+
+        return s, dsdx
 
     def grad_action(self, x: Tensor, beta: Tensor) -> Tensor:
         """Compute the gradient of the potential function."""
@@ -98,21 +118,40 @@ class LatticeU1(BaseLatticeU1):
     def calc_metrics(
             self,
             x: Tensor,
+            xinit: Optional[Tensor] = None,
             beta: Optional[Tensor] = None,
     ) -> dict[str, Tensor]:
         wloops = self.wilson_loops(x)
         plaqs = self.plaqs(wloops=wloops)
         charges = self.charges(wloops=wloops)
-        metrics = {'plaqs': plaqs}
+        metrics = {
+            'plaqs': plaqs,
+            'intQ': charges.intQ,
+            'sinQ': charges.sinQ
+        }
+
         if beta is not None:
             pexact = plaq_exact(beta) * tf.ones_like(plaqs)
             metrics.update({
-               'plaqs_err': pexact - plaqs
+               'plaqs_err': pexact - plaqs,
+               'action': self.action(x, beta),
             })
 
-        metrics.update({
-            'intQ': charges.intQ, 'sinQ': charges.sinQ
-        })
+        if xinit is not None:
+            wloops_ = self.wilson_loops(xinit)
+            plaqs_ = self.plaqs(wloops=wloops_)
+            charges_ = self.charges(wloops=wloops_)
+            metrics.update({
+                'dplaqs': tf.abs(tf.subtract(plaqs, plaqs_)),
+                'dQint': tf.abs(charges.intQ - charges_.intQ),
+                'dQsin': tf.abs(charges.sinQ - charges_.sinQ),
+            })
+            # if beta is not None:
+            #     action_ = self.action(xinit, beta)
+            #     metrics.update({
+            #         'daction': tf.abs(metrics['action'] - action_),
+            #     })
+
         return metrics
 
     def observables(self, x: Tensor) -> LatticeMetrics:
@@ -137,13 +176,15 @@ class LatticeU1(BaseLatticeU1):
         #       wloop = U0(x, y) +  U1(x+1, y) - U0(x, y+1) - U1(x, y)
         #   and so output = wloop.T, with output.shape = [-1, Lt, Lx]
         # --------------------------
-        x = tf.transpose(tf.reshape(x, (-1, *self.xshape)), (1, 2, 3, 0))
+        # x = tf.transpose(tf.reshape(x, (-1, *self.xshape)), (1, 2, 3, 0))
+        x = tf.reshape(x, (-1, *self.xshape))
         # x = tf.transpose(tf.reshape(x, self._shape), (1, 2, 3, 0))
-        x0 = x[0]  # type:ignore  NOTE: x0 = t links
-        x1 = x[1]  # type:ignore  NOTE: x1 = x links
-        return tf.transpose(
-            x0 + tf.roll(x1, -1, axis=0) - tf.roll(x0, -1, axis=1) - x1
-        )
+        xu = x[:, 0]  # type:ignore  NOTE: x0 = t links
+        xv = x[:, 1]  # type:ignore  NOTE: x1 = x links
+        # return tf.transpose(
+        #     xu + tf.roll(xv, -1, axis=0) - tf.roll(xu, -1, axis=1) - xv
+        # )
+        return xu + tf.roll(xv, -1, axis=1) - tf.roll(xu, -1, axis=2) - xv
 
     def wilson_loops4x4(self, x: Tensor) -> Tensor:
         """Calculate the 4x4 Wilson loops"""
@@ -189,6 +230,9 @@ class LatticeU1(BaseLatticeU1):
         wloops = self._get_wloops(x) if wloops is None else wloops
         return tf.reduce_mean(tf.math.cos(wloops), (1, 2))
 
+    def _plaqs(self, wloops: Tensor) -> Tensor:
+        return tf.reduce_mean(tf.math.cos(wloops), (1, 2))
+
     def _plaqs4x4(self, wloops4x4: Tensor) -> Tensor:
         return tf.reduce_mean(tf.math.cos(wloops4x4), (1, 2))
 
@@ -217,6 +261,12 @@ class LatticeU1(BaseLatticeU1):
             raise ValueError('Expected input `x`')
         return self.wilson_loops(x)
 
+    def random(self):
+        return self.g.random(list(self._shape))
+
+    def random_momentum(self) -> Tensor:
+        return self.g.random_momentum(list(self._shape))
+
     def sin_charges(
             self,
             x: Optional[Tensor] = None,
@@ -242,6 +292,11 @@ class LatticeU1(BaseLatticeU1):
     ) -> Charges:
         """Calculate both charge representations and return as single object"""
         wloops = self._get_wloops(x) if wloops is None else wloops
+        sinq = self._sin_charges(wloops)
+        intq = self._int_charges(wloops)
+        return Charges(intQ=intq, sinQ=sinq)
+
+    def _charges(self, wloops: Tensor) -> Charges:
         sinQ = self._sin_charges(wloops)
         intQ = self._int_charges(wloops)
         return Charges(intQ=intQ, sinQ=sinQ)
@@ -276,3 +331,12 @@ class LatticeU1(BaseLatticeU1):
         q2 = self._sin_charges(wloops=wloops2)
         qloss = (acc * tf.math.subtract(q2, q1) ** 2) + 1e-4
         return tf.reduce_mean(-qloss, axis=0)
+
+
+if __name__ == '__main__':
+    lattice = LatticeU1(3, [8, 8])
+    beta = tf.constant(1.0)
+    x = lattice.random()
+    v = lattice.random_momentum()
+    action = lattice.action(x, beta)
+    kinetic = lattice.kinetic_energy(v)
