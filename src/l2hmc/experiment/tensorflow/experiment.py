@@ -184,7 +184,8 @@ class Experiment(BaseExperiment):
             run=self.run,
             arun=self.arun,
             writer=writer,
-            train_dir=jobdir
+            train_dir=jobdir,
+            skip=None,
         )
         if RANK == 0:
             output['dataset'] = self.save_dataset(
