@@ -12,12 +12,12 @@ setup:
     entity: l2hmc-qcd
     project: l2hmc-qcd
     settings:
-        start_method: fork
+        start_method: thread
     tags:
       - "beta_init=${annealing_schedule.beta_init}"
       - "beta_final=${annealing_schedule.beta_final}"
-    config_exclude_keys:
-      - _target_
+    # config_exclude_keys:
+    #   - _target_
 # watch:
 #   log: all
 #   # log_freq: 100

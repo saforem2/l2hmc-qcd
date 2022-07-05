@@ -12,9 +12,9 @@ setup:
     entity: l2hmc-qcd
     project: l2hmc-qcd-debug
     settings:
-        start_method: fork
-    config_exclude_keys:
-      - _target_
+        start_method: thread
+    # config_exclude_keys:
+    #   - _target_
     tags:
       - "beta_init=${annealing_schedule.beta_init}"
       - "beta_final=${annealing_schedule.beta_final}"
