@@ -17,6 +17,7 @@ from l2hmc.configs import ExperimentConfig
 from l2hmc.utils.rich import print_config
 
 log = logging.getLogger()
+logging.getLogger('matplotlib').setLevel(logging.ERROR)
 
 
 def seed_everything(seed: int):
@@ -26,6 +27,20 @@ def seed_everything(seed: int):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
+
+
+def setup(cfg: DictConfig):
+    # width = cfg.get('width', None)
+    # if width is not None and os.environ.get('COLUMNS', None) is None:
+    #     os.environ['COLUMNS'] = str(width)
+    # elif os.environ.get('COLUMNS', None) is not None:
+    #     cfg.update({'width': int(os.environ.get('COLUMNS', 235))})
+    # size = shutil.get_terminal_size()
+    # WIDTH = size.columns
+    # HEIGHT = size.lines
+    # cfg.update({})
+    if cfg.get('ignore_warnings'):
+        warnings.filterwarnings('ignore')
 
 
 def setup_logger(rank: int) -> None:
@@ -74,6 +89,7 @@ def setup_tensorflow(cfg: DictConfig) -> int:
     SIZE = hvd.size()
     LOCAL_RANK = hvd.local_rank()
     LOCAL_SIZE = hvd.local_size()
+    setup_logger(RANK)
 
     log.warning(f'Using: {TF_FLOAT} precision')
     log.info(f'Global Rank: {RANK} / {SIZE-1}')
@@ -100,7 +116,7 @@ def setup_torch(cfg: DictConfig) -> int:
 
     if torch.cuda.is_available():
         torch.cuda.set_device(hvd.local_rank())
-        torch.cuda.manual_seed(cfg.seed)
+        # torch.cuda.manual_seed(cfg.seed + hvd.local_rank())
     # else:
     #     torch.set_default_dtype(torch.float32)
     RANK = hvd.rank()
@@ -115,123 +131,54 @@ def setup_torch(cfg: DictConfig) -> int:
     return RANK
 
 
-def train_tensorflow(cfg: DictConfig) -> dict:
-    RANK = setup_tensorflow(cfg)
-    from l2hmc.experiment.tensorflow.experiment import Experiment
-    outputs = {}
-    ex = Experiment(cfg)
-    _ = ex.build(
-        init_wandb=(RANK == 0),
-        init_aim=(RANK == 0),
-    )
-    assert isinstance(ex.config, ExperimentConfig)
-    should_train = (
-        ex.config.steps.nera > 0
-        and ex.config.steps.nepoch > 0
-    )
-    if should_train:
-        outputs['train'] = ex.train()
-        # Evaluate trained model
-        if RANK == 0 and ex.config.steps.test > 0:
-            log.warning('Evaluating trained model')
-            outputs['eval'] = ex.evaluate(job_type='eval')
-
-    # Run generic HMC for baseline comparison
-    if RANK == 0 and ex.config.steps.test > 0:
-        log.warning('Running generic HMC with same traj len')
-        outputs['hmc'] = ex.evaluate(job_type='hmc')
-
-    return outputs
-
-
-def train_pytorch(cfg: DictConfig) -> dict:
-    RANK = setup_torch(cfg)
-
-    from l2hmc.experiment.pytorch.experiment import Experiment
-
-    outputs = {}
-    ex = Experiment(cfg)
-    _ = ex.build(
-        init_wandb=(RANK == 0),
-        init_aim=(RANK == 0),
-    )
-    assert isinstance(ex.config, ExperimentConfig)
-    should_train = (
-        ex.config.steps.nera > 0
-        and ex.config.steps.nepoch > 0
-    )
-    if should_train:
-        # from l2hmc.network.pytorch.network import zero_weights
-        # log.warning('Zeroing network weights...')
-        # ex.dynamics.networks.apply(zero_weights)
-
-        outputs['train'] = ex.train()
-        # Evaluate trained model
-        if RANK == 0 and ex.config.steps.test > 0:
-            log.warning('Evaluating trained model')
-            outputs['eval'] = ex.evaluate(job_type='eval')
-
-    # Run generic HMC for baseline comparison
-    if RANK == 0 and ex.config.steps.test > 0:
-        log.warning('Running generic HMC with same traj len')
-        outputs['hmc'] = ex.evaluate(job_type='hmc')
-
-    return outputs
-
-
-def setup(cfg: DictConfig):
-    # width = cfg.get('width', None)
-    # if width is not None and os.environ.get('COLUMNS', None) is None:
-    #     os.environ['COLUMNS'] = str(width)
-    # elif os.environ.get('COLUMNS', None) is not None:
-    #     cfg.update({'width': int(os.environ.get('COLUMNS', 235))})
-    # size = shutil.get_terminal_size()
-    # WIDTH = size.columns
-    # HEIGHT = size.lines
-    # cfg.update({})
-    if cfg.get('ignore_warnings'):
-        warnings.filterwarnings('ignore')
-
-
-@hydra.main(version_base=None, config_path='./conf', config_name='config')
-def main(cfg: DictConfig) -> None:
-    setup(cfg)
+def get_experiment(cfg: DictConfig):
     framework = cfg.get('framework', None)
     os.environ['RUNDIR'] = str(os.getcwd())
     if framework in ['tf', 'tensorflow']:
         RANK = setup_tensorflow(cfg)
         from l2hmc.experiment.tensorflow.experiment import Experiment
-        ex = Experiment(cfg)
+        experiment = Experiment(cfg)
         init = (RANK == 0)
-        _ = ex.build(init_wandb=init, init_aim=init)
-    elif framework in ['pt', 'pytorch', 'torch']:
+        _ = experiment.build(init_wandb=init, init_aim=init)
+        return experiment
+
+    if framework in ['pt', 'pytorch', 'torch']:
         RANK = setup_torch(cfg)
         # from l2hmc.network.pytorch.network import zero_weights, init_weights
         from l2hmc.experiment.pytorch.experiment import Experiment
-        ex = Experiment(cfg)
+        experiment = Experiment(cfg)
         init = (RANK == 0)
-        _ = ex.build(init_wandb=init, init_aim=init)
+        _ = experiment.build(init_wandb=init, init_aim=init)
+        return experiment
         # log.warning('Initializing network weights...')
         # ex.dynamics.networks['xnet'].apply(init_weights)
         # ex.dynamics.networks['vnet'].apply(init_weights)
 
-    else:
-        raise ValueError(
-            'Framework must be specified, one of: [pytorch, tensorflow]'
-        )
+    raise ValueError(
+        'Framework must be specified, one of: [pytorch, tensorflow]'
+    )
 
-    if RANK == 0:
+
+@hydra.main(version_base=None, config_path='./conf', config_name='config')
+def main(cfg: DictConfig) -> None:
+    # --- [0.] Setup ------------------------------------------------------
+    setup(cfg)
+    ex = get_experiment(cfg)
+    assert isinstance(ex.config, ExperimentConfig)
+
+    if ex.trainer.rank == 0:
         print_config(ex.cfg, resolve=True)
 
-    assert isinstance(ex.config, ExperimentConfig)
     should_train = (
         ex.config.steps.nera > 0
         and ex.config.steps.nepoch > 0
     )
+
+    # --- [1.] Train model -------------------------------------------------
     if should_train:
         _ = ex.train()
-        # Evaluate trained model
-        if RANK == 0 and ex.config.steps.test > 0:
+        # --- [2.] Evaluate trained model ----------------------------------
+        if ex.trainer.rank == 0 and ex.config.steps.test > 0:
             log.warning('Evaluating trained model')
             _ = ex.evaluate(job_type='eval')
 
@@ -240,8 +187,8 @@ def main(cfg: DictConfig) -> None:
             except AttributeError as e:
                 log.exception(e)
 
-    # Run generic HMC for baseline comparison
-    if RANK == 0 and ex.config.steps.test > 0:
+    # --- [3.] Run generic HMC for comparison ------------------------------
+    if ex.trainer.rank == 0 and ex.config.steps.test > 0:
         log.warning('Running generic HMC with same traj len')
         _ = ex.evaluate(job_type='hmc')
 
