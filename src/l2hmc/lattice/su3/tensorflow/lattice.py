@@ -314,6 +314,7 @@ class LatticeSU3(Lattice):
     def calc_metrics(
             self,
             x: Tensor,
+            xinit: Optional[Tensor] = None,
             beta: Optional[Tensor] = None,
     ) -> dict[str, Tensor]:
         # wloops = self.wilson_loops(x)
@@ -324,6 +325,17 @@ class LatticeSU3(Lattice):
         # qint = self._int_charges(wloops)
         # TODO: FIX ME
         metrics = {'plaqs': plaqs,  'sinQ': q.sinQ, 'intQ': q.intQ}
+
+        if xinit is not None:
+            wloops_ = self.wilson_loops(xinit)
+            plaqs_ = self.plaqs(wloops=wloops_)
+            q_ = self._charges(wloops=wloops_)
+            metrics.update({
+                'dplaqs': tf.abs(plaqs, plaqs_),
+                'dQint': tf.abs(q.intQ - q_.intQ),
+                'dQsin': tf.abs(q.sinQ - q_.sinQ),
+            })
+
         if beta is not None:
             action = self.action(x, beta)
             metrics['action'] = action
