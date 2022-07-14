@@ -14,6 +14,7 @@ import aim
 
 import numpy as np
 from omegaconf.dictconfig import DictConfig
+from rich.console import Console
 from l2hmc.configs import ExperimentConfig, InputSpec
 from hydra.utils import instantiate
 
@@ -117,6 +118,9 @@ class BaseTrainer(ABC):
             'eval': StepTimer(evals_per_step=self._nlf),
             'hmc': StepTimer(evals_per_step=self._nlf),
         }
+
+    def set_console(self, console: Console) -> None:
+        self.console = console
 
     @abstractmethod
     def draw_x(self):

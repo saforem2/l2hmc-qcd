@@ -27,7 +27,8 @@ from tensorflow._api.v2.train import CheckpointManager
 from tensorflow.python.keras import backend as K
 
 from l2hmc.configs import (
-    ExperimentConfig
+    ExperimentConfig,
+    Steps
 )
 from contextlib import nullcontext
 from l2hmc.common import get_timestamp
@@ -399,6 +400,7 @@ class Trainer(BaseTrainer):
     def eval(
             self,
             beta: Optional[Tensor | float] = None,
+            eval_steps: Optional[int] = None,
             x: Optional[Tensor] = None,
             skip: Optional[str | list[str]] = None,
             run: Optional[Any] = None,
@@ -452,10 +454,12 @@ class Trainer(BaseTrainer):
         tables = {}
         summaries = []
         table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
-        nprint = max(1, self.steps.test // 20)
-        nlog = max((1, min((10, self.steps.test))))
-        if nlog <= self.steps.test:
-            nlog = min(10, max(1, self.steps.test // 100))
+        eval_steps = self.steps.test if eval_steps is None else eval_steps
+        assert isinstance(eval_steps, int)
+        nprint = max(1, eval_steps // 20)
+        nlog = max((1, min((10, eval_steps))))
+        if nlog <= eval_steps:
+            nlog = min(10, max(1, eval_steps // 100))
 
         assert job_type in ['eval', 'hmc']
         timer = self.timers[job_type]
@@ -482,7 +486,7 @@ class Trainer(BaseTrainer):
                 console=self.console,
                 vertical_overflow='visible',
         ):
-            for step in range(self.steps.test):
+            for step in range(eval_steps):
                 timer.start()
                 x, metrics = eval_fn((x, beta))  # type:ignore
                 dt = timer.stop()
@@ -681,11 +685,14 @@ class Trainer(BaseTrainer):
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
+            steps: Optional[Steps] = None,
             # extend_last_era: Optional[bool] = True,
             # keep: str | list[str] = None,
     ) -> dict:
         """Perform training and return dictionary of results."""
         skip = [skip] if isinstance(skip, str) else skip
+        steps = self.steps if steps is None else steps
+        assert isinstance(steps, Steps)
 
         if x is None:
             x = flatten(self.g.random(list(self.xshape)))
@@ -702,13 +709,13 @@ class Trainer(BaseTrainer):
         manager = self.setup_CheckpointManager(train_dir)
         self._gstep = K.get_value(self.optimizer.iterations)
 
-        extend = self.steps.extend_last_era
+        extend = steps.extend_last_era
         assert x is not None
-        for era in range(self.steps.nera):
+        for era in range(steps.nera):
             beta = self.config.annealing_schedule.betas[str(era)]
             extend = (
-                self.steps.extend_last_era
-                if era == self.steps.nera - 1
+                steps.extend_last_era
+                if era == steps.nera - 1
                 else 1
             )
 
@@ -728,7 +735,7 @@ class Trainer(BaseTrainer):
             self.summaries['train'][str(era)] = edata['summaries']
 
             st0 = time.time()
-            if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
+            if (era + 1) == steps.nera or (era + 1) % 5 == 0:
                 self.save_ckpt(manager, train_dir)
 
             if self.rank == 0:
