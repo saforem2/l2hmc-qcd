@@ -1,5 +1,6 @@
-<div align="center">  
-    <h1><tt>l2hmc</tt>-qcd</h1>
+
+<img src="assets/logo.svg" width="46%" style="align:center!important;" />
+<div align="left">
     <a href="https://pytorch.org/get-started/locally/"><img alt="pyTorch" src="https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&logoColor=white"></a> <a href="https://hydra.cc"><img alt="hydra" src="https://img.shields.io/badge/Config-Hydra-89b8cd"></a> <a href="https://www.tensorflow.org"><img alt="tensorflow" src="https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white"></a> 
     <br>
     <a href="https://arxiv.org/abs/2112.01582"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg"></a> <a href="https://arxiv.org/abs/2105.03418"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg"></a> 
@@ -8,8 +9,6 @@
     <br>
     <a href="https://hits.seeyoufarm.com"><img alt="hits" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fsaforem2%2Fl2hmc-qcd&count_bg=%2300CCFF&title_bg=%23555555&icon=&icon_color=%23111111&title=👋&edge_flat=false"></a>
     <br>
-                                  
-
     
 </div>
 
@@ -25,12 +24,19 @@
 
 <!---![HitCount] (http://hits.dwyl.com/saforem2/l2hmc-qcd.svg)--->
 
+<div align="center">
+
+
+</div>
+
 # Overview
 
-## Papers, etc.
+## 📚 Papers, etc.
 - [**Accelerated Sampling Techniques for Lattice Gauge Theory**](https://saforem2.github.io/l2hmc-dwq25/#/) @ [BNL & RBRC: DWQ @ 25](https://indico.bnl.gov/event/13576/), December 2021
 - [**Training Topological Samplers for Lattice Gauge Theory**](https://bit.ly/l2hmc-ect2021) from the [*Machine Learning for High Energy Physics, on and off the Lattice*](https://indico.ectstar.eu/event/77/) @ ect* Trento (09/30/2021) (+ 📊 [slides](https://www.bit.ly/l2hmc-ect2021))
 - [Deep Learning Hamiltonian Monte Carlo](https://arxiv.org/abs/2105.03418) @ [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) **ICLR 2021** (+📈[poster](https://www.bit.ly/l2hmc_poster))
+	- 📚 : [arXiv:2105.03418](https://arxiv.org/abs/2105.03418)  
+	- 📊 : [poster](https://www.bit.ly/l2hmc_poster)
 
 ## 📊 [Slides](https://www.bit.ly/l2hmc-ect2021)
   - [**Accelerated Sampling Techniques for Lattice Gauge Theory**](https://saforem2.github.io/l2hmc-dwq25/#/) @ [BNL & RBRC: DWQ @ 25](https://indico.bnl.gov/event/13576/), December 2021
@@ -38,12 +44,7 @@
 
  ## 📒 [Example Notebook](./src/l2hmc/notebooks/l2hmc-qcd.ipynb)
 
-- [x]   Accepted to the [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) at **ICLR 2021**
-  - 📚 : [arXiv:2105.03418](https://arxiv.org/abs/2105.03418)  
-  - 📊 : [poster](https://www.bit.ly/l2hmc_poster)
----
-
-## Overview
+![---](https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png)
 
 ## Background
 The L2HMC algorithm aims to improve upon [HMC](https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo) by optimizing a carefully chosen loss function which is designed to minimize autocorrelations within the Markov Chain, thereby improving the efficiency of the sampler.
@@ -64,7 +65,7 @@ Broadly, given an *analytically* described target distribution, π(x), L2HMC pro
 - Is capable of traversing low-density zones to mix between modes (often difficult for generic HMC).
 
 
-<!-- ## 📒 [Example Notebook](./l2hmc-qcd/notebooks/l2hmc-qcd.ipynb) -->
+📒 [Example Notebook](./src/l2hmc/notebooks/example.ipynb)
 
 # Installation
 
@@ -161,6 +162,7 @@ Or via the [` bin/train.sh `](bin/train.sh) script provided in [` bin/ `](bin/).
   ```
 -->
     
+![---](https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png)
 
 </details>
     
@@ -209,4 +211,3 @@ Government. Declaration of Interests - None.
 [![Stargazers over time](https://starchart.cc/saforem2/l2hmc-qcd.svg)](https://starchart.cc/saforem2/l2hmc-qcd)
     
 </div>
-
