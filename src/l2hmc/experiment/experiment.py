@@ -174,6 +174,7 @@ class BaseExperiment(ABC):
                                           resolve=True,
                                           throw_on_missing=True)
         run.config.update(cfg_dict)
+        # run.config['hvd_size'] = SIZE
         # print_config(DictConfig(self.config), resolve=True)
 
         return run
