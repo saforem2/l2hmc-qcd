@@ -67,6 +67,41 @@ def list_to_str(x: list) -> str:
 
 
 @dataclass
+class CustomLogging:
+    version: int = 1
+    formatters: dict[str, Any] = field(
+        default_factory=lambda: {
+            'simple': {
+                'format': (
+                    '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
+                )
+            }
+        }
+    )
+    handlers: dict[str, Any] = field(
+        default_factory=lambda: {
+            'console': {
+                'class': 'rich.logging.RichHandler',
+                'formatter': 'simple',
+                'rich_tracebacks': 'true'
+            },
+            'file': {
+                'class': 'logging.FileHander',
+                'formatter': 'simple',
+                'filename': '${hydra.job.name}.log',
+            },
+        }
+    )
+    root: dict[str, Any] = field(
+        default_factory=lambda: {
+            'level': 'INFO',
+            'handlers': ['console', 'file'],
+        }
+    )
+    disable_existing_loggers: bool = False
+
+
+@dataclass
 class BaseConfig:
     def to_json(self) -> str:
         return json.dumps(self.__dict__)
@@ -171,7 +206,7 @@ class U1Config(BaseConfig):
         self.input_spec = InputSpec(
             xshape=self.dynamics.xshape,  # type:ignore
             xnet={'x': [xdim, int(2)], 'v': [xdim, ]},
-            vnet={'x': [xdim, int(2)], 'v': [xdim, ]}
+            vnet={'x': [xdim, ], 'v': [xdim, ]}
         )
 
 
@@ -514,24 +549,4 @@ cs = ConfigStore.instance()
 cs.store(
     name='experiment_config',
     node=ExperimentConfig,
-)
-cs.store(
-    name='dynamics_config',
-    node=DynamicsConfig,
-)
-cs.store(
-    name='network_config',
-    node=NetworkConfig
-)
-cs.store(
-    name='loss_config',
-    node=LossConfig,
-)
-cs.store(
-    name='net_weights',
-    node=NetWeights,
-)
-cs.store(
-    name='annealing_schedule',
-    node=AnnealingSchedule,
 )
