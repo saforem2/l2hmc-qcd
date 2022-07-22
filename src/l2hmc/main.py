@@ -19,6 +19,9 @@ from l2hmc.utils.rich import print_config
 log = logging.getLogger(__name__)
 
 logging.getLogger('matplotlib').setLevel(logging.CRITICAL)
+logging.getLogger('PIL.PngImagePlugin').setLevel(logging.CRITICAL)
+logging.getLogger('graphviz._tools').setLevel(logging.CRITICAL)
+logging.getLogger('graphviz').setLevel(logging.CRITICAL)
 
 
 def seed_everything(seed: int):
