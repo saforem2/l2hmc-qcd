@@ -661,6 +661,7 @@ class Trainer(BaseTrainer):
 
         bfloat = self.config.annealing_schedule.betas[str(era)]
 
+        losses = []
         with ctx as live:
             if live is not None:
                 tstr = ' '.join([
@@ -675,6 +676,7 @@ class Trainer(BaseTrainer):
                 self.timers['train'].start()
                 x, metrics = self.train_step((x, beta))  # type:ignore
                 dt = self.timers['train'].stop()
+                losses.append(metrics['loss'])
                 self._gstep += 1
                 if self.should_print(epoch) or self.should_log(epoch):
                     record = {
@@ -712,6 +714,7 @@ class Trainer(BaseTrainer):
         data = {
             'rows': rows,
             'table': table,
+            'losses': losses,
             'summaries': summaries,
         }
 
@@ -726,6 +729,9 @@ class Trainer(BaseTrainer):
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             steps: Optional[Steps] = None,
+            nera: Optional[int] = None,
+            nepoch: Optional[int] = None,
+            beta: Optional[float] = None,
             # extend_last_era: Optional[bool] = True,
             # keep: str | list[str] = None,
     ) -> dict:
@@ -751,8 +757,17 @@ class Trainer(BaseTrainer):
 
         extend = steps.extend_last_era
         assert x is not None
-        for era in range(steps.nera):
-            beta = self.config.annealing_schedule.betas[str(era)]
+        b = float(
+            beta if beta is not None and isinstance(beta, float)
+            else self.config.annealing_schedule.beta_init
+        )
+        beta_final = self.config.annealing_schedule.beta_final
+        era = 0
+        assert b is not None and isinstance(b, float)
+        assert beta_final is not None and isinstance(beta_final, float)
+        # for era in range(steps.nera):
+        while b < beta_final:
+            # beta = self.config.annealing_schedule.betas[str(era)]
             extend = (
                 steps.extend_last_era
                 if era == steps.nera - 1
@@ -762,13 +777,20 @@ class Trainer(BaseTrainer):
             epoch_start = time.time()
             x, edata = self.train_epoch(  # type:ignore
                 x=x,
-                beta=beta,
+                beta=b,
                 era=era,
                 run=run,
                 arun=arun,
                 writer=writer,
                 extend=extend,
             )
+            era += 1
+
+            losses = edata['losses']
+            if losses[-1] < losses[0]:
+                b += self.config.annealing_schedule._dbeta
+            else:
+                b -= self.config.annealing_schedule._dbeta
 
             self.rows['train'][str(era)] = edata['rows']
             self.tables['train'][str(era)] = edata['table']
