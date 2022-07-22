@@ -170,7 +170,7 @@ class Dynamics(Model):
     def apply_transition_hmc(
             self,
             inputs: tuple[Tensor, Tensor],
-            eps: float,
+            eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
         data = self.generate_proposal_hmc(inputs, eps, nleapfrog=nleapfrog)
@@ -214,7 +214,7 @@ class Dynamics(Model):
         data = self.generate_proposal_fb(inputs, training=training)
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
         ma = ma_[:, None]
-        mr = mr_[:, None]
+        # mr = mr_[:, None]
         ma_ = tf.cast(ma_, dtype=TF_FLOAT)  # data['proposed'].x.dtype)
         mr_ = tf.cast(mr_, dtype=TF_FLOAT)  # data['proposed'].x.dtype)
         v_out = tf.where(
@@ -258,6 +258,11 @@ class Dynamics(Model):
         mf = mf_[:, None]
         mb = mb_[:, None]
 
+        x_init = tf.where(
+            tf.cast(mf, bool),
+            fwd['init'].x,
+            bwd['init'].x
+        )
         v_init = tf.where(
             tf.cast(mf, bool),
             fwd['init'].v,
@@ -289,9 +294,9 @@ class Dynamics(Model):
         # logdet_prop = mf_ * mfwd['sumlogdet'] + mb_ * mbwd['sumlogdet']
 
         acc = mf_ * mfwd['acc'] + mb_ * mbwd['acc']
-        ma_, mr_ = self._get_accept_masks(acc)
+        ma_, _ = self._get_accept_masks(acc)
         ma = ma_[:, None]
-        mr = mr_[:, None]
+        # mr = mr_[:, None]
 
         v_out = tf.where(
             tf.cast(ma, bool),
@@ -341,7 +346,7 @@ class Dynamics(Model):
     def generate_proposal_hmc(
             self,
             inputs: tuple[Tensor, Tensor],
-            eps: float,
+            eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
     ) -> dict:
         x, beta = inputs
@@ -446,7 +451,7 @@ class Dynamics(Model):
             eps: float,
     ) -> State:
         """Perform standard HMC leapfrog update."""
-        x = tf.reshape(state.x, self.xshape)
+        # x = tf.reshape(state.x, self.xshape)
         xflat = tf.reshape(state.x, state.v.shape)
         force1 = self.grad_potential(xflat, state.beta)        # f = dU / dx
         # halfeps = tf.constant(0.5 * eps, dtype=force1.dtype)
