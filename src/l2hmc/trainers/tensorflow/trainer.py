@@ -9,6 +9,7 @@ from pathlib import Path
 import time
 from typing import Any, Callable, Optional
 from omegaconf import DictConfig
+import shutil
 
 import tensorflow as tf
 import tensorflow.python.framework.ops as ops
@@ -27,7 +28,8 @@ from tensorflow._api.v2.train import CheckpointManager
 from tensorflow.python.keras import backend as K
 
 from l2hmc.configs import (
-    ExperimentConfig
+    ExperimentConfig,
+    Steps
 )
 from contextlib import nullcontext
 from l2hmc.common import get_timestamp
@@ -120,7 +122,7 @@ class Trainer(BaseTrainer):
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
     ) -> None:
-        super().__init__(cfg=cfg, keep=keep, skip=skip)
+        super(Trainer, self).__init__(cfg=cfg, keep=keep, skip=skip)
         assert isinstance(self.config, ExperimentConfig)
         self._gstep = 0
         self.lattice = self.build_lattice()
@@ -358,10 +360,9 @@ class Trainer(BaseTrainer):
     def hmc_step(
             self,
             inputs: tuple[Tensor, Tensor],
-            eps: float,
+            eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
-        # xi, beta = inputs
         xo, metrics = self.dynamics.apply_transition_hmc(
             inputs,
             eps=eps,
@@ -399,6 +400,7 @@ class Trainer(BaseTrainer):
     def eval(
             self,
             beta: Optional[Tensor | float] = None,
+            eval_steps: Optional[int] = None,
             x: Optional[Tensor] = None,
             skip: Optional[str | list[str]] = None,
             run: Optional[Any] = None,
@@ -430,7 +432,8 @@ class Trainer(BaseTrainer):
         assert job_type in ['eval', 'hmc']
 
         if x is None:
-            r = self.dynamics.g.random(list(self.xshape))
+            r = self.g.random(list(self.xshape))
+            # r = self.dynamics.g.random(list(self.xshape))
             x = tf.reshape(r, (r.shape[0], -1))
 
         if writer is not None:
@@ -452,10 +455,12 @@ class Trainer(BaseTrainer):
         tables = {}
         summaries = []
         table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
-        nprint = max(1, self.steps.test // 20)
-        nlog = max((1, min((10, self.steps.test))))
-        if nlog <= self.steps.test:
-            nlog = min(10, max(1, self.steps.test // 100))
+        eval_steps = self.steps.test if eval_steps is None else eval_steps
+        assert isinstance(eval_steps, int)
+        nprint = max(1, eval_steps // 20)
+        nlog = max((1, min((10, eval_steps))))
+        if nlog <= eval_steps:
+            nlog = min(10, max(1, eval_steps // 100))
 
         assert job_type in ['eval', 'hmc']
         timer = self.timers[job_type]
@@ -477,12 +482,28 @@ class Trainer(BaseTrainer):
         # with Live(table) as live:
         assert x is not None and isinstance(x, Tensor)
         assert beta is not None and isinstance(beta, Tensor)
-        with Live(
-                table,
-                console=self.console,
-                vertical_overflow='visible',
-        ):
-            for step in range(self.steps.test):
+        size = shutil.get_terminal_size()
+        width = int(size.columns)
+        # width = os.environ.get(
+        #     'COLUMNS',
+        #     os.environ.get(
+        #         'WIDTH',
+        #         self.console.width
+        #     )
+        # )
+        if int(width) > 100:
+            LIVE = True
+            ctx = Live(
+                    table,
+                    console=self.console,
+                    vertical_overflow='visible',
+            )
+        else:
+            LIVE = False
+            ctx = nullcontext()
+
+        with ctx:
+            for step in range(eval_steps):
                 timer.start()
                 x, metrics = eval_fn((x, beta))  # type:ignore
                 dt = timer.stop()
@@ -497,6 +518,9 @@ class Trainer(BaseTrainer):
                                                         writer=writer,
                                                         metrics=metrics,
                                                         job_type=job_type)
+                    if not LIVE:
+                        log.info(summary)
+
                     summaries.append(summary)
                     if step == 0:
                         table = add_columns(avgs, table)
@@ -611,16 +635,33 @@ class Trainer(BaseTrainer):
         )
 
         nepoch = self.steps.nepoch * extend
+        LIVE = False
+        width = os.environ.get(
+            'COLUMNS',
+            os.environ.get(
+                'WIDTH',
+                self.console.width
+            )
+        )
         if self.rank == 0:
-            ctxmgr = Live(table,
-                          console=self.console,
-                          vertical_overflow='visible')
+            if int(width) > 100:
+                LIVE = True
+                ctx = Live(
+                        table,
+                        console=self.console,
+                        vertical_overflow='visible',
+                )
+            else:
+                ctx = nullcontext()
+            # ctxmgr = Live(table,
+            #               console=self.console,
+            #               vertical_overflow='visible')
         else:
-            ctxmgr = nullcontext()
+            ctx = nullcontext()
 
         bfloat = self.config.annealing_schedule.betas[str(era)]
 
-        with ctxmgr as live:
+        with ctx as live:
             if live is not None:
                 tstr = ' '.join([
                     f'ERA: {era}/{self.steps.nera}',
@@ -653,6 +694,9 @@ class Trainer(BaseTrainer):
                     rows[self._gstep] = avgs
                     summaries.append(summary)
 
+                    if LIVE:
+                        log.info(summary)
+
                     if epoch == 0:
                         table = add_columns(avgs, table)
                     else:
@@ -681,11 +725,14 @@ class Trainer(BaseTrainer):
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
+            steps: Optional[Steps] = None,
             # extend_last_era: Optional[bool] = True,
             # keep: str | list[str] = None,
     ) -> dict:
         """Perform training and return dictionary of results."""
         skip = [skip] if isinstance(skip, str) else skip
+        steps = self.steps if steps is None else steps
+        assert isinstance(steps, Steps)
 
         if x is None:
             x = flatten(self.g.random(list(self.xshape)))
@@ -702,13 +749,13 @@ class Trainer(BaseTrainer):
         manager = self.setup_CheckpointManager(train_dir)
         self._gstep = K.get_value(self.optimizer.iterations)
 
-        extend = self.steps.extend_last_era
+        extend = steps.extend_last_era
         assert x is not None
-        for era in range(self.steps.nera):
+        for era in range(steps.nera):
             beta = self.config.annealing_schedule.betas[str(era)]
             extend = (
-                self.steps.extend_last_era
-                if era == self.steps.nera - 1
+                steps.extend_last_era
+                if era == steps.nera - 1
                 else 1
             )
 
@@ -728,7 +775,7 @@ class Trainer(BaseTrainer):
             self.summaries['train'][str(era)] = edata['summaries']
 
             st0 = time.time()
-            if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
+            if (era + 1) == steps.nera or (era + 1) % 5 == 0:
                 self.save_ckpt(manager, train_dir)
 
             if self.rank == 0:

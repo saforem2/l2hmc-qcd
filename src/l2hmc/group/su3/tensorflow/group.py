@@ -103,7 +103,7 @@ class SU3(Group):
         return randTAH3(shape[:-2])
 
     def kinetic_energy(self, p: Tensor) -> Tensor:
-        p2 = norm2(p) - tf.constant(8.0)
+        p2 = norm2(p) - tf.constant(8.0, dtype=TF_FLOAT)
         return (
             0.5 * tf.math.reduce_sum(
                 tf.reshape(p2, [p.shape[0], -1]), axis=1

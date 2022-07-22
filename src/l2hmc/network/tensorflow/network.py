@@ -270,7 +270,7 @@ def get_network(
         }
 
     kwargs = setup(xdim=xdim, name=name, network_config=network_config)
-    coeff_kwargs = kwargs['coeff']
+    # coeff_kwargs = kwargs['coeff']
     layer_kwargs = kwargs['layer']
 
     x_input = Input(input_shapes['x'], name=f'{name}_xinput')
@@ -278,8 +278,16 @@ def get_network(
     # log.info(f'xinput: {x_input}')
     # log.info(f'vinput: {v_input}')
 
-    s_coeff = tf.Variable(**coeff_kwargs['scale'])
-    q_coeff = tf.Variable(**coeff_kwargs['transf'])
+    s_coeff = tf.Variable(
+        trainable=True,
+        dtype=TF_FLOAT,
+        initial_value=tf.zeros([1, xdim], dtype=TF_FLOAT),
+    )
+    q_coeff = tf.Variable(
+        trainable=True,
+        dtype=TF_FLOAT,
+        initial_value=tf.zeros([1, xdim], dtype=TF_FLOAT),
+    )
 
     v = Flatten()(v_input)
     if conv_config is None or len(conv_config.filters) == 0:

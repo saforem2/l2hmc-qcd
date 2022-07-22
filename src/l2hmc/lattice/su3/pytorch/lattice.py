@@ -344,8 +344,9 @@ class LatticeSU3(Lattice):
     ) -> tuple[Tensor, Tensor]:
         x.requires_grad_(True)
         s = self.action(x, beta)
+        sc = torch.complex(s, torch.zeros_like(s))
         identity = torch.ones(x.shape[0], device=x.device, dtype=x.dtype)
-        dsdx, = torch.autograd.grad(s, x, grad_outputs=identity)
+        dsdx, = torch.autograd.grad(sc, x, grad_outputs=identity)
         return s, self.g.projectTAH(dsdx @ x.adjoint())
 
     def grad_action(self, x: Tensor, beta: Tensor) -> Tensor:
@@ -361,6 +362,7 @@ class LatticeSU3(Lattice):
             self,
             x: Tensor,
             beta: Optional[Tensor] = None,
+            xinit: Optional[Tensor] = None,
     ) -> dict[str, Tensor]:
         plaqs = self._plaquettes(x)
         q = self.charges(x)
@@ -370,13 +372,35 @@ class LatticeSU3(Lattice):
         # qsin = self._sin_charges(wloops)
         # qint = self._int_charges(wloops)
         metrics = {
+            'plaqs': plaqs,
             'sinQ': q.sinQ,
             'intQ': q.intQ,
-            'plaqs': plaqs,
         }
+
         if beta is not None:
-            action = self.action(x, beta)
-            metrics['action'] = action
+            # s = self.action(x, beta)
+            s, dsdx = self.action_with_grad(x, beta)
+            metrics.update({
+                'action': s,
+                'dsdx': dsdx,
+            })
+            if xinit is not None:
+                # action_ = self.action(xinit, beta)
+                s_, dsdx_ = self.action_with_grad(xinit, beta)
+                metrics.update({
+                    'daction': (s - s_).abs(),
+                    'dsdx': (dsdx - dsdx_).abs()
+                })
+
+        if xinit is not None:
+            wloops_ = self.wilson_loops(xinit)
+            plaqs_ = self.plaqs(wloops=wloops_)
+            q_ = self._charges(wloops=wloops_)
+            metrics.update({
+                'dplaqs': (plaqs - plaqs_).abs(),
+                'dQint': (q.intQ - q_.intQ).abs(),
+                'dQsin': (q.sinQ - q_.sinQ).abs(),
+            })
 
         return metrics
 

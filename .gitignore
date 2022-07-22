@@ -3,6 +3,9 @@
 ## --------------------------------
 **.venv**
 poetry.lock
+**events.out.tfevents**
+**wandb**
+**.aim**
 src/l2hmc/wandb/**
 src/l2hmc/outputs/**
 **outputs**

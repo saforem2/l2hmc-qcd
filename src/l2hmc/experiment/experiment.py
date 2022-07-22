@@ -8,6 +8,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Optional
+import numpy as np
 
 import aim
 from hydra.utils import instantiate
@@ -173,6 +174,7 @@ class BaseExperiment(ABC):
                                           resolve=True,
                                           throw_on_missing=True)
         run.config.update(cfg_dict)
+        # run.config['hvd_size'] = SIZE
         # print_config(DictConfig(self.config), resolve=True)
 
         return run
@@ -219,7 +221,8 @@ class BaseExperiment(ABC):
             output: dict,
             # dset: xr.Dataset,
             job_type: str,
-            outdir: os.PathLike,
+            nchains: Optional[int] = None,
+            outdir: Optional[os.PathLike] = None,
             fname: Optional[str] = None,
             therm_frac: Optional[float] = None,
     ) -> xr.Dataset:
@@ -231,6 +234,12 @@ class BaseExperiment(ABC):
         dQint = dset.data_vars.get('dQint', None)
         if dQint is not None:
             dQint = dQint.values
+            dQint = np.where(
+                np.isnan(dQint),
+                np.zeros_like(dQint),
+                dQint,
+            )
+            # dQint = dQint[~np.isnan()]
             if self.run is not None:
                 import wandb
                 assert self.run is wandb.run
@@ -247,11 +256,13 @@ class BaseExperiment(ABC):
                 self.arun.track(dQdist,
                                 name='dQint',
                                 context={'subset': job_type})
-        nchains = int(
+        chains_to_plot = int(
             min(self.cfg.dynamics.nchains,
                 max(64, self.cfg.dynamics.nchains // 8))
         )
+        chains_to_plot = nchains if nchains is not None else chains_to_plot
         timers = getattr(self.trainer, 'timers', None)
+        outdir = self._outdir if outdir is None else outdir
         if timers is not None:
             timer = timers.get(job_type, None)
             if timer is not None:

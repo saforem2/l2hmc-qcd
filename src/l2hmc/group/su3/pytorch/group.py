@@ -25,6 +25,8 @@ log = logging.getLogger(__name__)
 
 Tensor = torch.Tensor
 
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 
 class SU3(Group):
     def __init__(self) -> None:
@@ -93,9 +95,9 @@ class SU3(Group):
 
     def random(self, shape: list[int]) -> Tensor:
         """Returns (batched) random SU(3) matrices."""
-        r = torch.randn(shape, requires_grad=True)
-        i = torch.randn(shape, requires_grad=True)
-        return projectSU(torch.complex(r, i))
+        r = torch.randn(shape, requires_grad=True, device=DEVICE)
+        i = torch.randn(shape, requires_grad=True, device=DEVICE)
+        return projectSU(torch.complex(r, i)).to(DEVICE)
 
     def random_momentum(self, shape: list[int]) -> Tensor:
         """Returns (batched) Traceless Anti-Hermitian matrices"""
@@ -131,7 +133,7 @@ class SU3(Group):
         Make traceless with tr(B - (tr(B) / N) * I) = tr(B) - tr(B) = 0
         """
         _, n, _ = x.shape
-        algebra_elem = torch.solve(u, x)[0]  # X^{-1} u
+        algebra_elem = torch.linalg.solve(u, x)[0]  # X^{-1} u
         # do projection in lie algebra
         B = (algebra_elem - algebra_elem.conj().transpose(-2, -1)) / 2.
         trace = torch.einsum('bii->b', B)
