@@ -108,37 +108,33 @@ class Experiment(BaseExperiment):
     ) -> Trainer:
         return Trainer(self.cfg, skip=skip, keep=keep)
 
-    def init_wandb(
-            self,
-            dynamics: Optional[Dynamics] = None,
-            loss_fn: Optional[Callable] = None
-    ):
+    def init_wandb(self):
         import wandb
         run = super()._init_wandb()
         assert run is wandb.run
-        dynamics = self.trainer.dynamics if dynamics is None else dynamics
-        loss_fn = self.trainer.loss_fn if loss_fn is None else loss_fn
-        run.watch(
-            dynamics,
-            criterion=loss_fn,
-            # self.trainer.dynamics.networks,
-            # criterion=self.trainer.loss_fn,
-            log='all',
-            log_graph=True
-        )
+        # dynamics = self.trainer.dynamics if dynamics is None else dynamics
+        # loss_fn = self.trainer.loss_fn if loss_fn is None else loss_fn
         # run.watch(
-        #     self.trainer.dynamics.vnet,
+        #     dynamics,
+        #     criterion=loss_fn,
+        #     # self.trainer.dynamics.networks,
         #     # criterion=self.trainer.loss_fn,
         #     log='all',
         #     log_graph=True
         # )
-        # run.watch(
-        #     self.trainer.dynamics if dynamics is None else dynamics,
-        #     criterion=self.trainer.loss_fn if loss_fn is None else loss_fn,
-        #     log="all",
-        #     log_graph=True,
-        # )
-        run.config['hvd_size'] = SIZE
+        # # run.watch(
+        # #     self.trainer.dynamics.vnet,
+        # #     # criterion=self.trainer.loss_fn,
+        # #     log='all',
+        # #     log_graph=True
+        # # )
+        # # run.watch(
+        # #     self.trainer.dynamics if dynamics is None else dynamics,
+        # #     criterion=self.trainer.loss_fn if loss_fn is None else loss_fn,
+        # #     log="all",
+        # #     log_graph=True,
+        # # )
+        # run.config['hvd_size'] = SIZE
 
         return run
 
@@ -194,11 +190,12 @@ class Experiment(BaseExperiment):
         arun = None
         if RANK == 0:
             if init_wandb:
+                import wandb
                 log.warning(f'Initialize WandB from {rank}:{local_rank}')
-                run = self.init_wandb(
-                    # dynamics=self.trainer.dynamics,
-                    # loss_fn=self.trainer.loss_fn
-                )
+                run = self.init_wandb()
+                assert run is wandb.run
+                run.watch(self.trainer.dynamics, log="all")
+                run.config['SIZE'] = SIZE
             if init_aim:
                 log.warning(f'Initializing Aim from {rank}:{local_rank}')
                 arun = self.init_aim()
