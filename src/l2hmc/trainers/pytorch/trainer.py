@@ -126,7 +126,7 @@ class Trainer(BaseTrainer):
         self.optimizer = hvd.DistributedOptimizer(
             self.optimizer
         )
-        hvd.broadcast_parameters(self.dynamics.parameters(), root_rank=0)
+        hvd.broadcast_parameters(list(self.dynamics.parameters()), root_rank=0)
         hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
         # self.optimizer = hvd.DistributedOptimizer(
         #         self.optimizer,
