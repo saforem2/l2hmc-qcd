@@ -6,13 +6,13 @@ Experiment base class.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
-import os
 from typing import Any, Callable, Optional
 
 import horovod.torch as hvd
 from omegaconf import DictConfig
 import torch
 from torch.utils.tensorboard.writer import SummaryWriter
+from l2hmc.configs import NetWeights
 
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.experiment.experiment import BaseExperiment
@@ -20,6 +20,7 @@ from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
 from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
 # from l2hmc.trainers.pytorch.trainer import Trainer
 from l2hmc.trainers.pytorch.trainer import Trainer
+from l2hmc.utils.rich import get_console
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +39,19 @@ class Experiment(BaseExperiment):
         #     self.cfg = hydra.utils.instantiate(cfg)
         #     assert isinstance(self.config, ExperimentConfig)
 
+    def set_net_weights(self, net_weights: NetWeights):
+        from l2hmc.network.pytorch.network import Network
+        for step in range(self.config.dynamics.nleapfrog):
+            xnet0 = self.trainer.dynamics._get_xnet(step, first=True)
+            xnet1 = self.trainer.dynamics._get_xnet(step, first=False)
+            vnet = self.trainer.dynamics._get_vnet(step)
+            assert isinstance(xnet0, Network)
+            assert isinstance(xnet1, Network)
+            assert isinstance(vnet, Network)
+            xnet0.set_net_weight(net_weights.x)
+            xnet1.set_net_weight(net_weights.x)
+            vnet.set_net_weight(net_weights.v)
+
     def visualize_model(self, x: Optional[Tensor] = None):
         from torchviz import make_dot  # type: ignore
         if x is None:
@@ -47,15 +61,30 @@ class Experiment(BaseExperiment):
         else:
             v = torch.rand_like(x)
 
-        s, t, q = self.trainer.dynamics._call_xnet(
+        assert isinstance(x, Tensor)
+        assert isinstance(v, Tensor)
+        sx0, tx0, qx0 = 0.0, 0.0, 0.0
+        sv, tv, qv = 0.0, 0.0, 0.0
+        # for step in range(self.config.dynamics.nleapfrog):
+        sx0, tx0, qx0 = self.trainer.dynamics._call_xnet(
             0, inputs=(x, v), first=True
         )
-        xparams = dict(
-            self.trainer.dynamics.networks['xnet'].named_parameters()
+        sv, tv, qv = self.trainer.dynamics._call_vnet(
+            0, inputs=(x, v),
         )
-        make_dot(s, params=xparams).render('scale-xnet-0', format='png')
-        make_dot(t, params=xparams).render('transl-xnet-0', format='png')
-        make_dot(q, params=xparams).render('transf-xnet-0', format='png')
+        xparams = dict(
+            self.trainer.dynamics.xnet.named_parameters()
+        )
+        vparams = dict(
+            self.trainer.dynamics.vnet.named_parameters()
+        )
+        make_dot(sx0, params=xparams).render('scale-xnet-0', format='png')
+        make_dot(tx0, params=xparams).render('transl-xnet-0', format='png')
+        make_dot(qx0, params=xparams).render('transf-xnet-0', format='png')
+
+        make_dot(sv, params=vparams).render('scale-vnet-0', format='png')
+        make_dot(tv, params=vparams).render('transl-vnet-0', format='png')
+        make_dot(qv, params=vparams).render('transf-vnet-0', format='png')
 
     def update_wandb_config(
             self,
@@ -81,16 +110,34 @@ class Experiment(BaseExperiment):
 
     def init_wandb(
             self,
-            dynamics: Optional[Any] = None,
+            dynamics: Optional[Dynamics] = None,
             loss_fn: Optional[Callable] = None
     ):
+        import wandb
         run = super()._init_wandb()
+        assert run is wandb.run
+        dynamics = self.trainer.dynamics if dynamics is None else dynamics
+        loss_fn = self.trainer.loss_fn if loss_fn is None else loss_fn
         run.watch(
-            self.trainer.dynamics if dynamics is None else dynamics,
-            criterion=self.trainer.loss_fn if loss_fn is None else loss_fn,
-            log="all",
-            log_graph=True,
+            dynamics,
+            criterion=loss_fn,
+            # self.trainer.dynamics.networks,
+            # criterion=self.trainer.loss_fn,
+            log='all',
+            log_graph=True
         )
+        # run.watch(
+        #     self.trainer.dynamics.vnet,
+        #     # criterion=self.trainer.loss_fn,
+        #     log='all',
+        #     log_graph=True
+        # )
+        # run.watch(
+        #     self.trainer.dynamics if dynamics is None else dynamics,
+        #     criterion=self.trainer.loss_fn if loss_fn is None else loss_fn,
+        #     log="all",
+        #     log_graph=True,
+        # )
         run.config['hvd_size'] = SIZE
 
         return run
@@ -100,8 +147,8 @@ class Experiment(BaseExperiment):
             job_type: str,
     ):
         # sdir = super()._get_summary_dir(job_type=job_type)
-        sdir = os.getcwd()
-        return SummaryWriter(sdir)
+        # sdir = os.getcwd()
+        return SummaryWriter(self._outdir)
 
     def build(
             self,
@@ -149,8 +196,8 @@ class Experiment(BaseExperiment):
             if init_wandb:
                 log.warning(f'Initialize WandB from {rank}:{local_rank}')
                 run = self.init_wandb(
-                    dynamics=self.trainer.dynamics,
-                    loss_fn=self.trainer.loss_fn
+                    # dynamics=self.trainer.dynamics,
+                    # loss_fn=self.trainer.loss_fn
                 )
             if init_aim:
                 log.warning(f'Initializing Aim from {rank}:{local_rank}')
@@ -192,6 +239,9 @@ class Experiment(BaseExperiment):
     def train(
         self,
         nchains: Optional[int] = None,
+        nera: Optional[int] = None,
+        nepoch: Optional[int] = None,
+        # steps: Optional[Steps] = None,
     ):
         # nchains = 16 if nchains is None else nchains
         jobdir = self.get_jobdir(job_type='train')
@@ -199,10 +249,24 @@ class Experiment(BaseExperiment):
         if RANK == 0:
             writer = self.get_summary_writer(job_type='train')
 
+        # logfile = jobdir.joinpath(f'train-{RANK}.log')
+        # with open(logfile.as_posix(), 'wt') as logfile:
+        # console = Console(log_path=False, file=logfile)
+        console = get_console(record=True)
+        # console = Console(log_path=False, record=True, width=210)
+        self.trainer.set_console(console)
         output = self.trainer.train(run=self.run,
                                     arun=self.arun,
                                     writer=writer,
-                                    train_dir=jobdir)
+                                    train_dir=jobdir,
+                                    nera=nera,
+                                    nepoch=nepoch)
+        fname = f'train-{RANK}'
+        txtfile = jobdir.joinpath(f'{fname}.txt')
+        htmlfile = jobdir.joinpath(f'{fname}.html')
+        console.save_text(txtfile.as_posix(), clear=False)
+        console.save_html(htmlfile.as_posix())
+
         if RANK == 0:
             output['dataset'] = self.save_dataset(
                 output=output,
@@ -224,6 +288,7 @@ class Experiment(BaseExperiment):
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
+            eval_steps: Optional[int] = None,
     ):
         """Evaluate model."""
         if RANK != 0:
@@ -238,6 +303,11 @@ class Experiment(BaseExperiment):
         #     writer = None
         # run = self.run if run is None else run
         # assert run is wandb.run
+        # with open(logfile.as_posix(), 'wt') as logfile:
+        # console = Console(log_path=False, file=logfile)
+        # console = Console(log_path=False, file=logfile, width=210)
+        console = get_console(record=True)
+        self.trainer.set_console(console)
         # arun = self.arun if run is None else arun
         output = self.trainer.eval(
             run=self.run,
@@ -247,7 +317,14 @@ class Experiment(BaseExperiment):
             job_type=job_type,
             eps=eps,
             nleapfrog=nleapfrog,
+            eval_steps=eval_steps,
         )
+
+        fname = f'{job_type}-{RANK}'
+        txtfile = jobdir.joinpath(f'{fname}.txt')
+        htmlfile = jobdir.joinpath(f'{fname}.html')
+        console.save_text(txtfile.as_posix(), clear=False)
+        console.save_html(htmlfile.as_posix())
 
         output['dataset'] = self.save_dataset(
             output=output,

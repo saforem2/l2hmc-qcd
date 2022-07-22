@@ -8,21 +8,16 @@ from __future__ import absolute_import, division, print_function, annotations
 
 import logging
 from omegaconf import DictConfig
-import os
 
-from typing import Optional, Callable
+from typing import Optional
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
 from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
 
 import tensorflow as tf
 import horovod.tensorflow as hvd
-from l2hmc.loss.tensorflow.loss import LatticeLoss
 
-from l2hmc.network.tensorflow.network import NetworkFactory
 from l2hmc.trainers.tensorflow.trainer import Trainer
-
-# import wandb
 
 
 from l2hmc.experiment.experiment import BaseExperiment
@@ -97,8 +92,10 @@ class Experiment(BaseExperiment):
             job_type: str,
     ):
         # sdir = super()._get_summary_dir(job_type=job_type)
-        sdir = os.getcwd()
-        return tf.summary.create_file_writer(sdir)  # type:ignore
+        # sdir = os.getcwd()
+        return tf.summary.create_file_writer(  # type:ignore
+            self._outdir.as_posix()
+        )
 
     def build(
             self,
@@ -171,10 +168,6 @@ class Experiment(BaseExperiment):
             self,
             nchains: Optional[int] = None,
     ):
-        # nchains = int(
-        #     min(self.cfg.dynamics.nchains,
-        #         max(64, self.cfg.dynamics.nchains // 8))
-        # )
         jobdir = self.get_jobdir(job_type='train')
         writer = None
         if RANK == 0:
@@ -190,50 +183,10 @@ class Experiment(BaseExperiment):
         if RANK == 0:
             output['dataset'] = self.save_dataset(
                 output=output,
+                nchains=nchains,
                 job_type='train',
                 outdir=jobdir
             )
-
-        # dataset = output['history'].get_dataset(therm_frac=0.0)
-        # dQint = dataset.data_vars.get('dQint', None)
-        # if dQint is not None:
-        #     dQint = dQint.values
-        #     if self.run is not None:
-        #         import wandb
-        #         assert self.run is wandb.run
-        #         self.run.summary['dQint_train'] = dQint
-        #         self.run.summary['dQint_train'] = dQint.mean()
-
-        #     if self.arun is not None:
-        #         import aim
-        #         from aim import Distribution
-        #         assert isinstance(self.arun, aim.Run)
-        #         dQdist = Distribution(dQint)
-        #         self.arun.track(dQdist,
-        #                         name='dQint',
-        #                         context={'subset': 'train'})
-        #         self.arun.track(dQint.mean(),
-        #                         name='dQint.avg',
-        #                         context={'subset': 'train'})
-
-        # nchains = int(
-        #     min(self.cfg.dynamics.nchains,
-        #         max(64, self.cfg.dynamics.nchains // 8))
-        # )
-        # if RANK == 0:
-        #     _ = save_and_analyze_data(dataset,
-        #                               run=self.run,
-        #                               arun=self.arun,
-        #                               outdir=jobdir,
-        #                               output=output,
-        #                               nchains=nchains,
-        #                               job_type='train',
-        #                               framework='tensorflow')
-
-        # _ = self.trainer.timers['train'].save_and_write(
-        #     outdir=jobdir,
-        #     fname=f'step_timer-train-{RANK}:{LOCAL_RANK}'
-        # )
 
         if writer is not None:
             writer.close()
@@ -243,15 +196,13 @@ class Experiment(BaseExperiment):
     def evaluate(
             self,
             job_type: str,
-            # run: Optional[Any] = None,
-            # arun: Optional[Any] = None,
             therm_frac: float = 0.1,
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
+            eval_steps: Optional[int] = None,
     ) -> dict:
         """Evaluate model."""
-        # if self.trainer.rank != 0:
         if RANK != 0:
             return {}
 
@@ -267,6 +218,7 @@ class Experiment(BaseExperiment):
             job_type=job_type,
             eps=eps,
             nleapfrog=nleapfrog,
+            eval_steps=eval_steps,
         )
         output['dataset'] = self.save_dataset(
             output=output,
@@ -274,43 +226,6 @@ class Experiment(BaseExperiment):
             outdir=jobdir,
             therm_frac=therm_frac,
         )
-        # dataset = output['history'].get_dataset(therm_frac=therm_frac)
-        # dQint = dataset.data_vars.get('dQint', None)
-        # if dQint is not None:
-        #     dQint = dQint.values
-        #     drop = int(0.1 * len(dQint))
-        #     dQint = dQint[drop:]
-        #     if self.run is not None:
-        #         import wandb
-        #         assert self.run is wandb.run
-        #         self.run.summary[f'dQint_{job_type}'] = dQint
-        #         self.run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
-
-        #     if self.arun is not None:
-        #         from aim import Distribution
-        #         assert isinstance(self.arun, aim.Run)
-        #         dQdist = Distribution(dQint)
-        #         self.arun.track(dQdist,
-        #                         name=f'dQint_{job_type}',
-        #                         context={'subset': job_type})
-        #         self.arun.track(dQint.mean(),
-        #                         name=f'dQint_{job_type}.avg',
-        #                         context={'subset': job_type})
-
-        # _ = save_and_analyze_data(
-        #     dataset,
-        #     run=self.run,
-        #     arun=self.arun,
-        #     outdir=jobdir,
-        #     output=output,
-        #     nchains=nchains,
-        #     job_type=job_type,
-        #     framework='tensorflow',
-        # )
-        # _ = self.trainer.timers[job_type].save_and_write(
-        #     outdir=jobdir,
-        #     fname=f'step_timer-{job_type}-{RANK}:{LOCAL_RANK}'
-        # )
 
         if writer is not None:
             writer.close()
