@@ -106,12 +106,12 @@ def randTAH3(shape: list[int]):
     s3 = 0.577350269189625750    # sqrt(1/3)
     r3 = s2 * tf.random.normal(shape, dtype=TF_FLOAT)
     r8 = s2 * s3 * tf.random.normal(shape, dtype=TF_FLOAT)
-    # m00 = tf.dtypes.complex(tf.cast(0.0,TF_FLOAT), r8+r3)
-    # m11 = tf.dtypes.complex(tf.cast(0.0,TF_FLOAT), r8-r3)
-    # m22 = tf.dtypes.complex(tf.cast(0.0,TF_FLOAT), -2*r8)
-    m00 = tf.dtypes.complex(0.0, r8+r3)
-    m11 = tf.dtypes.complex(0.0, r8-r3)
-    m22 = tf.dtypes.complex(0.0, -2*r8)
+    m00 = tf.dtypes.complex(tf.cast(0.0,TF_FLOAT), r8+r3)
+    m11 = tf.dtypes.complex(tf.cast(0.0,TF_FLOAT), r8-r3)
+    m22 = tf.dtypes.complex(tf.cast(0.0,TF_FLOAT), -2*r8)
+    # m00 = tf.dtypes.complex(0.0, r8+r3)
+    # m11 = tf.dtypes.complex(0.0, r8-r3)
+    # m22 = tf.dtypes.complex(0.0, -2*r8)
     r01 = s2 * tf.random.normal(shape, dtype=TF_FLOAT)
     r02 = s2 * tf.random.normal(shape, dtype=TF_FLOAT)
     r12 = s2 * tf.random.normal(shape, dtype=TF_FLOAT)
@@ -243,7 +243,7 @@ def projectTAH(x: Tensor) -> Tensor:
     R = - T^a tr[T^a (X - X†)]
       = T^a ∂_a (- tr[X + X†])
     """
-    nc = tf.constant(x.shape[-1])
+    nc = tf.constant(x.shape[-1], dtype=TF_FLOAT)
     r = 0.5 * (x - tf.linalg.adjoint(x))
     d = tf.linalg.trace(r) / nc
     r -= tf.reshape(d, d.shape + [1, 1]) * eyeOf(x)

@@ -75,7 +75,7 @@ class LatticeSU3(Lattice):
         self.g = g.SU3()
         self.nt, self.nx, self.ny, self.nz = shape
         self.volume = self.nt * self.nx * self.ny * self.nz
-        self.c1 = c1
+        self.c1 = tf.constant(c1, TF_FLOAT)
         super().__init__(group=self.g, nchains=nchains, shape=shape)
 
     def random(self) -> Tensor:
@@ -93,8 +93,11 @@ class LatticeSU3(Lattice):
 
     def coeffs(self, beta: Tensor | float) -> dict:
         """Coefficients for the plaquette and rectangle terms."""
+        beta = tf.cast(beta, TF_FLOAT)
         rect_coeff = tf.scalar_mul(self.c1, beta)
-        plaq_coeff = beta * (tf.constant(1.0) - tf.constant(8.0) * self.c1)
+        plaq_coeff = beta * (
+            tf.constant(1.0, TF_FLOAT) - tf.constant(8.0, TF_FLOAT) * self.c1
+        )
 
         return {'plaq': plaq_coeff, 'rect': rect_coeff}
 
@@ -244,8 +247,9 @@ class LatticeSU3(Lattice):
             axis=range(2, len(ps.shape))
         )
         psum = tf.cast(tf.reduce_sum(plaqs, axis=0), TF_FLOAT)
+        pcoeff = tf.cast(coeffs['plaq'], TF_FLOAT)
 
-        action = tf.math.multiply(coeffs['plaq'], psum)
+        action = tf.math.multiply(pcoeff, psum)
 
         if self.c1 != 0:
             rects = tf.reduce_sum(
@@ -253,9 +257,10 @@ class LatticeSU3(Lattice):
                 axis=range(2, len(rs.shape))
             )
             rsum = tf.reduce_sum(rects, axis=0)
-            action += tf.math.multiply(coeffs['rect'], rsum)
+            rcoeff = tf.cast(coeffs['rect'], TF_FLOAT)
+            action += tf.math.multiply(rcoeff, rsum)
 
-        return action * tf.constant(-1.0 / 3.0)
+        return action * tf.constant(-1.0 / 3.0, TF_FLOAT)
 
     def _action(
             self,
@@ -267,7 +272,8 @@ class LatticeSU3(Lattice):
         psum = tf.math.reduce_sum(
             tf.math.reduce_sum(tf.math.real(ps), range(2, len(ps.shape)))
         )
-        action = tf.scalar_mul(coeffs['plaq'], psum)
+        pcoeff = tf.cast(coeffs['plaq'], TF_FLOAT)
+        action = tf.scalar_mul(pcoeff, psum)
         if self.c1 != 0:
             rsum = tf.math.reduce_sum(
                 tf.math.reduce_sum(
@@ -276,7 +282,9 @@ class LatticeSU3(Lattice):
                 ),
                 axis=0,
             )
-            action = action + coeffs['rect'] * rsum
+            rcoeff = tf.cast(coeffs['rect'], TF_FLOAT)
+            action += tf.math.multiply(rcoeff, rsum)
+            # action = action + coeffs['rect'] * rsum
 
         return tf.divide(action, 3.0)
 
@@ -315,6 +323,7 @@ class LatticeSU3(Lattice):
             self,
             x: Tensor,
             beta: Optional[Tensor] = None,
+            xinit: Optional[Tensor] = None,
     ) -> dict[str, Tensor]:
         # wloops = self.wilson_loops(x)
         # wloops = tf.reduce_sum(wloops, 0)
@@ -325,8 +334,33 @@ class LatticeSU3(Lattice):
         # TODO: FIX ME
         metrics = {'plaqs': plaqs,  'sinQ': q.sinQ, 'intQ': q.intQ}
         if beta is not None:
-            action = self.action(x, beta)
-            metrics['action'] = action
+            # s = self.action(x, beta)
+            s, dsdx = self.action_with_grad(x, beta)
+            metrics.update({
+                'action': s,
+                'dsdx': dsdx,
+            })
+            if xinit is not None:
+                # action_ = self.action(xinit, beta)
+                s_, dsdx_ = self.action_with_grad(xinit, beta)
+                metrics.update({
+                    'daction': tf.abs(tf.subtract(s, s_)),
+                    'dsdx': tf.abs(tf.subtract(dsdx, dsdx_))
+                })
+
+        if xinit is not None:
+            wloops_ = self.wilson_loops(xinit)
+            plaqs_ = self.plaqs(wloops=wloops_)
+            q_ = self._charges(wloops=wloops_)
+            metrics.update({
+                'dplaqs': tf.abs(plaqs, plaqs_),
+                'dQint': tf.abs(q.intQ - q_.intQ),
+                'dQsin': tf.abs(q.sinQ - q_.sinQ),
+            })
+
+        if beta is not None:
+            s = self.action(x, beta)
+            metrics['action'] = s
         return metrics
 
     @staticmethod

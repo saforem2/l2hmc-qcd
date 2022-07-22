@@ -6,13 +6,14 @@ Implements methods for training L2HMC sampler.
 """
 from __future__ import absolute_import, annotations, division, print_function
 from collections import defaultdict
-from contextlib import nullcontext
+# from contextlib import nullcontext
 # from dataclasses import asdict
 import logging
 import os
 from pathlib import Path
 import time
 from typing import Any, Callable, Optional
+# from accelerate import Accelerator
 
 
 import aim
@@ -22,7 +23,8 @@ from aim import Distribution
 import numpy as np
 from omegaconf import DictConfig
 from rich import box
-from rich.live import Live
+# from rich.console import Console
+# from rich.live import Live
 from rich.table import Table
 import torch
 import horovod.torch as hvd
@@ -45,16 +47,34 @@ from l2hmc.network.pytorch.network import NetworkFactory
 from l2hmc.trackers.pytorch.trackers import update_summaries
 from l2hmc.trainers.trainer import BaseTrainer
 from l2hmc.utils.history import summarize_dict
-from l2hmc.utils.rich import add_columns
+from l2hmc.utils.rich import add_columns, get_console
 from l2hmc.utils.step_timer import StepTimer
 
 # from mpi4py import MPI
 # from torchinfo import summary as model_summary
 
 
+from rich.logging import RichHandler
 # WIDTH = int(os.environ.get('COLUMNS', 150))
 
 log = logging.getLogger(__name__)
+# console = Console(theme=Theme({'logging.level.custom': 'green'}))
+console = get_console()
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(message)s",
+    datefmt="%X",
+    handlers=[
+        RichHandler(
+            rich_tracebacks=True,
+            tracebacks_show_locals=True,
+            console=console,
+        )
+    ]
+)
+
+logging.addLevelName(70, 'CUSTOM')
 
 
 Tensor = torch.Tensor
@@ -80,7 +100,7 @@ class Trainer(BaseTrainer):
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
     ) -> None:
-        super().__init__(cfg=cfg, keep=keep, skip=skip)
+        super(Trainer, self).__init__(cfg=cfg, keep=keep, skip=skip)
         assert isinstance(self.config, ExperimentConfig)
         self._gstep = 0
         self._with_cuda = torch.cuda.is_available()
@@ -89,31 +109,48 @@ class Trainer(BaseTrainer):
         self.dynamics = self.build_dynamics()
         self.optimizer = self.build_optimizer()
         self.lr_schedule = self.build_lr_schedule()
-        assert isinstance(self.dynamics, nn.Module)
+        self.rank = hvd.local_rank()
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         assert isinstance(self.dynamics, Dynamics)
-        self.verbose = self.config.dynamics.verbose
+        assert isinstance(self.dynamics, nn.Module)
+        # self.verbose = self.config.dynamics.verbose
         # skip_tracking = os.environ.get('SKIP_TRACKING', False)
         # self.verbose = not skip_tracking
         self.clip_norm = self.config.learning_rate.clip_norm
         if self._with_cuda:
             self.dynamics.cuda()
+            self.dynamics.networks.cuda()
+            self.dynamics.xnet.cuda()
+            self.dynamics.vnet.cuda()
 
         self.optimizer = hvd.DistributedOptimizer(
-                self.optimizer,
-                named_parameters=self.dynamics.named_parameters(),
-                # op=hvd.Average,
-                # op=hvd.Adasum if cfg.use_adasum else hvd.Average,
+            self.optimizer
         )
-        hvd.broadcast_parameters(self.dynamics.state_dict(), root_rank=0)
+        hvd.broadcast_parameters(list(self.dynamics.parameters()), root_rank=0)
         hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
-        self.device = hvd.local_rank()
-        self.rank = hvd.local_rank()
+        # self.optimizer = hvd.DistributedOptimizer(
+        #         self.optimizer,
+        #         # named_parameters=self.dynamics.named_parameters(),
+        #         # op=hvd.Average,
+        #         # op=hvd.Adasum if cfg.use_adasum else hvd.Average,
+        # )
+        # hvd.broadcast_parameters(self.dynamics.networks.state_dict(),
+        #                          root_rank=0)
+        # hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
+        # self.device = hvd.local_rank()
+        # self.rank = hvd.local_rank()
+        # self.rank = self.accelerator.local_process_index
         if self.config.dynamics.group == 'U1':
             self.g = U1Phase()
         elif self.config.dynamics.group == 'SU3':
             self.g = SU3()
         else:
             raise ValueError
+
+        # self.dynamics, self.optimizer = self.accelerator.prepare(
+        #     self.dynamics,
+        #     self.optimizer
+        # )
 
     def draw_x(self):
         return self.g.random(
@@ -158,9 +195,24 @@ class Trainer(BaseTrainer):
             network_config=self.config.network,
             net_weights=self.config.net_weights,
         )
-        return Dynamics(config=self.config.dynamics,
-                        potential_fn=self.lattice.action,
-                        network_factory=net_factory)
+        dynamics = Dynamics(config=self.config.dynamics,
+                            potential_fn=self.lattice.action,
+                            network_factory=net_factory)
+        # state = dynamics.random_state(1.)
+        # for step in range(self.config.dynamics.nleapfrog):
+        #     xn0 = dynamics._get_xnet(step, first=True)
+        #     xn1 = dynamics._get_xnet(step, first=True)
+        #     vn = dynamics._get_vnet(step)
+        #     if torch.cuda.is_available():
+        #         xn0, xn1, vn = xn0.cuda(), xn1.cuda(), vn.cuda()
+        #     xn0 = xn0.float()
+        #     xn1 = xn1.float()
+        #     vn = vn.float()
+        #     _ = dynamics._call_xnet(step, (state.x, state.v), first=True)
+        #     _ = dynamics._call_xnet(step, (state.x, state.v), first=False)
+        #     _ = dynamics._call_vnet(step, (state.x, state.v))
+
+        return dynamics
 
     def build_optimizer(
             self,
@@ -199,18 +251,22 @@ class Trainer(BaseTrainer):
         if self.rank != 0:
             return
 
-        assert isinstance(self.dynamics, Dynamics)
+        # assert isinstance(self.dynamics, Dynamics)
         ckpt_dir = Path(train_dir).joinpath('checkpoints')
         ckpt_dir.mkdir(exist_ok=True, parents=True)
         ckpt_file = ckpt_dir.joinpath(f'ckpt-{era}-{epoch}.tar')
         if self.rank == 0:
             log.info(f'Saving checkpoint to: {ckpt_file.as_posix()}')
-        xeps = {
-            k: grab(v) for k, v in self.dynamics.xeps.items()
-        }
-        veps = {
-            k: grab(v) for k, v in self.dynamics.veps.items()
-        }
+        assert isinstance(self.dynamics.xeps, nn.ParameterList)
+        assert isinstance(self.dynamics.veps, nn.ParameterList)
+        xeps = [e.detach().cpu().numpy() for e in self.dynamics.xeps]
+        veps = [e.detach().cpu().numpy() for e in self.dynamics.veps]
+        # xeps = {
+        #     k: grab(v) for k, v in self.dynamics.xeps
+        # }
+        # veps = {
+        #     k: grab(v) for k, v in self.dynamics.veps
+        # }
         ckpt = {
             'era': era,
             'epoch': epoch,
@@ -283,7 +339,7 @@ class Trainer(BaseTrainer):
         avgs = self.histories[job_type].update(record)
         summary = summarize_dict(avgs)
 
-        if writer is not None and self.verbose and step is not None:
+        if writer is not None:
             assert step is not None
             update_summaries(step=step,
                              model=model,
@@ -399,7 +455,7 @@ class Trainer(BaseTrainer):
         )
         xp = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=xi, x_prop=xp, acc=metrics['acc'])
-        if self.verbose:
+        if self.config.dynamics.verbose:
             lmetrics = self.loss_fn.lattice_metrics(xinit=xi, xout=xo)
             metrics.update(lmetrics)
 
@@ -419,7 +475,7 @@ class Trainer(BaseTrainer):
         # xout = self.g.compat_proj(xout)
         xprop = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
-        if self.verbose:
+        if self.config.dynamics.verbose:
             lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
             metrics.update(lmetrics)
 
@@ -430,6 +486,7 @@ class Trainer(BaseTrainer):
     def eval(
             self,
             beta: Optional[float] = None,
+            eval_steps: Optional[int] = None,
             x: Optional[Tensor] = None,
             skip: Optional[str | list[str]] = None,
             run: Optional[Any] = None,
@@ -468,10 +525,13 @@ class Trainer(BaseTrainer):
 
         tables = {}
         table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
-        nprint = max(1, self.steps.test // 50)
-        nlog = max((1, min((10, self.steps.test))))
-        if nlog <= self.steps.test:
-            nlog = min(10, max(1, self.steps.test // 100))
+
+        eval_steps = self.steps.test if eval_steps is None else eval_steps
+        assert isinstance(eval_steps, int)
+        nprint = max(1, eval_steps // 50)
+        nlog = max((1, min((10, eval_steps))))
+        if nlog <= eval_steps:
+            nlog = min(10, max(1, eval_steps // 100))
 
         assert job_type in ['eval', 'hmc']
         timer = self.timers[job_type]
@@ -489,40 +549,49 @@ class Trainer(BaseTrainer):
         if run is not None:
             run.config.update({job_type: {'beta': beta, 'xshape': x.shape}})
 
-        with Live(
-                table,
-                console=self.console,
-                vertical_overflow='visible',
-        ):
-            # live.update(table)
-            for step in range(self.steps.test):
-                timer.start()
-                x, metrics = eval_fn((x, beta))
-                dt = timer.stop()
-                if step % nlog == 0 or step % nprint == 0:
-                    record = {
-                        'step': step, 'beta': beta, 'dt': dt,
-                    }
-                    avgs, summary = self.record_metrics(run=run,
-                                                        arun=arun,
-                                                        step=step,
-                                                        record=record,
-                                                        writer=writer,
-                                                        metrics=metrics,
-                                                        job_type=job_type)
-                    summaries.append(summary)
-                    if step == 0:
-                        table = add_columns(avgs, table)
-                    else:
-                        table.add_row(*[f'{v}' for _, v in avgs.items()])
+        # with Live(
+        #         table,
+        #         console=self.console,
+        #         screen=True,
+        #         vertical_overflow='visible',
+        # ):
+        # live.update(table)
+        for step in range(eval_steps):
+            timer.start()
+            x, metrics = eval_fn((x, beta))
+            dt = timer.stop()
+            if step % nlog == 0 or step % nprint == 0:
+                record = {
+                    'step': step, 'beta': beta, 'dt': dt,
+                }
+                avgs, summary = self.record_metrics(run=run,
+                                                    arun=arun,
+                                                    step=step,
+                                                    record=record,
+                                                    writer=writer,
+                                                    metrics=metrics,
+                                                    job_type=job_type)
+                self.console.log(' '.join([
+                    # _mstr(k, v) for k, v in avgs.items()
+                    f'{k}={v:<4g}' if isinstance(v, int)
+                    else f'{k}={v:<5.4f}'
+                    for k, v in avgs.items() if k not in ['xeps', 'veps']
+                ]))
+                # log.info(' '.join('='.join([f'{k}])))
+                # log.info(summary)
+                summaries.append(summary)
+                if step == 0:
+                    table = add_columns(avgs, table)
+                else:
+                    table.add_row(*[f'{v}' for _, v in avgs.items()])
 
-                    if avgs.get('acc', 1.0) < 1e-5:
-                        self.reset_optimizer()
-                        self.console.log('Chains are stuck! Redrawing x')
-                        x = self.g.random(list(x.shape))
+                if avgs.get('acc', 1.0) < 1e-5:
+                    self.reset_optimizer()
+                    self.console.log('Chains are stuck! Redrawing x')
+                    x = self.g.random(list(x.shape))
 
-            # console.log(table)
-            tables[str(0)] = table
+        # console.log(table)
+        tables[str(0)] = table
 
         return {
             'timer': timer,
@@ -538,6 +607,7 @@ class Trainer(BaseTrainer):
         """Logic for performing a single training step"""
         xinit, beta = inputs
         xinit = self.g.compat_proj(xinit)
+        # xinit = self.to_u1(xinit)
         beta = torch.tensor(beta) if isinstance(beta, float) else beta
         if WITH_CUDA:
             xinit, beta = xinit.cuda(), beta.cuda()
@@ -574,33 +644,37 @@ class Trainer(BaseTrainer):
                                          x_prop=yprop,
                                          acc=metrics_['acc'])
             loss += aw * aux_loss
-            # loss = loss + (aux_loss / self.aux_weight)
 
-        # [3.] Backpropagate gradients
+        # # [3.] Backpropagate gradients
         # self.accelerator.backward(loss)
         self.optimizer.zero_grad()
         loss.backward()
+        if self.config.learning_rate.clip_norm > 0.0:
+            torch.nn.utils.clip_grad.clip_grad_norm(
+                self.dynamics.networks.parameters(),
+                max_norm=self.clip_norm
+            )
         self.optimizer.step()
         self.lr_schedule.step()
         # self.optimizer.synchronize()
-        # if self.clip_norm > 0.0:
-        #     torch.nn.utils.clip_grad_value_(
-        #             self.dynamics.parameters(),
-        #             clip_value=self.clip_norm,
-        #     )
 
-        # if self.lr_config.clip_norm > 0.0:
-        #     # clip_grad_norm(self.dynamics.parameters(),
-        #     #                max_norm=self.clip_norm)
-        #     # self.accelerator.clip_grad_norm_(
-        #     #     self.dynamics.parameters(),
-        #     #     max_norm=self.clip_norm
-        #     # )
+        # ---------------------------------------
+        # DEPRECATED: Removed Accelerator
+        # self.optimizer.zero_grad()
+        # self.accelerator.backward(loss)
+        # # extract_model_from_parallel(self.dynamics).parameters(),
+        # self.accelerator.clip_grad_norm_(
+        #     self.dynamics.parameters(),
+        #     max_norm=self.clip_norm,
+        # )
+        # self.optimizer.step()
+        # ---------------------------------------
 
         metrics['loss'] = loss
-        if self.verbose:
-            lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
-            metrics.update(lmetrics)
+        if self.config.dynamics.verbose:
+            with torch.no_grad():
+                lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
+                metrics.update(lmetrics)
 
         return xout.detach(), metrics
 
@@ -613,6 +687,7 @@ class Trainer(BaseTrainer):
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             extend: Optional[int] = None,
+            nepoch: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
         # if WITH_CUDA:
         #     with torch.cuda.amp.autocast():
@@ -627,56 +702,72 @@ class Trainer(BaseTrainer):
             row_styles=['dim', 'none'],
         )
 
-        nepoch = self.steps.nepoch * extend
-        if self.rank == 0:
-            ctxmgr = Live(table,
-                          console=self.console,
-                          vertical_overflow='visible')
-        else:
-            ctxmgr = nullcontext()
+        nepoch = self.steps.nepoch if nepoch is None else nepoch
+        assert isinstance(nepoch, int)
+        nepoch *= extend
+        # if self.rank == 0:
+        #     ctxmgr = Live(table,
+        #                   screen=True,
+        #                   console=self.console,
+        #                   vertical_overflow='visible')
+        # else:
+        #     ctxmgr = nullcontext()
 
-        with ctxmgr as live:
-            if live is not None:
-                tstr = ' '.join([
-                    f'ERA: {era}/{self.steps.nera}',
-                    f'BETA: {beta:.3f}',
-                ])
-                live.console.clear_live()
-                live.console.rule(tstr)
-                live.update(table)
+        # with ctxmgr as live:
+        #     if live is not None:
+        #         tstr = ' '.join([
+        #             f'ERA: {era}/{self.steps.nera}',
+        #             f'BETA: {beta:.3f}',
+        #         ])
+        #         live.console.clear_live()
+        #         live.console.rule(tstr)
+        #         live.update(table)
 
-            for epoch in range(nepoch):
-                self.timers['train'].start()
-                x, metrics = self.train_step((x, beta))
-                dt = self.timers['train'].stop()
-                self._gstep += 1
-                if self.should_print(epoch) or self.should_log(epoch):
-                    record = {
-                        'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
-                    }
-                    avgs, summary = self.record_metrics(
-                        run=run,
-                        arun=arun,
-                        step=self._gstep,
-                        writer=writer,
-                        record=record,    # template w/ step info
-                        metrics=metrics,  # metrics from Dynamics
-                        job_type='train'
-                    )
-                    rows[self._gstep] = avgs
-                    summaries.append(summary)
+        for epoch in range(nepoch):
+            self.timers['train'].start()
+            x, metrics = self.train_step((x, beta))
+            dt = self.timers['train'].stop()
+            self._gstep += 1
+            if self.should_print(epoch) or self.should_log(epoch):
+                record = {
+                    'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
+                }
+                avgs, summary = self.record_metrics(
+                    run=run,
+                    arun=arun,
+                    step=self._gstep,
+                    writer=writer,
+                    record=record,    # template w/ step info
+                    metrics=metrics,  # metrics from Dynamics
+                    job_type='train'
+                )
+                rows[self._gstep] = avgs
+                summaries.append(summary)
 
-                    if epoch == 0:
-                        table = add_columns(avgs, table)
-                    else:
-                        table.add_row(*[f'{v}' for _, v in avgs.items()])
+                # log.info(summary)
+                self.console.log(' '.join([
+                    # _mstr(k, v) for k, v in avgs.items()
+                    f'{k}={v:<3}' if isinstance(v, int)
+                    else f'{k}={v:<5.4f}'
+                    for k, v in avgs.items()
+                ]))
+                # self.console.log(' '.join([
+                #     # _mstr(k, v) for k, v in avgs.items()
+                #     f'{k}={v:<.4f}' if isinstance(v, float)
+                #     else f'{k}={v:<4}' for k, v in avgs.items()
+                # ]))
 
-                    if avgs.get('acc', 1.0) < 1e-5:
-                        self.reset_optimizer()
-                        log.warning('Chains are stuck! Re-drawing x !')
-                        x = self.draw_x()
-                        # x = random_angle(self.xshape)
-                        # x = x.reshape(x.shape[0], -1)
+                if epoch == 0:
+                    table = add_columns(avgs, table)
+                else:
+                    table.add_row(*[f'{v}' for _, v in avgs.items()])
+
+                if avgs.get('acc', 1.0) < 1e-5:
+                    self.reset_optimizer()
+                    log.warning('Chains are stuck! Re-drawing x !')
+                    x = self.draw_x()
+                    # x = random_angle(self.xshape)
+                    # x = x.reshape(x.shape[0], -1)
 
         data = {
             'rows': rows,
@@ -694,11 +785,16 @@ class Trainer(BaseTrainer):
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
+            nera: Optional[int] = None,
+            nepoch: Optional[int] = None,
+            beta: Optional[float] = None,
+            # steps: Optional[Steps] = None,
             # extend_last_era: Optional[bool] = True,
             # keep: str | list[str] = None,
     ) -> dict:
         """Perform training and return dictionary of results."""
         skip = [skip] if isinstance(skip, str) else skip
+        # steps = self.steps if steps is None else steps
         train_dir = (
             Path(os.getcwd()).joinpath('train')
             if train_dir is None else Path(train_dir)
@@ -720,14 +816,21 @@ class Trainer(BaseTrainer):
         era = 0
         epoch = 0
         # metrics = {}
+        nera = self.steps.nera if nera is None else nera
+        assert isinstance(nera, int)
         extend = self.steps.extend_last_era
-        for era in range(self.steps.nera):
-            beta = self.config.annealing_schedule.betas[str(era)]
+        sched_betas = self.config.annealing_schedule.betas
+        for era in range(nera):
+            beta = float(
+                beta if beta is not None and isinstance(beta, float)
+                else sched_betas.get(f'{era}', f'{self.steps.nera - 1}')
+            )
             extend = (
                 self.steps.extend_last_era
                 if era == self.steps.nera - 1
                 else 1
             )
+            assert beta is not None
 
             epoch_start = time.time()
             x, edata = self.train_epoch(
@@ -738,6 +841,7 @@ class Trainer(BaseTrainer):
                 arun=arun,
                 writer=writer,
                 extend=extend,
+                nepoch=nepoch,
             )
 
             self.rows['train'][str(era)] = edata['rows']
@@ -758,11 +862,11 @@ class Trainer(BaseTrainer):
                 self.save_ckpt(era, epoch, train_dir, run=run)
 
             if self.rank == 0:
-                ckptstr = '\n'.join([
-                    f'Saving took: {time.time() - st0:<5g}s',
-                    f'Era {era} took: {time.time() - epoch_start:<5g}s',
-                ])
-                self.console.log(ckptstr)
+                # ckptstr = '\n'.join([
+                log.info(f'Saving took: {time.time() - st0:<5g}s')
+                log.info(f'Era {era} took: {time.time() - epoch_start:<5g}s')
+                # ])
+                # self.console.log(ckptstr)
 
         return {
             'timer': self.timers['train'],
