@@ -16,8 +16,9 @@ from omegaconf import DictConfig
 from l2hmc.configs import ExperimentConfig
 from l2hmc.utils.rich import print_config
 
-log = logging.getLogger()
-logging.getLogger('matplotlib').setLevel(logging.ERROR)
+log = logging.getLogger(__name__)
+
+logging.getLogger('matplotlib').setLevel(logging.CRITICAL)
 
 
 def seed_everything(seed: int):
