@@ -19,8 +19,10 @@ ONE_HALF = 1. / 2.
 ONE_THIRD = 1. / 3.
 TWO_PI = torch.tensor(2. * PI)
 
-SQRT1by2 = torch.tensor(np.sqrt(1. / 2.))
-SQRT1by3 = torch.tensor(np.sqrt(1. / 3.))
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+SQRT1by2 = torch.tensor(np.sqrt(1. / 2.), device=DEVICE)
+SQRT1by3 = torch.tensor(np.sqrt(1. / 3.), device=DEVICE)
 
 
 f012 = +1.0
@@ -49,18 +51,35 @@ def unit(
     return eye
 
 
-def eyeOf(m: Tensor):
+def eyeOf1(m: Tensor):
     batch_shape = [1] * (len(m.shape) - 2)
-    eye = torch.zeros(batch_shape + [*m.shape[-2:]])
-    eye[-2:] = torch.eye(m.shape[-1])
+    eye = torch.zeros(batch_shape + [*m.shape[-2:]], device=DEVICE)
+    eye[-2:] = torch.eye(m.shape[-1], device=DEVICE)
     # return torch.stack([torch.eye(m.shape[-1]) for _ in batch_shape])
     # return torch.tensor([torch.eye([*m.shape[-2:]]) for _ in batch_shape])
     return eye
 
 
+def eyeOf(x: torch.Tensor) -> torch.Tensor:
+    # NOTE:
+    #  batch_dims = [[1], [1], [1], ..., [1]]
+    #  len(batch_dims) = len(m) - 2
+    batch_dims = [1] * (len(x.shape) - 2)
+    eye = torch.zeros(batch_dims + [*x.shape[-2:]], device=DEVICE)
+    eye[-2:] = torch.eye(x.shape[-1], device=DEVICE)
+    return eye
+    # return torch.eye(n, n, dtype=x.dtype, device=x.device).unsqueeze(0).repeat(
+    #     x.shape[0], 1, 1
+    # )
+
+
+def eye_like(x: Tensor):
+    return torch.eye(*x.size(), out=torch.empty_like(x)).to(DEVICE)
+
+
 def expm(m: Tensor, order: int = 12) -> Tensor:
     eye = eyeOf(m)
-    x = eye + m / torch.tensor(order)
+    x = eye + m / torch.tensor(order, device=DEVICE)
     for i in range(order - 1, 0, -1):
         x = eye + (torch.matmul(m, x) / torch.tensor(i).type_as(m))
 
@@ -85,23 +104,23 @@ def norm2(
 
 
 def randTAH3(shape: list[int]):
-    r3 = SQRT1by2 * torch.randn(shape)
-    r8 = SQRT1by2 * SQRT1by3 * torch.randn(shape)
+    r3 = SQRT1by2 * torch.randn(shape, device=DEVICE)
+    r8 = SQRT1by2 * SQRT1by3 * torch.randn(shape, device=DEVICE)
     m00 = torch.complex(torch.zeros_like(r3), r8 + r3)
     m11 = torch.complex(torch.zeros_like(r3), r8 - r3)
     m22 = torch.complex(torch.zeros_like(r3), -2 * r8)
-    r01 = SQRT1by2 * torch.randn(shape)
-    r02 = SQRT1by2 * torch.randn(shape)
-    r12 = SQRT1by2 * torch.randn(shape)
-    i01 = SQRT1by2 * torch.randn(shape)
-    i02 = SQRT1by2 * torch.randn(shape)
-    i12 = SQRT1by2 * torch.randn(shape)
-    m01 = torch.complex(r01, i01)
-    m10 = torch.complex(-r01, i01)
-    m02 = torch.complex(r02, i02)
-    m20 = torch.complex(-r02, i02)
-    m12 = torch.complex(r12, i12)
-    m21 = torch.complex(-r12, i12)
+    r01 = SQRT1by2 * torch.randn(shape, device=DEVICE)
+    r02 = SQRT1by2 * torch.randn(shape, device=DEVICE)
+    r12 = SQRT1by2 * torch.randn(shape, device=DEVICE)
+    i01 = SQRT1by2 * torch.randn(shape, device=DEVICE)
+    i02 = SQRT1by2 * torch.randn(shape, device=DEVICE)
+    i12 = SQRT1by2 * torch.randn(shape, device=DEVICE)
+    m01 = torch.complex(r01, i01).to(DEVICE)
+    m10 = torch.complex(-r01, i01).to(DEVICE)
+    m02 = torch.complex(r02, i02).to(DEVICE)
+    m20 = torch.complex(-r02, i02).to(DEVICE)
+    m12 = torch.complex(r12, i12).to(DEVICE)
+    m21 = torch.complex(-r12, i12).to(DEVICE)
 
     return torch.stack([
         torch.stack([m00, m10, m20], dim=-1),
@@ -229,15 +248,17 @@ def checkSU(x: Tensor) -> tuple[Tensor, Tensor]:
          2. det(x)
     from unitarity
     """
-    nc = torch.tensor(x.shape[-1]).to(x.dtype)
+    # nc = torch.tensor(x.shape[-1]).to(x.dtype)
+    nc = x.shape[-1]
     d = norm2(x.adjoint() @ x - eyeOf(x))
     d += norm2(-1 + x.det(), axis=[])
-    d_ = d.flatten(1)
-    a = d_.mean(-1)
-    b, _ = d_.max(-1)
+    # d_ = d.flatten(1)
+    d = d.unsqueeze(1)
+    a = d.mean(*range(1, len(d.shape)))
+    b, _ = d.max(*range(1, len(d.shape)))
     # a = d.mean(dim=tuple(range(1, len(d.shape))))
     # b = d.max(dim=tuple(range(1, len(d.shape))))
-    c = 2 * (nc * nc + 1)
+    c = float(2 * (nc * nc + 1))
 
     return (a / c).sqrt(), (b / c).sqrt()
 
