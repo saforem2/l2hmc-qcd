@@ -36,7 +36,6 @@ import wandb
 
 from l2hmc.configs import (
     ExperimentConfig,
-    Steps,
 )
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.group.u1.pytorch.group import U1Phase
@@ -101,8 +100,7 @@ class Trainer(BaseTrainer):
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
     ) -> None:
-        super().__init__(cfg=cfg, keep=keep, skip=skip)
-        # self.accelerator = Accelerator()
+        super(Trainer, self).__init__(cfg=cfg, keep=keep, skip=skip)
         assert isinstance(self.config, ExperimentConfig)
         self._gstep = 0
         self._with_cuda = torch.cuda.is_available()
@@ -111,25 +109,36 @@ class Trainer(BaseTrainer):
         self.dynamics = self.build_dynamics()
         self.optimizer = self.build_optimizer()
         self.lr_schedule = self.build_lr_schedule()
-        assert isinstance(self.dynamics, nn.Module)
+        self.rank = hvd.local_rank()
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         assert isinstance(self.dynamics, Dynamics)
-        self.verbose = self.config.dynamics.verbose
+        assert isinstance(self.dynamics, nn.Module)
+        # self.verbose = self.config.dynamics.verbose
         # skip_tracking = os.environ.get('SKIP_TRACKING', False)
         # self.verbose = not skip_tracking
         self.clip_norm = self.config.learning_rate.clip_norm
         if self._with_cuda:
             self.dynamics.cuda()
+            self.dynamics.networks.cuda()
+            self.dynamics.xnet.cuda()
+            self.dynamics.vnet.cuda()
 
         self.optimizer = hvd.DistributedOptimizer(
-                self.optimizer,
-                # named_parameters=self.dynamics.named_parameters(),
-                # op=hvd.Average,
-                # op=hvd.Adasum if cfg.use_adasum else hvd.Average,
+            self.optimizer
         )
-        hvd.broadcast_parameters(self.dynamics.state_dict(), root_rank=0)
+        hvd.broadcast_parameters(self.dynamics.parameters(), root_rank=0)
         hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
-        self.device = hvd.local_rank()
-        self.rank = hvd.local_rank()
+        # self.optimizer = hvd.DistributedOptimizer(
+        #         self.optimizer,
+        #         # named_parameters=self.dynamics.named_parameters(),
+        #         # op=hvd.Average,
+        #         # op=hvd.Adasum if cfg.use_adasum else hvd.Average,
+        # )
+        # hvd.broadcast_parameters(self.dynamics.networks.state_dict(),
+        #                          root_rank=0)
+        # hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
+        # self.device = hvd.local_rank()
+        # self.rank = hvd.local_rank()
         # self.rank = self.accelerator.local_process_index
         if self.config.dynamics.group == 'U1':
             self.g = U1Phase()
@@ -189,19 +198,19 @@ class Trainer(BaseTrainer):
         dynamics = Dynamics(config=self.config.dynamics,
                             potential_fn=self.lattice.action,
                             network_factory=net_factory)
-        state = dynamics.random_state(1.)
-        for step in range(self.config.dynamics.nleapfrog):
-            xn0 = dynamics._get_xnet(step, first=True)
-            xn1 = dynamics._get_xnet(step, first=True)
-            vn = dynamics._get_vnet(step)
-            if torch.cuda.is_available():
-                xn0, xn1, vn = xn0.cuda(), xn1.cuda(), vn.cuda()
-            xn0 = xn0.float()
-            xn1 = xn1.float()
-            vn = vn.float()
-            _ = dynamics._call_xnet(step, (state.x, state.v), first=True)
-            _ = dynamics._call_xnet(step, (state.x, state.v), first=False)
-            _ = dynamics._call_vnet(step, (state.x, state.v))
+        # state = dynamics.random_state(1.)
+        # for step in range(self.config.dynamics.nleapfrog):
+        #     xn0 = dynamics._get_xnet(step, first=True)
+        #     xn1 = dynamics._get_xnet(step, first=True)
+        #     vn = dynamics._get_vnet(step)
+        #     if torch.cuda.is_available():
+        #         xn0, xn1, vn = xn0.cuda(), xn1.cuda(), vn.cuda()
+        #     xn0 = xn0.float()
+        #     xn1 = xn1.float()
+        #     vn = vn.float()
+        #     _ = dynamics._call_xnet(step, (state.x, state.v), first=True)
+        #     _ = dynamics._call_xnet(step, (state.x, state.v), first=False)
+        #     _ = dynamics._call_vnet(step, (state.x, state.v))
 
         return dynamics
 
@@ -330,7 +339,7 @@ class Trainer(BaseTrainer):
         avgs = self.histories[job_type].update(record)
         summary = summarize_dict(avgs)
 
-        if writer is not None and self.verbose and step is not None:
+        if writer is not None:
             assert step is not None
             update_summaries(step=step,
                              model=model,
@@ -446,7 +455,7 @@ class Trainer(BaseTrainer):
         )
         xp = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=xi, x_prop=xp, acc=metrics['acc'])
-        if self.verbose:
+        if self.config.dynamics.verbose:
             lmetrics = self.loss_fn.lattice_metrics(xinit=xi, xout=xo)
             metrics.update(lmetrics)
 
@@ -466,7 +475,7 @@ class Trainer(BaseTrainer):
         # xout = self.g.compat_proj(xout)
         xprop = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
-        if self.verbose:
+        if self.config.dynamics.verbose:
             lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
             metrics.update(lmetrics)
 
@@ -615,7 +624,7 @@ class Trainer(BaseTrainer):
         # [1.] Forward call
         # with self.accelerator.autocast():
         # xinit = self.g.compat_proj(xinit.requires_grad_(True))
-        # xinit.requires_grad_(True)
+        xinit.requires_grad_(True)
         xout, metrics = self.dynamics((xinit, beta))
         xprop = metrics.pop('mc_states').proposed.x
 
@@ -642,7 +651,7 @@ class Trainer(BaseTrainer):
         loss.backward()
         if self.config.learning_rate.clip_norm > 0.0:
             torch.nn.utils.clip_grad.clip_grad_norm(
-                self.dynamics.parameters(),
+                self.dynamics.networks.parameters(),
                 max_norm=self.clip_norm
             )
         self.optimizer.step()
@@ -662,7 +671,7 @@ class Trainer(BaseTrainer):
         # ---------------------------------------
 
         metrics['loss'] = loss
-        if self.verbose:
+        if self.config.dynamics.verbose:
             with torch.no_grad():
                 lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
                 metrics.update(lmetrics)
@@ -678,6 +687,7 @@ class Trainer(BaseTrainer):
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             extend: Optional[int] = None,
+            nepoch: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
         # if WITH_CUDA:
         #     with torch.cuda.amp.autocast():
@@ -692,7 +702,9 @@ class Trainer(BaseTrainer):
             row_styles=['dim', 'none'],
         )
 
-        nepoch = self.steps.nepoch * extend
+        nepoch = self.steps.nepoch if nepoch is None else nepoch
+        assert isinstance(nepoch, int)
+        nepoch *= extend
         # if self.rank == 0:
         #     ctxmgr = Live(table,
         #                   screen=True,
@@ -773,13 +785,16 @@ class Trainer(BaseTrainer):
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
-            steps: Optional[Steps] = None,
+            nera: Optional[int] = None,
+            nepoch: Optional[int] = None,
+            beta: Optional[float] = None,
+            # steps: Optional[Steps] = None,
             # extend_last_era: Optional[bool] = True,
             # keep: str | list[str] = None,
     ) -> dict:
         """Perform training and return dictionary of results."""
         skip = [skip] if isinstance(skip, str) else skip
-        steps = self.steps if steps is None else steps
+        # steps = self.steps if steps is None else steps
         train_dir = (
             Path(os.getcwd()).joinpath('train')
             if train_dir is None else Path(train_dir)
@@ -801,14 +816,21 @@ class Trainer(BaseTrainer):
         era = 0
         epoch = 0
         # metrics = {}
+        nera = self.steps.nera if nera is None else nera
+        assert isinstance(nera, int)
         extend = self.steps.extend_last_era
-        for era in range(self.steps.nera):
-            beta = self.config.annealing_schedule.betas[str(era)]
+        sched_betas = self.config.annealing_schedule.betas
+        for era in range(nera):
+            beta = float(
+                beta if beta is not None and isinstance(beta, float)
+                else sched_betas.get(f'{era}', f'{self.steps.nera - 1}')
+            )
             extend = (
                 self.steps.extend_last_era
                 if era == self.steps.nera - 1
                 else 1
             )
+            assert beta is not None
 
             epoch_start = time.time()
             x, edata = self.train_epoch(
@@ -819,6 +841,7 @@ class Trainer(BaseTrainer):
                 arun=arun,
                 writer=writer,
                 extend=extend,
+                nepoch=nepoch,
             )
 
             self.rows['train'][str(era)] = edata['rows']
