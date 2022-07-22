@@ -125,8 +125,10 @@ class Dynamics(Model):
             'constraint': tf.keras.constraints.non_neg(),
         }
         for lf in range(self.config.nleapfrog):
-            self.xeps.append(tf.Variable(name=f'xeps_lf{lf}', **ekwargs))
-            self.veps.append(tf.Variable(name=f'veps_lf{lf}', **ekwargs))
+            xalpha = tf.Variable(name=f'xeps_lf{lf}', **ekwargs)
+            valpha = tf.Variable(name=f'veps_lf{lf}', **ekwargs)
+            self.xeps.append(tf.math.exp(tf.math.log(xalpha)))
+            self.veps.append(tf.math.exp(tf.math.log(valpha)))
 
     def _build_networks(self, network_factory):
         """Build networks."""
@@ -173,29 +175,31 @@ class Dynamics(Model):
     ) -> tuple[Tensor, dict]:
         data = self.generate_proposal_hmc(inputs, eps, nleapfrog=nleapfrog)
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
-        ma_ = tf.cast(ma_, dtype=data['proposed'].x.dtype)
-        mr_ = tf.cast(mr_, dtype=data['proposed'].x.dtype)
+        ma_ = tf.cast(ma_, dtype=TF_FLOAT)
+        mr_ = tf.cast(mr_, dtype=TF_FLOAT)
         ma = ma_[:, None]
-        mr = mr_[:, None]
+        # mr = mr_[:, None]
 
         xinit = self.flatten(data['init'].x)
         vinit = self.flatten(data['init'].v)
         xprop = self.flatten(data['proposed'].x)
         vprop = self.flatten(data['proposed'].v)
 
-        vout = ma * vprop + mr * vinit
-        xout = ma * xprop + mr * xinit
+        vout = tf.where(tf.cast(ma, bool), vprop, vinit)
+        xout = tf.where(tf.cast(ma, bool), xprop, xinit)
+        # vout = ma * vprop + mr * vinit
+        # xout = ma * xprop + mr * xinit
 
         # vout = ma * data['proposed'].v + mr * data['init'].v
         # xout = ma * data['proposed'].x + mr * data['init'].x
-        sumlogdet = tf.math.real(ma_) * data['metrics']['sumlogdet']
+        # sumlogdet = tf.math.real(ma_) * data['metrics']['sumlogdet']
         state_out = State(x=xout, v=vout, beta=data['init'].beta)
         mc_states = MonteCarloStates(init=data['init'],
                                      proposed=data['proposed'],
                                      out=state_out)
         data['metrics'].update({
             'acc_mask': ma_,
-            'sumlogdet': sumlogdet,
+            # 'sumlogdet': sumlogdet,
             'mc_states': mc_states,
         })
 
@@ -211,10 +215,20 @@ class Dynamics(Model):
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
         ma = ma_[:, None]
         mr = mr_[:, None]
-        ma_ = tf.cast(ma_, dtype=data['proposed'].x.dtype)
-        mr_ = tf.cast(mr_, dtype=data['proposed'].x.dtype)
-        v_out = ma * data['proposed'].v + mr * data['init'].v
-        x_out = ma * data['proposed'].x + mr * data['init'].x
+        ma_ = tf.cast(ma_, dtype=TF_FLOAT)  # data['proposed'].x.dtype)
+        mr_ = tf.cast(mr_, dtype=TF_FLOAT)  # data['proposed'].x.dtype)
+        v_out = tf.where(
+            tf.cast(ma, bool),
+            data['proposed'].v,
+            data['init'].v
+        )
+        x_out = tf.where(
+            tf.cast(ma, bool),
+            data['proposed'].x,
+            data['init'].x,
+        )
+        # v_out = ma * data['proposed'].v + mr * data['init'].v
+        # x_out = ma * data['proposed'].x + mr * data['init'].x
         sumlogdet = ma_ * data['metrics']['sumlogdet']
 
         state_out = State(x=x_out, v=v_out, beta=data['init'].beta)
@@ -244,24 +258,59 @@ class Dynamics(Model):
         mf = mf_[:, None]
         mb = mb_[:, None]
 
-        v_init = mf * fwd['init'].v + mb * bwd['init'].v
+        v_init = tf.where(
+            tf.cast(mf, bool),
+            fwd['init'].v,
+            bwd['init'].v
+        )
+        # v_init = mf * fwd['init'].v + mb * bwd['init'].v
 
-        x_prop = mf * fwd['proposed'].x + mb * bwd['proposed'].x
-        v_prop = mf * fwd['proposed'].v + mb * bwd['proposed'].v
+        x_prop = tf.where(
+            tf.cast(mf, bool),
+            fwd['proposed'].x,
+            bwd['proposed'].x
+        )
+        v_prop = tf.where(
+            tf.cast(mf, bool),
+            fwd['proposed'].v,
+            bwd['proposed'].v
+        )
+        # x_prop = mf * fwd['proposed'].x + mb * bwd['proposed'].x
+        # v_prop = mf * fwd['proposed'].v + mb * bwd['proposed'].v
 
         mfwd = fwd['metrics']
         mbwd = bwd['metrics']
 
-        logdet_prop = mf_ * mfwd['sumlogdet'] + mb_ * mbwd['sumlogdet']
+        logdet_prop = tf.where(
+            tf.cast(mf_, bool),
+            mfwd['sumlogdet'],
+            mbwd['sumlogdet']
+        )
+        # logdet_prop = mf_ * mfwd['sumlogdet'] + mb_ * mbwd['sumlogdet']
 
         acc = mf_ * mfwd['acc'] + mb_ * mbwd['acc']
         ma_, mr_ = self._get_accept_masks(acc)
         ma = ma_[:, None]
         mr = mr_[:, None]
 
-        v_out = ma * v_prop + mr * v_init
-        x_out = ma * x_prop + mr * x
-        sumlogdet = ma_ * logdet_prop  # + mr_ * logdet_init (= 0.)
+        v_out = tf.where(
+            tf.cast(ma, bool),
+            v_prop,
+            v_init
+        )
+        # v_out = ma * v_prop + mr * v_init
+        x_out = tf.where(
+            tf.cast(ma, bool),
+            x_prop,
+            x_init,
+        )
+        # x_out = ma * x_prop + mr * x
+        sumlogdet = tf.where(
+            tf.cast(ma_, bool),
+            logdet_prop,
+            tf.zeros_like(logdet_prop)
+        )
+        # sumlogdet = ma_ * logdet_prop  # + mr_ * logdet_init (= 0.)
 
         init = State(x=x, v=v_init, beta=beta)
         prop = State(x=x_prop, v=v_prop, beta=beta)
@@ -943,8 +992,8 @@ class Dynamics(Model):
         veps = np.array([e.numpy() for e in self.veps])
         xeps = np.array([e.numpy() for e in self.xeps])
 
-        np.savetxt(outdir.joinpath('veps.txt').as_posix(), xeps)
-        np.savetxt(outdir.joinpath('xeps.txt').as_posix(), veps)
+        np.savetxt(outdir.joinpath('veps.txt').as_posix(), veps)
+        np.savetxt(outdir.joinpath('xeps.txt').as_posix(), xeps)
         np.save(outdir.joinpath('veps.npy').as_posix(), veps)
         np.save(outdir.joinpath('xeps.npy').as_posix(), xeps)
 
