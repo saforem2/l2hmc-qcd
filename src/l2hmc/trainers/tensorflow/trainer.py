@@ -9,6 +9,7 @@ from pathlib import Path
 import time
 from typing import Any, Callable, Optional
 from omegaconf import DictConfig
+import shutil
 
 import tensorflow as tf
 import tensorflow.python.framework.ops as ops
@@ -121,7 +122,7 @@ class Trainer(BaseTrainer):
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
     ) -> None:
-        super().__init__(cfg=cfg, keep=keep, skip=skip)
+        super(Trainer, self).__init__(cfg=cfg, keep=keep, skip=skip)
         assert isinstance(self.config, ExperimentConfig)
         self._gstep = 0
         self.lattice = self.build_lattice()
@@ -359,10 +360,9 @@ class Trainer(BaseTrainer):
     def hmc_step(
             self,
             inputs: tuple[Tensor, Tensor],
-            eps: float,
+            eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
-        # xi, beta = inputs
         xo, metrics = self.dynamics.apply_transition_hmc(
             inputs,
             eps=eps,
@@ -432,7 +432,8 @@ class Trainer(BaseTrainer):
         assert job_type in ['eval', 'hmc']
 
         if x is None:
-            r = self.dynamics.g.random(list(self.xshape))
+            r = self.g.random(list(self.xshape))
+            # r = self.dynamics.g.random(list(self.xshape))
             x = tf.reshape(r, (r.shape[0], -1))
 
         if writer is not None:
@@ -481,11 +482,27 @@ class Trainer(BaseTrainer):
         # with Live(table) as live:
         assert x is not None and isinstance(x, Tensor)
         assert beta is not None and isinstance(beta, Tensor)
-        with Live(
-                table,
-                console=self.console,
-                vertical_overflow='visible',
-        ):
+        size = shutil.get_terminal_size()
+        width = int(size.columns)
+        # width = os.environ.get(
+        #     'COLUMNS',
+        #     os.environ.get(
+        #         'WIDTH',
+        #         self.console.width
+        #     )
+        # )
+        if int(width) > 100:
+            LIVE = True
+            ctx = Live(
+                    table,
+                    console=self.console,
+                    vertical_overflow='visible',
+            )
+        else:
+            LIVE = False
+            ctx = nullcontext()
+
+        with ctx:
             for step in range(eval_steps):
                 timer.start()
                 x, metrics = eval_fn((x, beta))  # type:ignore
@@ -501,6 +518,9 @@ class Trainer(BaseTrainer):
                                                         writer=writer,
                                                         metrics=metrics,
                                                         job_type=job_type)
+                    if not LIVE:
+                        log.info(summary)
+
                     summaries.append(summary)
                     if step == 0:
                         table = add_columns(avgs, table)
@@ -615,16 +635,33 @@ class Trainer(BaseTrainer):
         )
 
         nepoch = self.steps.nepoch * extend
+        LIVE = False
+        width = os.environ.get(
+            'COLUMNS',
+            os.environ.get(
+                'WIDTH',
+                self.console.width
+            )
+        )
         if self.rank == 0:
-            ctxmgr = Live(table,
-                          console=self.console,
-                          vertical_overflow='visible')
+            if int(width) > 100:
+                LIVE = True
+                ctx = Live(
+                        table,
+                        console=self.console,
+                        vertical_overflow='visible',
+                )
+            else:
+                ctx = nullcontext()
+            # ctxmgr = Live(table,
+            #               console=self.console,
+            #               vertical_overflow='visible')
         else:
-            ctxmgr = nullcontext()
+            ctx = nullcontext()
 
         bfloat = self.config.annealing_schedule.betas[str(era)]
 
-        with ctxmgr as live:
+        with ctx as live:
             if live is not None:
                 tstr = ' '.join([
                     f'ERA: {era}/{self.steps.nera}',
@@ -656,6 +693,9 @@ class Trainer(BaseTrainer):
                     )
                     rows[self._gstep] = avgs
                     summaries.append(summary)
+
+                    if LIVE:
+                        log.info(summary)
 
                     if epoch == 0:
                         table = add_columns(avgs, table)

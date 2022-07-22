@@ -5,11 +5,10 @@ Contains BaseTrainer (ABC) object for training L2HMC dynamics
 """
 from __future__ import absolute_import, division, print_function, annotations
 
-import os
 import logging
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 import aim
 
 import numpy as np
