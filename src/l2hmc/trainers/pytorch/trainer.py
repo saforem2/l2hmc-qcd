@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import time
 from typing import Any, Callable, Optional
+from contextlib import nullcontext
 # from accelerate import Accelerator
 
 
@@ -24,7 +25,7 @@ import numpy as np
 from omegaconf import DictConfig
 from rich import box
 # from rich.console import Console
-# from rich.live import Live
+from rich.live import Live
 from rich.table import Table
 import torch
 import horovod.torch as hvd
@@ -37,6 +38,7 @@ import wandb
 from l2hmc.configs import (
     ExperimentConfig,
 )
+from l2hmc.utils.rich import get_width, is_interactive
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.group.u1.pytorch.group import U1Phase
 from l2hmc.group.su3.pytorch.group import SU3
@@ -88,6 +90,11 @@ LOCAL_RANK = hvd.local_rank()
 
 WITH_CUDA = torch.cuda.is_available()
 
+GROUPS = {
+    'U1': U1Phase(),
+    'SU3': SU3(),
+}
+
 
 def grab(x: Tensor) -> np.ndarray:
     return x.detach().cpu().numpy()
@@ -107,26 +114,51 @@ class Trainer(BaseTrainer):
         self.lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
         self.dynamics = self.build_dynamics()
-        self.optimizer = self.build_optimizer()
-        self.lr_schedule = self.build_lr_schedule()
+        self.optimizer = torch.optim.Adam(
+            self.dynamics.parameters(),
+            lr=self.config.learning_rate.lr_init
+        )
+        # self.optimizer = self.build_optimizer()
+        # self.lr_schedule = self.build_lr_schedule()
         self.rank = hvd.local_rank()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        assert isinstance(self.dynamics, Dynamics)
-        assert isinstance(self.dynamics, nn.Module)
+        assert (
+            isinstance(self.dynamics, Dynamics)
+            and isinstance(self.dynamics, nn.Module)
+            and str(self.config.dynamics.group).upper() in ['U1', 'SU3']
+        )
+        if self.config.dynamics.group == 'U1':
+            self.g = U1Phase()
+        elif self.config.dynamics.group == 'SU3':
+            self.g = SU3()
+        else:
+            raise ValueError
+        # if self.config.dynamics.group == 'U1':
+        #     self.g = U1Phase()
+        # elif self.config.dynamics.group == 'SU3':
+        #     self.g = SU3()
+        # else:
+        #     raise ValueError
         # self.verbose = self.config.dynamics.verbose
         # skip_tracking = os.environ.get('SKIP_TRACKING', False)
         # self.verbose = not skip_tracking
         self.clip_norm = self.config.learning_rate.clip_norm
-        if self._with_cuda:
-            self.dynamics.cuda()
-            self.dynamics.networks.cuda()
-            self.dynamics.xnet.cuda()
-            self.dynamics.vnet.cuda()
 
-        self.optimizer = hvd.DistributedOptimizer(
-            self.optimizer
+        compression = (
+            hvd.Compression.fp16
+            if self.config.compression == 'fp16'
+            else hvd.Compression.none
         )
-        hvd.broadcast_parameters(list(self.dynamics.parameters()), root_rank=0)
+        self.optimizer = hvd.DistributedOptimizer(
+            self.optimizer,
+            named_parameters=self.dynamics.named_parameters(),
+            # compression=(
+            #     hvd.Compression.fp16
+            #     if str(self.config.compression) == 'fp16'
+            #     else hvd.Compression.none
+            # )
+        )
+        hvd.broadcast_parameters(self.dynamics.state_dict(), root_rank=0)
         hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
         # self.optimizer = hvd.DistributedOptimizer(
         #         self.optimizer,
@@ -140,17 +172,6 @@ class Trainer(BaseTrainer):
         # self.device = hvd.local_rank()
         # self.rank = hvd.local_rank()
         # self.rank = self.accelerator.local_process_index
-        if self.config.dynamics.group == 'U1':
-            self.g = U1Phase()
-        elif self.config.dynamics.group == 'SU3':
-            self.g = SU3()
-        else:
-            raise ValueError
-
-        # self.dynamics, self.optimizer = self.accelerator.prepare(
-        #     self.dynamics,
-        #     self.optimizer
-        # )
 
     def draw_x(self):
         return self.g.random(
@@ -198,6 +219,8 @@ class Trainer(BaseTrainer):
         dynamics = Dynamics(config=self.config.dynamics,
                             potential_fn=self.lattice.action,
                             network_factory=net_factory)
+        if torch.cuda.is_available():
+            dynamics.cuda()
         # state = dynamics.random_state(1.)
         # for step in range(self.config.dynamics.nleapfrog):
         #     xn0 = dynamics._get_xnet(step, first=True)
@@ -225,8 +248,8 @@ class Trainer(BaseTrainer):
         return torch.optim.Adam(self.dynamics.parameters(), lr=lr)
 
     def get_lr(self, step: int) -> float:
-        if step < len(self._lr_warmup):
-            return self._lr_warmup[step].item()
+        # if step < len(self._lr_warmup):
+        #     return self._lr_warmup[step].item()
         return self.config.learning_rate.lr_init
 
     def build_lr_schedule(self):
@@ -414,10 +437,10 @@ class Trainer(BaseTrainer):
         # xprop = to_u1(metrics.pop('mc_states').proposed.x)
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
         loss.backward()
-        if self.clip_norm > 0.0:
-            torch.nn.utils.clip_grad.clip_grad_value_(
+        if self.config.learning_rate.clip_norm > 0.0:
+            torch.nn.utils.clip_grad.clip_grad_norm(
                     self.dynamics.parameters(),
-                    clip_value=self.clip_norm
+                    self.config.learning_rate.clip_norm,
             )
 
         # self.accelerator.backward(loss)
@@ -571,12 +594,13 @@ class Trainer(BaseTrainer):
                                                     writer=writer,
                                                     metrics=metrics,
                                                     job_type=job_type)
-                self.console.log(' '.join([
-                    # _mstr(k, v) for k, v in avgs.items()
-                    f'{k}={v:<4g}' if isinstance(v, int)
-                    else f'{k}={v:<5.4f}'
-                    for k, v in avgs.items() if k not in ['xeps', 'veps']
-                ]))
+                log.info(summary)
+                # self.console.log(' '.join([
+                #     # _mstr(k, v) for k, v in avgs.items()
+                #     f'{k}={v:<4g}' if isinstance(v, int)
+                #     else f'{k}={v:<5.4f}'
+                #     for k, v in avgs.items() if k not in ['xeps', 'veps']
+                # ]))
                 # log.info(' '.join('='.join([f'{k}])))
                 # log.info(summary)
                 summaries.append(summary)
@@ -625,6 +649,8 @@ class Trainer(BaseTrainer):
         # with self.accelerator.autocast():
         # xinit = self.g.compat_proj(xinit.requires_grad_(True))
         xinit.requires_grad_(True)
+
+        self.optimizer.zero_grad()
         xout, metrics = self.dynamics((xinit, beta))
         xprop = metrics.pop('mc_states').proposed.x
 
@@ -647,15 +673,14 @@ class Trainer(BaseTrainer):
 
         # # [3.] Backpropagate gradients
         # self.accelerator.backward(loss)
-        self.optimizer.zero_grad()
         loss.backward()
         if self.config.learning_rate.clip_norm > 0.0:
             torch.nn.utils.clip_grad.clip_grad_norm(
-                self.dynamics.networks.parameters(),
+                self.dynamics.parameters(),
                 max_norm=self.clip_norm
             )
         self.optimizer.step()
-        self.lr_schedule.step()
+        # self.lr_schedule.step()
         # self.optimizer.synchronize()
 
         # ---------------------------------------
@@ -685,16 +710,12 @@ class Trainer(BaseTrainer):
             era: Optional[int] = None,
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
+            nepoch: Optional[int] = None,
             writer: Optional[Any] = None,
             extend: Optional[int] = None,
-            nepoch: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
-        # if WITH_CUDA:
-        #     with torch.cuda.amp.autocast():
         rows = {}
         summaries = []
-        # rows = self.rows['train']
-        # summaries = self.summaries['train']
         extend = 1 if extend is None else extend
         record = {'era': 0, 'epoch': 0, 'beta': 0.0, 'dt': 0.0}
         table = Table(
@@ -702,74 +723,69 @@ class Trainer(BaseTrainer):
             row_styles=['dim', 'none'],
         )
 
+        nepoch = self.steps.nepoch * extend
+        LIVE = False
+        width = get_width()
+        ctx = nullcontext()
+        if width > 100 and self.rank == 0 and not is_interactive():
+            LIVE = True
+            ctx = Live(
+                table,
+                console=self.console,
+                vertical_overflow='visible',
+            )
+
         nepoch = self.steps.nepoch if nepoch is None else nepoch
         assert isinstance(nepoch, int)
-        nepoch *= extend
-        # if self.rank == 0:
-        #     ctxmgr = Live(table,
-        #                   screen=True,
-        #                   console=self.console,
-        #                   vertical_overflow='visible')
-        # else:
-        #     ctxmgr = nullcontext()
-
-        # with ctxmgr as live:
-        #     if live is not None:
-        #         tstr = ' '.join([
-        #             f'ERA: {era}/{self.steps.nera}',
-        #             f'BETA: {beta:.3f}',
-        #         ])
-        #         live.console.clear_live()
-        #         live.console.rule(tstr)
-        #         live.update(table)
-
         losses = []
-        for epoch in range(nepoch):
-            self.timers['train'].start()
-            x, metrics = self.train_step((x, beta))
-            dt = self.timers['train'].stop()
-            losses.append(metrics['loss'])
-            self._gstep += 1
-            if self.should_print(epoch) or self.should_log(epoch):
-                record = {
-                    'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
-                }
-                avgs, summary = self.record_metrics(
-                    run=run,
-                    arun=arun,
-                    step=self._gstep,
-                    writer=writer,
-                    record=record,    # template w/ step info
-                    metrics=metrics,  # metrics from Dynamics
-                    job_type='train'
-                )
-                rows[self._gstep] = avgs
-                summaries.append(summary)
+        with ctx as live:
+            if live is not None:
+                tstr = ' '.join([
+                    f'ERA: {era}/{self.steps.nera}',
+                    f'BETA: {beta:.3f}',
+                ])
+                live.console.clear_live()
+                live.console.rule(tstr)
+                live.update(table)
 
-                # log.info(summary)
-                self.console.log(' '.join([
-                    # _mstr(k, v) for k, v in avgs.items()
-                    f'{k}={v:<3}' if isinstance(v, int)
-                    else f'{k}={v:<5.4f}'
-                    for k, v in avgs.items()
-                ]))
-                # self.console.log(' '.join([
-                #     # _mstr(k, v) for k, v in avgs.items()
-                #     f'{k}={v:<.4f}' if isinstance(v, float)
-                #     else f'{k}={v:<4}' for k, v in avgs.items()
-                # ]))
+            for epoch in range(nepoch):
+                self.timers['train'].start()
+                x, metrics = self.train_step((x, beta))  # type:ignore
+                dt = self.timers['train'].stop()
+                losses.append(metrics['loss'])
+                self._gstep += 1
+                if self.should_print(epoch) or self.should_log(epoch):
+                    record = {
+                        'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
+                    }
+                    avgs, summary = self.record_metrics(
+                        run=run,
+                        arun=arun,
+                        step=self._gstep,
+                        writer=writer,
+                        record=record,    # template w/ step info
+                        metrics=metrics,  # metrics from Dynamics
+                        job_type='train',
+                        model=self.dynamics,
+                        optimizer=self.optimizer,
+                    )
+                    rows[self._gstep] = avgs
+                    summaries.append(summary)
 
-                if epoch == 0:
-                    table = add_columns(avgs, table)
-                else:
-                    table.add_row(*[f'{v}' for _, v in avgs.items()])
+                    if not LIVE:
+                        log.info(summary)
 
-                if avgs.get('acc', 1.0) < 1e-5:
-                    self.reset_optimizer()
-                    log.warning('Chains are stuck! Re-drawing x !')
-                    x = self.draw_x()
-                    # x = random_angle(self.xshape)
-                    # x = x.reshape(x.shape[0], -1)
+                    if epoch == 0:
+                        table = add_columns(avgs, table)
+                    else:
+                        table.add_row(*[f'{v}' for _, v in avgs.items()])
+
+                    if avgs.get('acc', 1.0) < 1e-5:
+                        self.reset_optimizer()
+                        log.warning('Chains are stuck! Re-drawing x !')
+                        x = self.draw_x()
+                        # x = random_angle(self.xshape)
+                        # x = x.reshape(x.shape[0], -1)
 
         data = {
             'rows': rows,
@@ -822,7 +838,6 @@ class Trainer(BaseTrainer):
         nera = self.steps.nera if nera is None else nera
         assert isinstance(nera, int)
         extend = self.steps.extend_last_era
-        sched_betas = self.config.annealing_schedule.betas
         # for era in range(nera):
         #     beta = float(
         #         beta if beta is not None and isinstance(beta, float)
@@ -833,15 +848,29 @@ class Trainer(BaseTrainer):
         #         if era == self.steps.nera - 1
         #         else 1
         #     )
-        b = float(
-            beta if beta is not None and isinstance(beta, float)
-            else sched_betas.get(f'{era}', f'{self.steps.nera - 1}')
-        )
+        # b = float(
+        #     beta if beta is not None and isinstance(beta, float)
+        #     else sched_betas[era]
+        #     # else sched_betas.get(f'{era}', f'{self.steps.nera - 1}')
+        # )
         beta_final = self.config.annealing_schedule.beta_final
         assert beta_final is not None and isinstance(beta_final, float)
-        assert b is not None and isinstance(b, float)
-        while b < beta_final:
+        # assert b is not None and isinstance(b, float)
+        # while b < beta_final:
+        for era in range(nera):
             epoch_start = time.time()
+            b = float(
+                beta if beta is not None
+                else self.config.annealing_schedule.beta_dict.get(
+                    str(era),
+                    self.config.annealing_schedule.beta_final
+                )
+            )
+            extend = (
+                self.steps.extend_last_era
+                if era == self.steps.nera - 1
+                else 1
+            )
             x, edata = self.train_epoch(
                 x=x,
                 beta=b,
@@ -853,11 +882,11 @@ class Trainer(BaseTrainer):
                 nepoch=nepoch,
             )
 
-            losses = edata['losses']
-            if losses[-1] < losses[0]:
-                b += self.config.annealing_schedule._dbeta
-            else:
-                b -= self.config.annealing_schedule._dbeta
+            # losses = edata['losses']
+            # if losses[-1] < losses[0]:
+            #     b += self.config.annealing_schedule._dbeta
+            # else:
+            #     b -= self.config.annealing_schedule._dbeta
 
             self.rows['train'][str(era)] = edata['rows']
             self.tables['train'][str(era)] = edata['table']
