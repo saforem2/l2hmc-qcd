@@ -16,6 +16,8 @@ from omegaconf import DictConfig, OmegaConf
 import wandb
 import xarray as xr
 
+from l2hmc.trainers.trainer import BaseTrainer
+from l2hmc.utils.history import BaseHistory
 from l2hmc.common import get_timestamp, is_interactive, save_and_analyze_data
 from l2hmc.configs import (
     AIM_DIR, ExperimentConfig, HERE, OUTDIRS_FILE
@@ -45,6 +47,7 @@ SYNONYMS = {
 class BaseExperiment(ABC):
     """Convenience class for running framework independent experiments."""
     def __init__(self, cfg: DictConfig) -> None:
+        super().__init__()
         self._created = get_timestamp('%Y-%m-%d-%H%M%S')
         self.cfg = cfg
         self.config = instantiate(cfg)
@@ -64,7 +67,36 @@ class BaseExperiment(ABC):
         # self.dynamics = None
         # self.optimizer = None
         self._outdir = self.get_outdir()
-        super().__init__()
+
+    # @property
+    # @abstractmethod
+    # def run(self):
+    #     pass
+
+    # @run.setter
+    # @abstractmethod
+    # def run(self, run):
+    #     pass
+
+    # @property
+    # @abstractmethod
+    # def arun(self):
+    #     pass
+
+    # @arun.setter
+    # @abstractmethod
+    # def arun(self, arun):
+    #     pass
+
+    # @property
+    # @abstractmethod
+    # def trainer(self):
+    #     pass
+
+    # @trainer.setter
+    # @abstractmethod
+    # def trainer(self, trainer):
+    #     pass
 
     @abstractmethod
     def train(self) -> dict:
@@ -155,7 +187,9 @@ class BaseExperiment(ABC):
             ]
         })
 
-    def _init_wandb(self):
+    def _init_wandb(
+            self,
+    ):
         if self.run is not None and self.run is wandb.run:
             raise ValueError('WandB already initialized!')
 
@@ -167,6 +201,15 @@ class BaseExperiment(ABC):
         log.warning(f'os.getcwd(): {os.getcwd()}')
         wandb.tensorboard.patch(root_logdir=os.getcwd())
         run = wandb.init(dir=os.getcwd(), **self.config.wandb.setup)
+        # if self.config.framework in ['pt', 'torch', 'pytorch']:
+        #     assert run is not None and run is wandb.run
+        #     if dynamics is not None:
+        #         run.watch(
+        #             dynamics,
+        #             log='all',
+        #             log_graph=True,
+        #             criterion=criterion,
+        #         )
         assert run is wandb.run and run is not None
         wandb.define_metric('dQint_eval', summary='mean')
         run.log_code(HERE.as_posix())
@@ -218,16 +261,23 @@ class BaseExperiment(ABC):
 
     def save_dataset(
             self,
-            output: dict,
             # dset: xr.Dataset,
             job_type: str,
+            output: Optional[dict] = None,
             nchains: Optional[int] = None,
             outdir: Optional[os.PathLike] = None,
             fname: Optional[str] = None,
             therm_frac: Optional[float] = None,
     ) -> xr.Dataset:
-        history = output.get('history', None)
-        assert history is not None
+        assert isinstance(self.trainer, BaseTrainer)
+        if output is None:
+            history = self.trainer.histories.get(job_type, None)
+        else:
+            history = output.get('history', None)
+        if history is None:
+            raise ValueError(f'Unable to recover history for {job_type}')
+
+        assert history is not None and isinstance(history, BaseHistory)
         therm_frac = 0.1 if therm_frac is None else therm_frac
         dset = history.get_dataset(therm_frac=therm_frac)
         assert isinstance(dset, xr.Dataset)
