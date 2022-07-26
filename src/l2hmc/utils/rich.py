@@ -52,24 +52,37 @@ def is_interactive():
     return get_ipython() is not None
 
 
+def get_width():
+    width = os.environ.get('COLUMNS', os.environ.get('WIDTH', None))
+    if width is not None:
+        return int(width)
+
+    size = shutil.get_terminal_size()
+    os.environ['COLUMNS'] = str(size.columns)
+    return size.columns
+
+
 def get_console(width: Optional[int] = None, *args, **kwargs) -> Console:
     interactive = is_interactive()
     console = Console(
         force_jupyter=interactive,
         log_path=False,
-        color_system='truecolor',
+        # color_system='truecolor',
         *args,
         **kwargs)
     if width is None:
-        columns = os.environ.get('COLUMNS', os.environ.get('WIDTH', None))
-        if columns is None:
-            if not interactive:
-                size = shutil.get_terminal_size()
-                columns = size.columns
-            else:
-                columns = 120
+        if is_interactive():
+            columns = 100
         else:
-            columns = int(columns)
+            columns = os.environ.get('COLUMNS', os.environ.get('WIDTH', None))
+            if columns is None:
+                if not interactive:
+                    size = shutil.get_terminal_size()
+                    columns = size.columns
+                else:
+                    columns = 120
+            else:
+                columns = int(columns)
 
         width = int(max(columns, 120))
         console.width = width
@@ -224,6 +237,7 @@ def add_columns(
     return table
 
 
+import json
 def print_config(
     config: DictConfig,
     resolve: bool = True,
@@ -242,20 +256,26 @@ def print_config(
     tree = rich.tree.Tree("CONFIG")  # , style=style, guide_style=style)
 
     quee = []
+    yaml_strs = ""
 
     for field in config:
         if field not in quee:
             quee.append(field)
 
+    dconfig = {}
     for field in quee:
+
         branch = tree.add(field)  # , style=style, guide_style=style)
 
         config_group = config[field]
         if isinstance(config_group, DictConfig):
             branch_content = OmegaConf.to_yaml(config_group, resolve=resolve)
+            cfg = OmegaConf.to_container(config_group, resolve=resolve)
         else:
             branch_content = str(config_group)
+            cfg = str(config_group)
 
+        dconfig[field] = cfg
         branch.add(rich.syntax.Syntax(branch_content, "yaml"))
 
     outfile = Path(os.getcwd()).joinpath('config_tree.log')
@@ -263,6 +283,9 @@ def print_config(
     with outfile.open('wt') as f:
         console = rich.console.Console(file=f)
         console.print(tree)
+
+    with open('config.json', 'w') as f:
+        f.write(json.dumps(dconfig))
 
     # log.info(tree)
 
