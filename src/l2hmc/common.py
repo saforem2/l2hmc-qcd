@@ -12,22 +12,19 @@ from typing import Any, Optional
 
 import h5py
 import joblib
-
-import numpy as np
 import matplotlib.pyplot as plt
-from omegaconf import DictConfig
+import numpy as np
+from omegaconf import DictConfig, OmegaConf
+import pandas as pd
 import pandas as pd
 from rich.table import Table
 import wandb
 import xarray as xr
 
 from l2hmc.configs import AnnealingSchedule, Steps
+from l2hmc.configs import OUTPUTS_DIR
+from l2hmc.utils.plot_helpers import make_ridgeplots, plot_dataArray, set_plot_style
 from l2hmc.utils.rich import get_console, is_interactive
-from l2hmc.utils.plot_helpers import (
-    make_ridgeplots,
-    plot_dataArray,
-    set_plot_style
-)
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 log = logging.getLogger(__name__)
@@ -105,11 +102,290 @@ def dataset_to_h5pyfile(hfile: os.PathLike, dataset: xr.Dataset, **kwargs):
     f.close()
 
 
-def dataset_from_h5pyfile(hfile: os.PathLike) -> dict:
+def dict_from_h5pyfile(hfile: os.PathLike) -> dict:
     f = h5py.File(hfile, 'r')
     data = {key: f[key] for key in list(f.keys())}
     f.close()
     return data
+
+
+def dataset_from_h5pyfile(hfile: os.PathLike) -> xr.Dataset:
+    f = h5py.File(hfile, 'r')
+    data = {key: f[key] for key in list(f.keys())}
+    f.close()
+
+    return xr.Dataset(data)
+
+
+def load_job_data(
+        logdir: os.PathLike,
+        jobtype: str
+) -> xr.Dataset:
+    assert jobtype in ['train', 'eval', 'hmc']
+    fpath = Path(logdir).joinpath(
+        f'{jobtype}',
+        'data',
+        f'{jobtype}_data.h5',
+    )
+    assert fpath.is_file()
+    return dataset_from_h5pyfile(fpath)
+
+
+
+
+def load_time_data(
+        logdir: os.PathLike,
+        jobtype: str
+) -> pd.DataFrame:
+    assert jobtype in ['train', 'eval', 'hmc']
+    fpaths = Path(logdir).rglob(f'step-timer-{jobtype}')
+    data = {}
+    for idx, fpath in enumerate(fpaths):
+        tdata = pd.read_csv(fpath)
+        data[f'{idx}'] = tdata
+
+    return pd.DataFrame(data)
+
+
+def _load_from_dir(
+        logdir: os.PathLike,
+        to_load: str,
+) -> xr.Dataset | pd.DataFrame:
+    if to_load in ['train', 'eval', 'hmc']:
+        return load_job_data(logdir=logdir, jobtype=to_load)
+    if to_load in['time', 'timing']:
+        return load_time_data(logdir, jobtype=to_load)
+    raise ValueError('Unexpected argument for `to_load`')
+
+
+def load_from_dir(
+        logdir: os.PathLike,
+        to_load: str | list[str]
+) -> dict[str, xr.Dataset]: 
+    assert to_load in ['train', 'eval', 'hmc', 'time', 'timing']
+    data = {}
+    if isinstance(to_load, list):
+        for i in to_load:
+            data[i] = _load_from_dir(logdir, to_load)
+    elif isinstance(to_load, str):
+        data[to_load] = _load_from_dir(logdir, to_load)
+
+    return data
+
+
+def latvolume_to_str(latvolume: list[int]):
+    return 'x'.join([str(i) for i in latvolume])
+
+
+
+def check_nonempty(fpath: os.PathLike) -> bool:
+    return (
+        Path(fpath).is_dir()
+        and len(os.listdir(fpath)) > 0
+    )
+
+
+def check_jobdir(fpath: os.PathLike) -> bool:
+    jobdir = Path(fpath)
+    pdir = jobdir.joinpath('plots')
+    ddir = jobdir.joinpath('data')
+    ldir = jobdir.joinpath('logs')
+    return (
+        check_nonempty(pdir)
+        and check_nonempty(ddir)
+        and check_nonempty(ldir)
+    )
+
+
+def check_if_logdir(fpath: os.PathLike) -> bool:
+    logdir = Path(fpath)
+    tdir = Path(logdir).joinpath('train')
+    edir = Path(logdir).joinpath('eval')
+    hdir = Path(logdir).joinpath('hmc')
+    return (
+        (check_nonempty(tdir) and check_jobdir(tdir))
+        and (check_nonempty(edir) and check_jobdir(edir))
+        and (check_nonempty(hdir) and check_jobdir(hdir))
+    )
+
+
+def check_if_matching_logdir(
+        fpath: os.PathLike,
+        config_str: str,
+) -> bool:
+    return (
+        check_if_logdir(fpath)
+        and config_str in Path(fpath).as_posix()
+    )
+
+
+def find_logdirs(rootdir) -> list[Path]:
+    logdirs = []
+    # for path in Path(rootdir).iterdir():
+    for root, dirs, files in os.walk(rootdir):
+        for dir in dirs:
+            if check_if_logdir(dir):
+                logdirs.append(dir)
+        # is_logdir = check_if_logdir(path)
+        # if is_logdir:
+        #     logdirs.append(path)
+        # elif Path(path).is_dir():
+        #     find_logdirs(path)
+        # else:
+        #     continue
+    #     # for subdir in dirs:
+    #     if check_if_logdir(path):
+    #         logdirs.append(path)
+
+    return logdirs
+
+
+def find_matching_logdirs(
+        rootdir: Optional[os.PathLike] = None,
+        beta: Optional[float] = None,
+        group: Optional[str] = None,
+        nlf: Optional[int] = None,
+        merge_directions: Optional[bool] = None,
+        framework: Optional[str] = None,
+        latvolume: Optional[list[int]] = None,
+):
+    if rootdir is None:
+        rdir = Path(OUTPUTS_DIR).joinpath('runs')
+    else:
+        rdir = Path(rootdir)
+
+    logdirs = rdir.rglob(f'beta-{beta:.1f}')
+    # if beta is not None:
+    #     logdirs = [
+    #         i for i in logdirs
+    #         if f'beta-{beta:.1f}' in Path(i).as_posix()
+    #     ]
+
+    if group is not None:
+        logdirs = [
+            i for i in logdirs
+            if group in Path(i).as_posix()
+        ]
+
+    if nlf is not None:
+        logdirs = [
+            i for i in logdirs
+            if f'nlf-{nlf}' in Path(i).as_posix()
+        ]
+
+    if merge_directions is not None:
+        logdirs = [
+            i for i in logdirs
+            if f'merge_directions-{merge_directions}' in Path(i).as_posix()
+        ]
+
+    if framework is not None:
+        logdirs = [
+            i for i in logdirs
+            if framework in Path(i).as_posix()
+        ]
+
+    if latvolume is not None:
+        logdirs = [
+            i for i in logdirs
+            if 'x'.join([str(i) for i in latvolume]) in Path(i).as_posix()
+        ]
+
+    return logdirs
+
+
+def filter_runs_by(
+        beta: float,
+        group: Optional[str] = None,
+        nlf: Optional[int] = None,
+        merge_directions: Optional[bool] = None,
+        framework: Optional[str] = None,
+        latvolume: Optional[list[int]] = None,
+) -> list[Path]:
+    """Filter runs matching specified values.
+
+    Directory structure looks like:
+
+    U1/
+    └─ 16x16/
+        └─ nlf-8/
+            └─ beta-4.0/
+                └─ merge_directions-True/
+                    ├─ pytorch/
+                    │   └─ 2022-07-08/
+                    │       ├─ 19-56-30/
+                    │       │   ├─ train/
+                    │       │   ├─ eval/
+                    │       │   ├─ hmc/
+                    ├─ tensorflow/
+                    │   └─ 2022-07-08/
+                    │       ├─ 19-57-05/
+                    │       │   ├─ train/
+                    │       │   ├─ eval/
+                    │       │   ├─ hmc/
+    """
+    runs_path = Path(OUTPUTS_DIR).joinpath('runs')
+    group = 'U1' if group is None else group
+    latvolume = [16, 16] if latvolume is None else latvolume
+    latstr = 'x'.join([str(i) for i in latvolume])
+
+    bstr = f'beta-{beta:.1f}'
+    latdirs = runs_path.joinpath(
+        group,
+        latstr,
+    )
+    if nlf is None:
+        lfdirs = [
+            i for i in os.listdir(latdirs)
+            if Path(i).is_dir()
+        ]
+    else:
+        lfdirs = [
+            latdirs.joinpath(f'nlf-{nlf}')
+        ]
+
+    beta_dirs = []
+    for lfdir in lfdirs:
+        if (
+                bstr in Path(lfdir).as_posix()
+                and Path(lfdir).is_dir()
+        ):
+            beta_dirs.append(lfdir)
+
+    mdirs = []
+    if merge_directions is not None:
+        for bdir in beta_dirs:
+            if (
+                    f'merge_directions-{merge_directions}' in bdir
+                    and Path(bdir).is_dir()
+            ):
+                mdirs.append(bdir)
+
+
+
+
+
+
+def find_runs_with_matching_options(
+        config: dict[str, Any],
+        load: Optional[str]
+) -> list[Path]:
+    """Find runs with options matching those specified in `config`."""
+    runs_path = Path(OUTPUTS_DIR).joinpath('runs')
+    config_files = runs_path.rglob('config.yaml')
+    matches = []
+    for f in config_files:
+        fpath = Path(f)
+        assert fpath.is_file()
+        loaded = OmegaConf.load(f)
+        checks = []
+        for key, val in config.items():
+            checks.append((val == loaded.get(key, None)))
+
+        if sum(matches) == len(matches):
+            matches.append(fpath)
+
+    return matches
 
 
 def table_to_dict(table: Table, data: Optional[dict] = None) -> dict:
@@ -137,9 +413,8 @@ def save_logs(
         tables: dict[str, Table],
         summaries: Optional[list[str]] = None,
         job_type: Optional[str] = None,
-        # rows: Optional[dict] = None,  # type:ignore
         logdir: Optional[os.PathLike] = None,
-        run: Optional[Any] = None,
+        run: Optional[Any] = None
 ) -> None:
     job_type = 'job' if job_type is None else job_type
     if logdir is None:
@@ -148,7 +423,7 @@ def save_logs(
         logdir = Path(logdir)
 
     # cfile = logdir.joinpath('console.txt').as_posix()
-    # text = console.export_text()
+    # text = console.export_text(clear=False)
     # with open(cfile, 'w') as f:
     #     f.write(text)
 
@@ -163,7 +438,7 @@ def save_logs(
     tfile.parent.mkdir(exist_ok=True, parents=True)
 
     data = {}
-    console = get_console(record=True)
+    console = get_console(record=True, width=235)
     for idx, table in tables.items():
         if idx == 0:
             data = table_to_dict(table)
@@ -183,8 +458,8 @@ def save_logs(
     df.to_csv(dfile.as_posix(), mode='a')
 
     if run is not None:
-        with open(hfile.as_posix(), 'r') as f:
-            html = f.read()
+        # with open(hfile.as_posix(), 'r') as f:
+        #     html = f.read()
 
         # run.log({f'Media/{job_type}': wandb.Html(html)})
         run.log({
@@ -194,11 +469,12 @@ def save_logs(
     if summaries is not None:
         sfile = logdir.joinpath('summaries.txt').as_posix()
         with open(sfile, 'a') as f:
-            f.writelines(summaries)
+            f.write('\n'.join(summaries))
 
 
 def make_subdirs(basedir: os.PathLike):
     dirs = {}
+    assert Path(basedir).is_dir()
     for key in ['logs', 'data', 'plots']:
         d = Path(basedir).joinpath(key)
         d.mkdir(exist_ok=True, parents=True)
@@ -356,32 +632,39 @@ def analyze_dataset(
         artifact = None
         if job_type is not None:
             pngdir = Path(dirs['plots']).joinpath('pngs')
-            if run is not None:
-                name = f'{job_type}-{run.id}'
-                artifact = wandb.Artifact(name=name, type='result')
-
-                artifact.add_dir(pngdir.as_posix(), name=f'{job_type}/plots')
-                if datafile is not None:
-                    artifact.add_file(
-                        datafile.as_posix(),
-                        name=f'{job_type}/data'
+            if pngdir.is_dir():
+                if run is not None:
+                    name = f'{job_type}-{run.id}'
+                    artifact = wandb.Artifact(
+                        name=name,
+                        type='result'
                     )
 
-                run.log_artifact(artifact)
+                    artifact.add_dir(
+                        pngdir.as_posix(),
+                        name=f'{job_type}/plots'
+                    )
+                    if datafile is not None:
+                        artifact.add_file(
+                            datafile.as_posix(),
+                            name=f'{job_type}/data'
+                        )
 
-            if arun is not None:
-                from aim import Image
-                for f in list(pngdir.rglob('*.png')):
-                    aimage = Image(
-                        Path(f).as_posix(),
-                        format='png',
-                        quality=100,
-                    )
-                    arun.track(
-                        aimage,
-                        name=f'images/{f.stem}',
-                        context={'subset': job_type}
-                    )
+                    run.log_artifact(artifact)
+
+                if arun is not None:
+                    from aim import Image
+                    for f in list(pngdir.rglob('*.png')):
+                        aimage = Image(
+                            Path(f).as_posix(),
+                            format='png',
+                            quality=100,
+                        )
+                        arun.track(
+                            aimage,
+                            name=f'images/{f.stem}',
+                            context={'subset': job_type}
+                        )
 
     return dataset
 

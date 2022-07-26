@@ -11,7 +11,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Counter, Dict, List, Optional, Tuple
 
 from hydra.core.config_store import ConfigStore
 import numpy as np
@@ -273,6 +273,70 @@ class LearningRateConfig(BaseConfig):
         return f'lr-{self.lr_init:3.2f}'
 
 
+def avg_diff(
+        y: list[float],
+        x: Optional[list[float]] = None,
+        *,
+        drop: Optional[float | int] = None,
+) -> float:
+    # yarr = np.array(y)
+    # xarr = None
+    if x is not None:
+        assert len(y) == len(x)
+    #     xarr = np.array(x)
+
+    if drop is not None:
+        # If passed as an int, interpret as num to drop
+        if isinstance(drop, int) and drop > 1.:
+            n = drop
+        elif isinstance(drop, float) and drop < 1.:
+            n = int(drop * len(y))
+        else:
+            raise ValueError(
+                '`drop` must either be an `int > 1` or `float < 1.`'
+            )
+
+        y = y[n:]
+        if x is not None:
+            x = x[n:]
+
+    dy = np.subtract(y[1:], y[:-1]).mean()
+    if x is None:
+        return dy
+
+    return dy / np.subtract(x[1:], x[:-1]).mean()
+
+
+@dataclass
+class Steps:
+    nera: int
+    nepoch: int
+    test: int
+    log: Optional[int] = None
+    print: Optional[int] = None
+    extend_last_era: Optional[int] = None
+
+    def __post_init__(self):
+        if self.extend_last_era is None:
+            self.extend_last_era = 1
+        self.total = self.nera * self.nepoch
+        if self.total < 1000:
+            self.log = 5
+            self.print = max(1, int(self.nepoch // 10))
+        else:
+            if self.log is None:
+                self.log = max(1, int(self.total // 1000))
+                # self.log = max(1, int(self.nepoch // 10))
+
+            if self.print is None:
+                self.print = max(1, int(self.nepoch // 10))
+
+        assert isinstance(self.log, int)
+        assert isinstance(self.print, int)
+        self.log = max(1, int(self.log))
+        self.print = max(1, int(self.print))
+
+
 @dataclass
 class AnnealingSchedule(BaseConfig):
     beta_init: float
@@ -297,11 +361,129 @@ class AnnealingSchedule(BaseConfig):
         if self.beta_final is None:
             self.beta_final = self.beta_init
 
-        betas = np.linspace(self.beta_init, self.beta_final, steps.nera)
+        self.betas = np.linspace(self.beta_init, self.beta_final, steps.nera)
         self._dbeta = (self.beta_final - self.beta_init) / steps.total
-        self.betas = {
-            str(era): betas[era] for era in range(steps.nera)
+        self.beta_dict = {
+            str(era): self.betas[era] for era in range(steps.nera)
         }
+
+
+@dataclass
+class Annealear:
+    """Dynamically adjust annealing schedule during training."""
+    schedule: AnnealingSchedule
+    patience: int
+    min_delta: Optional[float] = None
+
+    def __post_init__(self):
+        self.wait = 0
+        self.best = np.Inf
+        self._current_era = 0
+        self._current_beta = self.schedule.beta_init
+        self._epoch = 0
+        self._count = 0
+        self.betas = []
+        self.loss = []
+        self.losses = {}
+        self._reset()
+
+    def _reset(self):
+        self.wait = 0
+
+    def update(self, loss: float):
+        self._epoch += 1
+        self.loss.append(loss)
+
+    @staticmethod
+    def avg_diff(
+            y: list[float],
+            x: Optional[list[float]] = None,
+            *,
+            drop: Optional[int | float] = None,
+    ) -> float:
+        """Returns (1/n) ∑ [δy/δx]."""
+        if x is not None:
+            assert len(x) == len(y)
+
+        if drop is not None:
+            if isinstance(drop, int):
+                # If passed as an int, we should interpret as num to drop
+                if drop > 1:
+                    y = y[drop:]
+                    if x is not None:
+                        x = x[drop:]
+                else:
+                    raise ValueError('Expected `drop` to be an int > 1')
+            elif isinstance(drop, float):
+                # If passed as a float, we should interpret as a percentage
+                if drop < 1.:
+                    frac = drop * len(y)
+                    y = y[frac:]
+                    if x is not None:
+                        x = x[frac:]
+                else:
+                    raise ValueError('Expected `drop` to be a float < 1.')
+            else:
+                raise ValueError(
+                    'Expected drop to be one of `int` or `float`.'
+                )
+
+        dyavg = np.subtract(y[1:], y[:-1]).mean()
+        if x is not None:
+            dxavg = np.subtract(x[1:], x[:-1]).mean()
+            return dyavg / dxavg
+
+        return dyavg
+
+    def start_epoch(self, era: int, beta: float):
+        self.losses[f'{era}'] = {
+            'beta': beta,
+            'loss': [],
+        }
+        self._prev_beta = self.betas[-1]
+        self._current_era = era
+        self._current_beta = beta
+
+        self.betas.append(beta)
+
+        self._prev_best = np.Inf
+        if (era - 1) in self.losses.keys():
+            self._prev_best = np.min(self.losses[str(era - 1)]['loss'])
+
+    def end_epoch(
+            self,
+            losses: list[float],
+            era: Optional[int] = None,
+            beta: Optional[float] = None,
+            drop: Optional[int | float] = None,
+    ) -> float:
+        current_era = self._current_era if era is None else era
+        current_beta = self._current_beta if beta is None else beta
+        prev_beta = self._prev_beta
+        new_beta = current_beta + self.schedule._dbeta
+        self.losses[f'{current_era}'] = {
+            'beta': current_beta,
+            'loss': losses,
+        }
+        new_best = np.min(losses)
+        avg_slope = self.avg_diff(losses, drop=drop)
+        if new_best < self._prev_best or avg_slope < 0:
+            # Loss has improved from previous best, return new_beta (increase)
+            return new_beta
+        else:
+            # Loss has NOT improved from previous best
+            current_beta_count = Counter(self.betas).get(current_beta)
+            if (
+                    current_beta_count is not None
+                    and isinstance(current_beta_count, int)
+                    and current_beta_count > self.patience
+            ):
+                # If we've exhausted our patience
+                # at the current_beta, return prev_beta (decrease)
+                return prev_beta
+
+            # If we're still being patient, return current_beta (no change)
+            return current_beta
 
 
 @dataclass
@@ -406,36 +588,6 @@ class LossConfig(BaseConfig):
 
 
 @dataclass
-class Steps:
-    nera: int
-    nepoch: int
-    test: int
-    log: Optional[int] = None
-    print: Optional[int] = None
-    extend_last_era: Optional[int] = None
-
-    def __post_init__(self):
-        if self.extend_last_era is None:
-            self.extend_last_era = 1
-        self.total = self.nera * self.nepoch
-        if self.total < 1000:
-            self.log = 5
-            self.print = max(1, int(self.nepoch // 10))
-        else:
-            if self.log is None:
-                self.log = max(1, int(self.total // 1000))
-                # self.log = max(1, int(self.nepoch // 10))
-
-            if self.print is None:
-                self.print = max(1, int(self.nepoch // 10))
-
-        assert isinstance(self.log, int)
-        assert isinstance(self.print, int)
-        self.log = max(1, int(self.log))
-        self.print = max(1, int(self.print))
-
-
-@dataclass
 class InputSpec(BaseConfig):
     xshape: List[int] | Tuple[int]
     xnet: Optional[Dict[str, List[int] | Tuple[int]]] = None
@@ -471,30 +623,31 @@ class TrainerConfig1:
 
 @dataclass
 class ExperimentConfig:
-    framework: str
     seed: int
+    wandb: Any
     steps: Steps
+    framework: str
     loss: LossConfig
     network: NetworkConfig
     net_weights: NetWeights
     dynamics: DynamicsConfig
-    annealing_schedule: AnnealingSchedule
     learning_rate: LearningRateConfig
-    wandb: Any
+    annealing_schedule: AnnealingSchedule
     # ----- optional below -------------------
     # outdir: Optional[Any] = None
-    conv: Optional[ConvolutionConfig] = None
     c1: Optional[float] = 0.0                # rectangle coefficient for SU3
+    name: Optional[str] = None
     width: Optional[int] = None
     nchains: Optional[int] = None
+    compile: Optional[bool] = True
     profile: Optional[bool] = False
+    compression: Optional[str] = None
     debug_mode: Optional[bool] = False
     default_mode: Optional[bool] = True
     print_config: Optional[bool] = True
     precision: Optional[str] = 'float32'
     ignore_warnings: Optional[bool] = True
-    compile: Optional[bool] = True
-    name: Optional[str] = None
+    conv: Optional[ConvolutionConfig] = None
 
     def __post_init__(self):
         if self.debug_mode:
