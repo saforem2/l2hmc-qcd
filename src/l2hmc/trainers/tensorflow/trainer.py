@@ -27,10 +27,8 @@ from tensorflow._api.v2.train import CheckpointManager
 
 from tensorflow.python.keras import backend as K
 
-from l2hmc.configs import (
-    ExperimentConfig,
-    Steps
-)
+from l2hmc.utils.rich import get_width, is_interactive
+from l2hmc.configs import ExperimentConfig
 from contextlib import nullcontext
 from l2hmc.common import get_timestamp
 
@@ -491,7 +489,8 @@ class Trainer(BaseTrainer):
         #         self.console.width
         #     )
         # )
-        if int(width) > 100:
+        width = get_width()
+        if int(width) > 100 and self.rank == 0 and not is_interactive():
             LIVE = True
             ctx = Live(
                     table,
@@ -622,6 +621,7 @@ class Trainer(BaseTrainer):
             era: Optional[int] = None,
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
+            nepoch: Optional[int] = None,
             writer: Optional[Any] = None,
             extend: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
@@ -636,37 +636,24 @@ class Trainer(BaseTrainer):
 
         nepoch = self.steps.nepoch * extend
         LIVE = False
-        width = os.environ.get(
-            'COLUMNS',
-            os.environ.get(
-                'WIDTH',
-                self.console.width
+        width = get_width()
+        ctx = nullcontext()
+        if width > 100 and self.rank == 0 and not is_interactive():
+            LIVE = True
+            ctx = Live(
+                table,
+                console=self.console,
+                vertical_overflow='visible',
             )
-        )
-        if self.rank == 0:
-            if int(width) > 100:
-                LIVE = True
-                ctx = Live(
-                        table,
-                        console=self.console,
-                        vertical_overflow='visible',
-                )
-            else:
-                ctx = nullcontext()
-            # ctxmgr = Live(table,
-            #               console=self.console,
-            #               vertical_overflow='visible')
-        else:
-            ctx = nullcontext()
 
-        bfloat = self.config.annealing_schedule.betas[str(era)]
-
+        nepoch = self.steps.nepoch if nepoch is None else nepoch
+        assert isinstance(nepoch, int)
         losses = []
         with ctx as live:
             if live is not None:
                 tstr = ' '.join([
                     f'ERA: {era}/{self.steps.nera}',
-                    f'BETA: {bfloat:.3f}',
+                    f'BETA: {beta:.3f}',
                 ])
                 live.console.clear_live()
                 live.console.rule(tstr)
@@ -696,7 +683,7 @@ class Trainer(BaseTrainer):
                     rows[self._gstep] = avgs
                     summaries.append(summary)
 
-                    if LIVE:
+                    if not LIVE:
                         log.info(summary)
 
                     if epoch == 0:
@@ -728,7 +715,7 @@ class Trainer(BaseTrainer):
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
-            steps: Optional[Steps] = None,
+            # steps: Optional[Steps] = None,
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
             beta: Optional[float] = None,
@@ -737,8 +724,6 @@ class Trainer(BaseTrainer):
     ) -> dict:
         """Perform training and return dictionary of results."""
         skip = [skip] if isinstance(skip, str) else skip
-        steps = self.steps if steps is None else steps
-        assert isinstance(steps, Steps)
 
         if x is None:
             x = flatten(self.g.random(list(self.xshape)))
@@ -755,27 +740,36 @@ class Trainer(BaseTrainer):
         manager = self.setup_CheckpointManager(train_dir)
         self._gstep = K.get_value(self.optimizer.iterations)
 
-        extend = steps.extend_last_era
+        # extend = steps.extend_last_era
         assert x is not None
-        b = float(
-            beta if beta is not None and isinstance(beta, float)
-            else self.config.annealing_schedule.beta_init
-        )
+        # b = float(
+        #     beta if beta is not None and isinstance(beta, float)
+        #     else self.config.annealing_schedule.beta_init
+        # )
         beta_final = self.config.annealing_schedule.beta_final
         era = 0
-        assert b is not None and isinstance(b, float)
+        # assert b is not None and isinstance(b, float)
         assert beta_final is not None and isinstance(beta_final, float)
-        # for era in range(steps.nera):
-        while b < beta_final:
-            # beta = self.config.annealing_schedule.betas[str(era)]
+        # while b < beta_final:
+        nera = self.steps.nera if nera is None else nera
+        assert nera is not None
+        for era in range(nera):
+            b = float(
+                beta if beta is not None
+                else self.config.annealing_schedule.beta_dict.get(
+                    str(era),
+                    self.config.annealing_schedule.beta_final
+                )
+            )
+
             extend = (
-                steps.extend_last_era
-                if era == steps.nera - 1
+                self.steps.extend_last_era
+                if era == self.steps.nera - 1
                 else 1
             )
 
             epoch_start = time.time()
-            x, edata = self.train_epoch(  # type:ignore
+            x, edata = self.train_epoch(
                 x=x,
                 beta=b,
                 era=era,
@@ -783,29 +777,26 @@ class Trainer(BaseTrainer):
                 arun=arun,
                 writer=writer,
                 extend=extend,
+                nepoch=nepoch,
             )
-            era += 1
-
-            losses = edata['losses']
-            if losses[-1] < losses[0]:
-                b += self.config.annealing_schedule._dbeta
-            else:
-                b -= self.config.annealing_schedule._dbeta
 
             self.rows['train'][str(era)] = edata['rows']
             self.tables['train'][str(era)] = edata['table']
             self.summaries['train'][str(era)] = edata['summaries']
 
+            # losses = edata['losses']
+            # if losses[-1] < losses[0]:
+            #     b += self.config.annealing_schedule._dbeta
+            # else:
+            #     b -= self.config.annealing_schedule._dbeta
+
             st0 = time.time()
-            if (era + 1) == steps.nera or (era + 1) % 5 == 0:
+            if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
                 self.save_ckpt(manager, train_dir)
 
             if self.rank == 0:
-                ckptstr = '\n'.join([
-                    f'Saving took: {time.time() - st0:<5g}s',
-                    f'Era {era} took: {time.time() - epoch_start:<5g}s',
-                ])
-                self.console.log(ckptstr)
+                log.info(f'Saving took: {time.time() - st0:<5g}s')
+                log.info(f'Era {era} took: {time.time() - epoch_start:<5g}s')
 
         return {
             'timer': self.timers['train'],
