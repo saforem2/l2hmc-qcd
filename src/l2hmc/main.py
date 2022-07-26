@@ -8,8 +8,10 @@ import logging
 import os
 import random
 import warnings
+import time
 
 import hydra
+from typing import Optional
 import numpy as np
 from omegaconf import DictConfig
 
@@ -135,7 +137,11 @@ def setup_torch(cfg: DictConfig) -> int:
     return RANK
 
 
-def get_experiment(cfg: DictConfig):
+def get_experiment(
+        cfg: DictConfig,
+        keep: Optional[str | list[str]] = None,
+        skip: Optional[str | list[str]] = None,
+):
     framework = cfg.get('framework', None)
     os.environ['RUNDIR'] = str(os.getcwd())
     if framework in ['tf', 'tensorflow']:
@@ -150,9 +156,16 @@ def get_experiment(cfg: DictConfig):
         RANK = setup_torch(cfg)
         # from l2hmc.network.pytorch.network import zero_weights, init_weights
         from l2hmc.experiment.pytorch.experiment import Experiment
-        experiment = Experiment(cfg)
-        init = (RANK == 0)
-        _ = experiment.build(init_wandb=init, init_aim=init)
+        init = (RANK == 0) and not os.environ.get('WANDB_OFFLINE', False)
+        experiment = Experiment(
+            cfg,
+            keep=keep,
+            skip=skip,
+            init_wandb=init,
+            init_aim=(RANK == 0),
+        )
+        # init = (RANK == 0)
+        # _ = experiment.build(init_wandb=init, init_aim=init)
         return experiment
         # log.warning('Initializing network weights...')
         # ex.dynamics.networks['xnet'].apply(init_weights)
@@ -173,18 +186,22 @@ def main(cfg: DictConfig) -> None:
     if ex.trainer.rank == 0:
         print_config(ex.cfg, resolve=True)
 
-    should_train = (
+    should_train: bool = (
         ex.config.steps.nera > 0
         and ex.config.steps.nepoch > 0
     )
 
     # --- [1.] Train model -------------------------------------------------
     if should_train:
+        tstart = time.time()
         _ = ex.train()
+        log.info(f'Training took: {time.time() - tstart:.5f}s')
         # --- [2.] Evaluate trained model ----------------------------------
         if ex.trainer.rank == 0 and ex.config.steps.test > 0:
-            log.warning('Evaluating trained model')
+            log.info('Evaluating trained model')
+            estart = time.time()
             _ = ex.evaluate(job_type='eval')
+            log.info(f'Evaluation took: {time.time() - estart:.5f}s')
 
             try:
                 ex.visualize_model()
@@ -193,8 +210,10 @@ def main(cfg: DictConfig) -> None:
 
     # --- [3.] Run generic HMC for comparison ------------------------------
     if ex.trainer.rank == 0 and ex.config.steps.test > 0:
-        log.warning('Running generic HMC with same traj len')
+        log.info('Running generic HMC for comparison')
+        hstart = time.time()
         _ = ex.evaluate(job_type='hmc')
+        log.info(f'HMC took: {time.time() - hstart:.5f}s')
 
 
 if __name__ == '__main__':
