@@ -10,6 +10,7 @@ import logging
 from omegaconf import DictConfig
 
 from typing import Optional
+from pathlib import Path
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
 from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
@@ -30,8 +31,41 @@ LOCAL_RANK = hvd.local_rank()
 
 
 class Experiment(BaseExperiment):
-    def __init__(self, cfg: DictConfig) -> None:
+    def __init__(
+            self,
+            cfg: DictConfig,
+            keep: Optional[str | list[str]] = None,
+            skip: Optional[str | list[str]] = None,
+            init_wandb: Optional[bool] = True,
+            init_aim: Optional[bool] = True,
+    ) -> None:
         super().__init__(cfg=cfg)
+        self.trainer = self.build_trainer(keep=keep, skip=skip)
+        self._rank = hvd.rank()
+        self._local_rank = hvd.local_rank()
+        run = None
+        arun = None
+        if self._rank == 0:
+            if init_wandb:
+                import wandb
+                log.warning(
+                    f'Initialize WandB from {self._rank}:{self._local_rank}'
+                )
+                run = super()._init_wandb()
+                run.config['SIZE'] = hvd.size()
+
+            if init_aim:
+                log.warning(
+                    f'Initializing Aim from {self._rank}:{self._local_rank}'
+                )
+                arun = self.init_aim()
+        self.run = run
+        self.arun = arun
+        self._is_built = True
+        assert callable(self.trainer.loss_fn)
+        assert isinstance(self.trainer, Trainer)
+        assert isinstance(self.trainer.dynamics, Dynamics)
+        assert isinstance(self.trainer.lattice, (LatticeU1, LatticeSU3))
         # if not isinstance(self.cfg, ExperimentConfig):
         #     self.cfg = hydra.utils.instantiate(cfg)
         #     assert isinstance(self.config, ExperimentConfig)
@@ -59,8 +93,10 @@ class Experiment(BaseExperiment):
                                            expand_nested=True,
                                            show_layer_activations=True)
         log.info('Saving model visualizations to: [xnet,vnet].png')
-        xdot.write_png('xnet.png')
-        vdot.write_png('vnet.png')
+        outdir = Path(self._outdir).joinpath('network_diagrams')
+        outdir.mkdir(exist_ok=True, parents=True)
+        xdot.write_png(outdir.joinpath('xnet.png').as_posix())
+        vdot.write_png(outdir.joinpath('vnet.png').as_posix())
 
     def update_wandb_config(
             self,

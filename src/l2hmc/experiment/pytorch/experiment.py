@@ -6,11 +6,12 @@ Experiment base class.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
-from typing import Any, Callable, Optional
+from typing import Optional
 
 import horovod.torch as hvd
 from omegaconf import DictConfig
 import torch
+from pathlib import Path
 from torch.utils.tensorboard.writer import SummaryWriter
 from l2hmc.configs import NetWeights
 
@@ -33,8 +34,56 @@ LOCAL_RANK = hvd.local_rank()
 
 
 class Experiment(BaseExperiment):
-    def __init__(self, cfg: DictConfig) -> None:
+    def __init__(
+            self,
+            cfg: DictConfig,
+            keep: Optional[str | list[str]] = None,
+            skip: Optional[str | list[str]] = None,
+            init_wandb: Optional[bool] = True,
+            init_aim: Optional[bool] = True,
+    ) -> None:
         super().__init__(cfg=cfg)
+        self.trainer = self.build_trainer(keep=keep, skip=skip)
+
+        self._rank = hvd.rank()
+        self._local_rank = hvd.local_rank()
+        run = None
+        arun = None
+        if self._rank == 0:
+            if init_wandb:
+                import wandb
+                log.warning(
+                    f'Initialize WandB from {self._rank}:{self._local_rank}'
+                )
+                run = super()._init_wandb()
+                run.watch(
+                    # self.trainer.dynamics,
+                    self.trainer.dynamics.networks,
+                    log='all',
+                    log_graph=True,
+                    criterion=self.trainer.loss_fn,
+                )
+                assert run is wandb.run
+                run.config['SIZE'] = SIZE
+
+            if init_aim:
+                log.warning(
+                    f'Initializing Aim from {self._rank}:{self._local_rank}'
+                )
+                arun = self.init_aim()
+                if arun is not None:
+                    if torch.cuda.is_available():
+                        arun['ngpus'] = SIZE
+                    else:
+                        arun['ncpus'] = SIZE
+
+        self.run = run
+        self.arun = arun
+        self._is_built = True
+        assert callable(self.trainer.loss_fn)
+        assert isinstance(self.trainer, Trainer)
+        assert isinstance(self.trainer.dynamics, Dynamics)
+        assert isinstance(self.trainer.lattice, (LatticeU1, LatticeSU3))
         # if not isinstance(self.cfg, ExperimentConfig):
         #     self.cfg = hydra.utils.instantiate(cfg)
         #     assert isinstance(self.config, ExperimentConfig)
@@ -78,13 +127,26 @@ class Experiment(BaseExperiment):
         vparams = dict(
             self.trainer.dynamics.vnet.named_parameters()
         )
-        make_dot(sx0, params=xparams).render('scale-xnet-0', format='png')
-        make_dot(tx0, params=xparams).render('transl-xnet-0', format='png')
-        make_dot(qx0, params=xparams).render('transf-xnet-0', format='png')
-
-        make_dot(sv, params=vparams).render('scale-vnet-0', format='png')
-        make_dot(tv, params=vparams).render('transl-vnet-0', format='png')
-        make_dot(qv, params=vparams).render('transf-vnet-0', format='png')
+        outdir = Path(self._outdir).joinpath('network_diagrams')
+        outdir.mkdir(exist_ok=True, parents=True)
+        make_dot(sx0, params=xparams).render(
+            outdir.joinpath('scale-xnet-0').as_posix(), format='png'
+        )
+        make_dot(tx0, params=xparams).render(
+            outdir.joinpath('transl-xnet-0').as_posix(), format='png'
+        )
+        make_dot(qx0, params=xparams).render(
+            outdir.joinpath('transf-xnet-0').as_posix(), format='png'
+        )
+        make_dot(sv, params=vparams).render(
+            outdir.joinpath('scale-vnet-0').as_posix(), format='png'
+        )
+        make_dot(tv, params=vparams).render(
+            outdir.joinpath('transl-vnet-0').as_posix(), format='png'
+        )
+        make_dot(qv, params=vparams).render(
+            outdir.joinpath('transf-vnet-0').as_posix(), format='png'
+        )
 
     def update_wandb_config(
             self,
@@ -108,35 +170,10 @@ class Experiment(BaseExperiment):
     ) -> Trainer:
         return Trainer(self.cfg, skip=skip, keep=keep)
 
-    def init_wandb(self):
-        import wandb
-        run = super()._init_wandb()
-        assert run is wandb.run
-        # dynamics = self.trainer.dynamics if dynamics is None else dynamics
-        # loss_fn = self.trainer.loss_fn if loss_fn is None else loss_fn
-        # run.watch(
-        #     dynamics,
-        #     criterion=loss_fn,
-        #     # self.trainer.dynamics.networks,
-        #     # criterion=self.trainer.loss_fn,
-        #     log='all',
-        #     log_graph=True
-        # )
-        # # run.watch(
-        # #     self.trainer.dynamics.vnet,
-        # #     # criterion=self.trainer.loss_fn,
-        # #     log='all',
-        # #     log_graph=True
-        # # )
-        # # run.watch(
-        # #     self.trainer.dynamics if dynamics is None else dynamics,
-        # #     criterion=self.trainer.loss_fn if loss_fn is None else loss_fn,
-        # #     log="all",
-        # #     log_graph=True,
-        # # )
-        # run.config['hvd_size'] = SIZE
-
-        return run
+    def init_wandb(
+            self,
+    ):
+        return super()._init_wandb()
 
     def get_summary_writer(
             self,
@@ -194,7 +231,10 @@ class Experiment(BaseExperiment):
                 log.warning(f'Initialize WandB from {rank}:{local_rank}')
                 run = self.init_wandb()
                 assert run is wandb.run
-                run.watch(self.trainer.dynamics, log="all")
+                # run.watch(
+                #     self.trainer.dynamics,
+                #     log="all"
+                # )
                 run.config['SIZE'] = SIZE
             if init_aim:
                 log.warning(f'Initializing Aim from {rank}:{local_rank}')
@@ -267,6 +307,7 @@ class Experiment(BaseExperiment):
         if RANK == 0:
             output['dataset'] = self.save_dataset(
                 output=output,
+                nchains=nchains,
                 job_type='train',
                 outdir=jobdir
             )
