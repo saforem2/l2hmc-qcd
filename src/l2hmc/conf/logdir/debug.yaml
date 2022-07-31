@@ -2,7 +2,8 @@
 
 hydra:
   run:
-    dir: outputs/debug/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: "outputs/debug/runs/${framework}\
+      /${now:%Y-%m-%d}/${now:%H-%M-%S}"
   sweep:
-    dir: outputs/debug/multiruns
-    subdir: ${hydra.job.num}
+    dir: "outputs/debug/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+    subdir: ${hydra.job.override_dirname}
