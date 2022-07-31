@@ -17,7 +17,5 @@ hydra:
       /${now:%H-%M-%S}"
   sweep:
     dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}"
-    subdir: ${hydra.job.override_dirname}
     # subdir: ${hydra.job.num}
-
-
+    subdir: ${hydra.job.override_dirname}
