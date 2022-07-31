@@ -639,6 +639,8 @@ class ExperimentConfig:
     name: Optional[str] = None
     width: Optional[int] = None
     nchains: Optional[int] = None
+    init_aim: Optional[bool] = None
+    init_wandb: Optional[bool] = None
     compile: Optional[bool] = True
     profile: Optional[bool] = False
     compression: Optional[str] = None

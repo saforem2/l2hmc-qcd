@@ -36,8 +36,6 @@ class Experiment(BaseExperiment):
             cfg: DictConfig,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
-            init_wandb: Optional[bool] = True,
-            init_aim: Optional[bool] = True,
     ) -> None:
         super().__init__(cfg=cfg)
         self.trainer = self.build_trainer(keep=keep, skip=skip)
@@ -45,20 +43,21 @@ class Experiment(BaseExperiment):
         self._local_rank = hvd.local_rank()
         run = None
         arun = None
-        if self._rank == 0:
-            if init_wandb:
-                import wandb
-                log.warning(
-                    f'Initialize WandB from {self._rank}:{self._local_rank}'
-                )
-                run = super()._init_wandb()
-                run.config['SIZE'] = hvd.size()
+        if self._rank == 0 and self.config.init_wandb:
+            # import wandb
+            log.warning(
+                f'Initialize WandB from {self._rank}:{self._local_rank}'
+            )
+            run = super()._init_wandb()
+            run.config['SIZE'] = hvd.size()
 
-            if init_aim:
-                log.warning(
-                    f'Initializing Aim from {self._rank}:{self._local_rank}'
-                )
-                arun = self.init_aim()
+        if self._rank == 0 and self.config.init_aim:
+            log.warning(
+                f'Initializing Aim from {self._rank}:{self._local_rank}'
+            )
+            arun = self.init_aim()
+            arun['SIZE'] = hvd.size()
+
         self.run = run
         self.arun = arun
         self._is_built = True
@@ -135,8 +134,8 @@ class Experiment(BaseExperiment):
 
     def build(
             self,
-            init_wandb: bool = True,
-            init_aim: bool = True
+            init_wandb: Optional[bool] = None,
+            init_aim: Optional[bool] = None
     ):
         return self._build(
             init_wandb=init_wandb,
@@ -145,8 +144,8 @@ class Experiment(BaseExperiment):
 
     def _build(
             self,
-            init_wandb: bool = True,
-            init_aim: bool = True,
+            init_wandb: Optional[bool] = None,
+            init_aim: Optional[bool] = None,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
     ):
@@ -167,20 +166,19 @@ class Experiment(BaseExperiment):
         arun = None
         local_rank = hvd.local_rank()
         rank = hvd.rank()
-        if RANK == 0:
-            if init_wandb:
-                log.warning(f'Initializing WandB from {rank}:{local_rank}')
-                run = self.init_wandb()
-            if init_aim:
-                log.warning(f'Initializing Aim from {rank}:{local_rank}')
-                arun = self.init_aim()
-                # assert arun is not None and arun is aim.Run
-                ndevices = hvd.size()
-                gpus = tf.config.experimental.list_physical_devices('GPU')
-                if gpus:
-                    arun['ngpus'] = ndevices
-                else:
-                    arun['ncpus'] = ndevices
+        if RANK == 0 and init_wandb:
+            log.warning(f'Initializing WandB from {rank}:{local_rank}')
+            run = self.init_wandb()
+        if RANK == 0 and init_aim:
+            log.warning(f'Initializing Aim from {rank}:{local_rank}')
+            arun = self.init_aim()
+            # assert arun is not None and arun is aim.Run
+            ndevices = hvd.size()
+            gpus = tf.config.experimental.list_physical_devices('GPU')
+            if gpus:
+                arun['ngpus'] = ndevices
+            else:
+                arun['ncpus'] = ndevices
 
         self.run = run
         self.arun = arun

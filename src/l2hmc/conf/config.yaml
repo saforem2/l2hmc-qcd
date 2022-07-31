@@ -9,6 +9,8 @@ width: 235              # Setting controlling terminal width for printing
 seed: 9992              # Seed for random number
 compile: True           # Compile network in tensorflow? (True by default)
 compression: fp16       # Compression for Horovod
+init_wandb: True
+init_aim: True
 nchains:  null          # Number of chains to use when evaluating model
 # optional num_threads: 8
 # optional outdir: outputs/${now:%Y-%m-%d_%H-%M-%S}
