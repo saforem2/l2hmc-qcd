@@ -21,7 +21,6 @@ from omegaconf import MISSING
 # from accelerate.accelerator import Accelerator
 # from hydra.utils import instantiate
 
-
 log = logging.getLogger(__name__)
 
 
@@ -64,41 +63,6 @@ def list_to_str(x: list) -> str:
         return '-'.join([f'{i:2.1f}' for i in x])
     else:
         return '-'.join([str(i) for i in x])
-
-
-@dataclass
-class CustomLogging:
-    version: int = 1
-    formatters: dict[str, Any] = field(
-        default_factory=lambda: {
-            'simple': {
-                'format': (
-                    '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
-                )
-            }
-        }
-    )
-    handlers: dict[str, Any] = field(
-        default_factory=lambda: {
-            'console': {
-                'class': 'rich.logging.RichHandler',
-                'formatter': 'simple',
-                'rich_tracebacks': 'true'
-            },
-            'file': {
-                'class': 'logging.FileHander',
-                'formatter': 'simple',
-                'filename': '${hydra.job.name}.log',
-            },
-        }
-    )
-    root: dict[str, Any] = field(
-        default_factory=lambda: {
-            'level': 'INFO',
-            'handlers': ['console', 'file'],
-        }
-    )
-    disable_existing_loggers: bool = False
 
 
 @dataclass
@@ -273,40 +237,6 @@ class LearningRateConfig(BaseConfig):
         return f'lr-{self.lr_init:3.2f}'
 
 
-def avg_diff(
-        y: list[float],
-        x: Optional[list[float]] = None,
-        *,
-        drop: Optional[float | int] = None,
-) -> float:
-    # yarr = np.array(y)
-    # xarr = None
-    if x is not None:
-        assert len(y) == len(x)
-    #     xarr = np.array(x)
-
-    if drop is not None:
-        # If passed as an int, interpret as num to drop
-        if isinstance(drop, int) and drop > 1.:
-            n = drop
-        elif isinstance(drop, float) and drop < 1.:
-            n = int(drop * len(y))
-        else:
-            raise ValueError(
-                '`drop` must either be an `int > 1` or `float < 1.`'
-            )
-
-        y = y[n:]
-        if x is not None:
-            x = x[n:]
-
-    dy = np.subtract(y[1:], y[:-1]).mean()
-    if x is None:
-        return dy
-
-    return dy / np.subtract(x[1:], x[:-1]).mean()
-
-
 @dataclass
 class Steps:
     nera: int
@@ -320,21 +250,16 @@ class Steps:
         if self.extend_last_era is None:
             self.extend_last_era = 1
         self.total = self.nera * self.nepoch
-        if self.total < 1000:
-            self.log = 5
-            self.print = max(1, int(self.nepoch // 10))
-        else:
-            if self.log is None:
-                self.log = max(1, int(self.total // 1000))
-                # self.log = max(1, int(self.nepoch // 10))
-
-            if self.print is None:
-                self.print = max(1, int(self.nepoch // 10))
+        freq = int(self.nepoch // 20)
+        self.log = (
+            max(1, freq) if self.log is None else self.log
+        )
+        self.print = (
+            max(1, freq) if self.print is None else self.print
+        )
 
         assert isinstance(self.log, int)
         assert isinstance(self.print, int)
-        self.log = max(1, int(self.log))
-        self.print = max(1, int(self.print))
 
 
 @dataclass
@@ -695,6 +620,7 @@ def get_experiment(overrides: Optional[list[str]] = None):
         raise ValueError(
             f'Unexpected value for `cfg.framework: {cfg.framework}'
         )
+
 
 
 defaults = [
