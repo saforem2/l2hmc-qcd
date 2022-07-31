@@ -145,24 +145,31 @@ def get_experiment(
     framework = cfg.get('framework', None)
     os.environ['RUNDIR'] = str(os.getcwd())
     if framework in ['tf', 'tensorflow']:
-        RANK = setup_tensorflow(cfg)
+        _ = setup_tensorflow(cfg)
         from l2hmc.experiment.tensorflow.experiment import Experiment
-        experiment = Experiment(cfg)
-        init = (RANK == 0)
-        _ = experiment.build(init_wandb=init, init_aim=init)
+        experiment = Experiment(
+            cfg,
+            keep=keep,
+            skip=skip
+        )
+        # init_wandb = (RANK == 0 and cfg.get('init_wandb', False))
+        # init_aim = (RANK == 0 and cfg.get('init_aim', False))
+        # _ = experiment.build()
         return experiment
 
     if framework in ['pt', 'pytorch', 'torch']:
-        RANK = setup_torch(cfg)
+        _ = setup_torch(cfg)
         # from l2hmc.network.pytorch.network import zero_weights, init_weights
         from l2hmc.experiment.pytorch.experiment import Experiment
-        init = (RANK == 0) and not os.environ.get('WANDB_OFFLINE', False)
+        # init = (RANK == 0) and not os.environ.get('WANDB_OFFLINE', False)
+        # init_wandb = (RANK == 0 and cfg.get('init_wandb', False))
+        # init_aim = (RANK == 0 and cfg.get('init_aim', False))
         experiment = Experiment(
             cfg,
             keep=keep,
             skip=skip,
-            init_wandb=init,
-            init_aim=(RANK == 0),
+            # init_wandb=init_wandb,
+            # init_aim=init_aim,
         )
         # init = (RANK == 0)
         # _ = experiment.build(init_wandb=init, init_aim=init)

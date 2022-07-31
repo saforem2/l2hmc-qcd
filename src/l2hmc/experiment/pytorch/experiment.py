@@ -39,8 +39,6 @@ class Experiment(BaseExperiment):
             cfg: DictConfig,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
-            init_wandb: Optional[bool] = True,
-            init_aim: Optional[bool] = True,
     ) -> None:
         super().__init__(cfg=cfg)
         self.trainer = self.build_trainer(keep=keep, skip=skip)
@@ -49,33 +47,33 @@ class Experiment(BaseExperiment):
         self._local_rank = hvd.local_rank()
         run = None
         arun = None
-        if self._rank == 0:
-            if init_wandb:
-                import wandb
-                log.warning(
-                    f'Initialize WandB from {self._rank}:{self._local_rank}'
-                )
-                run = super()._init_wandb()
-                run.watch(
-                    # self.trainer.dynamics,
-                    self.trainer.dynamics.networks,
-                    log='all',
-                    log_graph=True,
-                    criterion=self.trainer.loss_fn,
-                )
-                assert run is wandb.run
-                run.config['SIZE'] = SIZE
+        if self._rank == 0 and self.config.init_wandb:
+            import wandb
+            log.warning(
+                f'Initialize WandB from {self._rank}:{self._local_rank}'
+            )
+            run = super()._init_wandb()
+            run.watch(
+                # self.trainer.dynamics,
+                self.trainer.dynamics.networks,
+                log='all',
+                log_graph=True,
+                criterion=self.trainer.loss_fn,
+            )
+            assert run is wandb.run
+            run.config['SIZE'] = SIZE
 
-            if init_aim:
-                log.warning(
-                    f'Initializing Aim from {self._rank}:{self._local_rank}'
-                )
-                arun = self.init_aim()
-                if arun is not None:
-                    if torch.cuda.is_available():
-                        arun['ngpus'] = SIZE
-                    else:
-                        arun['ncpus'] = SIZE
+        if self._rank == 0 and self.config.init_aim:
+            log.warning(
+                f'Initializing Aim from {self._rank}:{self._local_rank}'
+            )
+            arun = self.init_aim()
+            arun['SIZE'] = SIZE
+            if arun is not None:
+                if torch.cuda.is_available():
+                    arun['ngpus'] = SIZE
+                else:
+                    arun['ncpus'] = SIZE
 
         self.run = run
         self.arun = arun
