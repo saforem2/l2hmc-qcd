@@ -15,17 +15,15 @@ import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 from omegaconf import DictConfig
+from omegaconf import OmegaConf
 import pandas as pd
 from rich.table import Table
 import wandb
 import xarray as xr
 
 from l2hmc.configs import AnnealingSchedule, Steps
-from l2hmc.utils.plot_helpers import (
-    make_ridgeplots,
-    plot_dataArray,
-    set_plot_style
-)
+from l2hmc.configs import OUTPUTS_DIR
+from l2hmc.utils.plot_helpers import make_ridgeplots, plot_dataArray, set_plot_style
 from l2hmc.utils.rich import get_console, is_interactive
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
@@ -340,6 +338,43 @@ def find_matching_logdirs(
     )
 
 
+def find_runs_with_matching_options(
+        config: dict[str, Any],
+        rootdir: Optional[os.PathLike] = None,
+        # load: Optional[str]
+) -> list[Path]:
+    """Find runs with options matching those specified in `config`."""
+    if rootdir is None:
+        rootdir = Path(OUTPUTS_DIR)
+
+    config_files = [
+        i.resolve() for i in Path(rootdir).rglob('*.yaml')
+        if (i.is_file and i.name == 'config.yaml')
+    ]
+    matches = []
+    for f in config_files:
+        fpath = Path(f)
+        assert fpath.is_file()
+        loaded = OmegaConf.to_container(OmegaConf.load(f), resolve=True)
+        assert isinstance(loaded, dict)
+        checks = []
+        for key, val in config.items():
+            if key in loaded and val == loaded.get(key, None):
+                checks.append(1)
+            else:
+                checks.append(0)
+            checks.append((val == loaded.get(key, None)))
+
+        if sum(matches) == len(matches):
+            matches.append(fpath)
+
+    return matches
+
+
+
+
+
+
 def table_to_dict(table: Table, data: Optional[dict] = None) -> dict:
     if data is None:
         return {
@@ -646,3 +681,37 @@ def save_and_analyze_data(
                   summaries=output.get('summaries'))
 
     return dataset
+
+
+def avg_diff(
+        y: list[float],
+        x: Optional[list[float]] = None,
+        *,
+        drop: Optional[float | int] = None,
+) -> float:
+    # yarr = np.array(y)
+    # xarr = None
+    if x is not None:
+        assert len(y) == len(x)
+    #     xarr = np.array(x)
+
+    if drop is not None:
+        # If passed as an int, interpret as num to drop
+        if isinstance(drop, int) and drop > 1.:
+            n = drop
+        elif isinstance(drop, float) and drop < 1.:
+            n = int(drop * len(y))
+        else:
+            raise ValueError(
+                '`drop` must either be an `int > 1` or `float < 1.`'
+            )
+
+        y = y[n:]
+        if x is not None:
+            x = x[n:]
+
+    dy = np.subtract(y[1:], y[:-1]).mean()
+    if x is None:
+        return dy
+
+    return dy / np.subtract(x[1:], x[:-1]).mean()
