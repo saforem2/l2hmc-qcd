@@ -14,19 +14,22 @@ import h5py
 import joblib
 import matplotlib.pyplot as plt
 import numpy as np
-from omegaconf import DictConfig, OmegaConf
-import pandas as pd
+from omegaconf import DictConfig
 import pandas as pd
 from rich.table import Table
 import wandb
 import xarray as xr
 
 from l2hmc.configs import AnnealingSchedule, Steps
-from l2hmc.configs import OUTPUTS_DIR
-from l2hmc.utils.plot_helpers import make_ridgeplots, plot_dataArray, set_plot_style
+from l2hmc.utils.plot_helpers import (
+    make_ridgeplots,
+    plot_dataArray,
+    set_plot_style
+)
 from l2hmc.utils.rich import get_console, is_interactive
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
+
 log = logging.getLogger(__name__)
 
 
@@ -131,8 +134,6 @@ def load_job_data(
     return dataset_from_h5pyfile(fpath)
 
 
-
-
 def load_time_data(
         logdir: os.PathLike,
         jobtype: str
@@ -153,7 +154,7 @@ def _load_from_dir(
 ) -> xr.Dataset | pd.DataFrame:
     if to_load in ['train', 'eval', 'hmc']:
         return load_job_data(logdir=logdir, jobtype=to_load)
-    if to_load in['time', 'timing']:
+    if to_load in ['time', 'timing']:
         return load_time_data(logdir, jobtype=to_load)
     raise ValueError('Unexpected argument for `to_load`')
 
@@ -161,7 +162,7 @@ def _load_from_dir(
 def load_from_dir(
         logdir: os.PathLike,
         to_load: str | list[str]
-) -> dict[str, xr.Dataset]: 
+) -> dict[str, xr.Dataset]:
     assert to_load in ['train', 'eval', 'hmc', 'time', 'timing']
     data = {}
     if isinstance(to_load, list):
@@ -175,7 +176,6 @@ def load_from_dir(
 
 def latvolume_to_str(latvolume: list[int]):
     return 'x'.join([str(i) for i in latvolume])
-
 
 
 def check_nonempty(fpath: os.PathLike) -> bool:
@@ -199,14 +199,19 @@ def check_jobdir(fpath: os.PathLike) -> bool:
 
 def check_if_logdir(fpath: os.PathLike) -> bool:
     logdir = Path(fpath)
-    tdir = Path(logdir).joinpath('train')
-    edir = Path(logdir).joinpath('eval')
-    hdir = Path(logdir).joinpath('hmc')
-    return (
-        (check_nonempty(tdir) and check_jobdir(tdir))
-        and (check_nonempty(edir) and check_jobdir(edir))
-        and (check_nonempty(hdir) and check_jobdir(hdir))
+    contents = os.listdir(logdir)
+    contents = os.listdir(logdir)
+    in_contents = (
+        'train' in contents
+        and 'eval' in contents
+        and 'hmc' in contents
     )
+    non_empty = (
+        check_nonempty(logdir.joinpath('train'))
+        and check_nonempty(logdir.joinpath('eval'))
+        and check_nonempty(logdir.joinpath('hmc'))
+    )
+    return (in_contents and non_empty)
 
 
 def check_if_matching_logdir(
@@ -219,29 +224,103 @@ def check_if_matching_logdir(
     )
 
 
-def find_logdirs(rootdir) -> list[Path]:
-    logdirs = []
-    # for path in Path(rootdir).iterdir():
-    for root, dirs, files in os.walk(rootdir):
-        for dir in dirs:
-            if check_if_logdir(dir):
-                logdirs.append(dir)
-        # is_logdir = check_if_logdir(path)
-        # if is_logdir:
-        #     logdirs.append(path)
-        # elif Path(path).is_dir():
-        #     find_logdirs(path)
-        # else:
-        #     continue
-    #     # for subdir in dirs:
-    #     if check_if_logdir(path):
-    #         logdirs.append(path)
+def find_logdirs(rootdir: os.PathLike) -> list[Path]:
+    """Every `logdir` should contain a `config_tree.log` file."""
+    return [
+        Path(i).parent
+        for i in Path(rootdir).rglob('config_tree.log')
+        if check_if_logdir(Path(i).parent)
+    ]
 
-    return logdirs
+
+def _match_beta(logdir, beta: Optional[float] = None) -> bool:
+    return (
+        beta is not None
+        and f'beta-{beta:.1f}' in Path(logdir).as_posix()
+    )
+
+
+def _match_group(logdir, group: Optional[str] = None) -> bool:
+    return (
+        group is not None
+        and group in Path(logdir).as_posix()
+    )
+
+
+def _match_nlf(logdir, nlf: Optional[int] = None) -> bool:
+    return (
+        nlf is not None
+        and f'nlf-{nlf}' in Path(logdir).as_posix()
+    )
+
+
+def _match_merge_directions(
+        logdir,
+        merge_directions: Optional[bool] = None
+) -> bool:
+    return (
+        merge_directions is not None
+        and (
+            f'merge_directions-{merge_directions}'
+            in Path(logdir).as_posix()
+        )
+    )
+
+
+def _match_framework(
+        logdir: os.PathLike,
+        framework: Optional[str] = None,
+) -> bool:
+    return (
+        framework is not None
+        and framework in Path(logdir).as_posix()
+    )
+
+
+def _match_latvolume(
+        logdir: os.PathLike,
+        latvolume: Optional[list[int]] = None
+) -> bool:
+    return (
+        latvolume is not None
+        and (
+            'x'.join([str(i) for i in latvolume])
+            in Path(logdir).as_posix()
+        )
+    )
+
+
+def filter_logdirs(
+        logdirs: list,
+        beta: Optional[float] = None,
+        group: Optional[str] = None,
+        nlf: Optional[int] = None,
+        merge_directions: Optional[bool] = None,
+        framework: Optional[str] = None,
+        latvolume: Optional[list[int]] = None,
+) -> list[os.PathLike]:
+    """Filter logdirs by criteria."""
+    matches = []
+
+    for logdir in logdirs:
+        if _match_beta(logdir, beta):
+            matches.append(logdir)
+        if _match_group(logdir, group):
+            matches.append(logdir)
+        if _match_nlf(logdir, nlf):
+            matches.append(logdir)
+        if _match_merge_directions(logdir, merge_directions):
+            matches.append(logdir)
+        if _match_framework(logdir, framework):
+            matches.append(logdir)
+        if _match_latvolume(logdir, latvolume):
+            matches.append(logdir)
+
+    return matches
 
 
 def find_matching_logdirs(
-        rootdir: Optional[os.PathLike] = None,
+        rootdir: os.PathLike,
         beta: Optional[float] = None,
         group: Optional[str] = None,
         nlf: Optional[int] = None,
@@ -249,143 +328,16 @@ def find_matching_logdirs(
         framework: Optional[str] = None,
         latvolume: Optional[list[int]] = None,
 ):
-    if rootdir is None:
-        rdir = Path(OUTPUTS_DIR).joinpath('runs')
-    else:
-        rdir = Path(rootdir)
-
-    logdirs = rdir.rglob(f'beta-{beta:.1f}')
-    # if beta is not None:
-    #     logdirs = [
-    #         i for i in logdirs
-    #         if f'beta-{beta:.1f}' in Path(i).as_posix()
-    #     ]
-
-    if group is not None:
-        logdirs = [
-            i for i in logdirs
-            if group in Path(i).as_posix()
-        ]
-
-    if nlf is not None:
-        logdirs = [
-            i for i in logdirs
-            if f'nlf-{nlf}' in Path(i).as_posix()
-        ]
-
-    if merge_directions is not None:
-        logdirs = [
-            i for i in logdirs
-            if f'merge_directions-{merge_directions}' in Path(i).as_posix()
-        ]
-
-    if framework is not None:
-        logdirs = [
-            i for i in logdirs
-            if framework in Path(i).as_posix()
-        ]
-
-    if latvolume is not None:
-        logdirs = [
-            i for i in logdirs
-            if 'x'.join([str(i) for i in latvolume]) in Path(i).as_posix()
-        ]
-
-    return logdirs
-
-
-def filter_runs_by(
-        beta: float,
-        group: Optional[str] = None,
-        nlf: Optional[int] = None,
-        merge_directions: Optional[bool] = None,
-        framework: Optional[str] = None,
-        latvolume: Optional[list[int]] = None,
-) -> list[Path]:
-    """Filter runs matching specified values.
-
-    Directory structure looks like:
-
-    U1/
-    └─ 16x16/
-        └─ nlf-8/
-            └─ beta-4.0/
-                └─ merge_directions-True/
-                    ├─ pytorch/
-                    │   └─ 2022-07-08/
-                    │       ├─ 19-56-30/
-                    │       │   ├─ train/
-                    │       │   ├─ eval/
-                    │       │   ├─ hmc/
-                    ├─ tensorflow/
-                    │   └─ 2022-07-08/
-                    │       ├─ 19-57-05/
-                    │       │   ├─ train/
-                    │       │   ├─ eval/
-                    │       │   ├─ hmc/
-    """
-    runs_path = Path(OUTPUTS_DIR).joinpath('runs')
-    group = 'U1' if group is None else group
-    latvolume = [16, 16] if latvolume is None else latvolume
-    latstr = 'x'.join([str(i) for i in latvolume])
-
-    bstr = f'beta-{beta:.1f}'
-    latdirs = runs_path.joinpath(
-        group,
-        latstr,
+    logdirs = find_logdirs(rootdir)
+    return filter_logdirs(
+        logdirs,
+        beta=beta,
+        group=group,
+        nlf=nlf,
+        merge_directions=merge_directions,
+        framework=framework,
+        latvolume=latvolume
     )
-    if nlf is None:
-        lfdirs = [
-            i for i in os.listdir(latdirs)
-            if Path(i).is_dir()
-        ]
-    else:
-        lfdirs = [
-            latdirs.joinpath(f'nlf-{nlf}')
-        ]
-
-    beta_dirs = []
-    for lfdir in lfdirs:
-        if (
-                bstr in Path(lfdir).as_posix()
-                and Path(lfdir).is_dir()
-        ):
-            beta_dirs.append(lfdir)
-
-    mdirs = []
-    if merge_directions is not None:
-        for bdir in beta_dirs:
-            if (
-                    f'merge_directions-{merge_directions}' in bdir
-                    and Path(bdir).is_dir()
-            ):
-                mdirs.append(bdir)
-
-
-
-
-
-
-def find_runs_with_matching_options(
-        config: dict[str, Any],
-        load: Optional[str]
-) -> list[Path]:
-    """Find runs with options matching those specified in `config`."""
-    runs_path = Path(OUTPUTS_DIR).joinpath('runs')
-    config_files = runs_path.rglob('config.yaml')
-    matches = []
-    for f in config_files:
-        fpath = Path(f)
-        assert fpath.is_file()
-        loaded = OmegaConf.load(f)
-        checks = []
-        for key, val in config.items():
-            checks.append((val == loaded.get(key, None)))
-
-        if sum(matches) == len(matches):
-            matches.append(fpath)
-
-    return matches
 
 
 def table_to_dict(table: Table, data: Optional[dict] = None) -> dict:
@@ -421,11 +373,6 @@ def save_logs(
         logdir = Path(os.getcwd()).joinpath('logs')
     else:
         logdir = Path(logdir)
-
-    # cfile = logdir.joinpath('console.txt').as_posix()
-    # text = console.export_text(clear=False)
-    # with open(cfile, 'w') as f:
-    #     f.write(text)
 
     table_dir = logdir.joinpath('tables')
     tdir = table_dir.joinpath('txt')
@@ -551,43 +498,35 @@ def plot_dataset(
         outdir: Optional[os.PathLike] = None,
         title: Optional[str] = None,
         job_type: Optional[str] = None,
-        run: Optional[Any] = None,
-        arun: Optional[Any] = None,
+        # run: Optional[Any] = None,
+        # arun: Optional[Any] = None,
         # run: Any = None,
 ) -> None:
     outdir = Path(outdir) if outdir is not None else Path(os.getcwd())
     outdir.mkdir(exist_ok=True, parents=True)
     # outdir = outdir.joinpath('plots')
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
+
+    _ = make_ridgeplots(
+        dataset,
+        outdir=outdir,
+        drop_nans=True,
+        drop_zeros=False,
+        num_chains=nchains
+    )
     for key, val in dataset.data_vars.items():
         if key == 'x':
             continue
 
-        # fig, ax = plt.subplots()
-        # _ = val.plot(ax=ax)  # type: ignore
-        # xdir = outdir.joinpath('xarr_plots')
-        # xdir.mkdir(exist_ok=True, parents=True)
-        # fig = save_figure(fig=fig, key=key, outdir=xdir)
-        # if arun is not None:
-        #     from aim import Figure, Run
-        #     assert isinstance(arun, Run)
-        #     afig = Figure(fig)
-        #     arun.track(afig, name=f'figures/{key}_xarr',
-        #                context={'subset': job_type})
-
-        fig, _, _ = plot_dataArray(val,
-                                   key=key,
-                                   outdir=outdir,
-                                   title=title,
-                                   line_labels=False,
-                                   num_chains=nchains)
+        fig, _, _ = plot_dataArray(
+            val,
+            key=key,
+            outdir=outdir,
+            title=title,
+            line_labels=False,
+            num_chains=nchains
+        )
         _ = save_figure(fig=fig, key=key, outdir=outdir)
-
-    _ = make_ridgeplots(dataset,
-                        outdir=outdir,
-                        drop_nans=True,
-                        drop_zeros=False,
-                        num_chains=nchains)
 
 
 def analyze_dataset(
@@ -600,7 +539,8 @@ def analyze_dataset(
         run: Optional[Any] = None,
         arun: Optional[Any] = None,
         use_hdf5: Optional[bool] = True,
-):
+) -> xr.Dataset:
+    """Save plot and analyze resultant `xarray.Dataset`."""
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
     dirs = make_subdirs(outdir)
     if nchains is not None and nchains > 1024:
