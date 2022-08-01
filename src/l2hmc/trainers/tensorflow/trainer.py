@@ -518,7 +518,7 @@ class Trainer(BaseTrainer):
                                                         writer=writer,
                                                         metrics=metrics,
                                                         job_type=job_type)
-                    if not LIVE:
+                    if not LIVE and step % nprint == 0:
                         log.info(summary)
 
                     summaries.append(summary)
@@ -684,7 +684,7 @@ class Trainer(BaseTrainer):
                     rows[self._gstep] = avgs
                     summaries.append(summary)
 
-                    if not LIVE:
+                    if not LIVE and self.should_print(epoch):
                         log.info(summary)
 
                     if epoch == 0:
@@ -696,8 +696,6 @@ class Trainer(BaseTrainer):
                         self.reset_optimizer()
                         log.warning('Chains are stuck! Re-drawing x !')
                         x = self.draw_x()
-                        # x = random_angle(self.xshape)
-                        # x = x.reshape(x.shape[0], -1)
 
         data = {
             'rows': rows,

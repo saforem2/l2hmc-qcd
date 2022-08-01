@@ -580,40 +580,47 @@ class Trainer(BaseTrainer):
         #         vertical_overflow='visible',
         # ):
         # live.update(table)
-        for step in range(eval_steps):
-            timer.start()
-            x, metrics = eval_fn((x, beta))
-            dt = timer.stop()
-            if step % nlog == 0 or step % nprint == 0:
-                record = {
-                    'step': step, 'beta': beta, 'dt': dt,
-                }
-                avgs, summary = self.record_metrics(run=run,
-                                                    arun=arun,
-                                                    step=step,
-                                                    record=record,
-                                                    writer=writer,
-                                                    metrics=metrics,
-                                                    job_type=job_type)
-                log.info(summary)
-                # self.console.log(' '.join([
-                #     # _mstr(k, v) for k, v in avgs.items()
-                #     f'{k}={v:<4g}' if isinstance(v, int)
-                #     else f'{k}={v:<5.4f}'
-                #     for k, v in avgs.items() if k not in ['xeps', 'veps']
-                # ]))
-                # log.info(' '.join('='.join([f'{k}])))
-                # log.info(summary)
-                summaries.append(summary)
-                if step == 0:
-                    table = add_columns(avgs, table)
-                else:
-                    table.add_row(*[f'{v}' for _, v in avgs.items()])
+        width = get_width()
+        if int(width) > 100 and self.rank == 0 and not is_interactive():
+            LIVE = True
+            ctx = Live(
+                    table,
+                    console=self.console,
+                    vertical_overflow='visible',
+            )
+        else:
+            LIVE = False
+            ctx = nullcontext()
 
-                if avgs.get('acc', 1.0) < 1e-5:
-                    self.reset_optimizer()
-                    self.console.log('Chains are stuck! Redrawing x')
-                    x = self.g.random(list(x.shape))
+        with ctx:
+            for step in range(eval_steps):
+                timer.start()
+                x, metrics = eval_fn((x, beta))
+                dt = timer.stop()
+                if step % nlog == 0 or step % nprint == 0:
+                    record = {
+                        'step': step, 'beta': beta, 'dt': dt,
+                    }
+                    avgs, summary = self.record_metrics(run=run,
+                                                        arun=arun,
+                                                        step=step,
+                                                        record=record,
+                                                        writer=writer,
+                                                        metrics=metrics,
+                                                        job_type=job_type)
+                    if not LIVE and step % nprint == 0:
+                        log.info(summary)
+
+                    summaries.append(summary)
+                    if step == 0:
+                        table = add_columns(avgs, table)
+                    else:
+                        table.add_row(*[f'{v}' for _, v in avgs.items()])
+
+                    if avgs.get('acc', 1.0) < 1e-5:
+                        self.reset_optimizer()
+                        self.console.log('Chains are stuck! Redrawing x')
+                        x = self.g.random(list(x.shape))
 
         # console.log(table)
         tables[str(0)] = table
@@ -773,7 +780,7 @@ class Trainer(BaseTrainer):
                     rows[self._gstep] = avgs
                     summaries.append(summary)
 
-                    if not LIVE:
+                    if not LIVE and self.should_print(epoch):
                         log.info(summary)
 
                     if epoch == 0:
