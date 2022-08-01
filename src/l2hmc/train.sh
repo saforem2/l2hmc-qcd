@@ -50,6 +50,7 @@ conda run python3 -m pip install --upgrade pip
 #
 # 2. If so, activate environment and make sure we have an 
 #    editable install
+# -----------------------------------------------------------
 VENV_DIR="${ROOT}/venv/"
 if [ -d ${VENV_DIR} ]; then
   source "${VENV_DIR}/bin/activate"
@@ -75,6 +76,7 @@ conda run python3 -m pip install \
   bokeh \
   nodejs \
   h5py \
+  accelerate \
   matplotx \
   torchviz
 
@@ -108,11 +110,9 @@ echo "┃  - mpirun: $(which mpirun)"
 echo "┃  - l2hmc: $(python3 -c 'import l2hmc; print(l2hmc.__file__)')"
 echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-
-# ---- Run Job --------------------------------------------
 # if [ -f ${EXEC} ]; then
+# ---- Run Job --------------------------------------------
 if (( ${NGPUS} > 1 )); then
-  # WIDTH=$COLUMNS nohup \
   mpirun \
   -x LD_LIBRARY_PATH \
   -x PATH \
@@ -120,19 +120,9 @@ if (( ${NGPUS} > 1 )); then
   -n ${NGPUS} \
   -npernode ${NGPU_PER_RANK} \
   --hostfile ${COBALT_NODEFILE} \
-  python3 ${EXEC} \
-    framework=pytorch \
-    dynamics.eps=0.0625 \
-    steps.nera=20 \
-    steps.nepoch=500 \
-    steps.print=50 \
-    steps.log=50 \
-    steps.test=5000 \
-    annealing_schedule.beta_final=7.0 \
-    'network.units=[64,64,64,64]' \
-    dynamics.nchains=2048 > ${LOGFILE}
+  python3 ${EXEC} $@ > ${LOGFILE}
 else
-  python3 ${EXEC} framework=pytorch #> ${LOGFILE} 2>&1 &
+  python3 ${EXEC} $@ > ${LOGFILE}
 fi
 
 exit
