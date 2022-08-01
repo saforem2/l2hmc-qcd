@@ -3,6 +3,7 @@ experiment.py
 
 Contains implementation of Experiment object, defined by a static config.
 """
+from __future__ import absolute_import, print_function, division, annotations
 from abc import ABC, abstractmethod
 import logging
 import os
@@ -297,7 +298,7 @@ class BaseExperiment(ABC):
             output: Optional[dict] = None,
             nchains: Optional[int] = None,
             outdir: Optional[os.PathLike] = None,
-            fname: Optional[str] = None,
+            # fname: Optional[str] = None,
             therm_frac: Optional[float] = None,
     ) -> xr.Dataset:
         assert isinstance(self.trainer, BaseTrainer)
