@@ -66,7 +66,7 @@ class BaseExperiment(ABC):
         self.trainer = None
         # self.dynamics = None
         # self.optimizer = None
-        self._outdir = self.get_outdir()
+        self._outdir, self._jobdirs = self.get_outdirs()
 
     # @property
     # @abstractmethod
@@ -194,7 +194,6 @@ class BaseExperiment(ABC):
             raise ValueError('WandB already initialized!')
 
         from wandb.util import generate_id
-        # from l2hmc.utils.rich import print_config
 
         run_id = generate_id()
         self.update_wandb_config(run_id=run_id)
@@ -222,7 +221,7 @@ class BaseExperiment(ABC):
 
         return run
 
-    def get_outdir(self) -> Path:
+    def get_outdirs(self) -> tuple[Path, dict[str, Path]]:
         outdir = self.cfg.get('outdir', None)
         if outdir is None:
             outdir = Path(os.getcwd())
@@ -233,8 +232,15 @@ class BaseExperiment(ABC):
                     self._created,
                     framework,
                 )
+        jobdirs = {
+            'train': Path(outdir).joinpath('train'),
+            'eval': Path(outdir).joinpath('eval'),
+            'hmc': Path(outdir).joinpath('hmc')
+        }
+        for _, val in jobdirs.items():
+            val.mkdir(exist_ok=True, parents=True)
 
-        return outdir
+        return outdir, jobdirs
 
     def get_jobdir(self, job_type: str) -> Path:
         jobdir = self._outdir.joinpath(job_type)
@@ -258,6 +264,31 @@ class BaseExperiment(ABC):
         sdir = jobdir.joinpath('summaries')
         sdir.mkdir(exist_ok=True, parents=True)
         return sdir.as_posix()
+
+    def save_timers(
+            self,
+            job_type: str,
+            outdir: Optional[os.PathLike] = None,
+    ) -> None:
+        # outdir = self._outdir if outdir is None else outdir
+        outdir = (
+            self._jobdirs.get(job_type, None)
+            if outdir is None else outdir
+        )
+        assert outdir is not None
+        timerdir = Path(outdir).joinpath('timers')
+        timerdir.mkdir(exist_ok=True, parents=True)
+        timers = getattr(self.trainer, 'timers', None)
+        if timers is not None:
+            timer = timers.get(job_type, None)
+            if timer is not None:
+                global_rank = getattr(self.trainer, 'global_rank', 0)
+                rank = getattr(self.trainer, 'rank', 0)
+                assert isinstance(timer, StepTimer)
+                fname = (
+                    f'step-timer-{job_type}-{global_rank}-{rank}'
+                )
+                timer.save_and_write(outdir=timerdir, fname=fname)
 
     def save_dataset(
             self,
@@ -311,16 +342,9 @@ class BaseExperiment(ABC):
                 max(64, self.cfg.dynamics.nchains // 8))
         )
         chains_to_plot = nchains if nchains is not None else chains_to_plot
-        timers = getattr(self.trainer, 'timers', None)
         outdir = self._outdir if outdir is None else outdir
-        if timers is not None:
-            timer = timers.get(job_type, None)
-            if timer is not None:
-                assert isinstance(timer, StepTimer)
-                fname = f'step-timer-{job_type}' if fname is None else fname
-                timer.save_and_write(outdir=outdir, fname=fname)
-
-        framework = self.config.framework
+        assert outdir is not None
+        self.save_timers(job_type=job_type, outdir=outdir)
         _ = save_and_analyze_data(dset,
                                   run=self.run,
                                   arun=self.arun,
@@ -328,5 +352,5 @@ class BaseExperiment(ABC):
                                   output=output,
                                   nchains=nchains,
                                   job_type=job_type,
-                                  framework=framework)
+                                  framework=self.config.framework)
         return dset
