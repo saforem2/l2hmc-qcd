@@ -23,7 +23,11 @@ import xarray as xr
 
 from l2hmc.configs import AnnealingSchedule, Steps
 from l2hmc.configs import OUTPUTS_DIR
-from l2hmc.utils.plot_helpers import make_ridgeplots, plot_dataArray, set_plot_style
+from l2hmc.utils.plot_helpers import (
+    make_ridgeplots,
+    plot_dataArray,
+    set_plot_style
+)
 from l2hmc.utils.rich import get_console, is_interactive
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
@@ -371,10 +375,6 @@ def find_runs_with_matching_options(
     return matches
 
 
-
-
-
-
 def table_to_dict(table: Table, data: Optional[dict] = None) -> dict:
     if data is None:
         return {
@@ -542,6 +542,7 @@ def plot_dataset(
     # outdir = outdir.joinpath('plots')
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
 
+    set_plot_style()
     _ = make_ridgeplots(
         dataset,
         outdir=outdir,
