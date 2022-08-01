@@ -127,8 +127,8 @@ class Dynamics(Model):
         for lf in range(self.config.nleapfrog):
             xalpha = tf.Variable(name=f'xeps_lf{lf}', **ekwargs)
             valpha = tf.Variable(name=f'veps_lf{lf}', **ekwargs)
-            self.xeps.append(tf.math.exp(tf.math.log(xalpha)))
-            self.veps.append(tf.math.exp(tf.math.log(valpha)))
+            self.xeps.append(xalpha)
+            self.veps.append(valpha)
 
     def _build_networks(self, network_factory):
         """Build networks."""
