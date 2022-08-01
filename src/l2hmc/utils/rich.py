@@ -4,11 +4,14 @@ rich.py
 Contains utils for textual layouts using Rich
 """
 from __future__ import absolute_import, annotations, division, print_function
+from dataclasses import dataclass, field
+import json
 import logging
 import os
 from pathlib import Path
 import shutil
 from typing import Optional
+from typing import Any
 
 from omegaconf import DictConfig, OmegaConf
 import rich
@@ -237,7 +240,7 @@ def add_columns(
     return table
 
 
-import json
+
 def print_config(
     config: DictConfig,
     resolve: bool = True,
@@ -256,7 +259,7 @@ def print_config(
     tree = rich.tree.Tree("CONFIG")  # , style=style, guide_style=style)
 
     quee = []
-    yaml_strs = ""
+    # yaml_strs = ""
 
     for field in config:
         if field not in quee:
@@ -287,8 +290,46 @@ def print_config(
     with open('config.json', 'w') as f:
         f.write(json.dumps(dconfig))
 
+    cfgfile = Path('config.yaml')
+    OmegaConf.save(config, cfgfile, resolve=True)
+
     # log.info(tree)
 
     # with outfile.open('w') as f:
     #     rich.print(tree, file=f)
     rich.print(tree)
+
+
+@dataclass
+class CustomLogging:
+    version: int = 1
+    formatters: dict[str, Any] = field(
+        default_factory=lambda: {
+            'simple': {
+                'format': (
+                    '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
+                )
+            }
+        }
+    )
+    handlers: dict[str, Any] = field(
+        default_factory=lambda: {
+            'console': {
+                'class': 'rich.logging.RichHandler',
+                'formatter': 'simple',
+                'rich_tracebacks': 'true'
+            },
+            'file': {
+                'class': 'logging.FileHander',
+                'formatter': 'simple',
+                'filename': '${hydra.job.name}.log',
+            },
+        }
+    )
+    root: dict[str, Any] = field(
+        default_factory=lambda: {
+            'level': 'INFO',
+            'handlers': ['console', 'file'],
+        }
+    )
+    disable_existing_loggers: bool = False
