@@ -14,6 +14,7 @@ from typing import Optional
 from typing import Any
 
 from omegaconf import DictConfig, OmegaConf
+import pandas as pd
 import rich
 from rich.console import Console
 from rich.layout import Layout
@@ -31,6 +32,7 @@ from rich.table import Table
 import rich.tree
 
 from l2hmc.configs import Steps
+from l2hmc.configs import OUTPUTS_DIR
 
 
 log = logging.getLogger(__name__)
@@ -240,6 +242,32 @@ def add_columns(
     return table
 
 
+def flatten_dict(d) -> dict:
+    res = {}
+    if isinstance(d, dict):
+        for k in d:
+            if k == '_target_':
+                continue
+
+            dflat = flatten_dict(d[k])
+            for key, val in dflat.items():
+                key = list(key)
+                key.insert(0, k)
+                res[tuple(key)] = val
+    else:
+        res[()] = d
+
+    return res
+
+
+def nested_dict_to_df(d):
+    dflat = flatten_dict(d)
+    df = pd.DataFrame.from_dict(dflat, orient='index')
+    df.index = pd.MultiIndex.from_tuples(df.index)
+    df = df.unstack(level=-1)
+    df.columns = df.columns.map("{0[1]}".format)
+    return df
+
 
 def print_config(
     config: DictConfig,
@@ -261,16 +289,16 @@ def print_config(
     quee = []
     # yaml_strs = ""
 
-    for field in config:
-        if field not in quee:
-            quee.append(field)
+    for f in config:
+        if f not in quee:
+            quee.append(f)
 
     dconfig = {}
-    for field in quee:
+    for f in quee:
 
-        branch = tree.add(field)  # , style=style, guide_style=style)
+        branch = tree.add(f)  # , style=style, guide_style=style)
 
-        config_group = config[field]
+        config_group = config[f]
         if isinstance(config_group, DictConfig):
             branch_content = OmegaConf.to_yaml(config_group, resolve=resolve)
             cfg = OmegaConf.to_container(config_group, resolve=resolve)
@@ -278,7 +306,7 @@ def print_config(
             branch_content = str(config_group)
             cfg = str(config_group)
 
-        dconfig[field] = cfg
+        dconfig[f] = cfg
         branch.add(rich.syntax.Syntax(branch_content, "yaml"))
 
     outfile = Path(os.getcwd()).joinpath('config_tree.log')
@@ -292,12 +320,15 @@ def print_config(
 
     cfgfile = Path('config.yaml')
     OmegaConf.save(config, cfgfile, resolve=True)
+    cfgdict = OmegaConf.to_object(config)
+    logdir = Path(os.getcwd()).resolve().as_posix()
+    if not config.get('debug_mode', False):
+        dbfpath = Path(OUTPUTS_DIR).joinpath('logdirs.csv')
+    else:
+        dbfpath = Path(OUTPUTS_DIR).joinpath('logdirs-debug.csv')
 
-    # log.info(tree)
-
-    # with outfile.open('w') as f:
-    #     rich.print(tree, file=f)
-    rich.print(tree)
+    df = pd.DataFrame({logdir: cfgdict})
+    df.T.to_csv(dbfpath.resolve().as_posix(), mode='a')
 
 
 @dataclass
