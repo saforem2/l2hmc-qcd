@@ -121,6 +121,7 @@ class Trainer(BaseTrainer):
         # self.optimizer = self.build_optimizer()
         # self.lr_schedule = self.build_lr_schedule()
         self.rank = hvd.local_rank()
+        self.global_rank = hvd.rank()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         assert (
             isinstance(self.dynamics, Dynamics)

@@ -310,6 +310,8 @@ def plot_dataArray(
 ) -> tuple:
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
+    set_plot_style()
+    plt.rcParams['axes.labelcolor'] = '#bdbdbd'
     figsize = subplots_kwargs.get('figsize', set_size())
     subplots_kwargs.update({'figsize': figsize})
     subfigs = None

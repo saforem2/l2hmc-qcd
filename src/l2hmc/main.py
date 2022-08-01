@@ -50,27 +50,28 @@ def setup(cfg: DictConfig):
 
 
 def setup_logger(rank: int) -> None:
-    fh = logging.FileHandler(f'main-{rank}.log')
-    fh.setLevel(logging.DEBUG)
+    pass
+    # fh = logging.FileHandler(f'main-{rank}.log')
+    # fh.setLevel(logging.DEBUG)
 
-    prefix = ':'.join([
-        '%(asctime)s',
-        '%(relativeCreated)6d',
-        '%(levelname)s',
-        '%(process)s',
-        '%(thread)s',
-        '%(threadName)s',
-        ('%05d' % rank),
-    ])
-    formatter = logging.Formatter(
-        ' '.join([
-            prefix,
-            '%(name)s',
-            '%(message)s',
-        ])
-    )
-    fh.setFormatter(formatter)
-    log.addHandler(fh)
+    # prefix = ':'.join([
+    #     '%(asctime)s',
+    #     '%(relativeCreated)6d',
+    #     '%(levelname)s',
+    #     '%(process)s',
+    #     '%(thread)s',
+    #     '%(threadName)s',
+    #     ('%05d' % rank),
+    # ])
+    # formatter = logging.Formatter(
+    #     ' '.join([
+    #         prefix,
+    #         '%(name)s',
+    #         '%(message)s',
+    #     ])
+    # )
+    # fh.setFormatter(formatter)
+    # log.addHandler(fh)
 
 
 def setup_tensorflow(cfg: DictConfig) -> int:
@@ -95,7 +96,7 @@ def setup_tensorflow(cfg: DictConfig) -> int:
     SIZE = hvd.size()
     LOCAL_RANK = hvd.local_rank()
     LOCAL_SIZE = hvd.local_size()
-    setup_logger(RANK)
+    # setup_logger(RANK)
 
     log.warning(f'Using: {TF_FLOAT} precision')
     log.info(f'Global Rank: {RANK} / {SIZE-1}')
@@ -129,7 +130,7 @@ def setup_torch(cfg: DictConfig) -> int:
     LOCAL_RANK = hvd.local_rank()
     SIZE = hvd.size()
     LOCAL_SIZE = hvd.local_size()
-    setup_logger(RANK)
+    # setup_logger(RANK)
 
     log.info(f'Global Rank: {RANK} / {SIZE-1}')
     log.info(f'[{RANK}]: Local rank: {LOCAL_RANK} / {LOCAL_SIZE-1}')

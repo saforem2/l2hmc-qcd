@@ -371,46 +371,4 @@ class Experiment(BaseExperiment):
         if writer is not None:
             writer.close()
 
-        # dataset = output['history'].get_dataset(therm_frac=therm_frac)
-        # dQint = dataset.data_vars.get('dQint', None)
-        # if dQint is not None:
-        #     dQint = dQint.values
-        #     drop = int(0.1 * len(dQint))
-        #     dQint = dQint[drop:]
-        #     if self.run is not None:
-        #         assert self.run is wandb.run
-        #         self.run.summary[f'dQint_{job_type}'] = dQint
-        #         self.run.summary[f'dQint_{job_type}.mean'] = dQint.mean()
-
-        #     if self.arun is not None:
-        #         import aim
-        #         assert isinstance(self.arun, aim.Run)
-        #         self.arun.track(
-        #             dQint.mean(),
-        #             name=f'dQint_{job_type}.avg'
-        #         )
-        #         dQdist = Distribution(dQint)
-        #         self.arun.track(dQdist,
-        #                         name='dQint',
-        #                         context={'subset': job_type})
-        #         self.arun.track(dQint.mean(),
-        #                         name='dQint.avg',
-        #                         context={'subset': job_type})
-
-        # _ = self.trainer.timers[job_type].save_and_write(
-        #     outdir=jobdir,
-        #     fname=f'step_timer-{job_type}-{RANK}:{LOCAL_RANK}'
-        # )
-
-        # _ = save_and_analyze_data(
-        #     dataset,
-        #     run=self.run,
-        #     arun=self.arun,
-        #     outdir=jobdir,
-        #     output=output,
-        #     nchains=nchains,
-        #     job_type=job_type,
-        #     framework='pytorch',
-        # )
-
         return output

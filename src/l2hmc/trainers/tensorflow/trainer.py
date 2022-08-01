@@ -139,6 +139,7 @@ class Trainer(BaseTrainer):
         self.reduce_lr.set_model(self.dynamics)
         self.reduce_lr.set_optimizer(self.optimizer)
         self.rank = hvd.local_rank()
+        self.global_rank = hvd.rank()
         if self.config.dynamics.group == 'U1':
             self.g = U1Phase()
         elif self.config.dynamics.group == 'SU3':
