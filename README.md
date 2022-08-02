@@ -11,32 +11,30 @@
 </div>
 </div>
 
-<!--<a href="https://www.hitwebcounter.com" target="_blank"><img alt="count" src="https://hitwebcounter.com/counter/counter.php?page=7965087&style=0038&nbdigits=5&type=page&initCount=1000" title="Free Counter" border="0" /></a>  -->
+# Contents
 
-<!---![](assets/image.svg)--->
-
-<!--- # l2hmc-qcd  [![CodeFactor](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge)](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd)--->
-
-<!---![hits](https://hitcounter.pythonanywhere.com/nocount/tag.svg?url=https://github.com/saforem2/l2hmc-qcd)--->
-
-<!---![HitCount] (http://hits.dwyl.com/saforem2/l2hmc-qcd.svg)--->
+- [Overview](#overview)
+  * [Papers 📚, Slides 📊, etc.](https://github.com/saforem2/l2hmc-qcd/#training--experimenting)
+  * [Background](#background)
+- [Installation](#installation)
+- [Training](#training)
+- [Details](#details)
+  * [L2HMC for LatticeQCD](#l2hmc-for-latticeqcd)
+  * [Organization](#organization)
+    + [Dynamics / Network](#dynamics---network)
+      - [Network Architecture](#network-architecture)
+    + [Lattice](#lattice)
 
 # Overview
 
-## 📚 Papers, etc.
-- [**Accelerated Sampling Techniques for Lattice Gauge Theory**](https://saforem2.github.io/l2hmc-dwq25/#/) @ [BNL & RBRC: DWQ @ 25](https://indico.bnl.gov/event/13576/), December 2021
-- [**Training Topological Samplers for Lattice Gauge Theory**](https://bit.ly/l2hmc-ect2021) from the [*Machine Learning for High Energy Physics, on and off the Lattice*](https://indico.ectstar.eu/event/77/) @ ect* Trento (09/30/2021) (+ 📊 [slides](https://www.bit.ly/l2hmc-ect2021))
-- [Deep Learning Hamiltonian Monte Carlo](https://arxiv.org/abs/2105.03418) @ [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) **ICLR 2021** (+📈[poster](https://www.bit.ly/l2hmc_poster))
+## Papers 📚, Slides 📊, etc.
+- 📘 [Example Notebook](./src/l2hmc/notebooks/experiment.ipynb) ([alternative link](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/experiment.ipynb) if github won't load)
+- [Accelerated Sampling Techniques for Lattice Gauge Theory](https://saforem2.github.io/l2hmc-dwq25/#/) @ [BNL & RBRC: DWQ @ 25](https://indico.bnl.gov/event/13576/) (12/2021)
+- [Training Topological Samplers for Lattice Gauge Theory](https://bit.ly/l2hmc-ect2021) from the [*ML for HEP, on and off the Lattice*](https://indico.ectstar.eu/event/77/) @ ECT$^{*}$ Trento (09/2021) (+ 📊 [slides](https://www.bit.ly/l2hmc-ect2021))
+- [Deep Learning Hamiltonian Monte Carlo](https://arxiv.org/abs/2105.03418) @ [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) **ICLR 2021**
 	- 📚 : [arXiv:2105.03418](https://arxiv.org/abs/2105.03418)  
 	- 📊 : [poster](https://www.bit.ly/l2hmc_poster)
 
-## 📊 [Slides](https://www.bit.ly/l2hmc-ect2021)
-  - [**Accelerated Sampling Techniques for Lattice Gauge Theory**](https://saforem2.github.io/l2hmc-dwq25/#/) @ [BNL & RBRC: DWQ @ 25](https://indico.bnl.gov/event/13576/), December 2021
-  - [**Training Topological Samplers for Lattice Gauge Theory**](https://bit.ly/l2hmc-ect2021) from the [*Machine Learning for High Energy Physics, on and off the Lattice*](https://indico.ectstar.eu/event/77/) @ ect* Trento (09/30/2021)
-
- ## 📒 [Example Notebook](./src/l2hmc/notebooks/l2hmc-qcd.ipynb)
-
-![---](https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png)
 
 ## Background
 The L2HMC algorithm aims to improve upon [HMC](https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo) by optimizing a carefully chosen loss function which is designed to minimize autocorrelations within the Markov Chain, thereby improving the efficiency of the sampler.
@@ -45,9 +43,7 @@ A detailed description of the original L2HMC algorithm can be found in the paper
 
 [*Generalizing Hamiltonian Monte Carlo with Neural Network*](https://arxiv.org/abs/1711.09268)
 
-with implementation available at [brain-research/l2hmc/](https://github.com/brain-research/l2hmc)
-
-by [Daniel Levy](http://ai.stanford.edu/~danilevy), [Matt D. Hoffman](http://matthewdhoffman.com/) and [Jascha Sohl-Dickstein](sohldickstein.com).
+with implementation available at [brain-research/l2hmc/](https://github.com/brain-research/l2hmc) by [Daniel Levy](http://ai.stanford.edu/~danilevy), [Matt D. Hoffman](http://matthewdhoffman.com/) and [Jascha Sohl-Dickstein](sohldickstein.com).
 
 Broadly, given an *analytically* described target distribution, π(x), L2HMC provides a *statistically exact* sampler that:
 
@@ -57,7 +53,7 @@ Broadly, given an *analytically* described target distribution, π(x), L2HMC pro
 - Is capable of traversing low-density zones to mix between modes (often difficult for generic HMC).
 
 
-📒 [Example Notebook](./src/l2hmc/notebooks/example.ipynb)
+![---](https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png)
 
 # Installation
 
@@ -67,7 +63,7 @@ Broadly, given an *analytically* described target distribution, π(x), L2HMC pro
 $ python3 -m pip install l2hmc
 ```
 
-# Training + Experimenting
+# Training
 
 This project uses [`hydra`](https://hydra.cc) for configuration management and supports both TensorFlow (+ Horovod) and PyTorch (+ DDP) training frameworks.
 
@@ -193,13 +189,7 @@ If you use this code or found this work interesting, please cite our work along 
 
 ## Acknowledgement
 
-<!---<div align="center">
- <img src="assets/anl.png" alt="Argonne National Laboratory Icon" width=500/>
-</div>!--->
-This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357.  This work describes objective technical results and analysis. Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States
-Government. Declaration of Interests - None.
-
-<!--[![Stargazers over time](https://starchart.cc/saforem2/l2hmc-qcd.svg)](https://starchart.cc/saforem2/l2hmc-qcd)-->
+> This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357. This work describes objective technical results and analysis. Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government.
 
 <div align="center">
 
