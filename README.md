@@ -54,7 +54,6 @@ Broadly, given an *analytically* described target distribution, π(x), L2HMC pro
 - Is capable of traversing low-density zones to mix between modes (often difficult for generic HMC).
 
 
-![---](https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png)
 
 # Installation
 
@@ -197,3 +196,6 @@ If you use this code or found this work interesting, please cite our work along 
 [![Stargazers over time](https://starchart.cc/saforem2/l2hmc-qcd.svg)](https://starchart.cc/saforem2/l2hmc-qcd)
     
 </div>
+
+![---](https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png)
+
