@@ -852,10 +852,9 @@ class Trainer(BaseTrainer):
 
             if self.rank == 0:
                 if era > 1 and str(era - 1) in self.summaries['train']:
-                    log.info(' '.join([
-                        'Avgs over last era:',
-                        f'{self.summaries["train"][str(era - 1)]}\n',
-                    ]))
+                    esummary = self.histories['train'].era_summary(f'{era-1}')
+                    log.info(f'Avgs over last era:\n {esummary}\n')
+
                 self.console.rule(f'ERA: {era} / {nera}, BETA: {b:.3f}')
 
             epoch_start = time.time()
