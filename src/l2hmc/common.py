@@ -18,21 +18,40 @@ from omegaconf import DictConfig
 from omegaconf import OmegaConf
 import pandas as pd
 from rich.table import Table
+import tensorflow as tf
+import tensorflow.python.framework.ops as ops
+import torch
 import wandb
 import xarray as xr
 
 from l2hmc.configs import AnnealingSchedule, Steps
 from l2hmc.configs import OUTPUTS_DIR
 from l2hmc.utils.plot_helpers import (
-    make_ridgeplots,
-    plot_dataArray,
-    set_plot_style
+    make_ridgeplots, plot_dataArray, set_plot_style
 )
 from l2hmc.utils.rich import get_console, is_interactive
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 
 log = logging.getLogger(__name__)
+
+TensorLike = tf.Tensor | ops.EagerTensor | torch.Tensor | np.ndarray
+
+
+def grab_tensor(x: TensorLike) -> np.ndarray:
+    if isinstance(x, np.ndarray):
+        return x
+    if isinstance(x, (tf.Tensor, ops.EagerTensor)):
+        assert (
+            hasattr(x, 'numpy')
+            and callable(getattr(x, 'numpy'))
+        )
+        return x.numpy()  # type:ignore
+
+    if isinstance(x, torch.Tensor):
+        return x.detach().cpu().numpy()
+
+    raise TypeError(f'type(x): {x.type}')
 
 
 def get_timestamp(fstr=None):
