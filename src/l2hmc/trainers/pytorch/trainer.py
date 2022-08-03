@@ -741,14 +741,13 @@ class Trainer(BaseTrainer):
 
         losses = []
         with ctx:
-            # if live is not None:
             if isinstance(ctx, Live):
-                tstr = ' '.join([
-                    f'ERA: {era}/{self.steps.nera}',
-                    f'BETA: {beta:.3f}',
-                ])
+                # tstr = ' '.join([
+                #     f'ERA: {era}',
+                #     f'BETA: {beta:.3f}',
+                # ])
                 ctx.console.clear_live()
-                ctx.console.rule(tstr)
+                # ctx.console.rule(tstr)
                 ctx.update(table)
 
             for epoch in range(nepoch):
@@ -821,36 +820,14 @@ class Trainer(BaseTrainer):
         if x is None:
             x = self.g.random(list(self.xshape)).flatten(1)
 
-        # if WIDTH is not None and WIDTH > 0:
-        #     console.width = WIDTH
-        # width = int(os.environ.get('COLUMNS', '150'))
-        # console.width = width
-        # console._width = width
-
         self.dynamics.train()
-        # log.warning(f'x.dtype: {x.dtype}')
 
         era = 0
         epoch = 0
-        # metrics = {}
         nera = self.steps.nera if nera is None else nera
+        nepoch = self.steps.nepoch if nepoch is None else nepoch
         assert isinstance(nera, int)
         extend = self.steps.extend_last_era
-        # for era in range(nera):
-        #     beta = float(
-        #         beta if beta is not None and isinstance(beta, float)
-        #         else sched_betas.get(f'{era}', f'{self.steps.nera - 1}')
-        #     )
-        #     extend = (
-        #         self.steps.extend_last_era
-        #         if era == self.steps.nera - 1
-        #         else 1
-        #     )
-        # b = float(
-        #     beta if beta is not None and isinstance(beta, float)
-        #     else sched_betas[era]
-        #     # else sched_betas.get(f'{era}', f'{self.steps.nera - 1}')
-        # )
         beta_final = self.config.annealing_schedule.beta_final
         assert beta_final is not None and isinstance(beta_final, float)
         if beta is not None:
@@ -867,12 +844,20 @@ class Trainer(BaseTrainer):
 
         # assert b is not None and isinstance(b, float)
         # while b < beta_final:
+        extend = 1
         for era in range(nera):
             b = torch.tensor(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
                 extend = int(self.steps.extend_last_era)
-            else:
-                extend = 1
+
+            if self.rank == 0:
+                if era > 1 and str(era - 1) in self.summaries['train']:
+                    log.info(' '.join([
+                        'Avgs over last era:',
+                        f'{self.summaries["train"][str(era - 1)]}\n',
+                    ]))
+                self.console.rule(f'ERA: {era} / {nera}, BETA: {b:.3f}')
+
             epoch_start = time.time()
             x, edata = self.train_epoch(
                 x=x,
@@ -884,6 +869,7 @@ class Trainer(BaseTrainer):
                 extend=extend,
                 nepoch=nepoch,
             )
+            st0 = time.time()
 
             # losses = edata['losses']
             # if losses[-1] < losses[0]:
@@ -894,17 +880,8 @@ class Trainer(BaseTrainer):
             self.rows['train'][str(era)] = edata['rows']
             self.tables['train'][str(era)] = edata['table']
             self.summaries['train'][str(era)] = edata['summaries']
-            # if self.rank == 0:
-            # if writer is not None:
-            #     update_summaries(
-            #         step=self._gstep,
-            #         model=self.dynamics,
-            #         optimizer=self.optimizer,
-            #         writer=writer,
-            #     )
 
-            st0 = time.time()
-            if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
+            if (era + 1) == nera or (era + 1) % 5 == 0:
                 # ckpt_metrics = {'loss': metrics.get('loss', 0.0)}
                 self.save_ckpt(era, epoch, train_dir, run=run)
 
