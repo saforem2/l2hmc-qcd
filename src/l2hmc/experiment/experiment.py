@@ -309,7 +309,7 @@ class BaseExperiment(ABC):
         if history is None:
             raise ValueError(f'Unable to recover history for {job_type}')
 
-        assert history is not None and isinstance(history, BaseHistory)
+        assert history is not None  # and isinstance(history, BaseHistory)
         therm_frac = 0.1 if therm_frac is None else therm_frac
         dset = history.get_dataset(therm_frac=therm_frac)
         assert isinstance(dset, xr.Dataset)

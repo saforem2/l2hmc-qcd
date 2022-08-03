@@ -6,7 +6,7 @@ Experiment base class.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
-from typing import Optional
+from typing import Optional, Any
 
 import horovod.torch as hvd
 from omegaconf import DictConfig
@@ -272,11 +272,14 @@ class Experiment(BaseExperiment):
         # assert self.loss_fn is not None
 
     def train(
-        self,
-        nchains: Optional[int] = None,
-        nera: Optional[int] = None,
-        nepoch: Optional[int] = None,
-        # steps: Optional[Steps] = None,
+            self,
+            nchains: Optional[int] = None,
+            x: Optional[Tensor] = None,
+            skip: Optional[str | list[str]] = None,
+            writer: Optional[Any] = None,
+            nera: Optional[int] = None,
+            nepoch: Optional[int] = None,
+            beta: Optional[float | list[float] | dict[str, float]] = None,
     ):
         # nchains = 16 if nchains is None else nchains
         jobdir = self.get_jobdir(job_type='train')
@@ -290,17 +293,22 @@ class Experiment(BaseExperiment):
         console = get_console(record=True)
         # console = Console(log_path=False, record=True, width=210)
         self.trainer.set_console(console)
-        output = self.trainer.train(run=self.run,
-                                    arun=self.arun,
-                                    writer=writer,
-                                    train_dir=jobdir,
-                                    nera=nera,
-                                    nepoch=nepoch)
-        fname = f'train-{RANK}'
-        txtfile = jobdir.joinpath(f'{fname}.txt')
-        htmlfile = jobdir.joinpath(f'{fname}.html')
-        console.save_text(txtfile.as_posix(), clear=False)
-        console.save_html(htmlfile.as_posix())
+        output = self.trainer.train(
+            x=x,
+            nera=nera,
+            nepoch=nepoch,
+            run=self.run,
+            arun=self.arun,
+            writer=writer,
+            train_dir=jobdir,
+            skip=skip,
+            beta=beta,
+        )
+        # fname = f'train-{RANK}'
+        # txtfile = jobdir.joinpath(f'{fname}.txt')
+        # htmlfile = jobdir.joinpath(f'{fname}.html')
+        # console.save_text(txtfile.as_posix(), clear=False)
+        # console.save_html(htmlfile.as_posix())
 
         if RANK == 0:
             output['dataset'] = self.save_dataset(
@@ -318,8 +326,6 @@ class Experiment(BaseExperiment):
     def evaluate(
             self,
             job_type: str,
-            # run: Optional[Any] = None,
-            # arun: Optional[Any] = None,
             therm_frac: float = 0.1,
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
@@ -333,18 +339,8 @@ class Experiment(BaseExperiment):
         assert job_type in ['eval', 'hmc']
         jobdir = self.get_jobdir(job_type)
         writer = self.get_summary_writer(job_type)
-        # if RANK == 0:
-        #     writer = self.get_summary_writer(job_type)
-        # else:
-        #     writer = None
-        # run = self.run if run is None else run
-        # assert run is wandb.run
-        # with open(logfile.as_posix(), 'wt') as logfile:
-        # console = Console(log_path=False, file=logfile)
-        # console = Console(log_path=False, file=logfile, width=210)
         console = get_console(record=True)
         self.trainer.set_console(console)
-        # arun = self.arun if run is None else arun
         output = self.trainer.eval(
             run=self.run,
             arun=self.arun,
@@ -355,12 +351,6 @@ class Experiment(BaseExperiment):
             nleapfrog=nleapfrog,
             eval_steps=eval_steps,
         )
-
-        fname = f'{job_type}-{RANK}'
-        txtfile = jobdir.joinpath(f'{fname}.txt')
-        htmlfile = jobdir.joinpath(f'{fname}.html')
-        console.save_text(txtfile.as_posix(), clear=False)
-        console.save_html(htmlfile.as_posix())
 
         output['dataset'] = self.save_dataset(
             output=output,
