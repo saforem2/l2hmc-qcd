@@ -19,7 +19,6 @@ import aim
 from aim import Distribution
 
 import numpy as np
-# from rich.layout import Layout
 from rich.live import Live
 from rich.table import Table
 from rich import box
@@ -642,30 +641,29 @@ class Trainer(BaseTrainer):
             row_styles=['dim', 'none'],
         )
 
-        nepoch = self.steps.nepoch * extend
-        LIVE = False
+        # nepoch = self.steps.nepoch * extend
+        nepoch = self.steps.nepoch if nepoch is None else nepoch
+        assert isinstance(nepoch, int)
+        nepoch *= extend
         width = get_width()
         ctx = nullcontext()
-        if width > 100 and self.rank == 0 and not is_interactive():
-            LIVE = True
+        if width > 150 and self.rank == 0 and not is_interactive():
             ctx = Live(
                 table,
                 console=self.console,
                 vertical_overflow='visible',
             )
 
-        nepoch = self.steps.nepoch if nepoch is None else nepoch
-        assert isinstance(nepoch, int)
         losses = []
-        with ctx as live:
-            if live is not None:
+        with ctx:
+            if isinstance(ctx, Live):
                 tstr = ' '.join([
                     f'ERA: {era}/{self.steps.nera}',
                     f'BETA: {beta:.3f}',
                 ])
-                live.console.clear_live()
-                live.console.rule(tstr)
-                live.update(table)
+                ctx.console.clear_live()
+                ctx.console.rule(tstr)
+                ctx.update(table)
 
             for epoch in range(nepoch):
                 self.timers['train'].start()
@@ -691,7 +689,7 @@ class Trainer(BaseTrainer):
                     rows[self._gstep] = avgs
                     summaries.append(summary)
 
-                    if not LIVE and self.should_print(epoch):
+                    if isinstance(ctx, Live) and self.should_print(epoch):
                         log.info(summary)
 
                     if epoch == 0:
@@ -742,20 +740,12 @@ class Trainer(BaseTrainer):
 
         manager = self.setup_CheckpointManager(train_dir)
         self._gstep = K.get_value(self.optimizer.iterations)
-
-        # extend = steps.extend_last_era
-        assert x is not None
-        # b = float(
-        #     beta if beta is not None and isinstance(beta, float)
-        #     else self.config.annealing_schedule.beta_init
-        # )
-        beta_final = self.config.annealing_schedule.beta_final
-        era = 0
-        # assert b is not None and isinstance(b, float)
-        assert beta_final is not None and isinstance(beta_final, float)
-        # while b < beta_final:
         nera = self.steps.nera if nera is None else nera
         assert nera is not None
+        assert x is not None
+
+        beta_final = self.config.annealing_schedule.beta_final
+        assert beta_final is not None and isinstance(beta_final, float)
         if beta is not None:
             assert isinstance(beta, (float, list))
             if isinstance(beta, list):
@@ -767,13 +757,22 @@ class Trainer(BaseTrainer):
         else:
             betas = self.config.annealing_schedule.beta_dict
 
+        # ┏━━━━━━━━━━━━━━━━━━━━━━┓
+        # ┃ MAIN TRAINING LOOP   ┃
+        # ┗━━━━━━━━━━━━━━━━━━━━━━┛
+        extend = 1
         for era in range(nera):
             b = tf.constant(betas.get(str(era), beta_final))
-            extend = (
-                self.steps.extend_last_era
-                if era == self.steps.nera - 1
-                else 1
-            )
+            if era == (nera - 1) and self.steps.extend_last_era is not None:
+                extend = int(self.steps.extend_last_era)
+
+            if self.rank == 0:
+                if era > 1 and str(era - 1) in self.summaries['train']:
+                    log.info(' '.join([
+                        'Avgs over last era:',
+                        f'{self.summaries["train"][str(era - 1)]}\n',
+                    ]))
+                self.console.rule(f'ERA: {era} / {nera}, BETA: {b:.3f}')
 
             epoch_start = time.time()
             x, edata = self.train_epoch(
@@ -786,6 +785,7 @@ class Trainer(BaseTrainer):
                 extend=extend,
                 nepoch=nepoch,
             )
+            st0 = time.time()
 
             self.rows['train'][str(era)] = edata['rows']
             self.tables['train'][str(era)] = edata['table']
@@ -797,7 +797,6 @@ class Trainer(BaseTrainer):
             # else:
             #     b -= self.config.annealing_schedule._dbeta
 
-            st0 = time.time()
             if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
                 self.save_ckpt(manager, train_dir)
 
