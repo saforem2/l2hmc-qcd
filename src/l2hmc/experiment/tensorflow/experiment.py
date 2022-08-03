@@ -9,7 +9,7 @@ from __future__ import absolute_import, division, print_function, annotations
 import logging
 from omegaconf import DictConfig
 
-from typing import Optional
+from typing import Any, Optional
 from pathlib import Path
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
@@ -201,6 +201,12 @@ class Experiment(BaseExperiment):
     def train(
             self,
             nchains: Optional[int] = None,
+            x: Optional[tf.Tensor] = None,
+            skip: Optional[str | list[str]] = None,
+            writer: Optional[Any] = None,
+            nera: Optional[int] = None,
+            nepoch: Optional[int] = None,
+            beta: Optional[float | list[float] | dict[str, float]] = None,
     ):
         jobdir = self.get_jobdir(job_type='train')
         writer = None
@@ -208,11 +214,15 @@ class Experiment(BaseExperiment):
             writer = self.get_summary_writer(job_type='train')
 
         output = self.trainer.train(
+            x=x,
+            nera=nera,
+            nepoch=nepoch,
             run=self.run,
             arun=self.arun,
             writer=writer,
             train_dir=jobdir,
-            skip=None,
+            skip=skip,
+            beta=beta,
         )
         if RANK == 0:
             output['dataset'] = self.save_dataset(
