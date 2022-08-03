@@ -153,11 +153,7 @@ class Trainer(BaseTrainer):
         self.optimizer = hvd.DistributedOptimizer(
             self.optimizer,
             named_parameters=self.dynamics.named_parameters(),
-            # compression=(
-            #     hvd.Compression.fp16
-            #     if str(self.config.compression) == 'fp16'
-            #     else hvd.Compression.none
-            # )
+            compression=compression,  # type: ignore
         )
         hvd.broadcast_parameters(self.dynamics.state_dict(), root_rank=0)
         hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
@@ -720,7 +716,7 @@ class Trainer(BaseTrainer):
             arun: Optional[Any] = None,
             nepoch: Optional[int] = None,
             writer: Optional[Any] = None,
-            extend: Optional[int] = None,
+            extend: int = 1,
     ) -> tuple[Tensor, dict]:
         rows = {}
         summaries = []
@@ -731,30 +727,29 @@ class Trainer(BaseTrainer):
             row_styles=['dim', 'none'],
         )
 
-        nepoch = self.steps.nepoch * extend
-        LIVE = False
+        nepoch = self.steps.nepoch if nepoch is None else nepoch
+        assert isinstance(nepoch, int)
+        nepoch *= extend
         width = get_width()
         ctx = nullcontext()
-        if width > 100 and self.rank == 0 and not is_interactive():
-            LIVE = True
+        if width > 150 and self.rank == 0 and not is_interactive():
             ctx = Live(
                 table,
                 console=self.console,
                 vertical_overflow='visible',
             )
 
-        nepoch = self.steps.nepoch if nepoch is None else nepoch
-        assert isinstance(nepoch, int)
         losses = []
-        with ctx as live:
-            if live is not None:
+        with ctx:
+            # if live is not None:
+            if isinstance(ctx, Live):
                 tstr = ' '.join([
                     f'ERA: {era}/{self.steps.nera}',
                     f'BETA: {beta:.3f}',
                 ])
-                live.console.clear_live()
-                live.console.rule(tstr)
-                live.update(table)
+                ctx.console.clear_live()
+                ctx.console.rule(tstr)
+                ctx.update(table)
 
             for epoch in range(nepoch):
                 self.timers['train'].start()
@@ -780,7 +775,7 @@ class Trainer(BaseTrainer):
                     rows[self._gstep] = avgs
                     summaries.append(summary)
 
-                    if not LIVE and self.should_print(epoch):
+                    if self.should_print(epoch) and not isinstance(ctx, Live):
                         log.info(summary)
 
                     if epoch == 0:
@@ -792,8 +787,6 @@ class Trainer(BaseTrainer):
                         self.reset_optimizer()
                         log.warning('Chains are stuck! Re-drawing x !')
                         x = self.draw_x()
-                        # x = random_angle(self.xshape)
-                        # x = x.reshape(x.shape[0], -1)
 
         data = {
             'rows': rows,
@@ -814,10 +807,7 @@ class Trainer(BaseTrainer):
             writer: Optional[Any] = None,
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
-            beta: Optional[float] = None,
-            # steps: Optional[Steps] = None,
-            # extend_last_era: Optional[bool] = True,
-            # keep: str | list[str] = None,
+            beta: Optional[float | list[float] | dict[str, float]] = None,
     ) -> dict:
         """Perform training and return dictionary of results."""
         skip = [skip] if isinstance(skip, str) else skip
@@ -863,22 +853,27 @@ class Trainer(BaseTrainer):
         # )
         beta_final = self.config.annealing_schedule.beta_final
         assert beta_final is not None and isinstance(beta_final, float)
+        if beta is not None:
+            assert isinstance(beta, (float, list))
+            if isinstance(beta, list):
+                assert len(beta) == nera, 'Expected len(beta) == nera'
+            else:
+                beta = nera * [beta]
+
+            betas = {f'{i}': b for i, b in zip(range(nera), beta)}
+
+        else:
+            betas = self.config.annealing_schedule.beta_dict
+
         # assert b is not None and isinstance(b, float)
         # while b < beta_final:
         for era in range(nera):
+            b = torch.tensor(betas.get(str(era), beta_final))
+            if era == (nera - 1) and self.steps.extend_last_era is not None:
+                extend = int(self.steps.extend_last_era)
+            else:
+                extend = 1
             epoch_start = time.time()
-            b = float(
-                beta if beta is not None
-                else self.config.annealing_schedule.beta_dict.get(
-                    str(era),
-                    self.config.annealing_schedule.beta_final
-                )
-            )
-            extend = (
-                self.steps.extend_last_era
-                if era == self.steps.nera - 1
-                else 1
-            )
             x, edata = self.train_epoch(
                 x=x,
                 beta=b,
@@ -914,11 +909,8 @@ class Trainer(BaseTrainer):
                 self.save_ckpt(era, epoch, train_dir, run=run)
 
             if self.rank == 0:
-                # ckptstr = '\n'.join([
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
                 log.info(f'Era {era} took: {time.time() - epoch_start:<5g}s')
-                # ])
-                # self.console.log(ckptstr)
 
         return {
             'timer': self.timers['train'],
@@ -978,13 +970,13 @@ class Trainer(BaseTrainer):
                     arun.track(dist,
                                step=step,
                                name=name,
-                               context=context)
+                               context=context)  # type: ignore
                     arun.track(val.mean(),
                                step=step,
                                name=f'{name}/avg',
-                               context=context,)
+                               context=context,)  # type: ignore
             else:
                 arun.track(val,
                            name=name,
                            step=step,
-                           context=context)
+                           context=context)  # type: ignore
