@@ -112,6 +112,13 @@ def flatten(x: Tensor):
     return tf.reshape(x, (x.shape[0], -1))
 
 
+def is_dist(z: Tensor | ops.EagerTensor | np.ndarray) -> bool:
+    return len(z.shape) > 1 or (
+        len(z.shape) == 1
+        and z.shape[0] > 1
+    )
+
+
 # TODO: Replace arguments in __init__ call below with configs.TrainerConfig
 class Trainer(BaseTrainer):
     def __init__(
@@ -714,12 +721,9 @@ class Trainer(BaseTrainer):
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
-            # steps: Optional[Steps] = None,
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
-            beta: Optional[float] = None,
-            # extend_last_era: Optional[bool] = True,
-            # keep: str | list[str] = None,
+            beta: Optional[float | list[float] | dict[str, float]] = None,
     ) -> dict:
         """Perform training and return dictionary of results."""
         skip = [skip] if isinstance(skip, str) else skip
@@ -752,15 +756,19 @@ class Trainer(BaseTrainer):
         # while b < beta_final:
         nera = self.steps.nera if nera is None else nera
         assert nera is not None
-        for era in range(nera):
-            b = float(
-                beta if beta is not None
-                else self.config.annealing_schedule.beta_dict.get(
-                    str(era),
-                    self.config.annealing_schedule.beta_final
-                )
-            )
+        if beta is not None:
+            assert isinstance(beta, (float, list))
+            if isinstance(beta, list):
+                assert len(beta) == nera, 'Expected len(beta) == nera'
+            else:
+                beta = nera * [beta]
 
+            betas = {f'{i}': b for i, b in zip(range(nera), beta)}
+        else:
+            betas = self.config.annealing_schedule.beta_dict
+
+        for era in range(nera):
+            b = tf.constant(betas.get(str(era), beta_final))
             extend = (
                 self.steps.extend_last_era
                 if era == self.steps.nera - 1
@@ -864,6 +872,12 @@ class Trainer(BaseTrainer):
             else:
                 name = f'{key}'
 
+            akws = {
+                'step': step,
+                'name': name,
+                'context': context,
+            }
+
             if isinstance(val, ops.EagerTensor):
                 val = val.numpy()
 
@@ -880,27 +894,17 @@ class Trainer(BaseTrainer):
                 if isinstance(val, ops.EagerTensor):
                     val = val.numpy()
                 # check to see if we should track as Distribution
-                is_dist = (
-                    len(val.shape) > 1
-                    or (
-                        len(val.shape) == 1
-                        and val.shape[0] > 1
-                    )
-                )
-                if is_dist:
+                if is_dist(val):
                     dist = Distribution(val)
-                    arun.track(dist, step=step, name=name, context=context)
-                    aname = f'{name}/avg'
+                    arun.track(dist, **akws)
+                    akws['name'] = f'{name}/avg'
                     avg = (
                         tf.reduce_mean(val) if isinstance(val, Tensor)
                         else val.mean()
                     )
-                    arun.track(avg, step=step, name=aname, context=context)
+                    arun.track(avg, **akws)
                 else:
-                    arun.track(val, step=step, name=name, context=context)
+                    arun.track(val, **akws)
 
             else:
-                arun.track(val,
-                           name=name,
-                           # step=step,
-                           context=context)
+                arun.track(val, **akws)
