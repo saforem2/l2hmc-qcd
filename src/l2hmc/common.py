@@ -8,7 +8,7 @@ import datetime
 import logging
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import h5py
 import joblib
@@ -35,10 +35,11 @@ os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 
 log = logging.getLogger(__name__)
 
-TensorLike = tf.Tensor | ops.EagerTensor | torch.Tensor | np.ndarray
+# TensorLike = tf.Tensor | ops.EagerTensor | torch.Tensor | np.ndarray
+ScalarLike = Union[int, float, bool, np.floating]
 
 
-def grab_tensor(x: TensorLike) -> np.ndarray:
+def grab_tensor(x: Any) -> np.ndarray | ScalarLike:
     if isinstance(x, np.ndarray):
         return x
     if isinstance(x, (tf.Tensor, ops.EagerTensor)):
@@ -51,7 +52,9 @@ def grab_tensor(x: TensorLike) -> np.ndarray:
     if isinstance(x, torch.Tensor):
         return x.detach().cpu().numpy()
 
-    raise TypeError(f'type(x): {x.type}')
+    else:
+        return x
+
 
 
 def get_timestamp(fstr=None):
