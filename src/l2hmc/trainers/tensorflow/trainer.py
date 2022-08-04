@@ -29,7 +29,6 @@ from tensorflow.python.keras import backend as K
 from l2hmc.utils.rich import get_width, is_interactive
 from l2hmc.configs import ExperimentConfig
 from contextlib import nullcontext
-from l2hmc.common import get_timestamp
 
 from l2hmc.learning_rate.tensorflow.learning_rate import ReduceLROnPlateau
 
@@ -127,7 +126,7 @@ class Trainer(BaseTrainer):
             skip: Optional[str | list[str]] = None,
     ) -> None:
         super(Trainer, self).__init__(cfg=cfg, keep=keep, skip=skip)
-        assert isinstance(self.config, ExperimentConfig)
+        # assert isinstance(self.config, ExperimentConfig)
         self._gstep = 0
         self.lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
@@ -146,6 +145,7 @@ class Trainer(BaseTrainer):
         self.reduce_lr.set_optimizer(self.optimizer)
         self.rank = hvd.local_rank()
         self.global_rank = hvd.rank()
+        self._is_chief = self.rank == 0 and self.global_rank == 0
         if self.config.dynamics.group == 'U1':
             self.g = U1Phase()
         elif self.config.dynamics.group == 'SU3':
@@ -250,13 +250,13 @@ class Trainer(BaseTrainer):
     def should_log(self, epoch):
         return (
             epoch % self.steps.log == 0
-            and self.rank == 0
+            and self._is_chief
         )
 
     def should_print(self, epoch):
         return (
             epoch % self.steps.print == 0
-            and self.rank == 0
+            and self._is_chief
         )
 
     def record_metrics(
@@ -298,7 +298,12 @@ class Trainer(BaseTrainer):
         summary = summarize_dict(avgs)
 
         # if writer is not None and self.verbose and step is not None:
-        if step is not None and writer is not None:
+        if (
+                step is not None
+                and writer is not None
+                and self.config.init_wandb
+                and self.config.init_aim
+        ):
             update_summaries(step=step,
                              model=model,
                              metrics=record,
@@ -497,7 +502,7 @@ class Trainer(BaseTrainer):
         #     )
         # )
         width = get_width()
-        if int(width) > 100 and self.rank == 0 and not is_interactive():
+        if int(width) > 100 and self._is_chief and not is_interactive():
             LIVE = True
             ctx = Live(
                     table,
@@ -547,20 +552,28 @@ class Trainer(BaseTrainer):
             'tables': tables,
         }
 
-    # @tf.function(experimental_follow_type_hints=True,
-    #         jit_compile=JIT_COMPILE)
-    # @tf.function(
-    #     experimental_follow_type_hints=True,
-    #     # input_signature=[
-    #     #     tf.TensorSpec(shape=None, dtype=TF_FLOAT),
-    #     #     tf.TensorSpec(shape=None, dtype=TF_FLOAT),
-    #     # ],
-    # )
     @tf.function
     def train_step(
             self,
             inputs: tuple[Tensor, Tensor]
     ) -> tuple[Tensor, dict]:
+        """Implement a single training step (forward + backward) pass.
+
+        - NOTE: Wrapper possibilities:
+            ```python
+            @tf.function(
+                    experimental_follow_type_hints=True,
+                    jit_compile=JIT_COMPILE
+            )
+            @tf.function(
+                experimental_follow_type_hints=True,
+                input_signature=[
+                    tf.TensorSpec(shape=None, dtype=TF_FLOAT),
+                    tf.TensorSpec(shape=None, dtype=TF_FLOAT),
+                ],
+            )
+            ```
+        """
         xinit, beta = inputs
         # xinit = self.dynamics.g.compat_proj(xinit)
         # should_clip = (
@@ -647,7 +660,7 @@ class Trainer(BaseTrainer):
         nepoch *= extend
         width = get_width()
         ctx = nullcontext()
-        if width > 150 and self.rank == 0 and not is_interactive():
+        if width > 150 and self._is_chief and not is_interactive():
             ctx = Live(
                 table,
                 console=self.console,
@@ -726,26 +739,30 @@ class Trainer(BaseTrainer):
         """Perform training and return dictionary of results."""
         skip = [skip] if isinstance(skip, str) else skip
 
-        if x is None:
-            x = flatten(self.g.random(list(self.xshape)))
-
+        # -- Tensorflow specific
         if writer is not None:
             writer.set_as_default()
 
         if train_dir is None:
             train_dir = Path(os.getcwd()).joinpath(
-                get_timestamp(), 'train'
+                self._created, 'train'
             )
             train_dir.mkdir(exist_ok=True, parents=True)
 
+        if x is None:
+            x = flatten(self.g.random(list(self.xshape)))
+
+        # -- Setup checkpoint manager for TensorFlow --------
         manager = self.setup_CheckpointManager(train_dir)
         self._gstep = K.get_value(self.optimizer.iterations)
-        nera = self.steps.nera if nera is None else nera
-        assert nera is not None
-        assert x is not None
+        # ----------------------------------------------------
+        # -- Setup Step information (nera, nepoch, etc). -----
+        nera = self.config.steps.nera if nera is None else nera
+        nepoch = self.config.steps.nepoch if nepoch is None else nepoch
+        extend = self.config.steps.extend_last_era
+        assert isinstance(nera, int)
+        assert isinstance(nepoch, int)
 
-        beta_final = self.config.annealing_schedule.beta_final
-        assert beta_final is not None and isinstance(beta_final, float)
         if beta is not None:
             assert isinstance(beta, (float, list))
             if isinstance(beta, list):
@@ -755,18 +772,26 @@ class Trainer(BaseTrainer):
 
             betas = {f'{i}': b for i, b in zip(range(nera), beta)}
         else:
-            betas = self.config.annealing_schedule.beta_dict
+            betas = self.config.annealing_schedule.setup(
+                nera=nera,
+                nepoch=nepoch,
+            )
 
-        # ┏━━━━━━━━━━━━━━━━━━━━━━┓
-        # ┃ MAIN TRAINING LOOP   ┃
-        # ┗━━━━━━━━━━━━━━━━━━━━━━┛
+        beta_final = list(betas.values())[-1]
+        assert beta_final is not None and isinstance(beta_final, float)
+
+        # ┏━------------------------------------━┓
+        # ┃         MAIN TRAINING LOOP           ┃
+        # ┗-------------------------------------━┛
+        era = 0
         extend = 1
+        assert x is not None
         for era in range(nera):
             b = tf.constant(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
                 extend = int(self.steps.extend_last_era)
 
-            if self.rank == 0:
+            if self._is_chief:
                 if era > 1 and str(era - 1) in self.summaries['train']:
                     esummary = self.histories['train'].era_summary(f'{era-1}')
                     log.info(f'Avgs over last era:\n {esummary}\n')
@@ -799,7 +824,7 @@ class Trainer(BaseTrainer):
             if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
                 self.save_ckpt(manager, train_dir)
 
-            if self.rank == 0:
+            if self._is_chief:
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
                 log.info(f'Era {era} took: {time.time() - epoch_start:<5g}s')
 
