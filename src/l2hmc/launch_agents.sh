@@ -19,8 +19,11 @@ export SWEEPDIR="logs/sweeps/sweep-${SWEEP_ID}"
 mkdir -p ${SWEEPDIR}
 
 for rank in $RANKS; do
-  TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
+  OLD_HOST=$(hostname)
+  ssh $rank
+  echo "$(hostname) (from ${OLD_HOST})"
   for ((i=1;i<=$NGPU_PER_RANK;i++)); do
+    TSTAMP=$(date "+%Y-%m-%d-%H%M%S-%s")
     LOGFILE="${SWEEPDIR}/${HOST}:gpu-${i}-${TSTAMP}.log"
     echo "Launching agent on ${HOST}:GPU-${i}"
     echo "Writing logs to: ${LOGFILE}"
