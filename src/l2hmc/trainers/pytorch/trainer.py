@@ -122,6 +122,7 @@ class Trainer(BaseTrainer):
         # self.lr_schedule = self.build_lr_schedule()
         self.rank = hvd.local_rank()
         self.global_rank = hvd.rank()
+        self._is_chief = (self.rank == 0 and self.global_rank == 0)
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         assert (
             isinstance(self.dynamics, Dynamics)
@@ -275,7 +276,7 @@ class Trainer(BaseTrainer):
         ckpt_dir = Path(train_dir).joinpath('checkpoints')
         ckpt_dir.mkdir(exist_ok=True, parents=True)
         ckpt_file = ckpt_dir.joinpath(f'ckpt-{era}-{epoch}.tar')
-        if self.rank == 0:
+        if self._is_chief:
             log.info(f'Saving checkpoint to: {ckpt_file.as_posix()}')
         assert isinstance(self.dynamics.xeps, nn.ParameterList)
         assert isinstance(self.dynamics.veps, nn.ParameterList)
@@ -310,13 +311,37 @@ class Trainer(BaseTrainer):
     def should_log(self, epoch):
         return (
             epoch % self.steps.log == 0
-            and LOCAL_RANK == 0
+            and self._is_chief
+            # and LOCAL_RANK == 0
         )
 
     def should_print(self, epoch):
         return (
             epoch % self.steps.print == 0
-            and LOCAL_RANK == 0
+            and self._is_chief
+            # and LOCAL_RANK == 0
+        )
+
+    def should_emit(self, epoch: int, nepoch: int) -> bool:
+        nprint = min(
+            getattr(self.steps, 'print', int(nepoch // 2)),
+            int(nepoch // 2)
+        )
+        nlog = min(
+            getattr(self.steps, 'log', int(nepoch // 4)),
+            int(nepoch // 4)
+        )
+        emit = (
+            epoch % nprint == 0
+            or epoch % nlog == 0
+        )
+
+        # LOCAL_RANK == 0 and (
+        return (
+            self._is_chief and (
+                (epoch % nprint == 0
+                 or epoch % nlog == 0)
+            )
         )
 
     def record_metrics(
@@ -359,7 +384,10 @@ class Trainer(BaseTrainer):
         avgs = self.histories[job_type].update(record)
         summary = summarize_dict(avgs)
 
-        if writer is not None:
+        if (
+                step is not None
+                and writer is not None
+        ):
             assert step is not None
             update_summaries(step=step,
                              model=model,
@@ -389,6 +417,7 @@ class Trainer(BaseTrainer):
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
     ) -> None:
+        assert self.config.init_aim or self.config.init_wandb
         dQdict = None
         dQint = record.get('dQint', None)
         if dQint is not None:
@@ -400,12 +429,12 @@ class Trainer(BaseTrainer):
                 }
             }
 
-        if run is not None:
+        if run is not None and self.config.init_wandb:
             run.log({f'wandb/{job_type}': record}, commit=False)
             run.log({f'avgs/wandb.{job_type}': avgs})
             if dQdict is not None:
                 run.log(dQdict, commit=False)
-        if arun is not None:
+        if arun is not None and self.config.init_aim:
             kwargs = {
                 'step': step,
                 'job_type': job_type,
@@ -577,7 +606,7 @@ class Trainer(BaseTrainer):
         # ):
         # live.update(table)
         width = get_width()
-        if int(width) > 100 and self.rank == 0 and not is_interactive():
+        if int(width) > 100 and self._is_chief and not is_interactive():
             LIVE = True
             ctx = Live(
                     table,
@@ -732,7 +761,7 @@ class Trainer(BaseTrainer):
         nepoch *= extend
         width = get_width()
         ctx = nullcontext()
-        if width > 150 and self.rank == 0 and not is_interactive():
+        if width > 150 and self._is_chief and not is_interactive():
             ctx = Live(
                 table,
                 console=self.console,
@@ -756,7 +785,8 @@ class Trainer(BaseTrainer):
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
                 self._gstep += 1
-                if self.should_print(epoch) or self.should_log(epoch):
+                # if self.should_print(epoch) or self.should_log(epoch):
+                if self.should_emit(epoch, nepoch):
                     record = {
                         'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
                     }
@@ -812,7 +842,9 @@ class Trainer(BaseTrainer):
         skip = [skip] if isinstance(skip, str) else skip
         # steps = self.steps if steps is None else steps
         train_dir = (
-            Path(os.getcwd()).joinpath('train')
+            Path(os.getcwd()).joinpath(
+                self._created, 'train'
+            )
             if train_dir is None else Path(train_dir)
         )
         train_dir.mkdir(exist_ok=True, parents=True)
@@ -820,16 +852,12 @@ class Trainer(BaseTrainer):
         if x is None:
             x = self.g.random(list(self.xshape)).flatten(1)
 
-        self.dynamics.train()
-
-        era = 0
-        epoch = 0
-        nera = self.steps.nera if nera is None else nera
-        nepoch = self.steps.nepoch if nepoch is None else nepoch
+        nera = self.config.steps.nera if nera is None else nera
+        nepoch = self.config.steps.nepoch if nepoch is None else nepoch
+        extend = self.config.steps.extend_last_era
         assert isinstance(nera, int)
-        extend = self.steps.extend_last_era
-        beta_final = self.config.annealing_schedule.beta_final
-        assert beta_final is not None and isinstance(beta_final, float)
+        assert isinstance(nepoch, int)
+
         if beta is not None:
             assert isinstance(beta, (float, list))
             if isinstance(beta, list):
@@ -840,17 +868,25 @@ class Trainer(BaseTrainer):
             betas = {f'{i}': b for i, b in zip(range(nera), beta)}
 
         else:
-            betas = self.config.annealing_schedule.beta_dict
+            betas = self.config.annealing_schedule.setup(
+                nera=nera,
+                nepoch=nepoch,
+            )
 
+        beta_final = list(betas.values())[-1]
+        assert beta_final is not None and isinstance(beta_final, float)
         # assert b is not None and isinstance(b, float)
         # while b < beta_final:
+        self.dynamics.train()
+        era = 0
+        epoch = 0
         extend = 1
         for era in range(nera):
             b = torch.tensor(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
                 extend = int(self.steps.extend_last_era)
 
-            if self.rank == 0:
+            if self._is_chief:
                 if era > 1 and str(era - 1) in self.summaries['train']:
                     esummary = self.histories['train'].era_summary(f'{era-1}')
                     log.info(f'Avgs over last era:\n {esummary}\n')
@@ -884,7 +920,7 @@ class Trainer(BaseTrainer):
                 # ckpt_metrics = {'loss': metrics.get('loss', 0.0)}
                 self.save_ckpt(era, epoch, train_dir, run=run)
 
-            if self.rank == 0:
+            if self._is_chief:
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
                 log.info(f'Era {era} took: {time.time() - epoch_start:<5g}s')
 
