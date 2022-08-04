@@ -21,7 +21,7 @@ from omegaconf import MISSING
 # from accelerate.accelerator import Accelerator
 # from hydra.utils import instantiate
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 HERE = Path(os.path.abspath(__file__)).parent
@@ -261,6 +261,28 @@ class Steps:
         assert isinstance(self.log, int)
         assert isinstance(self.print, int)
 
+    def update(
+            self,
+            nera: Optional[int] = None,
+            nepoch: Optional[int] = None,
+            test: Optional[int] = None,
+            log: Optional[int] = None,
+            print: Optional[int] = None,
+            extend_last_era: Optional[int] = None,
+    ) -> Steps:
+        logger.warning('Updating Steps!')
+        return Steps(
+            nera=(self.nera if nera is None else nera),
+            nepoch=(self.nepoch if nepoch is None else nepoch),
+            test=(self.test if test is None else test),
+            log=(self.log if log is None else log),
+            print=(self.print if print is None else print),
+            extend_last_era=(
+                self.extend_last_era if extend_last_era is None
+                else extend_last_era
+            )
+        )
+
 
 @dataclass
 class AnnealingSchedule(BaseConfig):
@@ -271,7 +293,7 @@ class AnnealingSchedule(BaseConfig):
 
     def __post_init__(self):
         if self.beta_final is None or self.beta_final < self.beta_init:
-            log.warning(
+            logger.warning(
                 f'AnnealingSchedule.beta_final must be >= {self.beta_init},'
                 f' but received: {self.beta_final}.\n'
                 f'Setting self.beta_final to {self.beta_init}'
@@ -282,15 +304,51 @@ class AnnealingSchedule(BaseConfig):
             and self.beta_final >= self.beta_init
         )
 
-    def setup(self, steps: Steps) -> None:
-        if self.beta_final is None:
-            self.beta_final = self.beta_init
+    def update(
+            self,
+            beta_init: Optional[float] = None,
+            beta_final: Optional[float] = None,
+    ):
+        logger.warning('Updating annealing schedule!')
+        if beta_init is not None:
+            logger.warning(f'annealing_schedule.beta_init = {beta_init:.3f}')
+            self.beta_init = beta_init
+        if beta_final is not None:
+            logger.warning(f'annealing_schedule.beta_final = {beta_final:.3f}')
+            self.beta_final = beta_final
 
-        self.betas = np.linspace(self.beta_init, self.beta_final, steps.nera)
-        self._dbeta = (self.beta_final - self.beta_init) / steps.total
+    def setup(
+            self,
+            nera: Optional[int] = None,
+            nepoch: Optional[int] = None,
+            steps: Optional[Steps] = None,
+            beta_init: Optional[float] = None,
+            beta_final: Optional[float] = None,
+    ) -> dict:
+        if nera is None:
+            assert steps is not None
+            nera = steps.nera
+
+        if nepoch is None:
+            assert steps is not None
+            nepoch = steps.nepoch
+
+        if beta_init is None:
+            beta_init = self.beta_init
+
+        if beta_final is None:
+            beta_final = (
+                self.beta_final
+                if self.beta_final is not None
+                else self.beta_init
+            )
+
+        self.betas = np.linspace(beta_init, beta_final, nera)
+        self._dbeta = (beta_final - beta_init) / (nera * nepoch)
         self.beta_dict = {
-            str(era): self.betas[era] for era in range(steps.nera)
+            str(era): self.betas[era] for era in range(nera)
         }
+        return self.beta_dict
 
 
 @dataclass
@@ -580,15 +638,18 @@ class ExperimentConfig:
         if self.debug_mode:
             self.compile = False
 
-        self.annealing_schedule.setup(self.steps)
+        self.annealing_schedule.setup(
+            nera=self.steps.nera,
+            nepoch=self.steps.nepoch,
+        )
         w = int(os.environ.get('COLUMNS', 235))
         self.width = w if self.width is None else self.width
         self.xdim = self.dynamics.xdim
         self.xshape = self.dynamics.xshape
-        log.warning(f'xdim: {self.dynamics.xdim}')
-        log.warning(f'group: {self.dynamics.group}')
-        log.warning(f'xshape: {self.dynamics.xshape}')
-        log.warning(f'latvolume: {self.dynamics.latvolume}')
+        logger.warning(f'xdim: {self.dynamics.xdim}')
+        logger.warning(f'group: {self.dynamics.group}')
+        logger.warning(f'xshape: {self.dynamics.xshape}')
+        logger.warning(f'latvolume: {self.dynamics.latvolume}')
 
 
 def get_config(overrides: Optional[list[str]] = None):
