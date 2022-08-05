@@ -26,9 +26,8 @@ import xarray as xr
 
 from l2hmc.configs import AnnealingSchedule, Steps
 from l2hmc.configs import OUTPUTS_DIR
-from l2hmc.utils.plot_helpers import (
-    make_ridgeplots, plot_dataArray, set_plot_style
-)
+from l2hmc.configs import State
+from l2hmc.utils.plot_helpers import make_ridgeplots, plot_dataArray, set_plot_style
 from l2hmc.utils.rich import get_console, is_interactive
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
@@ -57,13 +56,62 @@ def grab_tensor(x: Any) -> np.ndarray | ScalarLike:
 
 
 
+def clear_cuda_cache():
+    import gc
+    gc.collect()
+    with torch.no_grad():
+        torch.cuda.empty_cache()
+        torch.clear_autocast_cache()
+
+
 def get_timestamp(fstr=None):
     """Get formatted timestamp."""
     now = datetime.datetime.now()
     if fstr is None:
-
         return now.strftime('%Y-%m-%d-%H%M%S')
     return now.strftime(fstr)
+
+
+def check_diff(x, y, name: Optional[str] = None):
+    if isinstance(x, State):
+        xd = {'x': x.x, 'v': x.v, 'beta': x.beta}
+        yd = {'x': y.x, 'v': y.v, 'beta': y.beta}
+        check_diff(xd, yd, name=f'State')
+
+    elif isinstance(x, dict) and isinstance(y, dict):
+        for (kx, vx), (ky, vy) in zip(x.items(), y.items()):
+            if kx == ky:
+                check_diff(vx, vy, name=kx)
+            else:
+                log.warning(f'Mismatch encountered!')
+                log.warning(f'kx: {kx}')
+                log.warning(f'ky: {ky}')
+                vy_ = y.get(kx, None)
+                if vy_ is not None:
+                    check_diff(vx, vy_, name=kx)
+                else:
+                    log.warning(f'{kx} not in y, skipping!')
+                    continue
+            
+    elif isinstance(x, (list, tuple)) and isinstance(y, (list, tuple)):
+        assert len(x) == len(y)
+        for idx in range(len(x)):
+            check_diff(x[idx], y[idx], name=f'{name}, {idx}')
+            
+    else:
+        x = grab_tensor(x)
+        y = grab_tensor(y)
+        dstr = []
+        if name is not None:
+            dstr.append(f"'{name}''")
+
+        dstr.append(f'  sum(diff): {np.sum(x - y)}')
+        dstr.append(f'  min(diff): {np.min(x - y)}')
+        dstr.append(f'  max(diff): {np.max(x - y)}')
+        dstr.append(f'  mean(diff): {np.mean(x - y)}')
+        dstr.append(f'  std(diff): {np.std(x - y)}')
+        dstr.append(f'  np.allclose: {np.allclose(x, y)}')
+        log.info('\n'.join(dstr))
 
 
 def setup_annealing_schedule(cfg: DictConfig) -> AnnealingSchedule:
@@ -84,7 +132,12 @@ def setup_annealing_schedule(cfg: DictConfig) -> AnnealingSchedule:
         )
 
     sched = AnnealingSchedule(beta_init, beta_final)
-    sched.setup(steps)
+    sched.setup(
+        nera=steps.nera,
+        nepoch=steps.nepoch,
+        beta_init=beta_init,
+        beta_final=beta_final
+    )
     return sched
 
 
