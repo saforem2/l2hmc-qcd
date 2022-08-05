@@ -243,7 +243,7 @@ def projectTAH(x: Tensor) -> Tensor:
     R = - T^a tr[T^a (X - X†)]
       = T^a ∂_a (- tr[X + X†])
     """
-    nc = tf.constant(x.shape[-1], dtype=TF_FLOAT)
+    nc = tf.constant(x.shape[-1], dtype=x.dtype)
     r = 0.5 * (x - tf.linalg.adjoint(x))
     d = tf.linalg.trace(r) / nc
     r -= tf.reshape(d, d.shape + [1, 1]) * eyeOf(x)
@@ -253,7 +253,7 @@ def projectTAH(x: Tensor) -> Tensor:
 
 def checkU(x: Tensor) -> tuple[Tensor, Tensor]:
     """Returns the average and maximum of the sum of the deviations of X†X"""
-    nc = tf.constant(x.shape[-1], dtype=TF_FLOAT)
+    nc = tf.constant(x.shape[-1], dtype=x.dtype)
     d = norm2(tf.linalg.matmul(x, x, adjoint_a=True) - eyeOf(x))
     a = tf.math.reduce_mean(d, axis=range(1, len(d.shape)))
     b = tf.math.reduce_max(d, axis=range(1, len(d.shape)))
