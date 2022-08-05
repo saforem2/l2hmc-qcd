@@ -36,35 +36,49 @@ def seed_everything(seed: int):
 
 
 def setup(cfg: DictConfig):
-    # width = cfg.get('width', None)
-    # if width is not None and os.environ.get('COLUMNS', None) is None:
-    #     os.environ['COLUMNS'] = str(width)
-    # elif os.environ.get('COLUMNS', None) is not None:
-    #     cfg.update({'width': int(os.environ.get('COLUMNS', 235))})
-    # size = shutil.get_terminal_size()
-    # WIDTH = size.columns
-    # HEIGHT = size.lines
-    # cfg.update({})
     if cfg.get('ignore_warnings'):
         warnings.filterwarnings('ignore')
 
 
 def setup_tensorflow(precision: Optional[str] = None) -> int:
     import tensorflow as tf
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     import horovod.tensorflow as hvd
     hvd.init() if not hvd.is_initialized() else None
     tf.keras.backend.set_floatx(precision)
     TF_FLOAT = tf.keras.backend.floatx()
     # tf.config.run_functions_eagerly(True)
-    assert tf.keras.backend.floatx() == tf.float32
+    # assert tf.keras.backend.floatx() == tf.float32
     gpus = tf.config.experimental.list_physical_devices('GPU')
-    for gpu in gpus:
-        tf.config.experimental.set_memory_growth(gpu, True)
+    cpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
-        tf.config.experimental.set_visible_devices(
-            gpus[hvd.local_rank()],
-            'GPU'
-        )
+        try:
+            # Currently memory growth needs to be the same across GPUs
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            log.info(
+                f'{len(gpus)}, Physical GPUs and '
+                f'{len(logical_gpus)} Logical GPUs'
+            )
+            tf.config.experimental.set_visible_devices(
+                gpus[hvd.local_rank()],
+                'GPU',
+            )
+        except RuntimeError as e:
+            print(e)
+    elif cpus:
+        try:
+            # Currently, memory growth needs to be the same across GPUs
+            logical_cpus = tf.config.experimental.list_logical_devices('CPU')
+            log.info(
+                f'{len(cpus)}, Physical CPUs and '
+                f'{len(logical_cpus)} Logical CPUs'
+            )
+        except RuntimeError as e:
+            # Memory growth must be set before GPUs have been initialized
+            print(e)
 
     RANK = hvd.rank()
     SIZE = hvd.size()

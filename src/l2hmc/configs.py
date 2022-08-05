@@ -344,10 +344,12 @@ class AnnealingSchedule(BaseConfig):
             )
 
         self.betas = np.linspace(beta_init, beta_final, nera)
-        self._dbeta = (beta_final - beta_init) / (nera * nepoch)
+        total = steps.total if steps is not None else 1
+        self._dbeta = (beta_final - beta_init) / total
         self.beta_dict = {
             str(era): self.betas[era] for era in range(nera)
         }
+
         return self.beta_dict
 
 
