@@ -7,15 +7,39 @@
 TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
 echo "Job started at: ${TSTAMP}"
 
-# ---- Get job information -----------------------------------------------
-NRANKS=$(wc -l < ${COBALT_NODEFILE})
-NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
-NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
+if [[ $(hostname) == theta* ]]; then
+  NRANKS=$(wc -l < ${COBALT_NODEFILE})
+  HOSTFILE=${COBALT_NODEFILE}
+  NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
+  NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
+  MPI_COMMAND=$(which mpirun)
+  MPI_FLAGS="-x LD_LIBRARY_PATH -x PATH --verbose -n ${NGPUS} -npernode ${NGPU_PER_RANK} --hostfile ${HOSTFILE}"
+  echo "-----------------------"
+  echo "| Running on ThetaGPU |"
+  echo "-----------------------"
+  echo "HOSTNAME: $(hostname)"
+  # Load conda module and activate base environment
+  eval "$(/lus/theta-fs0/software/thetagpu/conda/2022-07-01/mconda3/bin/conda shell.zsh hook)"
+  module load conda/2022-07-01
+  conda activate base
+elif [[ $(hostname) == x* ]]; then
+  NRANKS=$(wc -l < ${PBS_NODEFILE})
+  HOSTFILE=${PBS_NODEFILE}
+  NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
+  NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
+  MPI_COMMAND=$(which mpiexec)
+  MPI_FLAGS="-n ${NGPUS} --ppn ${NGPU_PER_RANK} --envall --hostfile ${HOSTFILE}"
+  echo "-----------------------"
+  echo "| Running on Polaris |"
+  echo "-----------------------"
+  echo "HOSTNAME: $(hostname)"
+  module load conda/2022-07-19
+  conda activate base
+else
+  echo "HOSTNAME: $(hostname)"
+fi
 
-# Load conda module and activate base environment
-eval "$(/lus/theta-fs0/software/thetagpu/conda/2022-07-01/mconda3/bin/conda shell.zsh hook)"
-module load conda/2022-07-01
-conda activate base
+# ---- Get job information -----------------------------------------------
 
 # ---- Specify directories and executable for experiment ------------------
 DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd -LP)
@@ -113,14 +137,7 @@ echo "┗━━━━━━━━━━━━━━━━━━━━━━━�
 # if [ -f ${EXEC} ]; then
 # ---- Run Job --------------------------------------------
 if (( ${NGPUS} > 1 )); then
-  mpirun \
-  -x LD_LIBRARY_PATH \
-  -x PATH \
-  --verbose \
-  -n ${NGPUS} \
-  -npernode ${NGPU_PER_RANK} \
-  --hostfile ${COBALT_NODEFILE} \
-  python3 ${EXEC} $@ > ${LOGFILE}
+  ${MPI_COMMAND} ${MPI_FLAGS} python3 ${EXEC} $@ > ${LOGFILE}
 else
   python3 ${EXEC} $@ > ${LOGFILE}
 fi
