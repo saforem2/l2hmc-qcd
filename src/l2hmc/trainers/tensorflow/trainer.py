@@ -702,7 +702,7 @@ class Trainer(BaseTrainer):
                     rows[self._gstep] = avgs
                     summaries.append(summary)
 
-                    if isinstance(ctx, Live) and self.should_print(epoch):
+                    if not isinstance(ctx, Live) and self.should_print(epoch):
                         log.info(summary)
 
                     if epoch == 0:
