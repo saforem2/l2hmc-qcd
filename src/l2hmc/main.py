@@ -57,14 +57,14 @@ def setup_tensorflow(precision: Optional[str] = None) -> int:
             # Currently memory growth needs to be the same across GPUs
             for gpu in gpus:
                 tf.config.experimental.set_memory_growth(gpu, True)
+            tf.config.experimental.set_visible_devices(
+                gpus[hvd.local_rank()],
+                'GPU',
+            )
             logical_gpus = tf.config.experimental.list_logical_devices('GPU')
             log.info(
                 f'{len(gpus)}, Physical GPUs and '
                 f'{len(logical_gpus)} Logical GPUs'
-            )
-            tf.config.experimental.set_visible_devices(
-                gpus[hvd.local_rank()],
-                'GPU',
             )
         except RuntimeError as e:
             print(e)
@@ -193,7 +193,8 @@ def main(cfg: DictConfig) -> None:
         _ = ex.train()
         log.info(f'Training took: {time.time() - tstart:.5f}s')
         # --- [2.] Evaluate trained model ----------------------------------
-        if ex.trainer.rank == 0 and ex.config.steps.test > 0:
+        # if ex.trainer.rank == 0 and ex.config.steps.test > 0:
+        if ex.trainer._is_chief and ex.config.steps.test > 0:
             log.info('Evaluating trained model')
             estart = time.time()
             _ = ex.evaluate(job_type='eval')
@@ -205,7 +206,7 @@ def main(cfg: DictConfig) -> None:
                 log.exception(e)
 
     # --- [3.] Run generic HMC for comparison ------------------------------
-    if ex.trainer.rank == 0 and ex.config.steps.test > 0:
+    if ex.trainer._is_chief and ex.config.steps.test > 0:
         log.info('Running generic HMC for comparison')
         hstart = time.time()
         _ = ex.evaluate(job_type='hmc')
