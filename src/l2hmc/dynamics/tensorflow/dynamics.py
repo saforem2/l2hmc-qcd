@@ -414,6 +414,7 @@ class Dynamics(Model):
             state: State,
             logdet: Tensor,
             step: Optional[int] = None,
+            extras: Optional[dict[str, Tensor]] = None,
     ) -> dict:
         """Returns dict of various metrics about input State."""
         energy = self.hamiltonian(state)
@@ -423,6 +424,9 @@ class Dynamics(Model):
             'logprob': logprob,
             'logdet': logdet,
         }
+        if extras is not None:
+            metrics.update(extras)
+
         if step is not None:
             metrics.update({
                 'xeps': self.xeps[step],
@@ -535,11 +539,14 @@ class Dynamics(Model):
         state_ = State(state.x, state.v, state.beta)
         assert isinstance(state.x, Tensor)
         sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        sldf = tf.zeros_like(sumlogdet)
+        sldb = tf.zeros_like(sumlogdet)
 
         history = {}
         if self.config.verbose:
+            extras = {'sldf': sldf, 'sldb': sldb, 'sld': sumlogdet}
             history = self.update_history(
-                self.get_metrics(state_, sumlogdet, step=0),
+                self.get_metrics(state_, sumlogdet, step=0, extras=extras),
                 history=history,
             )
 
@@ -548,10 +555,15 @@ class Dynamics(Model):
             state_, logdet = self._forward_lf(step, state_, training)
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
-                history = self.update_history(
-                    self.get_metrics(state_, sumlogdet, step=step),
-                    history=history
+                sldf += logdet
+                extras = {'sldf': sldf, 'sldb': sldb, 'sld': sumlogdet}
+                metrics = self.get_metrics(
+                    state_,
+                    sumlogdet,
+                    step=step,
+                    extras=extras
                 )
+                history = self.update_history(metrics=metrics, history=history)
 
         # Flip momentum
         # m1 = -1.0 * tf.ones_like(state_.v)
@@ -562,12 +574,17 @@ class Dynamics(Model):
             state_, logdet = self._backward_lf(step, state_, training)
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
+                sldb += logdet
+                extras = {'sldf': sldf, 'sldb': sldb, 'sld': sumlogdet}
                 # Reverse step count to correctly order metrics at each step
                 step = self.config.nleapfrog - step - 1
-                history = self.update_history(
-                    self.get_metrics(state_, sumlogdet, step=step),
-                    history=history
+                metrics = self.get_metrics(
+                    state_,
+                    sumlogdet,
+                    step=step,
+                    extras=extras
                 )
+                history = self.update_history(metrics=metrics, history=history)
 
         acc = self.compute_accept_prob(state, state_, sumlogdet)
         history.update({'acc': acc, 'sumlogdet': sumlogdet})

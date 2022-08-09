@@ -244,22 +244,11 @@ class Dynamics(nn.Module):
 
     def save(self, outdir: os.PathLike) -> None:
         netdir = Path(outdir).joinpath('networks')
-        fxeps = netdir.joinpath('xeps.npy')
-        fveps = netdir.joinpath('veps.npy')
         outfile = netdir.joinpath('dynamics.pt')
         netdir.mkdir(exist_ok=True, parents=True)
         assert isinstance(self.xeps, nn.ParameterList)
         assert isinstance(self.veps, nn.ParameterList)
-        # xeps = np.array([
-        #     i.detach().cpu().numpy() for i in self.xeps
-        # ])
-        # veps = np.array([
-        #     i.detach().cpu().numpy() for i in self.veps
-        # ])
-        # np.save(fxeps, xeps)
-        # np.save(fveps, veps)
-        # np.savetxt(netdir.joinpath('xeps.txt').as_posix(), xeps)
-        # np.savetxt(netdir.joinpath('veps.txt').as_posix(), veps)
+        self.save_eps(outdir=netdir)
         torch.save(self.state_dict(), outfile.as_posix())
 
     def save_eps(self, outdir: os.PathLike) -> None:
@@ -268,22 +257,16 @@ class Dynamics(nn.Module):
         fveps = netdir.joinpath('veps.npy')
         assert isinstance(self.xeps, nn.ParameterList)
         assert isinstance(self.veps, nn.ParameterList)
-        # xeps = np.array([
-        #     i.detach().cpu().numpy() for i in self.xeps
-        # ])
-        # veps = np.array([
-        #     i.detach().cpu().numpy() for i in self.veps
-        # ])
-        # xeps = np.array([
-        #     i.detach().cpu().numpy() for i in list(self.xeps)
-        # ])
-        # veps = np.array([
-        #     i.detach().cpu().numpy() for i in list(self.veps)
-        # ])
-        # np.save(fxeps, xeps)
-        # np.save(fveps, veps)
-        # np.savetxt(netdir.joinpath('xeps.txt').as_posix(), xeps)
-        # np.savetxt(netdir.joinpath('veps.txt').as_posix(), veps)
+        xeps = np.array([
+            i.detach().cpu().numpy() for i in self.xeps
+        ])
+        veps = np.array([
+            i.detach().cpu().numpy() for i in self.veps
+        ])
+        np.save(fxeps, xeps)
+        np.save(fveps, veps)
+        np.savetxt(netdir.joinpath('xeps.txt').as_posix(), xeps)
+        np.savetxt(netdir.joinpath('veps.txt').as_posix(), veps)
 
     def load(self, outdir: os.PathLike) -> None:
         netdir = Path(outdir).joinpath('networks')
@@ -361,10 +344,10 @@ class Dynamics(nn.Module):
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
         ma_ = ma_.to(inputs[0].device)
         mr_ = mr_.to(inputs[0].device)
-        ma = ma_.unsqueeze(-1)
-        mr = mr_.unsqueeze(-1)
-        # ma = ma_[:, None]
-        # mr = mr_[:, None]
+        # ma = ma_.unsqueeze(-1)
+        # mr = mr_.unsqueeze(-1)
+        ma = ma_[:, None]
+        mr = mr_[:, None]
 
         xinit = data['init'].x.flatten(1)
         vinit = data['init'].v.flatten(1)
@@ -395,10 +378,8 @@ class Dynamics(nn.Module):
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
         ma_ = ma_.to(inputs[0].device)
         mr_ = mr_.to(inputs[0].device)
-        ma = ma_.unsqueeze(-1)
-        mr = mr_.unsqueeze(-1)
-        # ma = ma_[:, None]
-        # mr = mr_[:, None]
+        ma = ma_[:, None]
+        mr = mr_[:, None]
 
         # NOTE: We construct output states by combining
         #   output = (acc_mask * proposed) + (reject_mask * init)
@@ -435,8 +416,10 @@ class Dynamics(nn.Module):
         if torch.cuda.is_available():
             ma_ = ma_.cuda()
             mr_ = mr_.cuda()
-        ma = ma_.unsqueeze(-1)
-        mr = mr_.unsqueeze(-1)
+        # ma = ma_.unsqueeze(-1)
+        # mr = mr_.unsqueeze(-1)
+        ma = ma_[:, None]
+        mr = mr_[:, None]
 
         v_out = ma * data['proposed'].v + mr * data['init'].v
         x_out = ma * data['proposed'].x + mr * xinit
@@ -500,10 +483,10 @@ class Dynamics(nn.Module):
         if torch.cuda.is_available():
             ma_ = ma_.cuda()
             mr_ = mr_.cuda()
-        ma = ma_.unsqueeze(-1)
-        mr = mr_.unsqueeze(-1)
-        # ma = ma_[:, None]
-        # mr = mr_[:, None]
+        # ma = ma_.unsqueeze(-1)
+        # mr = mr_.unsqueeze(-1)
+        ma = ma_[:, None]
+        mr = mr_[:, None]
         # mr = mr_.unsqueeze(-1)
 
         v_out = ma * vp + mr * v_init
@@ -711,18 +694,9 @@ class Dynamics(nn.Module):
 
         history = {}
         if self.config.verbose:
-            extras = {
-                'sldf': sldf,
-                'sldb': sldb,
-                'sld': sumlogdet,
-            }
+            extras = {'sldf': sldf, 'sldb': sldb, 'sld': sumlogdet}
             history = self.update_history(
-                self.get_metrics(
-                    state_,
-                    sumlogdet,
-                    step=0,
-                    extras=extras
-                ),
+                self.get_metrics(state_, sumlogdet, step=0, extras=extras),
                 history=history,
             )
 
@@ -732,21 +706,14 @@ class Dynamics(nn.Module):
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
                 sldf += logdet
-                extras = {
-                    'sldf': sldf,
-                    'sldb': sldb,
-                    'sld': sumlogdet,
-                }
+                extras = {'sldf': sldf, 'sldb': sldb, 'sld': sumlogdet}
                 metrics = self.get_metrics(
                     state_,
                     sumlogdet,
                     step=step,
                     extras=extras
                 )
-                history = self.update_history(
-                    metrics=metrics,
-                    history=history,
-                )
+                history = self.update_history(metrics=metrics, history=history)
 
         # Flip momentum
         m1 = -1.0 * torch.ones_like(state_.v)
@@ -757,31 +724,17 @@ class Dynamics(nn.Module):
         for step in range(self.config.nleapfrog):
             state_, logdet = self._backward_lf(step, state_)
             sumlogdet = sumlogdet + logdet
-            # sumlogdet = sldf + sldb
-            # sumlogdet = sumlogdet + logdet
             if self.config.verbose:
                 sldb += logdet
-                extras = {
-                    'sldf': sldf,
-                    'sldb': sldb,
-                    'sld': sumlogdet,
-                }
+                extras = {'sldf': sldf, 'sldb': sldb, 'sld': sumlogdet}
                 # Reverse step count to correctly order metrics at each step
-                # step_r = self.config.nleapfrog - step - 1
-                # history = self.update_history(
-                #     self.get_metrics(state_, sumlogdet, step=step),
-                #     history=history,
-                # )
                 metrics = self.get_metrics(
                     state_,
                     sumlogdet,
                     step=(self.config.nleapfrog-step-1),
                     extras=extras,
                 )
-                history = self.update_history(
-                    metrics=metrics,
-                    history=history,
-                )
+                history = self.update_history(metrics=metrics, history=history)
 
         acc = self.compute_accept_prob(state, state_, sumlogdet)
         history.update({'acc': acc, 'sumlogdet': sumlogdet})
