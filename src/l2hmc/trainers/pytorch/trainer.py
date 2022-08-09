@@ -420,7 +420,7 @@ class Trainer(BaseTrainer):
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
     ) -> None:
-        assert self.config.init_aim or self.config.init_wandb
+        # assert self.config.init_aim or self.config.init_wandb
         dQdict = None
         dQint = record.get('dQint', None)
         if dQint is not None:
