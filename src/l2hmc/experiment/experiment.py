@@ -18,7 +18,6 @@ import wandb
 import xarray as xr
 
 from l2hmc.trainers.trainer import BaseTrainer
-from l2hmc.utils.history import BaseHistory
 from l2hmc.common import get_timestamp, is_interactive, save_and_analyze_data
 from l2hmc.configs import (
     AIM_DIR, ExperimentConfig, HERE, OUTDIRS_FILE
@@ -26,23 +25,15 @@ from l2hmc.configs import (
 from l2hmc.utils.step_timer import StepTimer
 # import l2hmc.utils.plot_helpers as hplt
 
-
 log = logging.getLogger(__name__)
 
-SYNONYMS = {
-    'pytorch': [
-        'p'
-        'pt',
-        'torch',
-        'pytorch',
-    ],
-    'tensorflow': [
-        't'
-        'tf',
-        'tflow',
-        'tensorflow',
-    ],
-}
+
+def get_logger(rank: int) -> logging.Logger:
+    return (
+        logging.getLogger(__name__)
+        if rank == 0
+        else logging.getLogger(None)
+    )
 
 
 class BaseExperiment(ABC):
@@ -116,10 +107,7 @@ class BaseExperiment(ABC):
         pass
 
     @abstractmethod
-    def get_summary_writer(
-            self,
-            job_type: str,
-    ):
+    def get_summary_writer(self):
         pass
 
     @abstractmethod
@@ -198,7 +186,7 @@ class BaseExperiment(ABC):
 
         run_id = generate_id()
         self.update_wandb_config(run_id=run_id)
-        log.warning(f'os.getcwd(): {os.getcwd()}')
+        # log.warning(f'os.getcwd(): {os.getcwd()}')
         wandb.tensorboard.patch(root_logdir=os.getcwd())
         run = wandb.init(dir=os.getcwd(), **self.config.wandb.setup)
         # if self.config.framework in ['pt', 'torch', 'pytorch']:

@@ -1,7 +1,7 @@
 """
 haarSUN.py
 
-Modified from original implementation at:
+Inspired by implementation from:
     https://github.com/CUAI/Equivariant-Manifold-Flows
 """
 from __future__ import absolute_import, print_function, division, annotations
@@ -9,7 +9,6 @@ from typing import Optional
 
 import torch
 import torch.distributions as distributions
-import scipy
 import scipy.linalg
 import numpy as np
 
@@ -36,15 +35,6 @@ class HaarSUN(torch.distributions.Distribution):
                 torch.randn(self.dim, self.dim),
                 torch.randn(self.dim, self.dim),
             )
-            # z = torch.randn(dim, dim) + torch.randn(dim, dim) *
-            # z = scipy.randn(dim, dim) + 1j * scipy.randn(dim, dim)
-            # d = np.diag(r)
-            # ph = d / np.abs(d)
-            # q = np.multiply(q, ph, q)
-            # q = q / (q.det)
-            # q = q / scipy.linalg.det(q) ** (1 / dim)
-            # final[k] = torch.tensor(q)
-            # q, r = scipy.linalg.qr(z / np.sqrt(2.0))
             q, r = torch.linalg.qr(z / np.sqrt(2.0))
             diag = r.diag()
             ph = diag / diag.abs()

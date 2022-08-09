@@ -177,8 +177,10 @@ class Trainer(BaseTrainer):
         ).flatten(1)
 
     def reset_optimizer(self):
-        log.warning('Resetting optimizer state!')
-        self.optimizer.state = defaultdict(dict)
+        if self._is_chief:
+            log.warning('Resetting optimizer state!')
+            self.optimizer.state = defaultdict(dict)
+            hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
 
     def build_lattice(self):
         group = str(self.config.dynamics.group).upper()
@@ -269,7 +271,7 @@ class Trainer(BaseTrainer):
             metrics: Optional[dict] = None,
             run: Optional[Any] = None,
     ) -> None:
-        if self.rank != 0:
+        if not self._is_chief:
             return
 
         # assert isinstance(self.dynamics, Dynamics)
@@ -336,13 +338,14 @@ class Trainer(BaseTrainer):
             or epoch % nlog == 0
         )
 
-        # LOCAL_RANK == 0 and (
-        return (
-            self._is_chief and (
-                (epoch % nprint == 0
-                 or epoch % nlog == 0)
-            )
-        )
+        # LOCAL_RANK == 0
+        # return (
+        #     self._is_chief and (
+        #         (epoch % nprint == 0
+        #          or epoch % nlog == 0)
+        #     )
+        # )
+        return self._is_chief and emit
 
     def record_metrics(
             self,

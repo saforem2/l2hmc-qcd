@@ -241,7 +241,7 @@ class Trainer(BaseTrainer):
             manager: CheckpointManager,
             train_dir: os.PathLike,
     ) -> None:
-        if self.rank != 0:
+        if not self._is_chief:
             return
 
         manager.save()
@@ -359,11 +359,13 @@ class Trainer(BaseTrainer):
 
             try:
                 self.aim_track(avgs, prefix='avgs', **kwargs)
-            except Exception:
+            except Exception as e:
+                log.exception(e)
                 log.warning('Unable to aim_track `avgs` !')
             try:
                 self.aim_track(record, prefix='record', **kwargs)
-            except Exception:
+            except Exception as e:
+                log.exception(e)
                 log.warning('Unable to aim_track `record` !')
 
     @tf.function

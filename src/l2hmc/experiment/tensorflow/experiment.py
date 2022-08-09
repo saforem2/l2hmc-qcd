@@ -122,10 +122,7 @@ class Experiment(BaseExperiment):
         run = super()._init_aim()
         return run
 
-    def get_summary_writer(
-            self,
-            job_type: str,
-    ):
+    def get_summary_writer(self):
         # sdir = super()._get_summary_dir(job_type=job_type)
         # sdir = os.getcwd()
         return tf.summary.create_file_writer(  # type:ignore
@@ -211,7 +208,7 @@ class Experiment(BaseExperiment):
         jobdir = self.get_jobdir(job_type='train')
         writer = None
         if RANK == 0:
-            writer = self.get_summary_writer(job_type='train')
+            writer = self.get_summary_writer()
 
         output = self.trainer.train(
             x=x,
@@ -252,7 +249,7 @@ class Experiment(BaseExperiment):
 
         assert job_type in ['eval', 'hmc']
         jobdir = self.get_jobdir(job_type)
-        writer = self.get_summary_writer(job_type)
+        writer = self.get_summary_writer()
 
         output = self.trainer.eval(
             run=self.run,

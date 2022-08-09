@@ -173,10 +173,7 @@ class Experiment(BaseExperiment):
     ):
         return super()._init_wandb()
 
-    def get_summary_writer(
-            self,
-            job_type: str,
-    ):
+    def get_summary_writer(self):
         # sdir = super()._get_summary_dir(job_type=job_type)
         # sdir = os.getcwd()
         return SummaryWriter(self._outdir)
@@ -285,7 +282,7 @@ class Experiment(BaseExperiment):
         jobdir = self.get_jobdir(job_type='train')
         writer = None
         if RANK == 0:
-            writer = self.get_summary_writer(job_type='train')
+            writer = self.get_summary_writer()
 
         # logfile = jobdir.joinpath(f'train-{RANK}.log')
         # with open(logfile.as_posix(), 'wt') as logfile:
@@ -338,7 +335,7 @@ class Experiment(BaseExperiment):
 
         assert job_type in ['eval', 'hmc']
         jobdir = self.get_jobdir(job_type)
-        writer = self.get_summary_writer(job_type)
+        writer = self.get_summary_writer()
         console = get_console(record=True)
         self.trainer.set_console(console)
         output = self.trainer.eval(
