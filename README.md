@@ -33,7 +33,7 @@
 ## Papers 📚, Slides 📊, etc.
 - 📘 [Example Notebook](./src/l2hmc/notebooks/experiment.ipynb) ([alternative link](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/experiment.ipynb) if github won't load)
 - [Accelerated Sampling Techniques for Lattice Gauge Theory](https://saforem2.github.io/l2hmc-dwq25/#/) @ [BNL & RBRC: DWQ @ 25](https://indico.bnl.gov/event/13576/) (12/2021)
-- [Training Topological Samplers for Lattice Gauge Theory](https://bit.ly/l2hmc-ect2021) from the [*ML for HEP, on and off the Lattice*](https://indico.ectstar.eu/event/77/) @ ECT$^{*}$ Trento (09/2021) (+ 📊 [slides](https://www.bit.ly/l2hmc-ect2021))
+- [Training Topological Samplers for Lattice Gauge Theory](https://bit.ly/l2hmc-ect2021) from the [*ML for HEP, on and off the Lattice*](https://indico.ectstar.eu/event/77/) @ $\mathrm{ECT}^{*}$ Trento (09/2021) (+ 📊 [slides](https://www.bit.ly/l2hmc-ect2021))
 - [Deep Learning Hamiltonian Monte Carlo](https://arxiv.org/abs/2105.03418) @ [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) **ICLR 2021**
 	- 📚 : [arXiv:2105.03418](https://arxiv.org/abs/2105.03418)  
 	- 📊 : [poster](https://www.bit.ly/l2hmc_poster)
@@ -83,7 +83,7 @@ for more information on how this works I encourage you to read [Hydra's Document
 
 **Goal:** Use L2HMC to **efficiently** generate _gauge configurations_ for calculating observables in lattice QCD.
 
-A detailed description of the (ongoing) work to apply this algorithm to simulations in lattice QCD (specifically, a 2D U(1) lattice gauge theory model) can be found in [`doc/main.pdf`](doc/main.pdf).
+A detailed description of the (ongoing) work to apply this algorithm to simulations in lattice QCD (specifically, a 2D U(1) lattice gauge theory model) can be found in [arXiv:2105.03418](https://arxiv.org/abs/2105.03418).
 
 <div align="center">
  <img src="assets/l2hmc_poster.jpeg" alt="l2hmc-qcd poster" width="66%" />
