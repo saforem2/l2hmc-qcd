@@ -1,85 +1,124 @@
-[tool.poetry]
-name = "l2hmc"
-version = "0.8.0"
-description = "L2HMC algorithm for sampling in Lattice QCD"
-authors = ["Sam Foreman <saforem2@gmail.com>"]
-readme = "README.md"
-repository = "https://github.com/saforem2/l2hmc-qcd"
-homepage = "https://github.com/saforem2/l2hmc-qcd"
-keywords = ["machine-learning", "lattice", "mcmc", "latticeqcd", "qcd"]
-packages = [{include = "l2hmc", from = "src"}]
-exclude = [
-  "wandb",
-  "outputs",
-  "old",
-  "src/l2hmc/outputs/",
-  "src/l2hmc/wandb/",
-  "**/old/**/*",
-  "**/wandb/**/*",
-  "**/outputs/**/*",
-  "**/.ipynb_checkpoints/**",
-  "**/__pycache__/**/*",
-  "**/.DS_Store/**/*"
-]
-
-[tool.poetry.dependencies]
-python = "^3.10,<3.11"
-torch = "^1.11.0"
-tensorflow = "^2.8.0"
-bokeh = "^2.4.2"
-mpi4py = "^3.1.3"
-nodejs = "^0.1.1"
-h5py = "^3.6.0"
-numpy = "^1.22.3"
-matplotlib = "^3.5.1"
-seaborn = "^0.11.2"
-xarray = "^2022.3.0"
-joblib = "^1.1.0"
-celerite = "^0.4.2"
-horovod = "^0.24.2"
-pynvim = {version = "^0.4.3", optional = true}
-neovim = {version = "^0.3.1", optional = true}
-pyright = {version = "^1.1.235", optional = true}
-ipython = "^8.2.0"
-rich = "^12.1.0"
-hydra-core = "^1.1.1"
-wandb = "^0.12.11"
-arviz = "^0.12.0"
-hydra-colorlog = "^1.1.0"
-matplotx = "^0.3.6"
-accelerate = "^0.6.2"
-
-[tool.poetry.dev-dependencies]
-euporie = "^1.4.3"
-ipykernel = "^6.12.1"
-notebook = "^6.4.10"
-ipython = {version = "^8.2.0", optional = true}
-ptipython = {version = "^1.0.1", optional = true}
-
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.pyright]
-include = ["src"]
-exclude = [
+[project]
+name = "l2hmc"
+description = 'Framework for training MCMC samplers for Lattice QCD'
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+keywords = []
+authors = [
+  { name = "Sam Foreman", email = "saforem2@gmail.com" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+]
+dependencies = [
+  "bokeh",
+  "mpi4py",
+  "nodejs",
+  "h5py",
+  "seaborn",
+  "xarray",
+  "joblib",
+  "celerite",
+  "pynvim",
+  "neovim",
+  "pyright",
+  "ipython",
+  "rich",
+  "hydra-core",
   "wandb",
-  "outputs",
-  "old",
+  "arviz",
+  "hydra-colorlog",
+  "matplotx",
+  "accelerate",
+  "tqdm",
+  "ptipython",
+  "tensorflow",
+  "torch",
+  "horovod[pytorch,tensorflow]"
+]
+dynamic = ["version"]
+
+[project.urls]
+Documentation = "https://github.com/saforem2/l2hmc-qcd"
+Issues = "https://github.com/saforem2/l2hmc-qcd/issues"
+Source = "https://github.com/saforem2/l2hmc-qcd"
+
+[tool.hatch.version]
+path = "src/l2hmc/__about__.py"
+
+[tool.hatch.build]
+exclude = [
   "src/l2hmc/outputs/",
-  "src/l2hmc/wandb/",
-  "**/old/**/*",
-  "**/wandb/**/*",
-  "**/outputs/**/*",
-  "**/__pycache__/**/*",
-  "**/.DS_Store/**/*"
+  "**old**",
 ]
-ignore = [
-  "src/l2hmc/old",
+
+[tool.hatch.build.targets.sdist]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/l2hmc"]
+
+[tool.hatch.envs.l2hmc]
+python = "3.10"
+dependencies = [
+  "bokeh",
+  "mpi4py",
+  "nodejs",
+  "h5py",
+  "seaborn",
+  "xarray",
+  "joblib",
+  "celerite",
+  "pynvim",
+  "neovim",
+  "pyright",
+  "ipython",
+  "rich",
+  "hydra-core",
+  "wandb",
+  "arviz",
+  "hydra-colorlog",
+  "matplotx",
+  "accelerate",
+  "tqdm",
+  "ptipython",
+  "tensorflow",
+  "pytorch",
+  "horovod"
 ]
-venvPath = "./.venv"
-reportMissingImports = true
-reportMissingTypeStubs = false
-useLibraryCodeForTypes = true
-pythonVersion = "3.10"
-pythonPlatform = "All"
+
+[tool.hatch.envs.default]
+dependencies = [
+  "pytest",
+  "pytest-cov",
+]
+[tool.hatch.envs.default.scripts]
+cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=src/l2hmc --cov=tests"
+no-cov = "cov --no-cov"
+
+[[tool.hatch.envs.test.matrix]]
+python = ["38", "39", "310"]
+
+[tool.coverage.run]
+branch = true
+parallel = true
+omit = [
+  "l2hmc/__about__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+  "no cov",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+]
