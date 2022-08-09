@@ -127,6 +127,11 @@ class Trainer(BaseTrainer):
     ) -> None:
         super(Trainer, self).__init__(cfg=cfg, keep=keep, skip=skip)
         # assert isinstance(self.config, ExperimentConfig)
+        if self.config.compression in [True, 'fp16']:
+            self.compression = hvd.Compression.fp16
+        else:
+            self.compression = hvd.Compression.none
+
         self._gstep = 0
         self.lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
@@ -139,7 +144,7 @@ class Trainer(BaseTrainer):
         # self.verbose = not skip_tracking
         self.clip_norm = self.config.learning_rate.clip_norm
         # compression = 'fp16'
-        self.compression = HVD_FP_MAP['fp16']
+        # self.compression = HVD_FP_MAP['fp16']
         self.reduce_lr = ReduceLROnPlateau(self.config.learning_rate)
         self.reduce_lr.set_model(self.dynamics)
         self.reduce_lr.set_optimizer(self.optimizer)
@@ -610,7 +615,7 @@ class Trainer(BaseTrainer):
                 loss += aw * aux_loss
                 # loss = (loss + aux_loss) / (1. + self.aux_weight)
 
-        tape = hvd.DistributedGradientTape(tape, compression=self.compression)
+        tape = hvd.DistributedGradientTape(tape)  # compression=self.compression)
         grads = tape.gradient(loss, self.dynamics.trainable_variables)
         if self.clip_norm > 0.0:
             grads = [
