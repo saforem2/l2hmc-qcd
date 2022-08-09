@@ -315,16 +315,16 @@ class Trainer(BaseTrainer):
     def should_log(self, epoch):
         return (
             epoch % self.steps.log == 0
-            and self.rank == 0
-            # and self._is_chief
+            # and self.rank == 0
+            and self._is_chief
             # and LOCAL_RANK == 0
         )
 
     def should_print(self, epoch):
         return (
             epoch % self.steps.print == 0
-            and self.rank == 0
-            # and self._is_chief
+            # and self.rank == 0
+            and self._is_chief
         )
 
     def should_emit(self, epoch: int, nepoch: int) -> bool:
