@@ -400,14 +400,15 @@ class Trainer(BaseTrainer):
                              optimizer=optimizer)
             writer.flush()
 
-        self.track_metrics(
-            record=record,
-            avgs=avgs,
-            job_type=job_type,
-            step=step,
-            run=run,
-            arun=arun,
-        )
+        if self.config.init_aim or self.config.init_wandb:
+            self.track_metrics(
+                record=record,
+                avgs=avgs,
+                job_type=job_type,
+                step=step,
+                run=run,
+                arun=arun,
+            )
 
         return avgs, summary
 
@@ -788,8 +789,13 @@ class Trainer(BaseTrainer):
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
                 self._gstep += 1
-                # if self.should_print(epoch) or self.should_log(epoch):
-                if self.should_emit(epoch, nepoch):
+                # if self.should_emit(epoch, nepoch):
+                if (
+                        self._is_chief and (
+                            self.should_print(epoch)
+                            or self.should_log(epoch)
+                        )
+                ):
                     record = {
                         'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
                     }
