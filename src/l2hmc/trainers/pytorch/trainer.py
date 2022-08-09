@@ -32,8 +32,6 @@ import horovod.torch as hvd
 from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
 import wandb
-from l2hmc.common import grab_tensor
-
 # from l2hmc.learning_rate.pytorch.learning_rate import rate
 
 from l2hmc.configs import (
@@ -120,7 +118,7 @@ class Trainer(BaseTrainer):
             lr=self.config.learning_rate.lr_init
         )
         # self.optimizer = self.build_optimizer()
-        # self.lr_schedule = self.build_lr_schedule()
+        self.lr_schedule = self.build_lr_schedule()
         self.rank = hvd.local_rank()
         self.global_rank = hvd.rank()
         # self._is_chief = self.rank == 0
@@ -173,6 +171,10 @@ class Trainer(BaseTrainer):
         # self.rank = hvd.local_rank()
         # self.rank = self.accelerator.local_process_index
 
+    def warning(self, s: str):
+        if self._is_chief:
+            log.warning(s)
+
     def draw_x(self):
         return self.g.random(
             list(self.config.dynamics.xshape)
@@ -180,7 +182,7 @@ class Trainer(BaseTrainer):
 
     def reset_optimizer(self):
         if self._is_chief:
-            log.warning('Resetting optimizer state!')
+            self.warning('Resetting optimizer state!')
             self.optimizer.state = defaultdict(dict)
             hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
 
@@ -250,8 +252,8 @@ class Trainer(BaseTrainer):
         return torch.optim.Adam(self.dynamics.parameters(), lr=lr)
 
     def get_lr(self, step: int) -> float:
-        # if step < len(self._lr_warmup):
-        #     return self._lr_warmup[step].item()
+        if step < len(self._lr_warmup):
+            return self._lr_warmup[step].item()
         return self.config.learning_rate.lr_init
 
     def build_lr_schedule(self):
@@ -261,7 +263,7 @@ class Trainer(BaseTrainer):
             2 * self.steps.nepoch
         )
         return LambdaLR(
-            optimizer=self.optimizer,
+            optimizer=self._optimizer,
             lr_lambda=lambda step: self.get_lr(step)
         )
 
@@ -541,6 +543,24 @@ class Trainer(BaseTrainer):
 
         return xout.detach(), metrics
 
+    def get_context_manager(self, table: Table):
+        width = get_width()
+        make_live = (
+            int(width) > 150          # make sure wide enough to fit table
+            and hvd.size() > 1        # not worth the trouble when distributed
+            and self.rank == 0        # only display from (one) main rank
+            and not is_interactive()  # AND not in a jupyter / ipython kernel
+        )
+        if make_live:
+            return Live(
+                table,
+                # screen=True,
+                console=self.console,
+                vertical_overflow='visible'
+            )
+
+        return nullcontext()
+
     def eval(
             self,
             beta: Optional[float] = None,
@@ -595,44 +615,19 @@ class Trainer(BaseTrainer):
         timer = self.timers[job_type]
         history = self.histories[job_type]
 
-        log.warning(f'x.shape (original): {x.shape}')
+        self.warning(f'x.shape (original): {x.shape}')
         if nchains is not None:
             if isinstance(nchains, int) and nchains > 0:
                 x = x[:nchains]
 
         assert isinstance(x, Tensor)
         assert isinstance(beta, float)
-        log.warning(f'x[:nchains].shape: {x.shape}')
+        self.warning(f'x[:nchains].shape: {x.shape}')
 
         if run is not None:
             run.config.update({job_type: {'beta': beta, 'xshape': x.shape}})
 
-        # with Live(
-        #         table,
-        #         console=self.console,
-        #         screen=True,
-        #         vertical_overflow='visible',
-        # ):
-        # live.update(table)
-        width = get_width()
-        # if int(width) > 150 and self.rank == 0 and not is_interactive():
-        if (
-                int(width) > 150
-                and hvd.size() > 1
-                and self.rank == 0
-                and not is_interactive()
-        ):
-            LIVE = True
-            ctx = Live(
-                    table,
-                    console=self.console,
-                    vertical_overflow='visible',
-            )
-
-        else:
-            LIVE = False
-            ctx = nullcontext()
-
+        ctx = self.get_context_manager(table)
         with ctx:
             for step in range(eval_steps):
                 timer.start()
@@ -649,7 +644,6 @@ class Trainer(BaseTrainer):
                                                         writer=writer,
                                                         metrics=metrics,
                                                         job_type=job_type)
-                    # if not LIVE and step % nprint == 0:
                     if not isinstance(ctx, Live) and step % nprint == 0:
                         log.info(summary)
 
@@ -776,17 +770,8 @@ class Trainer(BaseTrainer):
         nepoch = self.steps.nepoch if nepoch is None else nepoch
         assert isinstance(nepoch, int)
         nepoch *= extend
-        width = get_width()
-        ctx = nullcontext()
-        # if width > 150 and self.rank == 0 and not is_interactive():
-        if hvd.size() == 1 and self._is_chief and not is_interactive():
-            ctx = Live(
-                table,
-                console=self.console,
-                vertical_overflow='visible',
-            )
-
         losses = []
+        ctx = self.get_context_manager(table)
         with ctx:
             if isinstance(ctx, Live):
                 # tstr = ' '.join([
@@ -823,7 +808,7 @@ class Trainer(BaseTrainer):
                         metrics=metrics,  # metrics from Dynamics
                         job_type='train',
                         model=self.dynamics,
-                        optimizer=self.optimizer,
+                        optimizer=self._optimizer,
                     )
                     rows[self._gstep] = avgs
                     summaries.append(summary)
@@ -838,7 +823,7 @@ class Trainer(BaseTrainer):
 
                     if avgs.get('acc', 1.0) < 1e-5:
                         self.reset_optimizer()
-                        log.warning('Chains are stuck! Re-drawing x !')
+                        self.warning('Chains are stuck! Re-drawing x !')
                         x = self.draw_x()
 
         data = {
@@ -973,12 +958,11 @@ class Trainer(BaseTrainer):
         if not isinstance(metric, Tensor):
             metric = torch.Tensor(metric)
 
-
-        arr = metric.detach().cpu().numpy()
-        arr = arr[~np.isnan(arr)]
+        # arr = metric.detach().cpu().numpy()
         # arr = arr[~np.isnan(arr)]
-        # return metric.detach().cpu().numpy()
-        return arr
+        # arr = arr[~np.isnan(arr)]
+        # return arr
+        return metric.detach().cpu().numpy()
 
     def aim_track(
             self,
