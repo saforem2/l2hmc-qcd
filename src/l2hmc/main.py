@@ -179,7 +179,8 @@ def main(cfg: DictConfig) -> None:
     ex = get_experiment(cfg)
     assert isinstance(ex.config, ExperimentConfig)
 
-    if ex.trainer.rank == 0:
+    # if ex.trainer.rank == 0:
+    if ex.trainer._is_chief:
         print_config(ex.cfg, resolve=True)
 
     should_train: bool = (
