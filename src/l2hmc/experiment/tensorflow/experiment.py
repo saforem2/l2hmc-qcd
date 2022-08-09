@@ -221,7 +221,7 @@ class Experiment(BaseExperiment):
             skip=skip,
             beta=beta,
         )
-        if RANK == 0:
+        if self.trainer._is_chief:
             output['dataset'] = self.save_dataset(
                 output=output,
                 nchains=nchains,
@@ -244,7 +244,7 @@ class Experiment(BaseExperiment):
             eval_steps: Optional[int] = None,
     ) -> dict:
         """Evaluate model."""
-        if RANK != 0:
+        if not self.trainer._is_chief:
             return {}
 
         assert job_type in ['eval', 'hmc']
