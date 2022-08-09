@@ -330,6 +330,8 @@ class Trainer(BaseTrainer):
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
     ) -> None:
+        if self.rank != 0:
+            return
         dQdict = None
         dQint = record.get('dQint', None)
         if dQint is not None:
@@ -685,12 +687,13 @@ class Trainer(BaseTrainer):
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
                 self._gstep += 1
-                if (
-                        self._is_chief and (
-                            self.should_print(epoch)
-                            or self.should_log(epoch)
-                        )
-                ):
+                # if (
+                #         self._is_chief and (
+                #             self.should_print(epoch)
+                #             or self.should_log(epoch)
+                #         )
+                # ):
+                if self.should_print(epoch) or self.should_log(epoch):
                     record = {
                         'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
                     }
@@ -849,30 +852,36 @@ class Trainer(BaseTrainer):
     ) -> np.ndarray:
         """Consistently convert `metric` to np.ndarray."""
         if isinstance(metric, np.ndarray):
-            return metric
+            return metric[~np.isnan(metric)]
 
         if (
                 isinstance(metric, Tensor)
                 and hasattr(metric, 'numpy')
                 and isinstance(metric.numpy, Callable)
         ):
-            return metric.numpy()
+            # metric = metric[~tf.math.is_nan(metric)]
+            tmp = metric.numpy()
+            return tmp[~np.isnan(tmp)]
 
         elif isinstance(metric, list):
             if isinstance(metric[0], np.ndarray):
-                return np.stack(metric)
+                metric = np.stack(metric)
+                return metric[~np.isnan(metric)]
 
             if isinstance(metric[0], Tensor):
                 stack = tf.stack(metric)
+                stack = stack[~tf.math.is_nan(stack)]
                 if (
                         hasattr(stack, 'numpy')
                         and isinstance(stack.numpy, Callable)
                 ):
                     return stack.numpy()
             else:
-                return np.array(metric)
+                tmp = np.array(metric)
+                return tmp[~np.isnan(tmp)]
 
-            return np.array(metric)
+            tmp = np.array(metric)
+            return tmp[~np.isnan(tmp)]
 
         else:
             raise ValueError(
