@@ -301,8 +301,6 @@ class Trainer(BaseTrainer):
         if (
                 step is not None
                 and writer is not None
-                and self.config.init_wandb
-                and self.config.init_aim
         ):
             update_summaries(step=step,
                              model=model,
@@ -311,14 +309,15 @@ class Trainer(BaseTrainer):
                              optimizer=optimizer)
             writer.flush()
 
-        self.track_metrics(
-            record=record,
-            avgs=avgs,
-            job_type=job_type,
-            step=step,
-            run=run,
-            arun=arun,
-        )
+        if self.config.init_wandb or self.config.init_aim:
+            self.track_metrics(
+                record=record,
+                avgs=avgs,
+                job_type=job_type,
+                step=step,
+                run=run,
+                arun=arun,
+            )
 
         return avgs, summary
 
@@ -686,7 +685,12 @@ class Trainer(BaseTrainer):
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
                 self._gstep += 1
-                if self.should_print(epoch) or self.should_log(epoch):
+                if (
+                        self._is_chief and (
+                            self.should_print(epoch)
+                            or self.should_log(epoch)
+                        )
+                ):
                     record = {
                         'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
                     }
