@@ -307,13 +307,14 @@ class Experiment(BaseExperiment):
         # console.save_text(txtfile.as_posix(), clear=False)
         # console.save_html(htmlfile.as_posix())
 
-        if RANK == 0:
-            output['dataset'] = self.save_dataset(
+        if self.trainer._is_chief:
+            dset = self.save_dataset(
                 output=output,
                 nchains=nchains,
                 job_type='train',
                 outdir=jobdir
             )
+            output['dataset'] = dset
 
         if writer is not None:
             writer.close()
@@ -330,7 +331,8 @@ class Experiment(BaseExperiment):
             eval_steps: Optional[int] = None,
     ):
         """Evaluate model."""
-        if RANK != 0:
+        # if RANK != 0:
+        if not self.trainer._is_chief:
             return
 
         assert job_type in ['eval', 'hmc']

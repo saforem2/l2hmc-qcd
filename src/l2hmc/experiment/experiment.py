@@ -281,8 +281,8 @@ class BaseExperiment(ABC):
 
     def save_dataset(
             self,
-            # dset: xr.Dataset,
             job_type: str,
+            dset: Optional[xr.Dataset] = None,
             output: Optional[dict] = None,
             nchains: Optional[int] = None,
             outdir: Optional[os.PathLike] = None,
@@ -301,6 +301,24 @@ class BaseExperiment(ABC):
         therm_frac = 0.1 if therm_frac is None else therm_frac
         dset = history.get_dataset(therm_frac=therm_frac)
         assert isinstance(dset, xr.Dataset)
+
+        chains_to_plot = int(
+            min(self.cfg.dynamics.nchains,
+                max(64, self.cfg.dynamics.nchains // 8))
+        )
+        chains_to_plot = nchains if nchains is not None else chains_to_plot
+        outdir = self._outdir if outdir is None else outdir
+        assert outdir is not None
+        self.save_timers(job_type=job_type, outdir=outdir)
+        _ = save_and_analyze_data(dset,
+                                  run=self.run,
+                                  arun=self.arun,
+                                  outdir=outdir,
+                                  output=output,
+                                  nchains=nchains,
+                                  job_type=job_type,
+                                  framework=self.config.framework)
+
         dQint = dset.data_vars.get('dQint', None)
         if dQint is not None:
             dQint = dQint.values
@@ -326,20 +344,4 @@ class BaseExperiment(ABC):
                 self.arun.track(dQdist,
                                 name='dQint',
                                 context={'subset': job_type})
-        chains_to_plot = int(
-            min(self.cfg.dynamics.nchains,
-                max(64, self.cfg.dynamics.nchains // 8))
-        )
-        chains_to_plot = nchains if nchains is not None else chains_to_plot
-        outdir = self._outdir if outdir is None else outdir
-        assert outdir is not None
-        self.save_timers(job_type=job_type, outdir=outdir)
-        _ = save_and_analyze_data(dset,
-                                  run=self.run,
-                                  arun=self.arun,
-                                  outdir=outdir,
-                                  output=output,
-                                  nchains=nchains,
-                                  job_type=job_type,
-                                  framework=self.config.framework)
         return dset
