@@ -285,7 +285,7 @@ class Steps:
             print: Optional[int] = None,
             extend_last_era: Optional[int] = None,
     ) -> Steps:
-        logger.warning('Updating Steps!')
+        # logger.warning('Updating Steps!')
         return Steps(
             nera=(self.nera if nera is None else nera),
             nepoch=(self.nepoch if nepoch is None else nepoch),
@@ -675,10 +675,10 @@ class ExperimentConfig:
         self.width = w if self.width is None else self.width
         self.xdim = self.dynamics.xdim
         self.xshape = self.dynamics.xshape
-        logger.warning(f'xdim: {self.dynamics.xdim}')
-        logger.warning(f'group: {self.dynamics.group}')
-        logger.warning(f'xshape: {self.dynamics.xshape}')
-        logger.warning(f'latvolume: {self.dynamics.latvolume}')
+        # logger.warning(f'xdim: {self.dynamics.xdim}')
+        # logger.warning(f'group: {self.dynamics.group}')
+        # logger.warning(f'xshape: {self.dynamics.xshape}')
+        # logger.warning(f'latvolume: {self.dynamics.latvolume}')
 
 
 def get_config(overrides: Optional[list[str]] = None):
