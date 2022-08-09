@@ -41,6 +41,21 @@ State = namedtuple('State', ['x', 'v', 'beta'])
 
 MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
 
+SYNONYMS = {
+    'pytorch': [
+        'p'
+        'pt',
+        'torch',
+        'pytorch',
+    ],
+    'tensorflow': [
+        't'
+        'tf',
+        'tflow',
+        'tensorflow',
+    ],
+}
+
 
 def add_to_outdirs_file(outdir: os.PathLike):
     with open(OUTDIRS_FILE, 'a') as f:
@@ -635,6 +650,18 @@ class ExperimentConfig:
     precision: Optional[str] = 'float32'
     ignore_warnings: Optional[bool] = True
     conv: Optional[ConvolutionConfig] = None
+
+    def rank(self):
+        if self.framework in SYNONYMS['pytorch']:
+            import horovod.torch as hvd
+            if not hvd.is_initialized():
+                hvd.init()
+            return hvd.rank()
+        elif self.framework in SYNONYMS['tensorflow']:
+            import horovod.tensorflow as hvd
+            if not hvd.is_initialized():
+                hvd.init()
+            return hvd.rank()
 
     def __post_init__(self):
         if self.debug_mode:
