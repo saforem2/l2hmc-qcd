@@ -32,6 +32,7 @@ import horovod.torch as hvd
 from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
 import wandb
+from l2hmc.common import grab_tensor
 
 # from l2hmc.learning_rate.pytorch.learning_rate import rate
 
@@ -114,7 +115,7 @@ class Trainer(BaseTrainer):
         self.lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
         self.dynamics = self.build_dynamics()
-        self.optimizer = torch.optim.Adam(
+        self._optimizer = torch.optim.Adam(
             self.dynamics.parameters(),
             lr=self.config.learning_rate.lr_init
         )
@@ -122,6 +123,7 @@ class Trainer(BaseTrainer):
         # self.lr_schedule = self.build_lr_schedule()
         self.rank = hvd.local_rank()
         self.global_rank = hvd.rank()
+        # self._is_chief = self.rank == 0
         self._is_chief = (self.rank == 0 and self.global_rank == 0)
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         assert (
@@ -152,7 +154,7 @@ class Trainer(BaseTrainer):
             else hvd.Compression.none
         )
         self.optimizer = hvd.DistributedOptimizer(
-            self.optimizer,
+            self._optimizer,
             named_parameters=self.dynamics.named_parameters(),
             compression=compression,  # type: ignore
         )
@@ -313,15 +315,16 @@ class Trainer(BaseTrainer):
     def should_log(self, epoch):
         return (
             epoch % self.steps.log == 0
-            and self._is_chief
+            and self.rank == 0
+            # and self._is_chief
             # and LOCAL_RANK == 0
         )
 
     def should_print(self, epoch):
         return (
             epoch % self.steps.print == 0
-            and self._is_chief
-            # and LOCAL_RANK == 0
+            and self.rank == 0
+            # and self._is_chief
         )
 
     def should_emit(self, epoch: int, nepoch: int) -> bool:
@@ -421,6 +424,8 @@ class Trainer(BaseTrainer):
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
     ) -> None:
+        if self.rank != 0:
+            return
         # assert self.config.init_aim or self.config.init_wandb
         dQdict = None
         dQint = record.get('dQint', None)
@@ -610,13 +615,20 @@ class Trainer(BaseTrainer):
         # ):
         # live.update(table)
         width = get_width()
-        if int(width) > 100 and self._is_chief and not is_interactive():
+        # if int(width) > 150 and self.rank == 0 and not is_interactive():
+        if (
+                int(width) > 150
+                and hvd.size() > 1
+                and self.rank == 0
+                and not is_interactive()
+        ):
             LIVE = True
             ctx = Live(
                     table,
                     console=self.console,
                     vertical_overflow='visible',
             )
+
         else:
             LIVE = False
             ctx = nullcontext()
@@ -637,7 +649,8 @@ class Trainer(BaseTrainer):
                                                         writer=writer,
                                                         metrics=metrics,
                                                         job_type=job_type)
-                    if not LIVE and step % nprint == 0:
+                    # if not LIVE and step % nprint == 0:
+                    if not isinstance(ctx, Live) and step % nprint == 0:
                         log.info(summary)
 
                     summaries.append(summary)
@@ -718,7 +731,7 @@ class Trainer(BaseTrainer):
             )
         self.optimizer.step()
         # self.lr_schedule.step()
-        # self.optimizer.synchronize()
+        self.optimizer.synchronize()
 
         # ---------------------------------------
         # DEPRECATED: Removed Accelerator
@@ -765,7 +778,8 @@ class Trainer(BaseTrainer):
         nepoch *= extend
         width = get_width()
         ctx = nullcontext()
-        if width > 150 and self._is_chief and not is_interactive():
+        # if width > 150 and self.rank == 0 and not is_interactive():
+        if hvd.size() == 1 and self._is_chief and not is_interactive():
             ctx = Live(
                 table,
                 console=self.console,
@@ -790,12 +804,13 @@ class Trainer(BaseTrainer):
                 losses.append(metrics['loss'])
                 self._gstep += 1
                 # if self.should_emit(epoch, nepoch):
-                if (
-                        self._is_chief and (
-                            self.should_print(epoch)
-                            or self.should_log(epoch)
-                        )
-                ):
+                # if (
+                #         self._is_chief and (
+                #             self.should_print(epoch)
+                #             or self.should_log(epoch)
+                #         )
+                # ):
+                if self.should_print(epoch) or self.should_log(epoch):
                     record = {
                         'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
                     }
@@ -958,7 +973,12 @@ class Trainer(BaseTrainer):
         if not isinstance(metric, Tensor):
             metric = torch.Tensor(metric)
 
-        return metric.detach().cpu().numpy()
+
+        arr = metric.detach().cpu().numpy()
+        arr = arr[~np.isnan(arr)]
+        # arr = arr[~np.isnan(arr)]
+        # return metric.detach().cpu().numpy()
+        return arr
 
     def aim_track(
             self,
