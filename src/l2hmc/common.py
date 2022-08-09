@@ -27,7 +27,9 @@ import xarray as xr
 from l2hmc.configs import AnnealingSchedule, Steps
 from l2hmc.configs import OUTPUTS_DIR
 from l2hmc.configs import State
-from l2hmc.utils.plot_helpers import make_ridgeplots, plot_dataArray, set_plot_style
+from l2hmc.utils.plot_helpers import (
+    make_ridgeplots, plot_dataArray, set_plot_style
+)
 from l2hmc.utils.rich import get_console, is_interactive
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
@@ -55,7 +57,6 @@ def grab_tensor(x: Any) -> np.ndarray | ScalarLike:
         return x
 
 
-
 def clear_cuda_cache():
     import gc
     gc.collect()
@@ -76,14 +77,14 @@ def check_diff(x, y, name: Optional[str] = None):
     if isinstance(x, State):
         xd = {'x': x.x, 'v': x.v, 'beta': x.beta}
         yd = {'x': y.x, 'v': y.v, 'beta': y.beta}
-        check_diff(xd, yd, name=f'State')
+        check_diff(xd, yd, name='State')
 
     elif isinstance(x, dict) and isinstance(y, dict):
         for (kx, vx), (ky, vy) in zip(x.items(), y.items()):
             if kx == ky:
                 check_diff(vx, vy, name=kx)
             else:
-                log.warning(f'Mismatch encountered!')
+                log.warning('Mismatch encountered!')
                 log.warning(f'kx: {kx}')
                 log.warning(f'ky: {ky}')
                 vy_ = y.get(kx, None)
@@ -92,12 +93,12 @@ def check_diff(x, y, name: Optional[str] = None):
                 else:
                     log.warning(f'{kx} not in y, skipping!')
                     continue
-            
+
     elif isinstance(x, (list, tuple)) and isinstance(y, (list, tuple)):
         assert len(x) == len(y)
         for idx in range(len(x)):
             check_diff(x[idx], y[idx], name=f'{name}, {idx}')
-            
+
     else:
         x = grab_tensor(x)
         y = grab_tensor(y)
@@ -608,14 +609,13 @@ def plot_dataset(
         outdir: Optional[os.PathLike] = None,
         title: Optional[str] = None,
         job_type: Optional[str] = None,
-        # run: Optional[Any] = None,
-        # arun: Optional[Any] = None,
-        # run: Any = None,
 ) -> None:
     outdir = Path(outdir) if outdir is not None else Path(os.getcwd())
     outdir.mkdir(exist_ok=True, parents=True)
     # outdir = outdir.joinpath('plots')
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
+    names = ['rainbow', 'viridis_r', 'magma', 'mako', 'turbo', 'spectral']
+    cmap = np.random.choice(names, replace=True)
 
     set_plot_style()
     _ = make_ridgeplots(
@@ -623,7 +623,8 @@ def plot_dataset(
         outdir=outdir,
         drop_nans=True,
         drop_zeros=False,
-        num_chains=nchains
+        num_chains=nchains,
+        cmap=cmap,
     )
     for key, val in dataset.data_vars.items():
         if key == 'x':
@@ -654,7 +655,7 @@ def analyze_dataset(
     """Save plot and analyze resultant `xarray.Dataset`."""
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
     dirs = make_subdirs(outdir)
-    if nchains is not None and nchains > 1024:
+    if nchains is not None and nchains > 1000:
         nchains_ = nchains // 4
         log.warning(
             f'Reducing `nchains` from: {nchains} -> {nchains_} for plotting'
@@ -746,6 +747,7 @@ def save_and_analyze_data(
                               nchains=nchains,
                               job_type=job_type,
                               title=title)
+
     if not is_interactive():
         edir = Path(outdir).joinpath('logs')
         edir.mkdir(exist_ok=True, parents=True)

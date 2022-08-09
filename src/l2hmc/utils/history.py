@@ -14,6 +14,7 @@ import matplotx
 import numpy as np
 import seaborn as sns
 import tensorflow as tf
+from tensorflow.python.framework.ops import EagerTensor
 import torch
 import xarray as xr
 
@@ -74,7 +75,6 @@ class BaseHistory:
         raise ValueError
 
     def _update(self, key: str, val: TensorLike) -> float:
-        from l2hmc.common import grab_tensor
         if val is None:
             raise ValueError(f'None encountered: {key}: {val}')
 
@@ -88,14 +88,18 @@ class BaseHistory:
             else:
                 val = np.array(val)
 
-        arr = grab_tensor(val)
+        if isinstance(val, (EagerTensor, tf.Tensor)):
+            val = val.numpy()  # type:ignore
 
         try:
-            self.history[key].append(arr)
+            self.history[key].append(val)
         except KeyError:
-            self.history[key] = [arr]
+            self.history[key] = [val]
 
-        return np.array(arr).mean()
+        # if isinstance(val, Scalar):
+        #     return np.array(val).mean()
+
+        return np.array(val).mean()
 
     def update(self, metrics: dict) -> dict:
         avgs = {}
@@ -387,73 +391,34 @@ class BaseHistory:
             x: Union[list, np.ndarray],
             therm_frac: Optional[float] = 0.0,
     ) -> xr.DataArray:
-        """Convert `x` to an `xarray.DataArray` with consistent named dims
-
-        Explicitly, since we accumulate data in an interative fashion
-        (i.e. by sequentially appending new values to the end of a list)
-        the input data `x` can have shape:
-            - if len(x.shape) == 1:
-                x.shape = [ndraws]
-            - if len(x.shape) == 2:
-                x.shape = [ndraws, nchains]
-            - if len(x.shape) == 3:
-                x.shape = [ndraws, nleapfrog, nchains]
-
-        For consistency, we reshape these cases as:
-            - [ndraws] --> [ndraws]
-            - [ndraws, nchains] --> [nchains, ndraws]
-            - [ndraws, nleapfrog, nchains] --> [nchains, nleapfrog, ndraws]
-
-        This allows us to aggregate multiple different `xr.DataArray`s into a
-        single `xr.Dataset`
-
-        The resultant `xr.DataArray` will have coordinates corresponding
-        to these named dims.
-        """
         arr = np.array(x)
-        assert len(arr.shape) in [1, 2, 3]
-        xargs = {
-            'dims': ['draw'],
-            'coords': [np.arange(len(arr))],
-        }
-        if len(arr.shape) == 3:
-            arr = arr.T
-            nchains, nlf, ndraws = arr.shape
-            xargs = {
-                'dims': ('chain', 'leapfrog', 'draw'),
-                'coords': [
-                    np.arange(nchains),
-                    np.arange(nlf),
-                    np.arange(ndraws),
-                ]
-            }
-        elif len(arr.shape) == 2:
+        if therm_frac is not None and therm_frac > 0:
+            drop = int(therm_frac * arr.shape[0])
+            arr = arr[drop:]
+        # steps = np.arange(len(arr))
+        if len(arr.shape) == 1:                     # [ndraws]
+            ndraws = arr.shape[0]
+            dims = ['draw']
+            coords = [np.arange(len(arr))]
+            return xr.DataArray(arr, dims=dims, coords=coords)  # type:ignore
+
+        if len(arr.shape) == 2:                   # [nchains, ndraws]
             arr = arr.T
             nchains, ndraws = arr.shape
-            xargs = {
-                'dims': ('chain', 'draw'),
-                'coords': [
-                    np.arange(nchains),
-                    np.arange(ndraws),
-                ]
-            }
+            dims = ('chain', 'draw')
+            coords = [np.arange(nchains), np.arange(ndraws)]
+            return xr.DataArray(arr, dims=dims, coords=coords)  # type:ignore
+
+        if len(arr.shape) == 3:                   # [nchains, nlf, ndraws]
+            arr = arr.T
+            nchains, nlf, ndraws = arr.shape
+            dims = ('chain', 'leapfrog', 'draw')
+            coords = [np.arange(nchains), np.arange(nlf), np.arange(ndraws)]
+            return xr.DataArray(arr, dims=dims, coords=coords)  # type:ignore
+
         else:
-            assert len(arr.shape) == 1
-            ndraws = arr.shape[0]
-            xargs = {
-                'dims': ('draw'),
-                'coords': [np.arange(len(arr))],
-            }
-
-        darr = xr.DataArray(arr, **xargs)
-
-        # Drop first `therm_frac` percent of `draws` to account for warmup
-        if therm_frac is not None and therm_frac > 0.:
-            darr = darr.drop_sel(
-                draw=np.arange(int(therm_frac * len(darr.draw)))
-            )
-
-        return darr
+            print(f'arr.shape: {arr.shape}')
+            raise ValueError('Invalid shape encountered')
 
     def get_dataset(
             self,

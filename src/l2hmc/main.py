@@ -212,6 +212,11 @@ def main(cfg: DictConfig) -> None:
         hstart = time.time()
         _ = ex.evaluate(job_type='hmc')
         log.info(f'HMC took: {time.time() - hstart:.5f}s')
+        from l2hmc.utils.plot_helpers import measure_improvement
+        measure_improvement(
+            experiment=ex,
+            title=f'{ex.config.framework}',
+        )
 
 
 if __name__ == '__main__':
