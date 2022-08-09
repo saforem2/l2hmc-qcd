@@ -9,7 +9,6 @@ from pathlib import Path
 import time
 from typing import Any, Callable, Optional
 from omegaconf import DictConfig
-import shutil
 
 import tensorflow as tf
 import tensorflow.python.framework.ops as ops
@@ -415,6 +414,24 @@ class Trainer(BaseTrainer):
 
         return xout, metrics
 
+    def get_context_manager(self, table: Table):
+        width = get_width()
+        make_live = (
+            int(width) > 150          # make sure wide enough to fit table
+            and hvd.size() > 1        # not worth the trouble when distributed
+            and self.rank == 0        # only display from (one) main rank
+            and not is_interactive()  # AND not in a jupyter / ipython kernel
+        )
+        if make_live:
+            return Live(
+                table,
+                # screen=True,
+                console=self.console,
+                vertical_overflow='visible'
+            )
+
+        return nullcontext()
+
     def eval(
             self,
             beta: Optional[Tensor | float] = None,
@@ -497,30 +514,9 @@ class Trainer(BaseTrainer):
                 job_type: {'beta': beta, 'xshape': x.shape.as_list()}
             })
 
-        # with Live(table) as live:
         assert x is not None and isinstance(x, Tensor)
         assert beta is not None and isinstance(beta, Tensor)
-        size = shutil.get_terminal_size()
-        width = int(size.columns)
-        # width = os.environ.get(
-        #     'COLUMNS',
-        #     os.environ.get(
-        #         'WIDTH',
-        #         self.console.width
-        #     )
-        # )
-        width = get_width()
-        if int(width) > 100 and self._is_chief and not is_interactive():
-            LIVE = True
-            ctx = Live(
-                    table,
-                    console=self.console,
-                    vertical_overflow='visible',
-            )
-        else:
-            LIVE = False
-            ctx = nullcontext()
-
+        ctx = self.get_context_manager(table)
         with ctx:
             for step in range(eval_steps):
                 timer.start()
@@ -537,7 +533,8 @@ class Trainer(BaseTrainer):
                                                         writer=writer,
                                                         metrics=metrics,
                                                         job_type=job_type)
-                    if not LIVE and step % nprint == 0:
+
+                    if not isinstance(ctx, Live) and step % nprint == 0:
                         log.info(summary)
 
                     summaries.append(summary)
@@ -615,7 +612,11 @@ class Trainer(BaseTrainer):
                 loss += aw * aux_loss
                 # loss = (loss + aux_loss) / (1. + self.aux_weight)
 
-        tape = hvd.DistributedGradientTape(tape)  # compression=self.compression)
+        # tape = hvd.DistributedGradientTape(
+        #     tape,
+        #     compression=self.compression
+        # )
+        tape = hvd.DistributedGradientTape(tape)
         grads = tape.gradient(loss, self.dynamics.trainable_variables)
         if self.clip_norm > 0.0:
             grads = [
@@ -666,16 +667,8 @@ class Trainer(BaseTrainer):
         nepoch = self.steps.nepoch if nepoch is None else nepoch
         assert isinstance(nepoch, int)
         nepoch *= extend
-        width = get_width()
-        ctx = nullcontext()
-        if width > 150 and self._is_chief and not is_interactive():
-            ctx = Live(
-                table,
-                console=self.console,
-                vertical_overflow='visible',
-            )
-
         losses = []
+        ctx = self.get_context_manager(table)
         with ctx:
             if isinstance(ctx, Live):
                 tstr = ' '.join([
@@ -857,36 +850,40 @@ class Trainer(BaseTrainer):
     ) -> np.ndarray:
         """Consistently convert `metric` to np.ndarray."""
         if isinstance(metric, np.ndarray):
-            return metric[~np.isnan(metric)]
+            return metric  # [~np.isnan(metric)]
 
         if (
                 isinstance(metric, Tensor)
                 and hasattr(metric, 'numpy')
                 and isinstance(metric.numpy, Callable)
         ):
-            # metric = metric[~tf.math.is_nan(metric)]
-            tmp = metric.numpy()
-            return tmp[~np.isnan(tmp)]
+            # tmp = metric.numpy()
+            # return tmp[~np.isnan(tmp)]
+            return metric.numpy()
 
         elif isinstance(metric, list):
             if isinstance(metric[0], np.ndarray):
+                # metric = np.stack(metric)
+                # return metric[~np.isnan(metric)]
                 metric = np.stack(metric)
-                return metric[~np.isnan(metric)]
 
             if isinstance(metric[0], Tensor):
                 stack = tf.stack(metric)
-                stack = stack[~tf.math.is_nan(stack)]
+                # stack = tf.stack(metric)
+                # stack = stack[~tf.math.is_nan(stack)]
                 if (
                         hasattr(stack, 'numpy')
                         and isinstance(stack.numpy, Callable)
                 ):
                     return stack.numpy()
             else:
-                tmp = np.array(metric)
-                return tmp[~np.isnan(tmp)]
+                return np.array(metric)
+                # tmp = np.array(metric)
+                # return tmp[~np.isnan(tmp)]
 
-            tmp = np.array(metric)
-            return tmp[~np.isnan(tmp)]
+            # tmp = np.array(metric)
+            # return tmp[~np.isnan(tmp)]
+            return np.array(metric)
 
         else:
             raise ValueError(
