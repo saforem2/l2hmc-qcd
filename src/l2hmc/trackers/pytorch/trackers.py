@@ -10,38 +10,14 @@ import numpy as np
 import torch
 from torch.utils.tensorboard.writer import SummaryWriter
 
+from l2hmc.common import grab_tensor
+
 Tensor = torch.Tensor
 Array = np.ndarray
 Scalar = Union[float, int, bool]
 ArrayLike = Union[Tensor, Array, Scalar]
 
 log = logging.getLogger(__name__)
-
-
-def log_item(
-        tag: str,
-        val: ArrayLike,
-        writer: SummaryWriter,
-        step: Optional[int] = None,
-):
-    if step is not None:
-        iter_tag = '/'.join([tag.split('/')[0]] + ['iter'])
-        writer.add_scalar(tag=iter_tag, scalar_value=step, global_step=step)
-
-    if isinstance(val, (Tensor, Array)):
-        if isinstance(val, Tensor):
-            val = val.detach()
-
-        if len(val.shape) > 0:
-            writer.add_histogram(tag=tag, values=val, global_step=step)
-            writer.add_scalar(f'{tag}/avg', val.mean())
-
-        elif isinstance(val, (int, float, bool)) or len(val.shape) == 0:
-            writer.add_scalar(tag=tag, scalar_value=val, global_step=step)
-        else:
-            log.warning(f'Unexpected type encountered for: {tag}')
-            log.warning(f'{tag}.type: {type(val)}')
-
 
 def log_dict(
         writer: SummaryWriter,
@@ -51,6 +27,7 @@ def log_dict(
 ):
     """Create TensorBoard summaries for all items in `d`."""
     for key, val in d.items():
+
         pre = key if prefix is None else f'{prefix}/{key}'
         if isinstance(val, dict):
             log_dict(writer=writer, d=val, step=step, prefix=pre)
@@ -73,6 +50,61 @@ def log_list(
         tag = name if prefix is None else f'{prefix}/{name}'
         assert tag is not None
         log_item(writer=writer, val=t, step=step, tag=tag)
+
+
+def log_item(
+        tag: str,
+        val: float | int | bool | list | np.ndarray | torch.Tensor,
+        writer: SummaryWriter,
+        step: Optional[int] = None,
+):
+    if step is not None:
+        iter_tag = '/'.join([tag.split('/')[0]] + ['iter'])
+        writer.add_scalar(tag=iter_tag, scalar_value=step, global_step=step)
+
+    if isinstance(val, list):
+        log_list(writer=writer, x=val, step=step, prefix=tag)
+
+    elif isinstance(val, (Tensor, Array)):
+        if isinstance(val, torch.Tensor):
+            arr = grab_tensor(val)
+        else:
+            arr = np.array(val)
+
+        assert isinstance(arr, np.ndarray)
+        arr = arr[~np.isnan(arr)]
+        if len(arr) > 0:
+            writer.add_scalar(f'{tag}/avg', arr.mean(), global_step=step)
+            if len(arr.shape) > 0:
+                try:
+                    writer.add_histogram(tag=tag, values=val, global_step=step)
+                except ValueError:
+                    log.error(f'Error adding histogram for: {tag}')
+                    # log.exception(e)
+
+    elif (
+            isinstance(val, (int, float, bool, np.floating))
+            or len(val.shape) ==0
+    ):
+        writer.add_scalar(tag=tag, scalar_value=val, global_step=step)
+
+    else:
+        log.warning(f'Unexpected type encountered for: {tag}')
+        log.warning(f'{tag}.type: {type(val)}')
+
+    # if isinstance(val, (Tensor, Array)):
+    #     if isinstance(val, Tensor):
+    #         val = val.detach()
+
+    #     if len(val.shape) > 0:
+    #         writer.add_histogram(tag=tag, values=val, global_step=step)
+    #         writer.add_scalar(f'{tag}/avg', val.mean())
+
+    #     elif isinstance(val, (int, float, bool)) or len(val.shape) == 0:
+    #         writer.add_scalar(tag=tag, scalar_value=val, global_step=step)
+    #     else:
+    #         log.warning(f'Unexpected type encountered for: {tag}')
+    #         log.warning(f'{tag}.type: {type(val)}')
 
 
 def update_summaries(
