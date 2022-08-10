@@ -118,7 +118,7 @@ class Trainer(BaseTrainer):
             lr=self.config.learning_rate.lr_init
         )
         # self.optimizer = self.build_optimizer()
-        self.lr_schedule = self.build_lr_schedule()
+        # self.lr_schedule = self.build_lr_schedule()
         self.rank = hvd.local_rank()
         self.global_rank = hvd.rank()
         # self._is_chief = self.rank == 0
@@ -145,7 +145,6 @@ class Trainer(BaseTrainer):
         # skip_tracking = os.environ.get('SKIP_TRACKING', False)
         # self.verbose = not skip_tracking
         self.clip_norm = self.config.learning_rate.clip_norm
-
         compression = (
             hvd.Compression.fp16
             if self.config.compression == 'fp16'
@@ -252,8 +251,8 @@ class Trainer(BaseTrainer):
         return torch.optim.Adam(self.dynamics.parameters(), lr=lr)
 
     def get_lr(self, step: int) -> float:
-        if step < len(self._lr_warmup):
-            return self._lr_warmup[step].item()
+        # if step < len(self._lr_warmup):
+        #     return self._lr_warmup[step].item()
         return self.config.learning_rate.lr_init
 
     def build_lr_schedule(self):
@@ -315,19 +314,10 @@ class Trainer(BaseTrainer):
             run.log_artifact(artifact)
 
     def should_log(self, epoch):
-        return (
-            epoch % self.steps.log == 0
-            # and self.rank == 0
-            and self._is_chief
-            # and LOCAL_RANK == 0
-        )
+        return (epoch % self.steps.log == 0 and self._is_chief)
 
     def should_print(self, epoch):
-        return (
-            epoch % self.steps.print == 0
-            # and self.rank == 0
-            and self._is_chief
-        )
+        return (epoch % self.steps.print == 0 and self._is_chief)
 
     def should_emit(self, epoch: int, nepoch: int) -> bool:
         nprint = min(
@@ -440,21 +430,27 @@ class Trainer(BaseTrainer):
                 }
             }
 
-        if run is not None and self.config.init_wandb:
-            run.log({f'wandb/{job_type}': record}, commit=False)
-            run.log({f'avgs/wandb.{job_type}': avgs})
-            if dQdict is not None:
-                run.log(dQdict, commit=False)
-        if arun is not None and self.config.init_aim:
+        if run is not None:
+            try:
+                run.log({f'wandb/{job_type}': record}, commit=False)
+                run.log({f'avgs/wandb.{job_type}': avgs})
+                if dQdict is not None:
+                    run.log(dQdict, commit=False)
+            except ValueError:
+                self.warning(f'Unable to track record with WandB, skipping!')
+        if arun is not None:
             kwargs = {
                 'step': step,
                 'job_type': job_type,
                 'arun': arun
             }
-            self.aim_track(avgs, prefix='avgs', **kwargs)
-            self.aim_track(record, prefix='record', **kwargs)
-            if dQdict is not None:
-                self.aim_track({'dQint': dQint}, prefix='dQ', **kwargs)
+            try:
+                self.aim_track(avgs, prefix='avgs', **kwargs)
+                self.aim_track(record, prefix='record', **kwargs)
+                if dQdict is not None:
+                    self.aim_track({'dQint': dQint}, prefix='dQ', **kwargs)
+            except ValueError:
+                self.warning(f'Unable to track record with aim, skipping!')
 
     def profile_step(
             self,
@@ -725,7 +721,7 @@ class Trainer(BaseTrainer):
             )
         self.optimizer.step()
         # self.lr_schedule.step()
-        self.optimizer.synchronize()
+        # self.optimizer.synchronize()
 
         # ---------------------------------------
         # DEPRECATED: Removed Accelerator
