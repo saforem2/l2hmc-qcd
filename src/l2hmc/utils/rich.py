@@ -4,13 +4,17 @@ rich.py
 Contains utils for textual layouts using Rich
 """
 from __future__ import absolute_import, annotations, division, print_function
+from dataclasses import dataclass, field
+import json
 import logging
 import os
 from pathlib import Path
 import shutil
 from typing import Optional
+from typing import Any
 
 from omegaconf import DictConfig, OmegaConf
+import pandas as pd
 import rich
 from rich.console import Console
 from rich.layout import Layout
@@ -28,6 +32,7 @@ from rich.table import Table
 import rich.tree
 
 from l2hmc.configs import Steps
+from l2hmc.configs import OUTPUTS_DIR
 
 
 log = logging.getLogger(__name__)
@@ -52,24 +57,37 @@ def is_interactive():
     return get_ipython() is not None
 
 
+def get_width():
+    width = os.environ.get('COLUMNS', os.environ.get('WIDTH', None))
+    if width is not None:
+        return int(width)
+
+    size = shutil.get_terminal_size()
+    os.environ['COLUMNS'] = str(size.columns)
+    return size.columns
+
+
 def get_console(width: Optional[int] = None, *args, **kwargs) -> Console:
     interactive = is_interactive()
     console = Console(
         force_jupyter=interactive,
         log_path=False,
-        color_system='truecolor',
+        # color_system='truecolor',
         *args,
         **kwargs)
     if width is None:
-        columns = os.environ.get('COLUMNS', os.environ.get('WIDTH', None))
-        if columns is None:
-            if not interactive:
-                size = shutil.get_terminal_size()
-                columns = size.columns
-            else:
-                columns = 120
+        if is_interactive():
+            columns = 100
         else:
-            columns = int(columns)
+            columns = os.environ.get('COLUMNS', os.environ.get('WIDTH', None))
+            if columns is None:
+                if not interactive:
+                    size = shutil.get_terminal_size()
+                    columns = size.columns
+                else:
+                    columns = 120
+            else:
+                columns = int(columns)
 
         width = int(max(columns, 120))
         console.width = width
@@ -224,6 +242,33 @@ def add_columns(
     return table
 
 
+def flatten_dict(d) -> dict:
+    res = {}
+    if isinstance(d, dict):
+        for k in d:
+            if k == '_target_':
+                continue
+
+            dflat = flatten_dict(d[k])
+            for key, val in dflat.items():
+                key = list(key)
+                key.insert(0, k)
+                res[tuple(key)] = val
+    else:
+        res[()] = d
+
+    return res
+
+
+def nested_dict_to_df(d):
+    dflat = flatten_dict(d)
+    df = pd.DataFrame.from_dict(dflat, orient='index')
+    df.index = pd.MultiIndex.from_tuples(df.index)
+    df = df.unstack(level=-1)
+    df.columns = df.columns.map("{0[1]}".format)
+    return df
+
+
 def print_config(
     config: DictConfig,
     resolve: bool = True,
@@ -242,20 +287,26 @@ def print_config(
     tree = rich.tree.Tree("CONFIG")  # , style=style, guide_style=style)
 
     quee = []
+    # yaml_strs = ""
 
-    for field in config:
-        if field not in quee:
-            quee.append(field)
+    for f in config:
+        if f not in quee:
+            quee.append(f)
 
-    for field in quee:
-        branch = tree.add(field)  # , style=style, guide_style=style)
+    dconfig = {}
+    for f in quee:
 
-        config_group = config[field]
+        branch = tree.add(f)  # , style=style, guide_style=style)
+
+        config_group = config[f]
         if isinstance(config_group, DictConfig):
             branch_content = OmegaConf.to_yaml(config_group, resolve=resolve)
+            cfg = OmegaConf.to_container(config_group, resolve=resolve)
         else:
             branch_content = str(config_group)
+            cfg = str(config_group)
 
+        dconfig[f] = cfg
         branch.add(rich.syntax.Syntax(branch_content, "yaml"))
 
     outfile = Path(os.getcwd()).joinpath('config_tree.log')
@@ -264,8 +315,52 @@ def print_config(
         console = rich.console.Console(file=f)
         console.print(tree)
 
-    # log.info(tree)
+    with open('config.json', 'w') as f:
+        f.write(json.dumps(dconfig))
 
-    # with outfile.open('w') as f:
-    #     rich.print(tree, file=f)
-    rich.print(tree)
+    cfgfile = Path('config.yaml')
+    OmegaConf.save(config, cfgfile, resolve=True)
+    cfgdict = OmegaConf.to_object(config)
+    logdir = Path(os.getcwd()).resolve().as_posix()
+    if not config.get('debug_mode', False):
+        dbfpath = Path(OUTPUTS_DIR).joinpath('logdirs.csv')
+    else:
+        dbfpath = Path(OUTPUTS_DIR).joinpath('logdirs-debug.csv')
+
+    df = pd.DataFrame({logdir: cfgdict})
+    df.T.to_csv(dbfpath.resolve().as_posix(), mode='a')
+
+
+@dataclass
+class CustomLogging:
+    version: int = 1
+    formatters: dict[str, Any] = field(
+        default_factory=lambda: {
+            'simple': {
+                'format': (
+                    '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
+                )
+            }
+        }
+    )
+    handlers: dict[str, Any] = field(
+        default_factory=lambda: {
+            'console': {
+                'class': 'rich.logging.RichHandler',
+                'formatter': 'simple',
+                'rich_tracebacks': 'true'
+            },
+            'file': {
+                'class': 'logging.FileHander',
+                'formatter': 'simple',
+                'filename': '${hydra.job.name}.log',
+            },
+        }
+    )
+    root: dict[str, Any] = field(
+        default_factory=lambda: {
+            'level': 'INFO',
+            'handlers': ['console', 'file'],
+        }
+    )
+    disable_existing_loggers: bool = False

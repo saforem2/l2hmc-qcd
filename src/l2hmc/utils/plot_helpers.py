@@ -5,9 +5,10 @@ Contains helpers for plotting.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import datetime
+import logging
 import os
 from pathlib import Path
-from typing import Any, Tuple, Optional
+from typing import Any, Optional, Tuple
 import warnings
 
 import matplotlib.pyplot as plt
@@ -16,7 +17,9 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import xarray as xr
-import logging
+
+# from l2hmc.experiment.pytorch.experiment import Experiment as ptExperiment
+# from l2hmc.experiment.tensorflow.experiment import Experiment as tfExperiment
 
 warnings.filterwarnings('ignore')
 
@@ -26,7 +29,7 @@ xplt = xr.plot  # type: ignore
 
 LW = plt.rcParams.get('axes.linewidth', 1.75)
 
-colors = {
+COLORS = {
     'blue':     '#007DFF',
     'red':      '#FF5252',
     'green':    '#63FF5B',
@@ -101,12 +104,74 @@ def get_timestamp(fstr=None):
 FigAxes = Tuple[plt.Figure, plt.Axes]
 
 
+def save_figure(fig: plt.Figure, fname: str, outdir: os.PathLike):
+    pngdir = Path(outdir).joinpath('pngs')
+    pngdir.mkdir(exist_ok=True, parents=True)
+    pngfile = pngdir.joinpath(f'{fname}.png')
+    svgfile = Path(outdir).joinpath(f'{fname}.svg')
+    fig.savefig(pngfile, dpi=400, bbox_inches='tight')
+    fig.savefig(svgfile, dpi=400, bbox_inches='tight')
+
+
 def savefig(fig: plt.Figure, outfile: os.PathLike):
     fout = Path(outfile)
     parent = fout.parent
     parent.mkdir(exist_ok=True, parents=True)
-    print(f'Saving figure to: {fout.as_posix()}')
+    log.info(f'Saving figure to: {fout.as_posix()}')
     fig.savefig(fout.as_posix(), dpi=400, bbox_inches='tight')
+
+
+def measure_improvement(
+        experiment: Any,
+        title: Optional[str] = None,
+) -> None:
+    ehist = experiment.trainer.histories.get('eval', None)
+    hhist = experiment.trainer.histories.get('hmc', None)
+    if ehist is not None and hhist is not None:
+        edset = ehist.get_dataset()
+        hdset = hhist.get_dataset()
+        dQint_eval = edset.dQint.mean('chain')[1:]
+        dQint_hmc = hdset.dQint.mean('chain')[1:]
+        fig, ax = plt.subplots()
+        _ = ax.plot(
+            dQint_eval,
+            label='Trained',
+            lw=2.,
+            color=COLORS['blue'],
+        )
+        _ = ax.plot(
+            dQint_hmc,
+            label='HMC',
+            ls=':',
+            lw=1.5,
+            color=COLORS['blue'],
+        )
+        _ = ax.grid(True, alpha=0.2)
+        xticks = ax.get_xticks()
+        # xticklabels = ax.get_xticklabels()
+        _ = ax.set_xticklabels([
+            f'{experiment.config.steps.log * int(i)}' for i in xticks
+        ])
+        _ = ax.set_xlabel('MD Step')
+        _ = ax.set_ylabel('dQint')
+        _ = ax.legend(
+            loc='best',
+            framealpha=0.1,
+            ncol=2,
+            labelcolor='#FFF',
+            shadow=True
+        )
+        if title is not None:
+            _ = ax.set_title(title)
+
+        outdir = experiment._outdir
+        improvement = np.mean(dQint_eval.values / dQint_hmc.values)
+        txtfile = Path(outdir).joinpath('model_improvement.txt').as_posix()
+        log.warning(f'Writing model improvement to: {txtfile}')
+        with open(txtfile, 'w') as f:
+            f.write(f'{improvement:.8f}')
+
+        save_figure(fig, fname='model_improvement', outdir=outdir)
 
 
 def plot_scalar(
@@ -310,6 +375,8 @@ def plot_dataArray(
 ) -> tuple:
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
+    set_plot_style()
+    plt.rcParams['axes.labelcolor'] = '#bdbdbd'
     figsize = subplots_kwargs.get('figsize', set_size())
     subplots_kwargs.update({'figsize': figsize})
     subfigs = None
@@ -697,14 +764,15 @@ def make_ridgeplots(
         outdir: Optional[os.PathLike] = None,
         drop_zeros: Optional[bool] = False,
         drop_nans: Optional[bool] = True,
-        cmap: Optional[str] = 'viridis_r',
-        # default_style: dict = None,
+        cmap: Optional[str] = 'rainbow',
 ):
     """Make ridgeplots."""
     data = {}
     # with sns.axes_style('white', rc={'axes.facecolor': (0, 0, 0, 0)}):
     # sns.set(style='white', palette='bright', context='paper')
     # with sns.set_style(style='white'):
+    outdir = Path(os.getcwd()) if outdir is None else Path(outdir)
+    outdir = outdir.joinpath('ridgeplots')
     with sns.plotting_context(
             context='paper',
     ):
@@ -745,8 +813,11 @@ def make_ridgeplots(
                 # Initialize the FacetGrid object
                 ncolors = len(val.leapfrog.values)
                 pal = sns.color_palette(cmap, n_colors=ncolors)
-                g = sns.FacetGrid(lfdf, row='lf', hue='lf',
-                                  aspect=15, height=0.25, palette=pal)
+                g = sns.FacetGrid(
+                    lfdf,
+                    row='lf', hue='lf',
+                    aspect=15, height=0.25, palette=pal  # type:ignore
+                )
 
                 # Draw the densities in a few steps
                 _ = g.map(sns.kdeplot, key, cut=1,
@@ -781,7 +852,7 @@ def make_ridgeplots(
                     outdir.mkdir(exist_ok=True, parents=True)
                     pngdir.mkdir(exist_ok=True, parents=True)
 
-                    log.info(f'Saving figure to: {fsvg.as_posix()}')
+                    log.warning(f'Saving figure to: {fsvg.as_posix()}')
                     plt.savefig(fsvg.as_posix(), dpi=500, bbox_inches='tight')
                     plt.savefig(fpng.as_posix(), dpi=500, bbox_inches='tight')
 

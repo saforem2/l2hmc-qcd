@@ -110,7 +110,7 @@ class ScaledTanh(nn.Module):
                 out_features,
                 requires_grad=True,
                 device=DEVICE
-            )
+            ).exp()
         )
         # self.coeff = torch.zeros(1, out_features, requires_grad=True)
         self.layer = nn.Linear(
@@ -129,7 +129,7 @@ class ScaledTanh(nn.Module):
     def forward(self, x):
         if self._with_cuda:
             x = x.cuda()
-        return torch.exp(self.coeff) * F.tanh(self.layer(x))
+        return self.coeff * F.tanh(self.layer(x))
 
 
 class Network(nn.Module):
@@ -245,6 +245,10 @@ class Network(nn.Module):
             inputs: tuple[Tensor, Tensor],
     ) -> tuple[Tensor, Tensor, Tensor]:
         x, v = inputs
+
+        x.requires_grad_(True)
+        v.requires_grad_(True)
+
         x = x.to(DEVICE)
         v = v.to(DEVICE)
         if len(self.conv_stack) > 0:

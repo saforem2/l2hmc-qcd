@@ -17,8 +17,11 @@ defaults:
 debug_mode: True
 
 hydra:
+  verbose: true
+  job:
+    chdir: true
   # sets level of all command line loggers to 'DEBUG'
-  verbose: ['l2hmc', 'tensorflow', 'pytorch', 'numpy']
+  # verbose: ['l2hmc', 'tensorflow', 'pytorch', 'numpy']
 
   # https://hydra.cc/docs/tutorials/basic/running_your_app/logging/
   # use this to set level of only chosen command line loggers to 'DEBUG'

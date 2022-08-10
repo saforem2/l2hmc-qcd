@@ -2,7 +2,7 @@ _target_: l2hmc.configs.LearningRateConfig
 
 # lr_init: 0.01  # for SGD
 lr_init: 1e-3  # for Adam
-clip_norm:  100 # gradient norm clipping
+clip_norm:  0 # gradient norm clipping
 mode: 'auto'
 monitor: 'loss'
 patience: 5

@@ -3,6 +3,7 @@ experiment.py
 
 Contains implementation of Experiment object, defined by a static config.
 """
+from __future__ import absolute_import, print_function, division, annotations
 from abc import ABC, abstractmethod
 import logging
 import os
@@ -16,6 +17,7 @@ from omegaconf import DictConfig, OmegaConf
 import wandb
 import xarray as xr
 
+from l2hmc.trainers.trainer import BaseTrainer
 from l2hmc.common import get_timestamp, is_interactive, save_and_analyze_data
 from l2hmc.configs import (
     AIM_DIR, ExperimentConfig, HERE, OUTDIRS_FILE
@@ -23,28 +25,21 @@ from l2hmc.configs import (
 from l2hmc.utils.step_timer import StepTimer
 # import l2hmc.utils.plot_helpers as hplt
 
-
 log = logging.getLogger(__name__)
 
-SYNONYMS = {
-    'pytorch': [
-        'p'
-        'pt',
-        'torch',
-        'pytorch',
-    ],
-    'tensorflow': [
-        't'
-        'tf',
-        'tflow',
-        'tensorflow',
-    ],
-}
+
+def get_logger(rank: int) -> logging.Logger:
+    return (
+        logging.getLogger(__name__)
+        if rank == 0
+        else logging.getLogger(None)
+    )
 
 
 class BaseExperiment(ABC):
     """Convenience class for running framework independent experiments."""
     def __init__(self, cfg: DictConfig) -> None:
+        super().__init__()
         self._created = get_timestamp('%Y-%m-%d-%H%M%S')
         self.cfg = cfg
         self.config = instantiate(cfg)
@@ -63,8 +58,37 @@ class BaseExperiment(ABC):
         self.trainer = None
         # self.dynamics = None
         # self.optimizer = None
-        self._outdir = self.get_outdir()
-        super().__init__()
+        self._outdir, self._jobdirs = self.get_outdirs()
+
+    # @property
+    # @abstractmethod
+    # def run(self):
+    #     pass
+
+    # @run.setter
+    # @abstractmethod
+    # def run(self, run):
+    #     pass
+
+    # @property
+    # @abstractmethod
+    # def arun(self):
+    #     pass
+
+    # @arun.setter
+    # @abstractmethod
+    # def arun(self, arun):
+    #     pass
+
+    # @property
+    # @abstractmethod
+    # def trainer(self):
+    #     pass
+
+    # @trainer.setter
+    # @abstractmethod
+    # def trainer(self, trainer):
+    #     pass
 
     @abstractmethod
     def train(self) -> dict:
@@ -83,10 +107,7 @@ class BaseExperiment(ABC):
         pass
 
     @abstractmethod
-    def get_summary_writer(
-            self,
-            job_type: str,
-    ):
+    def get_summary_writer(self):
         pass
 
     @abstractmethod
@@ -155,18 +176,28 @@ class BaseExperiment(ABC):
             ]
         })
 
-    def _init_wandb(self):
+    def _init_wandb(
+            self,
+    ):
         if self.run is not None and self.run is wandb.run:
             raise ValueError('WandB already initialized!')
 
         from wandb.util import generate_id
-        # from l2hmc.utils.rich import print_config
 
         run_id = generate_id()
         self.update_wandb_config(run_id=run_id)
-        log.warning(f'os.getcwd(): {os.getcwd()}')
+        # log.warning(f'os.getcwd(): {os.getcwd()}')
         wandb.tensorboard.patch(root_logdir=os.getcwd())
         run = wandb.init(dir=os.getcwd(), **self.config.wandb.setup)
+        # if self.config.framework in ['pt', 'torch', 'pytorch']:
+        #     assert run is not None and run is wandb.run
+        #     if dynamics is not None:
+        #         run.watch(
+        #             dynamics,
+        #             log='all',
+        #             log_graph=True,
+        #             criterion=criterion,
+        #         )
         assert run is wandb.run and run is not None
         wandb.define_metric('dQint_eval', summary='mean')
         run.log_code(HERE.as_posix())
@@ -179,7 +210,7 @@ class BaseExperiment(ABC):
 
         return run
 
-    def get_outdir(self) -> Path:
+    def get_outdirs(self) -> tuple[Path, dict[str, Path]]:
         outdir = self.cfg.get('outdir', None)
         if outdir is None:
             outdir = Path(os.getcwd())
@@ -190,8 +221,15 @@ class BaseExperiment(ABC):
                     self._created,
                     framework,
                 )
+        jobdirs = {
+            'train': Path(outdir).joinpath('train'),
+            'eval': Path(outdir).joinpath('eval'),
+            'hmc': Path(outdir).joinpath('hmc')
+        }
+        for _, val in jobdirs.items():
+            val.mkdir(exist_ok=True, parents=True)
 
-        return outdir
+        return outdir, jobdirs
 
     def get_jobdir(self, job_type: str) -> Path:
         jobdir = self._outdir.joinpath(job_type)
@@ -216,21 +254,71 @@ class BaseExperiment(ABC):
         sdir.mkdir(exist_ok=True, parents=True)
         return sdir.as_posix()
 
+    def save_timers(
+            self,
+            job_type: str,
+            outdir: Optional[os.PathLike] = None,
+    ) -> None:
+        # outdir = self._outdir if outdir is None else outdir
+        outdir = (
+            self._jobdirs.get(job_type, None)
+            if outdir is None else outdir
+        )
+        assert outdir is not None
+        timerdir = Path(outdir).joinpath('timers')
+        timerdir.mkdir(exist_ok=True, parents=True)
+        timers = getattr(self.trainer, 'timers', None)
+        if timers is not None:
+            timer = timers.get(job_type, None)
+            if timer is not None:
+                global_rank = getattr(self.trainer, 'global_rank', 0)
+                rank = getattr(self.trainer, 'rank', 0)
+                assert isinstance(timer, StepTimer)
+                fname = (
+                    f'step-timer-{job_type}-{global_rank}-{rank}'
+                )
+                timer.save_and_write(outdir=timerdir, fname=fname)
+
     def save_dataset(
             self,
-            output: dict,
-            # dset: xr.Dataset,
             job_type: str,
+            dset: Optional[xr.Dataset] = None,
+            output: Optional[dict] = None,
             nchains: Optional[int] = None,
             outdir: Optional[os.PathLike] = None,
-            fname: Optional[str] = None,
+            # fname: Optional[str] = None,
             therm_frac: Optional[float] = None,
     ) -> xr.Dataset:
-        history = output.get('history', None)
-        assert history is not None
+        assert isinstance(self.trainer, BaseTrainer)
+        if output is None:
+            history = self.trainer.histories.get(job_type, None)
+        else:
+            history = output.get('history', None)
+        if history is None:
+            raise ValueError(f'Unable to recover history for {job_type}')
+
+        assert history is not None  # and isinstance(history, BaseHistory)
         therm_frac = 0.1 if therm_frac is None else therm_frac
         dset = history.get_dataset(therm_frac=therm_frac)
         assert isinstance(dset, xr.Dataset)
+
+        chains_to_plot = int(
+            min(self.cfg.dynamics.nchains,
+                max(64, self.cfg.dynamics.nchains // 8))
+        )
+        chains_to_plot = nchains if nchains is not None else chains_to_plot
+        outdir = self._outdir if outdir is None else outdir
+        assert outdir is not None
+        self.save_timers(job_type=job_type, outdir=outdir)
+        _ = save_and_analyze_data(dset,
+                                  run=self.run,
+                                  arun=self.arun,
+                                  outdir=outdir,
+                                  output=output,
+                                  nchains=nchains,
+                                  job_type=job_type,
+                                  framework=self.config.framework)
+
         dQint = dset.data_vars.get('dQint', None)
         if dQint is not None:
             dQint = dQint.values
@@ -256,27 +344,4 @@ class BaseExperiment(ABC):
                 self.arun.track(dQdist,
                                 name='dQint',
                                 context={'subset': job_type})
-        chains_to_plot = int(
-            min(self.cfg.dynamics.nchains,
-                max(64, self.cfg.dynamics.nchains // 8))
-        )
-        chains_to_plot = nchains if nchains is not None else chains_to_plot
-        timers = getattr(self.trainer, 'timers', None)
-        outdir = self._outdir if outdir is None else outdir
-        if timers is not None:
-            timer = timers.get(job_type, None)
-            if timer is not None:
-                assert isinstance(timer, StepTimer)
-                fname = f'step-timer-{job_type}' if fname is None else fname
-                timer.save_and_write(outdir=outdir, fname=fname)
-
-        framework = self.config.framework
-        _ = save_and_analyze_data(dset,
-                                  run=self.run,
-                                  arun=self.arun,
-                                  outdir=outdir,
-                                  output=output,
-                                  nchains=nchains,
-                                  job_type=job_type,
-                                  framework=framework)
         return dset

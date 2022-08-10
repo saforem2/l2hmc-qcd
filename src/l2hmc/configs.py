@@ -11,7 +11,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Counter, Dict, List, Optional, Tuple
 
 from hydra.core.config_store import ConfigStore
 import numpy as np
@@ -21,8 +21,7 @@ from omegaconf import MISSING
 # from accelerate.accelerator import Accelerator
 # from hydra.utils import instantiate
 
-
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 HERE = Path(os.path.abspath(__file__)).parent
@@ -41,6 +40,21 @@ OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 State = namedtuple('State', ['x', 'v', 'beta'])
 
 MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
+
+SYNONYMS = {
+    'pytorch': [
+        'p'
+        'pt',
+        'torch',
+        'pytorch',
+    ],
+    'tensorflow': [
+        't'
+        'tf',
+        'tflow',
+        'tensorflow',
+    ],
+}
 
 
 def add_to_outdirs_file(outdir: os.PathLike):
@@ -64,41 +78,6 @@ def list_to_str(x: list) -> str:
         return '-'.join([f'{i:2.1f}' for i in x])
     else:
         return '-'.join([str(i) for i in x])
-
-
-@dataclass
-class CustomLogging:
-    version: int = 1
-    formatters: dict[str, Any] = field(
-        default_factory=lambda: {
-            'simple': {
-                'format': (
-                    '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
-                )
-            }
-        }
-    )
-    handlers: dict[str, Any] = field(
-        default_factory=lambda: {
-            'console': {
-                'class': 'rich.logging.RichHandler',
-                'formatter': 'simple',
-                'rich_tracebacks': 'true'
-            },
-            'file': {
-                'class': 'logging.FileHander',
-                'formatter': 'simple',
-                'filename': '${hydra.job.name}.log',
-            },
-        }
-    )
-    root: dict[str, Any] = field(
-        default_factory=lambda: {
-            'level': 'INFO',
-            'handlers': ['console', 'file'],
-        }
-    )
-    disable_existing_loggers: bool = False
 
 
 @dataclass
@@ -274,6 +253,53 @@ class LearningRateConfig(BaseConfig):
 
 
 @dataclass
+class Steps:
+    nera: int
+    nepoch: int
+    test: int
+    log: Optional[int] = None
+    print: Optional[int] = None
+    extend_last_era: Optional[int] = None
+
+    def __post_init__(self):
+        if self.extend_last_era is None:
+            self.extend_last_era = 1
+        self.total = self.nera * self.nepoch
+        freq = int(self.nepoch // 20)
+        self.log = (
+            max(1, freq) if self.log is None else self.log
+        )
+        self.print = (
+            max(1, freq) if self.print is None else self.print
+        )
+
+        assert isinstance(self.log, int)
+        assert isinstance(self.print, int)
+
+    def update(
+            self,
+            nera: Optional[int] = None,
+            nepoch: Optional[int] = None,
+            test: Optional[int] = None,
+            log: Optional[int] = None,
+            print: Optional[int] = None,
+            extend_last_era: Optional[int] = None,
+    ) -> Steps:
+        # logger.warning('Updating Steps!')
+        return Steps(
+            nera=(self.nera if nera is None else nera),
+            nepoch=(self.nepoch if nepoch is None else nepoch),
+            test=(self.test if test is None else test),
+            log=(self.log if log is None else log),
+            print=(self.print if print is None else print),
+            extend_last_era=(
+                self.extend_last_era if extend_last_era is None
+                else extend_last_era
+            )
+        )
+
+
+@dataclass
 class AnnealingSchedule(BaseConfig):
     beta_init: float
     beta_final: Optional[float] = 1.0
@@ -282,7 +308,7 @@ class AnnealingSchedule(BaseConfig):
 
     def __post_init__(self):
         if self.beta_final is None or self.beta_final < self.beta_init:
-            log.warning(
+            logger.warning(
                 f'AnnealingSchedule.beta_final must be >= {self.beta_init},'
                 f' but received: {self.beta_final}.\n'
                 f'Setting self.beta_final to {self.beta_init}'
@@ -293,14 +319,171 @@ class AnnealingSchedule(BaseConfig):
             and self.beta_final >= self.beta_init
         )
 
-    def setup(self, steps: Steps) -> None:
-        if self.beta_final is None:
-            self.beta_final = self.beta_init
+    def update(
+            self,
+            beta_init: Optional[float] = None,
+            beta_final: Optional[float] = None,
+    ):
+        logger.warning('Updating annealing schedule!')
+        if beta_init is not None:
+            logger.warning(f'annealing_schedule.beta_init = {beta_init:.3f}')
+            self.beta_init = beta_init
+        if beta_final is not None:
+            logger.warning(f'annealing_schedule.beta_final = {beta_final:.3f}')
+            self.beta_final = beta_final
 
-        betas = np.linspace(self.beta_init, self.beta_final, steps.nera)
-        self.betas = {
-            str(era): betas[era] for era in range(steps.nera)
+    def setup(
+            self,
+            nera: Optional[int] = None,
+            nepoch: Optional[int] = None,
+            steps: Optional[Steps] = None,
+            beta_init: Optional[float] = None,
+            beta_final: Optional[float] = None,
+    ) -> dict:
+        if nera is None:
+            assert steps is not None
+            nera = steps.nera
+
+        if nepoch is None:
+            assert steps is not None
+            nepoch = steps.nepoch
+
+        if beta_init is None:
+            beta_init = self.beta_init
+
+        if beta_final is None:
+            beta_final = (
+                self.beta_final
+                if self.beta_final is not None
+                else self.beta_init
+            )
+
+        self.betas = np.linspace(beta_init, beta_final, nera)
+        total = steps.total if steps is not None else 1
+        self._dbeta = (beta_final - beta_init) / total
+        self.beta_dict = {
+            str(era): self.betas[era] for era in range(nera)
         }
+
+        return self.beta_dict
+
+
+@dataclass
+class Annealear:
+    """Dynamically adjust annealing schedule during training."""
+    schedule: AnnealingSchedule
+    patience: int
+    min_delta: Optional[float] = None
+
+    def __post_init__(self):
+        self.wait = 0
+        self.best = np.Inf
+        self._current_era = 0
+        self._current_beta = self.schedule.beta_init
+        self._epoch = 0
+        self._count = 0
+        self.betas = []
+        self.loss = []
+        self.losses = {}
+        self._reset()
+
+    def _reset(self):
+        self.wait = 0
+
+    def update(self, loss: float):
+        self._epoch += 1
+        self.loss.append(loss)
+
+    @staticmethod
+    def avg_diff(
+            y: list[float],
+            x: Optional[list[float]] = None,
+            *,
+            drop: Optional[int | float] = None,
+    ) -> float:
+        """Returns (1/n) ∑ [δy/δx]."""
+        if x is not None:
+            assert len(x) == len(y)
+
+        if drop is not None:
+            if isinstance(drop, int):
+                # If passed as an int, we should interpret as num to drop
+                if drop > 1:
+                    y = y[drop:]
+                    if x is not None:
+                        x = x[drop:]
+                else:
+                    raise ValueError('Expected `drop` to be an int > 1')
+            elif isinstance(drop, float):
+                # If passed as a float, we should interpret as a percentage
+                if drop < 1.:
+                    frac = drop * len(y)
+                    y = y[frac:]
+                    if x is not None:
+                        x = x[frac:]
+                else:
+                    raise ValueError('Expected `drop` to be a float < 1.')
+            else:
+                raise ValueError(
+                    'Expected drop to be one of `int` or `float`.'
+                )
+
+        dyavg = np.subtract(y[1:], y[:-1]).mean()
+        if x is not None:
+            dxavg = np.subtract(x[1:], x[:-1]).mean()
+            return dyavg / dxavg
+
+        return dyavg
+
+    def start_epoch(self, era: int, beta: float):
+        self.losses[f'{era}'] = {
+            'beta': beta,
+            'loss': [],
+        }
+        self._prev_beta = self.betas[-1]
+        self._current_era = era
+        self._current_beta = beta
+
+        self.betas.append(beta)
+
+        self._prev_best = np.Inf
+        if (era - 1) in self.losses.keys():
+            self._prev_best = np.min(self.losses[str(era - 1)]['loss'])
+
+    def end_epoch(
+            self,
+            losses: list[float],
+            era: Optional[int] = None,
+            beta: Optional[float] = None,
+            drop: Optional[int | float] = None,
+    ) -> float:
+        current_era = self._current_era if era is None else era
+        current_beta = self._current_beta if beta is None else beta
+        prev_beta = self._prev_beta
+        new_beta = current_beta + self.schedule._dbeta
+        self.losses[f'{current_era}'] = {
+            'beta': current_beta,
+            'loss': losses,
+        }
+        new_best = np.min(losses)
+        avg_slope = self.avg_diff(losses, drop=drop)
+        if new_best < self._prev_best or avg_slope < 0:
+            # Loss has improved from previous best, return new_beta (increase)
+            return new_beta
+        else:
+            # Loss has NOT improved from previous best
+            current_beta_count = Counter(self.betas).get(current_beta)
+            if (
+                    current_beta_count is not None
+                    and isinstance(current_beta_count, int)
+                    and current_beta_count > self.patience
+            ):
+                # If we've exhausted our patience
+                # at the current_beta, return prev_beta (decrease)
+                return prev_beta
+
+            # If we're still being patient, return current_beta (no change)
+            return current_beta
 
 
 @dataclass
@@ -405,36 +588,6 @@ class LossConfig(BaseConfig):
 
 
 @dataclass
-class Steps:
-    nera: int
-    nepoch: int
-    test: int
-    log: Optional[int] = None
-    print: Optional[int] = None
-    extend_last_era: Optional[int] = None
-
-    def __post_init__(self):
-        if self.extend_last_era is None:
-            self.extend_last_era = 1
-        self.total = self.nera * self.nepoch
-        if self.total < 1000:
-            self.log = 5
-            self.print = max(1, int(self.nepoch // 10))
-        else:
-            if self.log is None:
-                self.log = max(1, int(self.total // 1000))
-                # self.log = max(1, int(self.nepoch // 10))
-
-            if self.print is None:
-                self.print = max(1, int(self.nepoch // 10))
-
-        assert isinstance(self.log, int)
-        assert isinstance(self.print, int)
-        self.log = max(1, int(self.log))
-        self.print = max(1, int(self.print))
-
-
-@dataclass
 class InputSpec(BaseConfig):
     xshape: List[int] | Tuple[int]
     xnet: Optional[Dict[str, List[int] | Tuple[int]]] = None
@@ -470,44 +623,62 @@ class TrainerConfig1:
 
 @dataclass
 class ExperimentConfig:
-    framework: str
     seed: int
+    wandb: Any
     steps: Steps
+    framework: str
     loss: LossConfig
     network: NetworkConfig
     net_weights: NetWeights
     dynamics: DynamicsConfig
-    annealing_schedule: AnnealingSchedule
     learning_rate: LearningRateConfig
-    wandb: Any
+    annealing_schedule: AnnealingSchedule
     # ----- optional below -------------------
     # outdir: Optional[Any] = None
-    conv: Optional[ConvolutionConfig] = None
     c1: Optional[float] = 0.0                # rectangle coefficient for SU3
+    name: Optional[str] = None
     width: Optional[int] = None
     nchains: Optional[int] = None
+    init_aim: Optional[bool] = None
+    init_wandb: Optional[bool] = None
+    compile: Optional[bool] = True
     profile: Optional[bool] = False
+    compression: Optional[str] = None
     debug_mode: Optional[bool] = False
     default_mode: Optional[bool] = True
     print_config: Optional[bool] = True
     precision: Optional[str] = 'float32'
     ignore_warnings: Optional[bool] = True
-    compile: Optional[bool] = True
-    name: Optional[str] = None
+    conv: Optional[ConvolutionConfig] = None
+
+    def rank(self):
+        if self.framework in SYNONYMS['pytorch']:
+            import horovod.torch as hvd
+            if not hvd.is_initialized():
+                hvd.init()
+            return hvd.rank()
+        elif self.framework in SYNONYMS['tensorflow']:
+            import horovod.tensorflow as hvd
+            if not hvd.is_initialized():
+                hvd.init()
+            return hvd.rank()
 
     def __post_init__(self):
         if self.debug_mode:
             self.compile = False
 
-        self.annealing_schedule.setup(self.steps)
+        self.annealing_schedule.setup(
+            nera=self.steps.nera,
+            nepoch=self.steps.nepoch,
+        )
         w = int(os.environ.get('COLUMNS', 235))
         self.width = w if self.width is None else self.width
         self.xdim = self.dynamics.xdim
         self.xshape = self.dynamics.xshape
-        log.warning(f'xdim: {self.dynamics.xdim}')
-        log.warning(f'group: {self.dynamics.group}')
-        log.warning(f'xshape: {self.dynamics.xshape}')
-        log.warning(f'latvolume: {self.dynamics.latvolume}')
+        # logger.warning(f'xdim: {self.dynamics.xdim}')
+        # logger.warning(f'group: {self.dynamics.group}')
+        # logger.warning(f'xshape: {self.dynamics.xshape}')
+        # logger.warning(f'latvolume: {self.dynamics.latvolume}')
 
 
 def get_config(overrides: Optional[list[str]] = None):

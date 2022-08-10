@@ -8,6 +8,9 @@ precision: 'float32'    # Default floating point precision
 width: 235              # Setting controlling terminal width for printing
 seed: 9992              # Seed for random number
 compile: True           # Compile network in tensorflow? (True by default)
+compression: fp16       # Compression for Horovod
+init_wandb: True
+init_aim: True
 nchains:  null          # Number of chains to use when evaluating model
 # optional num_threads: 8
 # optional outdir: outputs/${now:%Y-%m-%d_%H-%M-%S}
@@ -15,7 +18,7 @@ nchains:  null          # Number of chains to use when evaluating model
 
 # ----------------------------------------------------------------------------
 # pretty print config at the start of the run using Rich library
-print_config: True
+print_config: false
 # ----------------------------------------------------------------------------
 # disable python warnings if they annoy you
 ignore_warnings: True
@@ -26,9 +29,8 @@ ignore_warnings: True
 # name of the run, should be used along with experiment mode
 name: null
 # ----------------------------------------------------------------------------
-hydra:
-  job:
-    chdir: true
+    
+
 
 defaults:
   - _self_
@@ -41,7 +43,7 @@ defaults:
   - logdir: default.yaml              # Defines where to run experiment using info from cfg
   - loss: default.yaml                # Defines weights of various terms in loss function
   - network: default.yaml             # Defines network architecture, activation fns, etc.
-  - conv: default.yaml                # Defines arch of Conv block to prepend to xnetwork
+  # - conv: default.yaml                # Defines arch of Conv block to prepend to xnetwork
   - net_weights: default.yaml         # Weights for controlling rel contribution of net fns
   - learning_rate: default.yaml       # Defines initial lr, optimizer type, lr schedule, etc.
   - annealing_schedule: default.yaml  # Defines annealing schedule to use for training
@@ -63,31 +65,7 @@ defaults:
   # use this to set level of only chosen command line loggers to 'DEBUG'
   # verbose: [src.train, src.utils]
 
-# --------------------------------------------------------------------------------------------
-# IGNORE
-# --------------------------------------------------------------------------------------------
-# hydra:
-# hydra:
-#   # launcher:
-#   #   # override the number of jobs from joblib
-#   #   n_jobs = 10
-#   run:
-#     # Default output paths for all file logs
-#     dir: ${hydra.job.}
-#   sweep:
-#     dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}"
-#     subdir: ${hydra.job.override_dirname}
-#     # subdir: ${hydra.job.num}
-
-
-#   job_logging:
-#     version: 1
-
-# path to original working directory
-# hydra hijacks working directory by changing it to the new log directory
-# so it's useful to have this path as a special variable
-# https://hydra.cc/docs/next/tutorials/basic/running_your_app/working_directory
-# work_dir: ${hydra:runtime.cwd}
-
-# path to folder with data
-# data_dir: ${work_dir}/data/
+hydra:
+  verbose: true
+  job:
+    chdir: true

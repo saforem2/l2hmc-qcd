@@ -14,6 +14,7 @@ import aim
 import numpy as np
 from omegaconf.dictconfig import DictConfig
 from rich.console import Console
+from l2hmc.common import get_timestamp
 from l2hmc.configs import ExperimentConfig, InputSpec
 from hydra.utils import instantiate
 
@@ -32,6 +33,7 @@ class BaseTrainer(ABC):
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
     ):
+        self._created = get_timestamp()
         if isinstance(cfg, DictConfig):
             self.config = instantiate(cfg)
         else:

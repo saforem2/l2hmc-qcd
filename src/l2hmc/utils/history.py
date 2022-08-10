@@ -14,6 +14,7 @@ import matplotx
 import numpy as np
 import seaborn as sns
 import tensorflow as tf
+from tensorflow.python.framework.ops import EagerTensor
 import torch
 import xarray as xr
 
@@ -87,8 +88,8 @@ class BaseHistory:
             else:
                 val = np.array(val)
 
-        if isinstance(val, tf.Tensor):
-            val = val.numpy()
+        if isinstance(val, (EagerTensor, tf.Tensor)):
+            val = val.numpy()  # type:ignore
 
         try:
             self.history[key].append(val)
@@ -427,11 +428,6 @@ class BaseHistory:
         data = self.history if data is None else data
         data_vars = {}
         for key, val in data.items():
-            # TODO: FIX ME
-            # if isinstance(val, list):
-            #     if isinstance(val[0], (dict, AttrDict)):
-            #         tmp = invert
-            #      data_vars[key] = dataset = self.get_dataset(val)
             name = key.replace('/', '_')
             try:
                 data_vars[name] = self.to_DataArray(val, therm_frac)
