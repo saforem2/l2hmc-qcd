@@ -1,0 +1,24 @@
+# @package _global_
+
+framework: ???          # ML framework to use: one of 'pytorch', 'tensorflow'
+nchains: 512            # number of chains to use for evaluation
+compression: ???
+seed: 9992
+
+# ----------------------------------------------------------------------------
+# name of the run, should be used along with experiment mode
+name: beta6-16x16-${framework}
+# ----------------------------------------------------------------------------
+
+steps:
+  _target_: l2hmc.configs.Steps
+  nera: 10
+  nepoch: 2000
+  test: 5000
+  log: 100
+  print: 100
+
+annealing_schedule:
+  _target_: l2hmc.configs.AnnealingSchedule
+  beta_init: 1.0
+  beta_final: 6.0
