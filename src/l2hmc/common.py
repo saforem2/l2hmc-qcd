@@ -165,6 +165,7 @@ def save_dataset(
 
 
 def dataset_to_h5pyfile(hfile: os.PathLike, dataset: xr.Dataset, **kwargs):
+    log.info(f'Saving dataset to: {hfile}')
     f = h5py.File(hfile, 'a')
     for key, val in dataset.data_vars.items():
         arr = val.values
