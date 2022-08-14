@@ -1,5 +1,5 @@
 """
-network.py
+pytorch/network.py
 
 Contains the pytorch implementation of the Normalizing Flow network
 
@@ -132,25 +132,61 @@ class ScaledTanh(nn.Module):
         return self.coeff * F.tanh(self.layer(x))
 
 
-class Network(nn.Module):
+class ConvStack(nn.Module):
     def __init__(
             self,
-            xshape: tuple[int],
+            xshape: list[int],
+            conv_config: ConvolutionConfig,
+            activation_fn: Callable[[Tensor], Tensor],
+            use_batch_norm: bool = False,
+    ) -> None:
+        super(ConvStack, self).__init__()
+        if len(xshape) == 3:
+            d, nt, nx = xshape[0], xshape[1], xshape[2]
+        elif len(xshape) == 4:
+            _, d, nt, nx = xshape[0], xshape[1], xshape[2], xshape[3]
+        else:
+            raise ValueError(f'Invalid value for `xshape`: {xshape}')
+
+        self.d = d
+        self.nt = nt
+        self.nx = nx
+        self.activation_fn = activation_fn
+        self.layers = [
+            PeriodicPadding(conv_config.sizes[0] - 1),
+            Conv2d(d, conv_config.filters[0], conv_config.sizes[0])
+        ]
+        iterable = zip(conv_config.filters[1:], conv_config.sizes[1:])
+        for idx, (f, n) in enumerate(iterable):
+            self.layers.append(PeriodicPadding(n - 1))
+            self.layers.append(nn.LazyConv2d(n, f))
+            # , padding=(n-1), padding_mode='circular'))
+            # conv_stack.append(self.activation_fn)
+            if (idx + 1) % 2 == 0:
+                self.layers.append(nn.MaxPool2d(conv_config.pool[idx]))
+
+            self.layers.append(self.activation_fn)
+
+        self.layers.append(nn.Flatten())
+        if use_batch_norm:
+            self.layers.append(nn.BatchNorm1d(-1))
+
+
+class InputLayer(nn.Module):
+    def __init__(
+            self,
+            xshape: list[int],
             network_config: NetworkConfig,
+            activation_fn: Callable[[Tensor], Tensor],
+            conv_stack: Optional[ConvStack] = None,
             input_shapes: Optional[dict[str, int]] = None,
-            net_weight: Optional[NetWeight] = None,
-            conv_config: Optional[ConvolutionConfig] = None,
-            name: Optional[str] = None,
-    ):
-        super(Network, self).__init__()
-        if net_weight is None:
-            net_weight = NetWeight(1., 1., 1.)
-
-        self.name = name if name is not None else 'network'
+    ) -> None:
+        super(InputLayer, self).__init__()
         self.xshape = xshape
+        self.activation_fn = activation_fn
         self.net_config = network_config
-        self.nw = net_weight
-
+        self.conv_stack = conv_stack
+        self.units = self.net_config.units
         self.xdim = np.cumprod(xshape[1:])[-1]
 
         if input_shapes is None:
@@ -169,6 +205,53 @@ class Network(nn.Module):
                     f'\t  val: {val}'
                 )
 
+        self.xlayer = nn.Linear(
+            self.input_shapes['x'],
+            self.net_config.units[0]
+        )
+        self.vlayer = nn.Linear(
+            self.input_shapes['v'],
+            self.net_config.units[0]
+        )
+
+    def forward(
+            self,
+            inputs: tuple[Tensor, Tensor]
+    ) -> Tensor:
+        x, v = inputs
+
+        x.requires_grad_(True)
+        v.requires_grad_(True)
+
+        x = x.to(DEVICE)
+        v = v.to(DEVICE)
+        if self.conv_stack is not None:
+            x = self.conv_stack(x)
+
+        v = self.vlayer(v)
+        x = self.xlayer(flatten(x))
+        return self.activation_fn(x + v)
+
+
+class Network(nn.Module):
+    def __init__(
+            self,
+            xshape: list[int],
+            network_config: NetworkConfig,
+            input_shapes: Optional[dict[str, int]] = None,
+            net_weight: Optional[NetWeight] = None,
+            conv_config: Optional[ConvolutionConfig] = None,
+            name: Optional[str] = None,
+    ):
+        super(Network, self).__init__()
+        if net_weight is None:
+            net_weight = NetWeight(1., 1., 1.)
+
+        self.name = name if name is not None else 'network'
+        self.xshape = xshape
+        self.net_config = network_config
+        self.nw = net_weight
+        self.xdim = np.cumprod(xshape[1:])[-1]
         act_fn = self.net_config.activation_fn
         if isinstance(act_fn, str):
             act_fn = ACTIVATION_FNS.get(act_fn, None)
@@ -176,60 +259,31 @@ class Network(nn.Module):
         assert isinstance(act_fn, Callable)
         self.activation_fn = act_fn
 
-        self.units = self.net_config.units
-
+        self.conv_stack = None
         if conv_config is not None:
-            self.conv_config = conv_config
-            if len(xshape) == 3:
-                d, nt, nx = xshape[0], xshape[1], xshape[2]
-            elif len(xshape) == 4:
-                _, d, nt, nx = xshape[0], xshape[1], xshape[2], xshape[3]
-            else:
-                raise ValueError(f'Invalid value for `xshape`: {xshape}')
+            self.conv_stack = ConvStack(
+                xshape=xshape,
+                conv_config=conv_config,
+                activation_fn=self.activation_fn,
+            )
 
-            self.nt = nt
-            self.nx = nx
-            self.d = d
-            # p0 = PeriodicPadding(conv_config.sizes[0] - 1)
-            conv_stack = [
-                PeriodicPadding(conv_config.sizes[0] - 1),
-                Conv2d(d, conv_config.filters[0], conv_config.sizes[0])
-            ]
-            iterable = zip(conv_config.filters[1:], conv_config.sizes[1:])
-            for idx, (f, n) in enumerate(iterable):
-                conv_stack.append(PeriodicPadding(n - 1))
-                conv_stack.append(nn.LazyConv2d(n, f))
-                # , padding=(n-1), padding_mode='circular'))
-                # conv_stack.append(self.activation_fn)
-                if (idx + 1) % 2 == 0:
-                    conv_stack.append(nn.MaxPool2d(conv_config.pool[idx]))
+        self.input_layer = InputLayer(
+            xshape=xshape,
+            network_config=network_config,
+            activation_fn=self.activation_fn,
+            conv_stack=self.conv_stack,
+            input_shapes=input_shapes,
+        )
 
-            conv_stack.append(nn.Flatten())
-            if network_config.use_batch_norm:
-                conv_stack.append(nn.BatchNorm1d(-1))
-
-            self.conv_stack = nn.ModuleList(conv_stack)
-
-        else:
-            self.conv_stack = []
-
-        self.x_layer = nn.Linear(self.input_shapes['x'], self.units[0])
-        self.v_layer = nn.Linear(self.input_shapes['v'], self.units[0])
-
+        self.units = self.net_config.units
         self.hidden_layers = nn.ModuleList()
         for idx, units in enumerate(self.units[1:]):
             h = nn.Linear(self.units[idx], units)
             self.hidden_layers.append(h)
 
-        self.s_coeff = nn.parameter.Parameter(
-            torch.zeros(1, self.xdim, requires_grad=True, device=DEVICE)
-        )
-        self.q_coeff = nn.parameter.Parameter(
-            torch.zeros(1, self.xdim, requires_grad=True, device=DEVICE)
-        )
-        self.scale = nn.Linear(self.units[-1], self.xdim)
+        self.scale = ScaledTanh(self.units[-1], self.xdim)
+        self.transf = ScaledTanh(self.units[-1], self.xdim)
         self.transl = nn.Linear(self.units[-1], self.xdim)
-        self.transf = nn.Linear(self.units[-1], self.xdim)
 
         if self.net_config.dropout_prob > 0:
             self.dropout = nn.Dropout(self.net_config.dropout_prob)
@@ -244,26 +298,7 @@ class Network(nn.Module):
             self,
             inputs: tuple[Tensor, Tensor],
     ) -> tuple[Tensor, Tensor, Tensor]:
-        x, v = inputs
-
-        x.requires_grad_(True)
-        v.requires_grad_(True)
-
-        x = x.to(DEVICE)
-        v = v.to(DEVICE)
-        if len(self.conv_stack) > 0:
-            try:
-                x = x.reshape(-1, self.d + 2, self.nt, self.nx)
-            except ValueError:
-                x = x.reshape(-1, self.d, self.nt, self.nx)
-
-            for layer in self.conv_stack:
-                x = self.activation_fn(layer(x))
-
-        v = self.v_layer(v)
-        x = self.x_layer(flatten(x))
-
-        z = self.activation_fn(x + v)
+        z = self.input_layer(inputs)
         for layer in self.hidden_layers:
             z = self.activation_fn(layer(z))
 
@@ -273,14 +308,14 @@ class Network(nn.Module):
         if self.net_config.use_batch_norm:
             z = self.batch_norm(z)
 
-        scale = torch.exp(self.s_coeff) * F.tanh(self.scale(z))
+        scale = self.scale(z)
+        transf = self.transf(z)
         transl = self.transl(z)
-        transf = torch.exp(self.q_coeff) * F.tanh(self.transf(z))
 
         return (
             self.nw.s * scale,
             self.nw.t * transl,
-            self.nw.q * transf
+            self.nw.q * transf,
         )
 
 
