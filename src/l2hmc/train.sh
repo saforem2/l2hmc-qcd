@@ -102,10 +102,6 @@ if [[ -f "${VENV_DIR}/bin/activate" ]]; then
   echo "Found venv at: ${VENV_DIR}"
   source "${VENV_DIR}/bin/activate"
   python3 -m pip install -e "${ROOT}" --no-deps
-elif [[ -f "${ROOT}/.venv/bin/activate" ]]; then
-  echo "Found venv at: ${ROOT}/.venv/"
-  source "${ROOT}/.venv/bin/activate"
-  python3 -m pip install -e "${ROOT}" --no-deps
 else
   echo "Creating new venv at: ${VENV_DIR}"
   python3 -m venv "${ROOT}/venv/" --system-site-packages
