@@ -822,7 +822,7 @@ def make_ridgeplots(
                 # Draw the densities in a few steps
                 _ = g.map(sns.kdeplot, key, cut=1,
                           shade=True, alpha=0.7, linewidth=1.25)
-                _ = g.map(plt.axhline, y=0, lw=1.5, alpha=0.9, clip_on=False)
+                _ = g.map(plt.axhline, y=0, lw=1., alpha=0.9, clip_on=False)
 
                 # Define and use a simple function to
                 # label the plot in axes coords:
