@@ -26,7 +26,7 @@ from l2hmc.group.su3.tensorflow.group import SU3
 Tensor = tf.Tensor
 Model = tf.keras.Model
 TensorLike = tf.types.experimental.TensorLike
-TF_FLOAT = tf.keras.backend.floatx()
+TF_FLOAT = tf.dtypes.as_dtype(tf.keras.backend.floatx())
 
 PI = tf.constant(pi, dtype=TF_FLOAT)
 TWO = tf.constant(2., dtype=TF_FLOAT)
@@ -84,8 +84,10 @@ def xy_repr(x: Tensor) -> Tensor:
     return tf.stack([tf.math.cos(x), tf.math.sin(x)], axis=-1)
 
 
-CallableNetwork = Callable[[Tuple[Tensor, Tensor], bool],
-                           Tuple[Tensor, Tensor, Tensor]]
+CallableNetwork = (
+    tf.keras.Model | Callable[[Tuple[Tensor, Tensor], bool],
+                              Tuple[Tensor, Tensor, Tensor]]
+)
 
 
 class Dynamics(Model):
@@ -691,14 +693,14 @@ class Dynamics(Model):
 
         return masks
 
-    def _get_vnet(self, step: int) -> CallableNetwork:
+    def _get_vnet(self, step: int) -> tf.keras.Model:
         """Returns momentum network to be used for updating v."""
         vnet = self.vnet
         if self.config.use_separate_networks:
             return vnet[str(step)]
         return vnet
 
-    def _get_xnet(self, step: int, first: bool) -> CallableNetwork:
+    def _get_xnet(self, step: int, first: bool) -> tf.keras.Model:
         """Returns position network to be used for updating x."""
         xnet = self.xnet
         if self.config.use_separate_networks:
@@ -1011,13 +1013,21 @@ class Dynamics(Model):
         outdir = Path(outdir).joinpath('networks')
         outdir.mkdir(exist_ok=True, parents=True)
 
-        veps = np.array([e.numpy() for e in self.veps])
-        xeps = np.array([e.numpy() for e in self.xeps])
+        try:
+            self.save(
+                outdir.joinpath('dynamics').as_posix(),
+                save_format='tf',
+            )
+        except:
+            pass
 
-        np.savetxt(outdir.joinpath('veps.txt').as_posix(), veps)
-        np.savetxt(outdir.joinpath('xeps.txt').as_posix(), xeps)
-        np.save(outdir.joinpath('veps.npy').as_posix(), veps)
-        np.save(outdir.joinpath('xeps.npy').as_posix(), xeps)
+        # veps = np.array([e.numpy() for e in self.veps])
+        # xeps = np.array([e.numpy() for e in self.xeps])
+
+        # np.savetxt(outdir.joinpath('veps.txt').as_posix(), veps)
+        # np.savetxt(outdir.joinpath('xeps.txt').as_posix(), xeps)
+        # np.save(outdir.joinpath('veps.npy').as_posix(), veps)
+        # np.save(outdir.joinpath('xeps.npy').as_posix(), xeps)
 
         if self.config.use_separate_networks:
             for lf in range(self.config.nleapfrog):
@@ -1027,8 +1037,8 @@ class Dynamics(Model):
                 vnet = self._get_vnet(lf)
                 xnet1 = self._get_xnet(lf, first=True)
 
-                vnet.save(fvnet)
-                xnet1.save(fxnet1)
+                vnet.save(fvnet, save_format='tf')
+                xnet1.save(fxnet1, save_format='tf')
 
                 if self.config.use_split_xnets:
                     xnet2 = self._get_xnet(lf, first=False)
@@ -1041,10 +1051,10 @@ class Dynamics(Model):
             fvnet = outdir.joinpath('vnet').as_posix()
             fxnet1 = outdir.joinpath('xnet_first').as_posix()
 
-            vnet.save(fvnet)
-            xnet1.save(fxnet1)
+            vnet.save(fvnet, save_format='tf')
+            xnet1.save(fxnet1, save_format='tf')
 
             if self.config.use_split_xnets:
                 xnet2 = self._get_xnet(0, first=False)
                 fxnet2 = outdir.joinpath('xnet_second').as_posix()
-                xnet2.save(fxnet2)
+                xnet2.save(fxnet2, save_format='tf')
