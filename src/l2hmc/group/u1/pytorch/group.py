@@ -86,7 +86,7 @@ class U1Phase(Group):
 
     @staticmethod
     def group_to_vec(x):
-        return torch.stack([x.cos(), x.sin()], dim=-1)
+        return torch.cat([x.cos(), x.sin()], dim=1)
 
     def compat_proj(self, x: Tensor) -> Tensor:
         # return (x + PI % TWO_PI) - PI
@@ -94,13 +94,10 @@ class U1Phase(Group):
         return ((x + PI) % TWO_PI) - PI
 
     def random(self, shape: list[int]) -> Tensor:
-        # return self.compat_proj(random_angle(shape, requires_grad=True))
         return self.compat_proj(TWO_PI * torch.rand(shape))
-        # return self.compat_proj(torch.rand(shape, *(-4, 4)))
 
     def random_momentum(self, shape: list[int]) -> Tensor:
         return torch.randn(shape).reshape(shape[0], -1)
 
     def kinetic_energy(self, p: Tensor) -> Tensor:
         return 0.5 * p.flatten(1).square().sum(-1)
-        # return p.reshape(p.shape[0], -1).square().sum(1)
