@@ -6,7 +6,7 @@ Contains the pytorch implementation of the Normalizing Flow network
 used to train the L2HMC model.
 """
 from __future__ import absolute_import, annotations, division, print_function
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 import logging
 
 import numpy as np
@@ -31,11 +31,11 @@ Tensor = torch.Tensor
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 ACTIVATION_FNS = {
-    'elu': F.elu,
-    'tanh': F.tanh,
-    'relu': F.relu,
-    'swish': F.silu,
-    'leaky_relu': F.leaky_relu,
+    'elu': nn.ELU(),
+    'tanh': nn.Tanh(),
+    'relu': nn.ReLU(),
+    'swish': nn.SiLU(),
+    'leaky_relu': nn.LeakyReLU(),
 }
 
 
@@ -116,7 +116,7 @@ class ScaledTanh(nn.Module):
         self.layer = nn.Linear(
             in_features=in_features,
             out_features=out_features,
-            # bias=False,
+            bias=False,
         )
         self.tanh = nn.Tanh()
         self._with_cuda = False
@@ -132,12 +132,43 @@ class ScaledTanh(nn.Module):
         return self.coeff * F.tanh(self.layer(x))
 
 
+def calc_output_size(
+        # in_channels: int,
+        # out_channels: int,
+        hw: tuple[int, int],
+        kernel_size: int | tuple[int, int],
+        stride: int = 1,
+        pad: int = 0,
+        dilation: int = 1,
+):
+    from math import floor
+    if isinstance(kernel_size, int):
+        kernel_size = (kernel_size, kernel_size)
+    h = floor(1 + (
+        (
+            hw[0]
+            + (2 * pad)
+            - (dilation * (kernel_size[0] - 1))
+            - 1
+        ) / stride
+    ))
+    w = floor(1 + (
+        (
+            hw[1]
+            + (2 * pad)
+            - (dilation * (kernel_size[1] - 1))
+            - 1
+        ) / stride
+    ))
+    return h, w
+
+
 class ConvStack(nn.Module):
     def __init__(
             self,
             xshape: list[int],
             conv_config: ConvolutionConfig,
-            activation_fn: Callable[[Tensor], Tensor],
+            activation_fn: Any,
             use_batch_norm: bool = False,
     ) -> None:
         super(ConvStack, self).__init__()
@@ -151,25 +182,87 @@ class ConvStack(nn.Module):
         self.d = d
         self.nt = nt
         self.nx = nx
+        self.xshape = xshape
+        self.xdim = np.cumprod(xshape[1:])[-1]
         self.activation_fn = activation_fn
-        self.layers = [
+        self.layers = nn.ModuleList([
             PeriodicPadding(conv_config.sizes[0] - 1),
-            Conv2d(d, conv_config.filters[0], conv_config.sizes[0])
-        ]
-        iterable = zip(conv_config.filters[1:], conv_config.sizes[1:])
-        for idx, (f, n) in enumerate(iterable):
+            # in_channels, out_channels, kernel_size
+            nn.LazyConv2d(
+                conv_config.filters[0],
+                conv_config.sizes[0],
+                # padding='same',
+                # padding_mode='circular',
+            )
+            # Conv2d(
+            #     d,
+            #     conv_config.filters[0],
+            #     conv_config.sizes[0],
+            #     padding='same',
+            #     padding_mode='circular'
+            # )
+        ])
+        for idx, (f, n) in enumerate(zip(
+                conv_config.filters[1:],
+                conv_config.sizes[1:],
+        )):
             self.layers.append(PeriodicPadding(n - 1))
-            self.layers.append(nn.LazyConv2d(n, f))
-            # , padding=(n-1), padding_mode='circular'))
-            # conv_stack.append(self.activation_fn)
+            self.layers.append(nn.LazyConv2d(f, n))
             if (idx + 1) % 2 == 0:
                 self.layers.append(nn.MaxPool2d(conv_config.pool[idx]))
 
             self.layers.append(self.activation_fn)
+        # iterable = zip([
+        #     conv_config.filters[:-1],
+        #     conv_config.filters[1:],
+        #     conv_config.sizes[1:]
+        # ])
+        # for idx, (in, out, size) in enumerate(iterable):
+        # for idx, (i, o, n) in enumerate(zip(
+        #         conv_config.filters[:-1],
+        #         conv_config.filters[1:],
+        #         conv_config.sizes[1:],
+        # )):
+        #     # self.layers.append(PeriodicPadding(o - 1))
+        #     # self.layers.append(PeriodicPadding(o - 1))
+        #     self.layers.append(
+        #         Conv2d(
+        #             i, o, n,
+        #             padding='same',
+        #             padding_mode='circular'
+        #         )
+        #     )
+        #     # self.layers.append(nn.LazyConv2d(n, f))
+        #     # , padding=(n-1), padding_mode='circular'))
+        #     # conv_stack.append(self.activation_fn)
+        #     if (idx + 1) % 2 == 0:
+        #         self.layers.append(nn.MaxPool2d(conv_config.pool[idx]))
+
+        #     self.layers.append(self.activation_fn)
 
         self.layers.append(nn.Flatten())
         if use_batch_norm:
             self.layers.append(nn.BatchNorm1d(-1))
+        self.layers.append(nn.LazyLinear(self.xdim))
+        self.layers.append(self.activation_fn)
+
+    def forward(self, x: Tensor) -> Tensor:
+        x.requires_grad_(True)
+        x = x.to(DEVICE)
+        if x.shape != self.xshape:
+            try:
+                x = x.reshape(x.shape[0], self.d + 2, self.nt, self.nx)
+            except (ValueError, RuntimeError):
+                x = x.reshape(*self.xshape)
+        # try:
+        #     x = x.reshape(x.shape[0], self.d + 2, self.nt, self.nx)
+        # except ValueError:
+        #     x = x.reshape(x.shape[0], self.d, self.nt, self.nx)
+
+        for layer in self.layers:
+            x = layer(x)
+
+        return x
 
 
 class InputLayer(nn.Module):
@@ -178,14 +271,13 @@ class InputLayer(nn.Module):
             xshape: list[int],
             network_config: NetworkConfig,
             activation_fn: Callable[[Tensor], Tensor],
-            conv_stack: Optional[ConvStack] = None,
+            conv_config: Optional[ConvolutionConfig] = None,
             input_shapes: Optional[dict[str, int]] = None,
     ) -> None:
         super(InputLayer, self).__init__()
         self.xshape = xshape
         self.activation_fn = activation_fn
         self.net_config = network_config
-        self.conv_stack = conv_stack
         self.units = self.net_config.units
         self.xdim = np.cumprod(xshape[1:])[-1]
 
@@ -205,14 +297,26 @@ class InputLayer(nn.Module):
                     f'\t  val: {val}'
                 )
 
-        self.xlayer = nn.Linear(
-            self.input_shapes['x'],
-            self.net_config.units[0]
-        )
-        self.vlayer = nn.Linear(
-            self.input_shapes['v'],
-            self.net_config.units[0]
-        )
+        self.conv_stack = None
+        self.conv_config = conv_config
+        # if conv_config is not None:
+        if conv_config is not None and len(conv_config.filters) > 0:
+            self.conv_stack = ConvStack(
+                xshape=xshape,
+                conv_config=conv_config,
+                activation_fn=self.activation_fn,
+            )
+
+        # self.xlayer = nn.Linear(
+        #     self.input_shapes['x'],
+        #     self.net_config.units[0]
+        # )
+        # self.vlayer = nn.Linear(
+        #     self.input_shapes['v'],
+        #     self.net_config.units[0]
+        # )
+        self.xlayer = nn.LazyLinear(self.net_config.units[0])
+        self.vlayer = nn.LazyLinear(self.net_config.units[0])
 
     def forward(
             self,
@@ -228,7 +332,7 @@ class InputLayer(nn.Module):
         if self.conv_stack is not None:
             x = self.conv_stack(x)
 
-        v = self.vlayer(v)
+        v = self.vlayer(flatten(v))
         x = self.xlayer(flatten(x))
         return self.activation_fn(x + v)
 
@@ -259,19 +363,11 @@ class Network(nn.Module):
         assert isinstance(act_fn, Callable)
         self.activation_fn = act_fn
 
-        self.conv_stack = None
-        if conv_config is not None:
-            self.conv_stack = ConvStack(
-                xshape=xshape,
-                conv_config=conv_config,
-                activation_fn=self.activation_fn,
-            )
-
         self.input_layer = InputLayer(
             xshape=xshape,
             network_config=network_config,
             activation_fn=self.activation_fn,
-            conv_stack=self.conv_stack,
+            conv_config=conv_config,
             input_shapes=input_shapes,
         )
 
@@ -319,6 +415,51 @@ class Network(nn.Module):
         )
 
 
+def get_network(
+        xshape: list[int],
+        network_config: NetworkConfig,
+        input_shapes: Optional[dict[str, int]] = None,
+        net_weight: Optional[NetWeight] = None,
+        conv_config: Optional[ConvolutionConfig] = None,
+        name: Optional[str] = None,
+) -> Network:
+    return Network(
+        xshape=xshape,
+        network_config=network_config,
+        input_shapes=input_shapes,
+        net_weight=net_weight,
+        conv_config=conv_config,
+        name=name
+    )
+
+
+def get_and_call_network(
+        xshape: list[int],
+        *,
+        network_config: NetworkConfig,
+        is_xnet: bool,
+        input_shapes: Optional[dict[str, int]] = None,
+        net_weight: Optional[NetWeight] = None,
+        conv_config: Optional[ConvolutionConfig] = None,
+        name: Optional[str] = None,
+) -> Network:
+    net = get_network(
+        xshape=xshape,
+        network_config=network_config,
+        input_shapes=input_shapes,
+        net_weight=net_weight,
+        conv_config=conv_config,
+        name=name,
+    )
+    x = torch.rand(xshape)
+    v = torch.rand_like(x)
+    if is_xnet:
+        x = torch.cat([x.cos(), x.sin()], dim=1)
+
+    _ = net((x, v))
+    return net
+
+
 class NetworkFactory(BaseNetworkFactory):
     def build_networks(self, n: int, split_xnets: bool) -> nn.ModuleDict:
         """Build LeapfrogNetwork."""
@@ -328,20 +469,41 @@ class NetworkFactory(BaseNetworkFactory):
         cfg = self.get_build_configs()
         if n == 1:
             return nn.ModuleDict({
-                'xnet': Network(**cfg['xnet']),
-                'vnet': Network(**cfg['vnet']),
+                'xnet': get_and_call_network(**cfg['xnet'], is_xnet=True),
+                'vnet': get_and_call_network(**cfg['vnet'], is_xnet=False),
+                # 'xnet': Network(**cfg['xnet']),
+                # 'vnet': Network(**cfg['vnet']),
             })
 
         vnet = nn.ModuleDict()
         xnet = nn.ModuleDict()
         for lf in range(n):
-            vnet[f'{lf}'] = Network(**cfg['vnet'], name=f'vnet/{lf}')
+            vnet[f'{lf}'] = get_and_call_network(
+                **cfg['vnet'],
+                is_xnet=False,
+                name=f'vnet/{lf}',
+            )
+            # vnet[f'{lf}'] = Network(**cfg['vnet'], name=f'vnet/{lf}')
             if split_xnets:
                 xnet[f'{lf}'] = nn.ModuleDict({
-                    'first': Network(**cfg['xnet'], name=f'xnet/{lf}/first'),
-                    'second': Network(**cfg['xnet'], name=f'xnet/{lf}/second'),
+                    'first': get_and_call_network(
+                        **cfg['xnet'],
+                        is_xnet=True,
+                        name=f'xnet/{lf}/first'
+                    ),
+                    'second': get_and_call_network(
+                        **cfg['xnet'],
+                        is_xnet=True,
+                        name=f'xnet/{lf}/second'
+                    ),
                 })
             else:
-                xnet[f'{lf}'] = Network(**cfg['xnet'], name=f'xnet/{lf}')
+                xnet[f'{lf}'] = get_and_call_network(
+                    **cfg['xnet'],
+                    is_xnet=True,
+                    name=f'xnet/{lf}'
+                )
+                # xnet[f'{lf}'] = Network(**cfg['xnet'], name=f'xnet/{lf}')
+                # xnet[f'{lf}'] = Network(**cfg['xnet'], name=f'xnet/{lf}')
 
         return nn.ModuleDict({'xnet': xnet, 'vnet': vnet})
