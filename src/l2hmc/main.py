@@ -41,7 +41,10 @@ def setup(cfg: DictConfig):
         warnings.filterwarnings('ignore')
 
 
-def setup_tensorflow(precision: Optional[str] = None) -> int:
+def setup_tensorflow(
+        precision: Optional[str] = None,
+        debug: Optional[bool] = False
+) -> int:
     import tensorflow as tf
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
@@ -49,7 +52,8 @@ def setup_tensorflow(precision: Optional[str] = None) -> int:
     hvd.init() if not hvd.is_initialized() else None
     tf.keras.backend.set_floatx(precision)
     TF_FLOAT = tf.keras.backend.floatx()
-    # tf.config.run_functions_eagerly(True)
+    # if debug:
+    #     tf.config.run_functions_eagerly(True)
     # assert tf.keras.backend.floatx() == tf.float32
     gpus = tf.config.experimental.list_physical_devices('GPU')
     cpus = tf.config.experimental.list_physical_devices('GPU')
@@ -136,7 +140,7 @@ def get_experiment(
     framework = cfg.get('framework', None)
     os.environ['RUNDIR'] = str(os.getcwd())
     if framework in ['tf', 'tensorflow']:
-        _ = setup_tensorflow(cfg.precision)
+        _ = setup_tensorflow(cfg.precision, cfg.debug_mode)
         from l2hmc.experiment.tensorflow.experiment import Experiment
         experiment = Experiment(
             cfg,
