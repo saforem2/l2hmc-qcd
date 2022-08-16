@@ -394,6 +394,7 @@ class Dynamics(nn.Module):
                                      proposed=data['proposed'],
                                      out=state_out)
         data['metrics'].update({
+            'beta': data['init'].beta,
             'acc_mask': ma_,
             'sumlogdet': sumlogdet,
             'mc_states': mc_states,
@@ -431,6 +432,7 @@ class Dynamics(nn.Module):
                                      out=state_out)
 
         metrics.update({
+            'beta': beta,
             'acc': metrics['acc'],
             'acc_mask': ma_,
             'sumlogdet': logdet,
@@ -958,7 +960,7 @@ class Dynamics(nn.Module):
             self,
             step: int,
             inputs: tuple[Tensor, Tensor],
-            first: bool = False,
+            first: bool = False
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Call the position network used to update x.
 
@@ -972,7 +974,6 @@ class Dynamics(nn.Module):
         x, v = inputs
         x = self.g.group_to_vec(x)
 
-        # x, v = x.to(self.device), v.to(self.device)
         if torch.cuda.is_available():
             x, v = x.cuda(), v.cuda()
 
