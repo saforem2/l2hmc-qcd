@@ -80,7 +80,11 @@ def plot_models(dynamics: Dynamics, logdir: os.PathLike):
     for key, val in networks.items():
         try:
             fpath = logdir.joinpath(f'{key}.png')
-            tf.keras.utils.plot_model(val, show_shapes=True, to_file=fpath)
+            tf.keras.utils.plot_model(
+                val,
+                show_shapes=True,
+                to_file=fpath.as_posix()
+            )
         except Exception:
             log.warning('Unable to plot dynamics networks, continuing!')
             pass
@@ -244,12 +248,16 @@ class Trainer(BaseTrainer):
             self,
             manager: CheckpointManager,
             train_dir: os.PathLike,
-    ) -> None:
+    ) -> os.PathLike | None:
         if not self._is_chief:
             return
 
-        manager.save()
-        self.dynamics.save_networks(train_dir)
+        ckpt = manager.save()
+        # try:
+        #     self.dynamics.save_networks(train_dir)
+        # except Exception as exc:
+        #     log.exception(exc)
+        return ckpt
 
     def should_log(self, epoch):
         return (
@@ -409,6 +417,10 @@ class Trainer(BaseTrainer):
             lmetrics = self.loss_fn.lattice_metrics(xinit=inputs[0], xout=xout)
             metrics.update(lmetrics)
 
+        metrics.update({
+            'beta': inputs[1],
+            'loss': loss,
+        })
         metrics.update({'loss': loss})
         assert isinstance(metrics, dict)
 

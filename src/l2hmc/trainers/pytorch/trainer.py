@@ -535,7 +535,9 @@ class Trainer(BaseTrainer):
             lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
             metrics.update(lmetrics)
 
-        metrics.update({'loss': loss.detach().cpu().numpy()})
+        metrics.update({
+            'loss': loss.detach().cpu().numpy(),
+        })
 
         return xout.detach(), metrics
 
@@ -650,7 +652,6 @@ class Trainer(BaseTrainer):
                         table.add_row(*[f'{v}' for _, v in avgs.items()])
 
                     if avgs.get('acc', 1.0) < 1e-5:
-                        self.reset_optimizer()
                         self.console.log('Chains are stuck! Redrawing x')
                         x = self.g.random(list(x.shape))
 
@@ -939,8 +940,10 @@ class Trainer(BaseTrainer):
 
     def metric_to_numpy(
             self,
-            metric: Tensor | list | np.ndarray,
+            metric: Tensor | list | np.ndarray | float,
     ) -> np.ndarray:
+        if isinstance(metric, float):
+            return np.array(metric)
         if isinstance(metric, list):
             if isinstance(metric[0], Tensor):
                 metric = torch.stack(metric)
