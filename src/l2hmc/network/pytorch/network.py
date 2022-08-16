@@ -361,6 +361,7 @@ class Network(nn.Module):
         self.net_config = network_config
         self.nw = net_weight
         self.xdim = np.cumprod(xshape[1:])[-1]
+        self._with_cuda = torch.cuda.is_available()
         act_fn = self.net_config.activation_fn
         if isinstance(act_fn, str):
             act_fn = ACTIVATION_FNS.get(act_fn, None)
