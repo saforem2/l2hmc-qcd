@@ -43,7 +43,7 @@ defaults:
   - logdir: default.yaml              # Defines where to run experiment using info from cfg
   - loss: default.yaml                # Defines weights of various terms in loss function
   - network: default.yaml             # Defines network architecture, activation fns, etc.
-  # - conv: default.yaml                # Defines arch of Conv block to prepend to xnetwork
+  - conv: default.yaml                # Defines arch of Conv block to prepend to xnetwork
   - net_weights: default.yaml         # Weights for controlling rel contribution of net fns
   - learning_rate: default.yaml       # Defines initial lr, optimizer type, lr schedule, etc.
   - annealing_schedule: default.yaml  # Defines annealing schedule to use for training
