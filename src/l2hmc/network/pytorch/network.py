@@ -117,6 +117,7 @@ class ScaledTanh(nn.Module):
             in_features=in_features,
             out_features=out_features,
             bias=False,
+            device=DEVICE,
         )
         self.tanh = nn.Tanh()
         self._with_cuda = False
@@ -182,6 +183,7 @@ class ConvStack(nn.Module):
         self.d = d
         self.nt = nt
         self.nx = nx
+        self._with_cuda = torch.cuda.is_available()
         self.xshape = xshape
         self.xdim = np.cumprod(xshape[1:])[-1]
         self.activation_fn = activation_fn
@@ -280,6 +282,7 @@ class InputLayer(nn.Module):
         self.net_config = network_config
         self.units = self.net_config.units
         self.xdim = np.cumprod(xshape[1:])[-1]
+        self._with_cuda = torch.cuda.is_available()
 
         if input_shapes is None:
             input_shapes = {'x': self.xdim, 'v': self.xdim}
@@ -315,8 +318,8 @@ class InputLayer(nn.Module):
         #     self.input_shapes['v'],
         #     self.net_config.units[0]
         # )
-        self.xlayer = nn.LazyLinear(self.net_config.units[0])
-        self.vlayer = nn.LazyLinear(self.net_config.units[0])
+        self.xlayer = nn.LazyLinear(self.net_config.units[0], device=DEVICE)
+        self.vlayer = nn.LazyLinear(self.net_config.units[0], device=DEVICE)
 
     def forward(
             self,
@@ -326,9 +329,11 @@ class InputLayer(nn.Module):
 
         x.requires_grad_(True)
         v.requires_grad_(True)
-
-        x = x.to(DEVICE)
-        v = v.to(DEVICE)
+        if self._with_cuda:
+            x = x.cuda()
+            v = v.cuda()
+        # x = x.to(DEVICE)
+        # v = v.to(DEVICE)
         if self.conv_stack is not None:
             x = self.conv_stack(x)
 
@@ -387,6 +392,14 @@ class Network(nn.Module):
         if self.net_config.use_batch_norm:
             self.batch_norm = nn.BatchNorm1d(self.units[-1], device=DEVICE)
 
+        if torch.cuda.is_available():
+            self.cuda()
+            self.input_layer.cuda()
+            self.hidden_layers.cuda()
+            self.scale.cuda()
+            self.transf.cuda()
+            self.transl.cuda()
+
     def set_net_weight(self, net_weight: NetWeight):
         self.nw = net_weight
 
@@ -394,7 +407,16 @@ class Network(nn.Module):
             self,
             inputs: tuple[Tensor, Tensor],
     ) -> tuple[Tensor, Tensor, Tensor]:
-        z = self.input_layer(inputs)
+        x, v = inputs
+
+        x.requires_grad_(True)
+        v.requires_grad_(True)
+        if self._with_cuda:
+            x = x.cuda()
+            v = v.cuda()
+        # x = x.to(DEVICE)
+        # v = v.to(DEVICE)
+        z = self.input_layer((x, v))
         for layer in self.hidden_layers:
             z = self.activation_fn(layer(z))
 
