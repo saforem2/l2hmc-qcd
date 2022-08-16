@@ -84,10 +84,10 @@ def xy_repr(x: Tensor) -> Tensor:
     return tf.stack([tf.math.cos(x), tf.math.sin(x)], axis=-1)
 
 
-CallableNetwork = (
-    tf.keras.Model | Callable[[Tuple[Tensor, Tensor], bool],
-                              Tuple[Tensor, Tensor, Tensor]]
-)
+# CallableNetwork = (
+#     tf.keras.Model | Callable[[Tuple[Tensor, Tensor], bool],
+#                               Tuple[Tensor, Tensor, Tensor]]
+# )
 
 
 class Dynamics(Model):
