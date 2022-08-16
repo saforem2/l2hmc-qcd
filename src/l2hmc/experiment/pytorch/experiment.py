@@ -325,6 +325,7 @@ class Experiment(BaseExperiment):
             self,
             job_type: str,
             therm_frac: float = 0.1,
+            beta: Optional[float] = None,
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
@@ -341,6 +342,7 @@ class Experiment(BaseExperiment):
         console = get_console(record=True)
         self.trainer.set_console(console)
         output = self.trainer.eval(
+            beta=beta,
             run=self.run,
             arun=self.arun,
             writer=writer,

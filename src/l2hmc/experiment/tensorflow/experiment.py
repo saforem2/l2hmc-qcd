@@ -238,6 +238,7 @@ class Experiment(BaseExperiment):
             self,
             job_type: str,
             therm_frac: float = 0.1,
+            beta: Optional[float] = None,
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
