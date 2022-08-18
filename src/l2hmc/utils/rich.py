@@ -329,6 +329,7 @@ def print_config(
 
     df = pd.DataFrame({logdir: cfgdict})
     df.T.to_csv(dbfpath.resolve().as_posix(), mode='a')
+    os.environ['LOGDIR'] = logdir
 
 
 @dataclass
