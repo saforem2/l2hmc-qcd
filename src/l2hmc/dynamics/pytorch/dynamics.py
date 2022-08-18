@@ -106,12 +106,20 @@ def grab(x: Tensor) -> Array:
     return x.detach().cpu().numpy()
 
 
+def dummy_network(x: Tensor, v: Tensor):
+    return (
+        torch.zeros_like(x),
+        torch.zeros_like(x),
+        torch.zeros_like(x),
+    )
+
+
 class Dynamics(nn.Module):
     def __init__(
             self,
             potential_fn: Callable,
             config: cfgs.DynamicsConfig,
-            network_factory: NetworkFactory
+            network_factory: Optional[NetworkFactory] = None
     ):
         """Initialization method."""
         super().__init__()
@@ -124,11 +132,21 @@ class Dynamics(nn.Module):
 
         self.network_factory = network_factory
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.networks = self._build_networks(network_factory)
-        self.xnet = self.networks['xnet']
-        self.vnet = self.networks['vnet']
-        self.register_module('xnet', self.networks['xnet'])
-        self.register_module('vnet', self.networks['vnet'])
+        if network_factory is not None:
+            self._networks_built = True
+            self.networks = self._build_networks(network_factory)
+            self.xnet = self.networks['xnet']
+            self.vnet = self.networks['vnet']
+            self.register_module('xnet', self.networks['xnet'])
+            self.register_module('vnet', self.networks['vnet'])
+        else:
+            self._networks_built = False
+            self.xnet = dummy_network
+            self.vnet = dummy_network
+            self.networks = {
+                'xnet': self.xnet,
+                'vnet': self.vnet,
+            }
         # assert isinstance(self.networks, nn.ModuleDict)
         # self.xnet = self.networks.get_submodule['xnet']
         # self.vnet = self.networks.get_submodule['vnet']
@@ -851,16 +869,25 @@ class Dynamics(nn.Module):
         # return torch.from_numpy(np.array(masks)).float().to(self.device)
         return masks
 
-    def _get_vnet(self, step: int) -> nn.Module:
+    def _get_vnet(self, step: int) -> nn.Module | Callable:
         """Returns momentum network to be used for updating v."""
+        if not self._networks_built:
+            return self.vnet
         # vnet = self.networks.get_submodule('vnet')
         if self.config.use_separate_networks:
             return self.vnet.get_submodule(str(step))
         return self.vnet
 
-    def _get_xnet(self, step: int, first: bool = False) -> nn.Module:
+    def _get_xnet(
+            self,
+            step: int,
+            first: bool = False
+    ) -> nn.Module | Callable:
         """Returns position network to be used for updating x."""
         # xnet = self.networks.get_submodule('xnet')
+        if not self._networks_built:
+            return self.xnet
+
         if self.config.use_separate_networks:
             xnet = self.xnet.get_submodule(str(step))
             if self.config.use_split_xnets:

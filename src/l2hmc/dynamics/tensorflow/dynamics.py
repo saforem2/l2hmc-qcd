@@ -90,12 +90,23 @@ def xy_repr(x: Tensor) -> Tensor:
 # )
 
 
+def dummy_network(
+        x: Tensor,
+        v: Tensor
+) -> tuple[Tensor, Tensor, Tensor]:
+    return (
+        tf.zeros_like(x),
+        tf.zeros_like(x),
+        tf.zeros_like(x)
+    )
+
+
 class Dynamics(Model):
     def __init__(
             self,
             potential_fn: Callable,
             config: cfgs.DynamicsConfig,
-            network_factory: NetworkFactory,
+            network_factory: Optional[NetworkFactory] = None,
     ):
         """Initialization."""
         super(Dynamics, self).__init__()
@@ -103,11 +114,24 @@ class Dynamics(Model):
         self.config = config
         self.group = config.group
         self.xdim = self.config.xdim
-        self.xshape = tuple(network_factory.input_spec.xshape)
+        self.xshape = self.config.xshape
+        # self.xshape = tuple(network_factory.input_spec.xshape)
         self.potential_fn = potential_fn
         self.nlf = self.config.nleapfrog
         # self.midpt = self.config.nleapfrog // 2
-        self.xnet, self.vnet = self._build_networks(network_factory)
+        self.network_factory = network_factory
+        if network_factory is not None:
+            self._networks_built = True
+            self.xnet, self.vnet = self._build_networks(network_factory)
+            self.networks = {'xnet': self.xnet, 'vnet': self.vnet}
+        else:
+            self._networks_built = False
+            self.xnet = dummy_network
+            self.vnet = dummy_network
+            self.networks = {
+                'xnet': self.xnet,
+                'vnet': self.vnet
+            }
         self.masks = self._build_masks()
         if self.config.group == 'U1':
             self.g = U1Phase()
@@ -693,17 +717,27 @@ class Dynamics(Model):
 
         return masks
 
-    def _get_vnet(self, step: int) -> tf.keras.Model:
+    def _get_vnet(self, step: int) -> tf.keras.Model | Callable:
         """Returns momentum network to be used for updating v."""
+        if not self._networks_built:
+            return self.vnet
         vnet = self.vnet
-        if self.config.use_separate_networks:
+        assert isinstance(vnet, (dict, tf.keras.Model))
+        if self.config.use_separate_networks and isinstance(vnet, dict):
             return vnet[str(step)]
         return vnet
 
-    def _get_xnet(self, step: int, first: bool) -> tf.keras.Model:
+    def _get_xnet(
+            self,
+            step: int,
+            first: bool
+    ) -> tf.keras.Model | Callable:
         """Returns position network to be used for updating x."""
+        if not self._networks_built:
+            return self.xnet
         xnet = self.xnet
-        if self.config.use_separate_networks:
+        assert isinstance(xnet, (tf.keras.Model, dict))
+        if self.config.use_separate_networks and isinstance(xnet, dict):
             xnet = xnet[str(step)]
             if self.config.use_split_xnets:
                 if first:
@@ -1018,7 +1052,8 @@ class Dynamics(Model):
                 outdir.joinpath('dynamics').as_posix(),
                 save_format='tf',
             )
-        except:
+        except Exception as e:
+            log.exception(e)
             pass
 
         # veps = np.array([e.numpy() for e in self.veps])

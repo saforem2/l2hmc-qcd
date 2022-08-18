@@ -34,11 +34,16 @@ class Experiment(BaseExperiment):
     def __init__(
             self,
             cfg: DictConfig,
+            build_networks: bool = True,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
     ) -> None:
         super().__init__(cfg=cfg)
-        self.trainer = self.build_trainer(keep=keep, skip=skip)
+        self.trainer = self.build_trainer(
+            keep=keep,
+            skip=skip,
+            build_networks=build_networks
+        )
         self._rank = hvd.rank()
         self._local_rank = hvd.local_rank()
         run = None
@@ -110,10 +115,16 @@ class Experiment(BaseExperiment):
 
     def build_trainer(
             self,
+            build_networks: bool = True,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
     ) -> Trainer:
-        return Trainer(self.cfg, skip=skip, keep=keep)
+        return Trainer(
+            self.cfg,
+            skip=skip,
+            keep=keep,
+            build_networks=build_networks,
+        )
 
     def init_wandb(self):
         return super()._init_wandb()

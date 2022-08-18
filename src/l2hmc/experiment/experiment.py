@@ -38,11 +38,20 @@ def get_logger(rank: int) -> logging.Logger:
 
 class BaseExperiment(ABC):
     """Convenience class for running framework independent experiments."""
-    def __init__(self, cfg: DictConfig) -> None:
+    def __init__(
+            self,
+            cfg: DictConfig,
+            # build_networks: bool = True,
+            # keep: Optional[str | list[str]] = None,
+            # skip: Optional[str | list[str]] = None,
+    ) -> None:
         super().__init__()
         self._created = get_timestamp('%Y-%m-%d-%H%M%S')
         self.cfg = cfg
         self.config = instantiate(cfg)
+        # self._build_networks = build_networks
+        # self.keep = keep
+        # self.skip = skip
         assert isinstance(self.config, ExperimentConfig)
         assert self.config.framework in [
             'pytorch',

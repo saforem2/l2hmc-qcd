@@ -125,6 +125,7 @@ class Trainer(BaseTrainer):
     def __init__(
             self,
             cfg: DictConfig | ExperimentConfig,
+            build_networks: bool = True,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
     ) -> None:
@@ -138,7 +139,9 @@ class Trainer(BaseTrainer):
         self._gstep = 0
         self.lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
-        self.dynamics = self.build_dynamics()
+        self.dynamics = self.build_dynamics(
+            build_networks=build_networks
+        )
         self.optimizer = self.build_optimizer()
         # self.lr_schedule = self.build_lr_schedule()
         assert isinstance(self.dynamics, Dynamics)
@@ -198,14 +201,19 @@ class Trainer(BaseTrainer):
             loss_config=self.config.loss,
         )
 
-    def build_dynamics(self) -> Dynamics:
+    def build_dynamics(
+            self,
+            build_networks: bool = True,
+    ) -> Dynamics:
         input_spec = self.get_input_spec()
-        net_factory = NetworkFactory(
-            input_spec=input_spec,
-            conv_config=self.config.conv,
-            network_config=self.config.network,
-            net_weights=self.config.net_weights,
-        )
+        net_factory = None
+        if build_networks:
+            net_factory = NetworkFactory(
+                input_spec=input_spec,
+                conv_config=self.config.conv,
+                network_config=self.config.network,
+                net_weights=self.config.net_weights,
+            )
         return Dynamics(config=self.config.dynamics,
                         potential_fn=self.lattice.action,
                         network_factory=net_factory)
