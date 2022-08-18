@@ -504,8 +504,11 @@ class ConvolutionConfig(BaseConfig):
         outstr = [
             list_to_str(self.filters),
             list_to_str(self.sizes),
-            list_to_str(self.pool)
         ]
+        if self.pool is not None:
+            outstr.append(
+                list_to_str(self.pool)
+            )
 
         return '_'.join(outstr)
 
@@ -704,14 +707,29 @@ def get_config(overrides: Optional[list[str]] = None):
     return cfg
 
 
-def get_experiment(overrides: Optional[list[str]] = None):
+def get_experiment(
+        overrides: Optional[list[str]] = None,
+        build_networks: bool = True,
+        keep: Optional[str | list[str]] = None,
+        skip: Optional[str | list[str]] = None,
+):
     cfg = get_config(overrides)
     if cfg.framework == 'pytorch':
         from l2hmc.experiment.pytorch.experiment import Experiment
-        return Experiment(cfg)
+        return Experiment(
+            cfg,
+            keep=keep,
+            skip=skip,
+            build_networks=build_networks,
+        )
     elif cfg.framework == 'tensorflow':
         from l2hmc.experiment.tensorflow.experiment import Experiment
-        return Experiment(cfg)
+        return Experiment(
+            cfg,
+            keep=keep,
+            skip=skip,
+            build_networks=build_networks,
+        )
     else:
         raise ValueError(
             f'Unexpected value for `cfg.framework: {cfg.framework}'

@@ -138,7 +138,7 @@ def get_experiment(
     framework = cfg.get('framework', None)
     os.environ['RUNDIR'] = str(os.getcwd())
     if framework in ['tf', 'tensorflow']:
-        _ = setup_tensorflow(cfg.precision, cfg.debug_mode)
+        _ = setup_tensorflow(cfg.precision)
         from l2hmc.experiment.tensorflow.experiment import Experiment
         experiment = Experiment(
             cfg,
