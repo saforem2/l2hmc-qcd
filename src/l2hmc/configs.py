@@ -59,8 +59,9 @@ SYNONYMS = {
 
 def add_to_outdirs_file(outdir: os.PathLike):
     with open(OUTDIRS_FILE, 'a') as f:
-        f.write('\n')
-        f.write(Path(outdir).resolve().as_posix())
+        f.writelines([
+            Path(outdir).resolve.as_posix()
+        ])
 
 
 def get_jobdir(cfg: DictConfig, job_type: str) -> Path:
@@ -490,9 +491,14 @@ class Annealear:
 class ConvolutionConfig(BaseConfig):
     filters: List[int]
     sizes: List[int]
-    pool: List[int]
+    pool: Optional[List[int]] = None
     # activation: str
     # paddings: list[int]
+
+    def __post_init__(self):
+        if self.pool is None:
+            self.pool = len(self.filters) * [2]
+        assert self.pool is not None
 
     def to_str(self):
         outstr = [
