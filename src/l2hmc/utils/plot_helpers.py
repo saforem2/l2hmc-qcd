@@ -168,6 +168,7 @@ def measure_improvement(
         improvement = np.mean(dQint_eval.values / dQint_hmc.values)
         txtfile = Path(outdir).joinpath('model_improvement.txt').as_posix()
         log.warning(f'Writing model improvement to: {txtfile}')
+        log.warning(f'Model improvement: {improvement:.8f}')
         with open(txtfile, 'w') as f:
             f.write(f'{improvement:.8f}')
 
