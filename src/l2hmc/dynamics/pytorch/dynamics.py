@@ -189,8 +189,9 @@ class Dynamics(nn.Module):
         if torch.cuda.is_available():
             self.xeps = self.xeps.cuda()
             self.veps = self.veps.cuda()
-            self.xnet.cuda()
-            self.vnet.cuda()
+            if self._build_networks:
+                self.xnet.cuda()
+                self.vnet.cuda()
             # self.networks.cuda()
             self.cuda()
 
