@@ -9,11 +9,12 @@ import os
 import random
 import warnings
 import time
+from pathlib import Path
 
 import hydra
 from typing import Optional
 import numpy as np
-from omegaconf import DictConfig
+from omegaconf.dictconfig import DictConfig
 
 from l2hmc.configs import ExperimentConfig
 from l2hmc.utils.rich import print_config
@@ -41,10 +42,7 @@ def setup(cfg: DictConfig):
         warnings.filterwarnings('ignore')
 
 
-def setup_tensorflow(
-        precision: Optional[str] = None,
-        debug: Optional[bool] = False
-) -> int:
+def setup_tensorflow(precision: Optional[str] = None) -> int:
     import tensorflow as tf
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
@@ -178,7 +176,7 @@ def get_experiment(
 
 
 @hydra.main(version_base=None, config_path='./conf', config_name='config')
-def main(cfg: DictConfig) -> None:
+def main(cfg: DictConfig) -> str:
     # --- [0.] Setup ------------------------------------------------------
     setup(cfg)
     ex = get_experiment(cfg)
@@ -223,8 +221,11 @@ def main(cfg: DictConfig) -> None:
             title=f'{ex.config.framework}',
         )
 
+    return Path(ex._outdir).as_posix()
+
 
 if __name__ == '__main__':
     import wandb
     wandb.require(experiment='service')
-    main()
+    outdir = main()
+    log.info(f'Run completed in: {outdir}')
