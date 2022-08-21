@@ -3,13 +3,54 @@
 #COBALT -q single-gpu
 #COBALT -A DLHMC
 #COBALT --attrs filesystems=home,theta-fs0,grand,eagle
+# -------------------------------------------------------
+# UG Section 2.5, page UG-24 Job Submission Options
+# Add another # at the beginning of the line to comment out a line
+# NOTE: adding a switch to the command line will override values in this file.
+
+# These options are MANDATORY at ALCF; Your qsub will fail if you don't provide them.
+#PBS -A <short project name>
+#PBS -l walltime=HH:MM:SS
+
+# Highly recommended 
+# The first 15 characters of the job name are displayed in the qstat output:
+#PBS -N <name>
+
+# If you need a queue other than the default (uncomment to use)
+##PBS -q <queue name>
+# Controlling the output of your application
+# UG Sec 3.3 page UG-40 Managing Output and Error Files
+# By default, PBS spools your output on the compute node and then uses scp to move it the
+# destination directory after the job finishes.  Since we have globally mounted file systems
+# it is highly recommended that you use the -k option to write directly to the destination
+# the doe stands for direct, output, error
+#PBS -o <path for stdout>
+#PBS -k doe
+#PBS -e <path for stderr>
+# Setting job dependencies
+# UG Section 6.2, page UG-107 Using Job Dependencies
+# There are many options for how to set up dependancies;  afterok will give behavior similar
+# to Cobalt (uncomment to use)
+##PBS depend=afterok:<jobid>:<jobid>
+
+# Environment variables (uncomment to use)
+# Section 6.12, page UG-126 Using Environment Variables
+# Sect 2.59.7, page RG-231 Enviornment variables PBS puts in the job environment
+##PBS -v <variable list>
+## -v a=10, "var2='A,B'", c=20, HOME=/home/zzz
+##PBS -V exports all the environment variables in your environnment to the compute node
+# The rest is an example of how an MPI job might be set up
+# echo Working directory is $PBS_O_WORKDIR
+# cd $PBS_O_WORKDIR
 
 TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
 HOST=$(hostname)
+echo "Job ID: ${PBS_JOBID}"
 echo "Job started at: ${TSTAMP}"
 
 # ---- Specify directories and executable for experiment ------------------
 DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd -LP)
+echo "DIR:$DIR"
 MAIN="${DIR}/main.py"
 PARENT=$(dirname $DIR)
 ROOT=$(dirname $PARENT)
@@ -60,6 +101,7 @@ if [[ $(hostname) == theta* ]]; then
     -x LD_LIBRARY_PATH"
   module load conda/2022-07-01
   conda activate base
+  # cd /lus/grand/projects/DLHMC/foremans/l2hmc-qcd/src/l2hmc/
 # ---- Check if running on Polaris -----------------------------
 elif [[ $(hostname) == x* ]]; then
   NRANKS=$(wc -l < ${PBS_NODEFILE})
@@ -74,18 +116,21 @@ elif [[ $(hostname) == x* ]]; then
     --hostfile ${HOSTFILE}"
   module load conda/2022-07-19
   conda activate base
+  # cd /lus/grand/projects/datascience/foremans/polaris/projects/l2hmc-qcd/src/l2hmc
 # ---- Check if running on MacOS --------------------------------
-elif [[ $(uname) == Darwin* ]]; then
-  # ---- Check if environment has an mpirun executable ----------
-  if [[ -x $(which mpirun) ]]; then
-    MPI_COMMAND=$(which mpirun)
-    MPI_FLAGS="-np ${NCPUS}"
-  fi
-# ---- Otherwise, run without MPI -------------------------------
 else
-    MPI_COMMAND=""
-    MPI_FLAGS=""
-    echo "HOSTNAME: $(hostname)"
+  if [[ $(uname) == Darwin* ]]; then
+    # ---- Check if environment has an mpirun executable ----------
+    if [[ -x $(which mpirun) ]]; then
+      MPI_COMMAND=$(which mpirun)
+      MPI_FLAGS="-np ${NCPUS}"
+    fi
+  # ---- Otherwise, run without MPI -------------------------------
+  else
+      MPI_COMMAND=""
+      MPI_FLAGS=""
+      echo "HOSTNAME: $(hostname)"
+  fi
 fi
 
 
@@ -128,15 +173,15 @@ conda run python3 -m pip install \
   matplotx \
   torchviz
 
-python3 -m pip install --pre --upgrade aim
+python3 -m pip install --upgrade aim
 python3 -m pip install --pre --upgrade wandb
 
 # ---- Environment settings -----------------------------------------------
 export NCCL_DEBUG=INFO
 export KMP_SETTINGS=TRUE
 export OMP_NUM_THREADS=16
-export OMPI_MCA_opal_cuda_support=true
-export TF_ENABLE_AUTO_MIXED_PRECISION=1
+# export OMPI_MCA_opal_cuda_support=TRUE
+# export TF_ENABLE_AUTO_MIXED_PRECISION=1
 # export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/cuda/lib64"
 # export KMP_AFFINITY='granularity=fine,verbose,compact,1,0'
 # export TF_XLA_FLAGS="--tf_xla_auto_jit=2 --tf_xla_enable_xla_devices"
@@ -148,6 +193,7 @@ EXEC="${MPI_COMMAND} ${MPI_FLAGS} $(which python3) ${MAIN}"
 echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
 echo "┃  STARTING A NEW RUN ON ${NGPU} GPUs ${NCPUS}   ┃"
 echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+echo -e '\n'
 printf '%.s─' $(seq 1 $(tput cols))
 echo "┃  - DATE: ${TSTAMP}"
 echo "┃  - NCPUS: ${NCPUS}"
@@ -157,11 +203,11 @@ echo "┃  - NGPUS TOTAL: ${NGPUS}"
 echo "┃  - MAIN: ${MAIN}"
 echo "┃  - Writing logs to ${LOGFILE}"
 echo "┃  - python3: $(which python3)"
-echo "┃  - mpirun: $(which mpirun)"
+echo "┃  - mpirun: ${MPI_COMMAND}"
 echo "┃  - l2hmc: $(python3 -c 'import l2hmc; print(l2hmc.__file__)')"
-echo "┃  - exec: ${EXEC}"
-# echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+echo "┃  - exec: ${EXEC} $@"
 printf '%.s─' $(seq 1 $(tput cols))
+echo -e '\n'
 
 # Run executable command
 ${EXEC} $@ > ${LOGFILE}
