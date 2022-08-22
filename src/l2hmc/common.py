@@ -102,16 +102,19 @@ def check_diff(x, y, name: Optional[str] = None):
     else:
         x = grab_tensor(x)
         y = grab_tensor(y)
+        diff = np.array(x - y)
         dstr = []
         if name is not None:
             dstr.append(f"'{name}''")
 
-        dstr.append(f'  sum(diff): {np.sum(x - y)}')
-        dstr.append(f'  min(diff): {np.min(x - y)}')
-        dstr.append(f'  max(diff): {np.max(x - y)}')
-        dstr.append(f'  mean(diff): {np.mean(x - y)}')
-        dstr.append(f'  std(diff): {np.std(x - y)}')
-        dstr.append(f'  np.allclose: {np.allclose(x, y)}')
+        dstr.append(f'  min(diff): {np.min(diff)}')
+        dstr.append(f'  max(diff): {np.max(diff)}')
+        dstr.append(f'  sum(diff): {np.sum(diff)}')
+        dstr.append(f'  sum(diff ** 2): {np.sum(diff ** 2)}')
+        if len(diff.shape) > 1:
+            dstr.append(f'  mean(diff): {np.mean(diff)}')
+            dstr.append(f'  std(diff): {np.std(diff)}')
+            dstr.append(f'  np.allclose: {np.allclose(x, y)}')
         log.info('\n'.join(dstr))
 
 
