@@ -18,7 +18,9 @@ from torch import nn
 
 import l2hmc.configs as cfgs
 from l2hmc.group.u1.pytorch.group import U1Phase
+from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
 from l2hmc.group.su3.pytorch.group import SU3
+from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
 from l2hmc.network.pytorch.network import NetworkFactory
 
 log = logging.getLogger(__name__)
@@ -107,6 +109,7 @@ def grab(x: Tensor) -> Array:
 
 
 def dummy_network(x: Tensor, v: Tensor):
+    assert x.shape == v.shape
     return (
         torch.zeros_like(x),
         torch.zeros_like(x),
@@ -139,6 +142,7 @@ class Dynamics(nn.Module):
             self.vnet = self.networks['vnet']
             self.register_module('xnet', self.networks['xnet'])
             self.register_module('vnet', self.networks['vnet'])
+            log.debug('Built networks.')
         else:
             self._networks_built = False
             self.xnet = dummy_network
@@ -147,6 +151,8 @@ class Dynamics(nn.Module):
                 'xnet': self.xnet,
                 'vnet': self.vnet,
             }
+
+        log.debug(f'dynamics._networks_built: {self._networks_built}')
         # assert isinstance(self.networks, nn.ModuleDict)
         # self.xnet = self.networks.get_submodule['xnet']
         # self.vnet = self.networks.get_submodule['vnet']
@@ -158,8 +164,12 @@ class Dynamics(nn.Module):
 
         if self.config.group == 'U1':
             self.g = U1Phase()
+            self.lattice = LatticeU1(self.config.nchains,
+                                     self.config.latvolume)
         elif self.config.group == 'SU3':
             self.g = SU3()
+            self.lattice = LatticeSU3(self.config.nchains,
+                                      self.config.latvolume)
 
         # self.xeps = nn.ParameterDict()
         # self.veps = nn.ParameterDict()
@@ -189,7 +199,7 @@ class Dynamics(nn.Module):
         if torch.cuda.is_available():
             self.xeps = self.xeps.cuda()
             self.veps = self.veps.cuda()
-            if self._build_networks:
+            if network_factory is not None and self._networks_built:
                 self.xnet.cuda()
                 self.vnet.cuda()
             # self.networks.cuda()
@@ -658,6 +668,56 @@ class Dynamics(nn.Module):
         force2 = self.grad_potential(xp, state.beta)       # calc force, again
         v2 = v1 - 0.5 * eps * force2                       # v -= ½ veps * f
         return State(x=xp, v=v2, beta=state.beta)          # output: (x', v')
+
+    def transition_kernel_hmc1(
+            self,
+            state: State,
+            eps: Optional[float] = None,
+            nleapfrog: Optional[int] = None,
+    ) -> tuple[State, dict]:
+        state_ = State(x=state.x, v=state.v, beta=state.beta)
+        sumlogdet = torch.zeros(state.x.shape[0],
+                                dtype=state.x.real.dtype,
+                                device=state.x.device)
+        history = {}
+        if self.config.verbose:
+            history = self.update_history(
+                self.get_metrics(state_, sumlogdet),
+                history=history,
+            )
+        eps = self.config.eps_hmc if eps is None else eps
+        nlf = (
+            self.config.nleapfrog if not self.config.merge_directions
+            else 2 * self.config.nleapfrog
+        )
+        assert nlf <= 2 * self.config.nleapfrog
+        nleapfrog = nlf if nleapfrog is None else nleapfrog
+
+        x = self.g.update_gauge(state.x, 0.5 * eps * state.v)
+        force = self.grad_potential(x, state.beta)
+        v = state.v - eps * force
+        for _ in range(1, nleapfrog):
+            x = self.g.update_gauge(x, eps * v)
+            force = self.grad_potential(x, state.beta)
+            v = v - eps * force
+            state_ = State(x=x, v=v, beta=state.beta)
+            if self.config.verbose:
+                history = self.update_history(
+                    self.get_metrics(state_, sumlogdet),
+                    history=history
+                )
+
+        x = self.g.update_gauge(x, 0.5 * eps * v)
+        state_ = State(x=x, v=v, beta=state.beta)
+        acc = self.compute_accept_prob(state, state_, sumlogdet)
+        history.update({'acc': acc, 'sumlogdet': sumlogdet})
+
+        if self.config.verbose:
+            for key, val in history.items():
+                if isinstance(val, list) and isinstance(val[0], Tensor):
+                    history[key] = torch.stack(val)
+
+        return state_, history
 
     def transition_kernel_hmc(
             self,
@@ -1203,17 +1263,16 @@ class Dynamics(nn.Module):
             self,
             x: Tensor,
             beta: Tensor,
-            # create_graph: bool = True,
     ) -> Tensor:
         """Compute the gradient of the potential function."""
-        x = x.to(self.device)
-        x.requires_grad_(True)
-        s = self.potential_energy(x, beta)
-        id = torch.ones(x.shape[0], device=self.device)
-        dsdx, = torch.autograd.grad(s, x,
-                                    create_graph=True,
-                                    retain_graph=True,
-                                    # create_graph=create_graph,
-                                    # retain_graph=True,
-                                    grad_outputs=id)
-        return dsdx
+        # x.requires_grad_(True)
+        # s = self.potential_energy(x, beta)
+        # id = torch.ones(x.shape[0], device=self.device)
+        # dsdx, = torch.autograd.grad(s, x,
+        #                             create_graph=True,
+        #                             retain_graph=True,
+        #                             # create_graph=create_graph,
+        #                             # retain_graph=True,
+        #                             grad_outputs=id)
+        # return dsdx
+        return self.lattice.grad_action(x, beta)

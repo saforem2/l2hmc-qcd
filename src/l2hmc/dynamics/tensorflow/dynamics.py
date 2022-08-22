@@ -20,6 +20,8 @@ from l2hmc import configs as cfgs
 from l2hmc.network.tensorflow.network import NetworkFactory
 from l2hmc.group.u1.tensorflow.group import U1Phase
 from l2hmc.group.su3.tensorflow.group import SU3
+from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
+from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
 # import l2hmc.group.tensorflow.group as g
 
 
@@ -94,6 +96,7 @@ def dummy_network(
         x: Tensor,
         v: Tensor
 ) -> tuple[Tensor, Tensor, Tensor]:
+    assert x.shape == v.shape
     return (
         tf.zeros_like(x),
         tf.zeros_like(x),
@@ -135,8 +138,12 @@ class Dynamics(Model):
         self.masks = self._build_masks()
         if self.config.group == 'U1':
             self.g = U1Phase()
+            self.lattice = LatticeU1(self.config.nchains,
+                                     self.config.latvolume)
         elif self.config.group == 'SU3':
             self.g = SU3()
+            self.lattice = LatticeSU3(self.config.nchains,
+                                      self.config.latvolume)
         else:
             raise ValueError('Unexpected value for `self.config.group`')
 
@@ -481,28 +488,15 @@ class Dynamics(Model):
             eps: float,
     ) -> State:
         """Perform standard HMC leapfrog update."""
-        # x = tf.reshape(state.x, self.xshape)
-        xflat = tf.reshape(state.x, state.v.shape)
-        force1 = self.grad_potential(xflat, state.beta)        # f = dU / dx
-        # halfeps = tf.constant(0.5 * eps, dtype=force1.dtype)
-        halfeps = tf.cast(eps / 2.0, dtype=force1.dtype)
-        eps = tf.cast(eps, dtype=force1.dtype)
-        # dt = 0.5 * eps
-        v1 = state.v - halfeps * force1
-        # xp = x + dt * v1                                 # x += xeps * v
-        xp = tf.reshape(
-            self.g.update_gauge(
-                tf.reshape(state.x, self.xshape),
-                tf.reshape(eps * v1, self.xshape)
-            ),
-            state.v.shape
-        )
-        # xp = tf.reshape(xp, state.v.shape)
-        force2 = self.grad_potential(xp, state.beta)       # calc force, again
-        v1 = tf.reshape(v1, [v1.shape[0], -1])
-        force2 = tf.reshape(force2, v1.shape)
-        v2 = v1 - halfeps * force2                         # v -= ½ veps * f
-        return State(x=xp, v=v2, beta=state.beta)          # output: (x', v')
+        x = tf.reshape(state.x, state.v.shape)
+        force = self.grad_potential(x, state.beta)        # f = dU / dx
+        eps = tf.cast(eps, dtype=force.dtype)
+        halfeps = tf.cast(eps / 2.0, dtype=force.dtype)
+        v = state.v - halfeps * force
+        x = self.g.update_gauge(x, eps * v)
+        force = self.grad_potential(x, state.beta)       # calc force, again
+        v -= halfeps * force
+        return State(x=x, v=v, beta=state.beta)          # output: (x', v')
 
     def transition_kernel_hmc(
             self,
@@ -520,20 +514,13 @@ class Dynamics(Model):
                 self.get_metrics(state_, sumlogdet),
                 history={}
             )
-
-        if self.config.merge_directions:
-            nleapfrog = (
-                2 * self.config.nleapfrog
-                if nleapfrog is None else nleapfrog
-            )
-        else:
-            nleapfrog = (
-                self.config.nleapfrog
-                if nleapfrog is None else nleapfrog
-            )
-
-        # eps = (1. / nleapfrog) if eps is None else eps
         eps = self.config.eps_hmc if eps is None else eps
+        nlf = (
+            self.config.nleapfrog if not self.config.merge_directions
+            else 2 * self.config.nleapfrog
+        )
+        assert nlf <= 2 * self.config.nleapfrog
+        nleapfrog = nlf if nleapfrog is None else nleapfrog
         for _ in range(nleapfrog):
             state_ = self.leapfrog_hmc(state_, eps=eps)
             if self.config.verbose:
@@ -995,15 +982,16 @@ class Dynamics(Model):
 
     def grad_potential(self, x: Tensor, beta: Tensor) -> Tensor:
         """Compute the gradient of the potential function."""
-        if tf.executing_eagerly():
-            with tf.GradientTape() as tape:
-                tape.watch(x)
-                pe = self.potential_energy(x, beta)
-            grad = tape.gradient(pe, x)
-        else:
-            grad = tf.gradients(self.potential_energy(x, beta), [x])[0]
+        # if tf.executing_eagerly():
+        #     with tf.GradientTape() as tape:
+        #         tape.watch(x)
+        #         pe = self.potential_energy(x, beta)
+        #     grad = tape.gradient(pe, x)
+        # else:
+        #     grad = tf.gradients(self.potential_energy(x, beta), [x])[0]
 
-        return grad
+        # return grad
+        return self.lattice.grad_action(x, beta)
 
     def load_networks(self, d: os.PathLike):
         d = Path(d)
