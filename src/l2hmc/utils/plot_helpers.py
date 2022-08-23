@@ -128,9 +128,11 @@ def savefig(fig: plt.Figure, outfile: os.PathLike):
 def measure_improvement(
         experiment: Any,
         title: Optional[str] = None,
-) -> None:
+) -> np.floating | float:
     ehist = experiment.trainer.histories.get('eval', None)
     hhist = experiment.trainer.histories.get('hmc', None)
+    improvement = 0.0
+    set_plot_style()
     if ehist is not None and hhist is not None:
         edset = ehist.get_dataset()
         hdset = hhist.get_dataset()
@@ -162,8 +164,8 @@ def measure_improvement(
             loc='best',
             framealpha=0.1,
             ncol=2,
-            labelcolor='#FFF',
-            shadow=True
+            labelcolor='#bdbdbd',
+            # shadow=True
         )
         if title is not None:
             _ = ax.set_title(title)
@@ -177,6 +179,8 @@ def measure_improvement(
             f.write(f'{improvement:.8f}')
 
         save_figure(fig, fname='model_improvement', outdir=outdir)
+
+    return improvement
 
 
 def plot_scalar(
@@ -371,6 +375,7 @@ def plot_dataArray(
         val: xr.DataArray,
         key: Optional[str] = None,
         therm_frac: Optional[float] = 0.,
+        logfreq: Optional[int] = None,
         num_chains: Optional[int] = 10,
         title: Optional[str] = None,
         outdir: Optional[str | Path] = None,
@@ -412,6 +417,7 @@ def plot_dataArray(
                     ax.plot(steps, arr[~np.isnan(arr)], **plot_kwargs)
                 except Exception:
                     log.error(f'Unable to plot {key}! Continuing')
+            _ = ax.grid(True, alpha=0.2)
             axes = ax
         elif len(arr.shape) == 3:
             fig, ax = plt.subplots(**subplots_kwargs)
@@ -429,6 +435,7 @@ def plot_dataArray(
 
         ax = plt.gca()
         ax.set_ylabel(key)
+        ax.set_xlabel('draw')
         # matplotx.line_labels()
         if line_labels:
             matplotx.line_labels()
@@ -447,6 +454,13 @@ def plot_dataArray(
     if title is not None:
         fig = plt.gcf()
         fig.suptitle(title)
+
+    if logfreq is not None:
+        ax = plt.gca()
+        xticks = ax.get_xticks()
+        _ = ax.set_xticklabels([
+            f'{logfreq * int(i)}' for i in xticks
+        ])
 
     if outdir is not None:
         outfile = Path(outdir).joinpath(f'{key}.svg')
@@ -571,6 +585,7 @@ def plot_metric(
         key: Optional[str] = None,
         therm_frac: Optional[float] = 0.,
         num_chains: Optional[int] = 0,
+        logfreq: Optional[int] = None,
         title: Optional[str] = None,
         outdir: Optional[os.PathLike] = None,
         subplots_kwargs: Optional[dict[str, Any]] = None,
@@ -623,12 +638,18 @@ def plot_metric(
         sns.despine(ax=ax, top=True, right=True)
         sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
         ax1.set_xlabel('')
+        if logfreq is not None:
+            xticks = ax.get_xticks()
+            _ = ax.set_xticklabels([
+                f'{logfreq * int(i)}' for i in xticks
+            ])
         axes = (ax, ax1)
     else:
         # arr.shape = [draws]
         if len(arr.shape) == 1:
             fig, ax = plt.subplots(**subplots_kwargs)
             ax.plot(steps, arr, **plot_kwargs)
+            ax.grid(True, alpha=0.2)
             axes = ax
         # arr.shape = [draws, nleapfrog, chains]
         elif len(arr.shape) == 3:
@@ -673,6 +694,12 @@ def plot_metric(
     if title is not None:
         fig.suptitle(title)
 
+    if logfreq is not None:
+        xticks = ax.get_xticks()
+        _ = ax.set_xticklabels([
+            f'{logfreq * int(i)}' for i in xticks
+        ])
+
     if outdir is not None:
         outfile = Path(outdir).joinpath(f'{key}.{ext}')
         if not outfile.is_file():
@@ -707,6 +734,7 @@ def plot_dataset(
         num_chains: Optional[int] = 8,
         therm_frac: Optional[float] = 0.,
         title: Optional[str] = None,
+        logfreq: Optional[int] = None,
         outdir: Optional[os.PathLike] = None,
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
@@ -730,6 +758,7 @@ def plot_dataset(
             key=str(key),
             title=title,
             outdir=None,
+            logfreq=logfreq,
             therm_frac=therm_frac,
             num_chains=num_chains,
             plot_kwargs=plot_kwargs,
