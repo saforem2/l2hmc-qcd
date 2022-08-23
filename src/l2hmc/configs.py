@@ -18,8 +18,6 @@ import numpy as np
 from omegaconf import DictConfig
 from omegaconf import MISSING
 
-# from accelerate.accelerator import Accelerator
-# from hydra.utils import instantiate
 
 logger = logging.getLogger(__name__)
 
@@ -572,20 +570,9 @@ class DynamicsConfig(BaseConfig):
             )
             assert len(self.xshape) == 8
             assert len(self.latvolume) == 4
-            self.xdim = self.nt * self.nx * self.ny * self.nz * self.dim * 8
+            self.xdim = int(np.cumprod(self.xshape[1:])[-1])
         else:
             raise ValueError('Expected `group` to be one of `"U1", "SU3"`')
-
-    # def get_xshape(self):
-    #     if self.group.upper() == 'U1':
-    #         return (self.nchains, self.dim, *self.latvolume)
-    #     elif self.group.upper() == 'SU3':
-    #         return (
-    #             self.nchains,
-    #             self.dim,
-    #             *self.latvolume,
-    #             *self.link_shape
-    #         )
 
 
 @dataclass
@@ -614,20 +601,6 @@ class InputSpec(BaseConfig):
             self.xnet = {'x': self.xshape, 'v': self.xshape}
         if self.vnet is None:
             self.vnet = {'x': self.xshape, 'v': self.xshape}
-
-
-@dataclass
-class TrainerConfig1:
-    steps: Steps
-    lr: LearningRateConfig
-    dynamics: DynamicsConfig
-    schedule: AnnealingSchedule
-    compile: bool = True
-    aux_weight: float = 0.0
-    evals_per_step: int = 1
-    compression: Optional[str] = 'none'
-    keep: Optional[str | list[str]] = None
-    skip: Optional[str | list[str]] = None
 
 
 @dataclass
