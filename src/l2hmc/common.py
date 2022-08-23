@@ -28,7 +28,9 @@ from l2hmc.configs import AnnealingSchedule, Steps
 from l2hmc.configs import OUTPUTS_DIR
 from l2hmc.configs import State
 from l2hmc.utils.plot_helpers import (
-    make_ridgeplots, plot_dataArray, set_plot_style
+    make_ridgeplots,
+    plot_dataArray,
+    set_plot_style
 )
 from l2hmc.utils.rich import get_console, is_interactive
 
@@ -116,6 +118,41 @@ def check_diff(x, y, name: Optional[str] = None):
             dstr.append(f'  std(diff): {np.std(diff)}')
             dstr.append(f'  np.allclose: {np.allclose(x, y)}')
         log.info('\n'.join(dstr))
+
+
+def update_dict(
+        dnew: dict,
+        dold: Optional[dict] = None,
+) -> tuple[list[str], dict]:
+    dold = {} if dold is None else dold
+    mstr = []
+    for key, val in dnew.items():
+        if isinstance(val, (torch.Tensor, tf.Tensor)):
+            val = grab_tensor(val)
+
+        if isinstance(val, list):
+            if isinstance(val[0], torch.Tensor):
+                val = grab_tensor(torch.stack(val))
+            elif isinstance(val[0], tf.Tensor):
+                val = grab_tensor(tf.stack(val))
+            else:
+                try:
+                    val = np.stack(val)
+                except Exception as exc:
+                    log.exception(exc)
+        else:
+            val = np.array(val)
+
+        try:
+            mstr.append(f'{key}={val.mean():^5.4f}')  # type:ignore
+        except AttributeError:
+            mstr.append(f'{key}={val:^5.4f}')
+        try:
+            dold[key].append(val)
+        except NameError:
+            dold[key] = [val]
+
+    return mstr, dold
 
 
 def setup_annealing_schedule(cfg: DictConfig) -> AnnealingSchedule:
@@ -610,6 +647,7 @@ def make_dataset(metrics: dict) -> xr.Dataset:
 def plot_dataset(
         dataset: xr.Dataset,
         nchains: Optional[int] = 10,
+        logfreq: Optional[int] = None,
         outdir: Optional[os.PathLike] = None,
         title: Optional[str] = None,
         job_type: Optional[str] = None,
@@ -637,6 +675,7 @@ def plot_dataset(
         fig, _, _ = plot_dataArray(
             val,
             key=key,
+            logfreq=logfreq,
             outdir=outdir,
             title=title,
             line_labels=False,
@@ -650,6 +689,7 @@ def analyze_dataset(
         outdir: os.PathLike,
         nchains: Optional[int] = None,
         title: Optional[str] = None,
+        logfreq: Optional[int] = None,
         job_type: Optional[str] = None,
         save: Optional[bool] = True,
         run: Optional[Any] = None,
@@ -667,6 +707,7 @@ def analyze_dataset(
 
     plot_dataset(dataset,
                  nchains=nchains,
+                 logfreq=logfreq,
                  title=title,
                  job_type=job_type,
                  outdir=dirs['plots'])
@@ -729,6 +770,7 @@ def save_and_analyze_data(
         dataset: xr.Dataset,
         outdir: os.PathLike,
         nchains: Optional[int] = None,
+        logfreq: Optional[int] = None,
         run: Optional[Any] = None,
         arun: Optional[Any] = None,
         output: Optional[dict] = None,
@@ -749,6 +791,7 @@ def save_and_analyze_data(
                               save=True,
                               outdir=outdir,
                               nchains=nchains,
+                              logfreq=logfreq,
                               job_type=job_type,
                               title=title)
 
