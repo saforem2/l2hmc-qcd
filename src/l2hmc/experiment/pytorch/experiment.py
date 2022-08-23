@@ -301,17 +301,30 @@ class Experiment(BaseExperiment):
         console = get_console(record=True)
         # console = Console(log_path=False, record=True, width=210)
         self.trainer.set_console(console)
-        output = self.trainer.train(
-            x=x,
-            nera=nera,
-            nepoch=nepoch,
-            run=self.run,
-            arun=self.arun,
-            writer=writer,
-            train_dir=jobdir,
-            skip=skip,
-            beta=beta,
-        )
+        if self.config.annealing_schedule.dynamic:
+            output = self.trainer.train_dynamic(
+                x=x,
+                nera=nera,
+                nepoch=nepoch,
+                run=self.run,
+                arun=self.arun,
+                writer=writer,
+                train_dir=jobdir,
+                skip=skip,
+                beta=beta,
+            )
+        else:
+            output = self.trainer.train(
+                x=x,
+                nera=nera,
+                nepoch=nepoch,
+                run=self.run,
+                arun=self.arun,
+                writer=writer,
+                train_dir=jobdir,
+                skip=skip,
+                beta=beta,
+            )
         # fname = f'train-{RANK}'
         # txtfile = jobdir.joinpath(f'{fname}.txt')
         # htmlfile = jobdir.joinpath(f'{fname}.html')
