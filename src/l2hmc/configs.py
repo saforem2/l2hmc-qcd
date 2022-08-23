@@ -302,6 +302,7 @@ class Steps:
 class AnnealingSchedule(BaseConfig):
     beta_init: float
     beta_final: Optional[float] = 1.0
+    dynamic: bool = False
     # steps: Steps
     # TODO: Add methods for specifying different annealing schedules
 
@@ -604,7 +605,7 @@ class InputSpec(BaseConfig):
 
 
 @dataclass
-class ExperimentConfig:
+class ExperimentConfig(BaseConfig):
     seed: int
     wandb: Any
     steps: Steps
