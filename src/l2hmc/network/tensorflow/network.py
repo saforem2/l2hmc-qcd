@@ -316,9 +316,9 @@ class LeapfrogLayer(tf.keras.Model):
         transl = self.transl(z)
 
         return (
-            self.nw.s * scale,
-            self.nw.t * transl,
-            self.nw.q * transf
+            tf.cast(self.nw.s * scale, inputs[0].dtype),
+            tf.cast(self.nw.t * transl, inputs[0].dtype),
+            tf.cast(self.nw.q * transf, inputs[0].dtype)
         )
 
 
