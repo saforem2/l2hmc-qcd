@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from torch.utils.tensorboard.writer import SummaryWriter
 
-from l2hmc.common import grab_tensor
+# from l2hmc.common import grab_tensor
 
 Tensor = torch.Tensor
 Array = np.ndarray
@@ -18,6 +18,7 @@ Scalar = Union[float, int, bool]
 ArrayLike = Union[Tensor, Array, Scalar]
 
 log = logging.getLogger(__name__)
+
 
 def log_dict(
         writer: SummaryWriter,
@@ -67,7 +68,8 @@ def log_item(
 
     elif isinstance(val, (Tensor, Array)):
         if isinstance(val, torch.Tensor):
-            arr = grab_tensor(val)
+            arr = val.detach().cpu().numpy()
+            # arr = grab_tensor(val)
         else:
             arr = np.array(val)
 
