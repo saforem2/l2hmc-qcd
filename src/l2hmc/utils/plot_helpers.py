@@ -33,9 +33,9 @@ COLORS = {
     'blue':     '#007DFF',
     'red':      '#FF5252',
     'green':    '#63FF5B',
-    'yellow':   '#FFFF00',
     'orange':   '#FD971F',
     'purple':   '#AE81FF',
+    'yellow':   '#ffeb3b',
     'pink':     '#F92672',
     'teal':     '#00CC99',
     'white':    '#CFCFCF',
@@ -72,7 +72,7 @@ plt.rcParams['axes.labelcolor'] = '#bdbdbd'
 # })
 
 
-def set_plot_style():
+def set_plot_style(**kwargs):
     plt.style.use('default')
     plt.rcParams.update({
         'image.cmap': 'viridis',
@@ -89,8 +89,12 @@ def set_plot_style():
         'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
         'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
     })
-
+    plt.rcParams['axes.prop_cycle'] = plt.cycler(
+        'color',
+        list(COLORS.values())
+    )
     plt.rcParams['axes.labelcolor'] = '#bdbdbd'
+    plt.rcParams.update(**kwargs)
 
 
 def get_timestamp(fstr=None):
