@@ -903,6 +903,7 @@ class Trainer(BaseTrainer):
             'nepoch': nepoch,
             'extend': extend,
             'betas': betas,
+            'train_dir': train_dir,
             'beta_final': beta_final,
         }
 
