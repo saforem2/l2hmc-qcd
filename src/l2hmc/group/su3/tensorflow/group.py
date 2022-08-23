@@ -25,7 +25,7 @@ from l2hmc.group.su3.tensorflow.utils import (
 log = logging.getLogger(__name__)
 
 Tensor = tf.Tensor
-TF_FLOAT = tf.keras.backend.floatx()
+TF_FLOAT = tf.dtypes.as_dtype(tf.keras.backend.floatx())
 
 
 class SU3(Group):
