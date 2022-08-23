@@ -45,7 +45,7 @@ class LatticeLoss:
 
     @staticmethod
     def mixed_loss(loss: Tensor, weight: float) -> Tensor:
-        w = tf.constant(weight, dtype=TF_FLOAT)
+        w = tf.constant(weight, dtype=loss.dtype)
         return (w / loss) - (loss / w)
 
     def plaq_loss(self, x1: Tensor, x2: Tensor, acc: Tensor) -> Tensor:
@@ -64,9 +64,14 @@ class LatticeLoss:
         if isinstance(self.g, U1Phase):
             ploss = acc * tf.reduce_sum(dwloops, axis=(1, 2))
         elif isinstance(self.g, SU3):
-            ploss = acc * tf.reduce_sum(
-                dwloops, tuple(range(2, 3, len(w1.shape)))
-            )
+            # ploss = acc * tf.cast(
+            #     tf.reduce_sum(
+            #         dwloops, tuple(range(2, 3, len(w1.shape)))
+            #     ),
+            #     acc.dtype
+            # )
+            # TODO: Update / implement plaquette loss for 4D SU(3) model
+            ploss = tf.constant(0.0)
         else:
             raise ValueError(f'Unexpected value for self.g: {self.g}')
 
@@ -74,6 +79,7 @@ class LatticeLoss:
             ploss += 1e-4  # to prevent division by zero in mixed_loss
             tf.reduce_mean(self.mixed_loss(ploss, self.plaq_weight))
 
+        ploss = tf.cast(ploss, self.plaq_weight.dtype)
         return tf.reduce_mean(-ploss / self.plaq_weight)
 
     def _charge_loss(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
