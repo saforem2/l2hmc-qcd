@@ -216,7 +216,7 @@ class Trainer(BaseTrainer):
 
     def build_dynamics(
             self,
-            build_networks: Optional[bool] = True,
+            build_networks: bool = True,
     ) -> Dynamics:
         input_spec = self.get_input_spec()
         net_factory = None
@@ -643,6 +643,17 @@ class Trainer(BaseTrainer):
                     record = {
                         'step': step, 'beta': beta, 'dt': dt,
                     }
+                    if job_type == 'hmc':
+                        acc = metrics.get('acc_mask', None)
+                        if acc is not None and eps is not None:
+                            acc_avg = acc.mean()
+                            if acc_avg < 0.66:
+                                eps -= (eps / 10.)
+                            else:
+                                eps += (eps / 10.)
+
+                            record['eps'] = eps
+
                     avgs, summary = self.record_metrics(run=run,
                                                         arun=arun,
                                                         step=step,
@@ -650,8 +661,17 @@ class Trainer(BaseTrainer):
                                                         writer=writer,
                                                         metrics=metrics,
                                                         job_type=job_type)
+
                     if not isinstance(ctx, Live) and step % nprint == 0:
-                        log.info(summary)
+                        log.info(
+                            ', '.join([
+                                '='.join(
+                                    zip(list(avgs.keys()),
+                                        list(avgs.values()))
+                                )
+                            ])
+                        )
+                        # log.info(summary)
 
                     summaries.append(summary)
                     if step == 0:
@@ -895,8 +915,11 @@ class Trainer(BaseTrainer):
         era = 0
         epoch = 0
         extend = 1
+        # for era in range(nera):
+        b = torch.tensor(betas.get(str(era), beta_final))
+        # while b < beta_final:
         for era in range(nera):
-            b = torch.tensor(betas.get(str(era), beta_final))
+            # b = torch.tensor(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
                 extend = int(self.steps.extend_last_era)
 
@@ -920,11 +943,125 @@ class Trainer(BaseTrainer):
             )
             st0 = time.time()
 
-            # losses = edata['losses']
-            # if losses[-1] < losses[0]:
-            #     b += self.config.annealing_schedule._dbeta
-            # else:
-            #     b -= self.config.annealing_schedule._dbeta
+            losses = torch.stack(edata['losses'][1:])
+            if self.config.annealing_schedule.dynamic:
+                dy_avg = (losses[1:] - losses[:-1]).mean().item()
+                # if losses[-1] < losses[0]:
+                if dy_avg > 0:
+                    b -= (b / 10.)  # self.config.annealing_schedule._dbeta
+                else:
+                    b += (b / 10.)  # self.config.annealing_schedule._dbeta
+
+            self.rows['train'][str(era)] = edata['rows']
+            self.tables['train'][str(era)] = edata['table']
+            self.summaries['train'][str(era)] = edata['summaries']
+
+            if (era + 1) == nera or (era + 1) % 5 == 0:
+                # ckpt_metrics = {'loss': metrics.get('loss', 0.0)}
+                self.save_ckpt(era, epoch, train_dir, run=run)
+
+            if self._is_chief:
+                log.info(f'Saving took: {time.time() - st0:<5g}s')
+                log.info(f'Era {era} took: {time.time() - epoch_start:<5g}s')
+
+        return {
+            'timer': self.timers['train'],
+            'rows': self.rows['train'],
+            'summaries': self.summaries['train'],
+            'history': self.histories['train'],
+            'tables': self.tables['train'],
+        }
+
+    def train_dynamic(
+            self,
+            x: Optional[Tensor] = None,
+            skip: Optional[str | list[str]] = None,
+            train_dir: Optional[os.PathLike] = None,
+            run: Optional[Any] = None,
+            arun: Optional[Any] = None,
+            writer: Optional[Any] = None,
+            nera: Optional[int] = None,
+            nepoch: Optional[int] = None,
+            beta: Optional[float | list[float] | dict[str, float]] = None,
+    ) -> dict:
+        """Perform training and return dictionary of results."""
+        skip = [skip] if isinstance(skip, str) else skip
+        # steps = self.steps if steps is None else steps
+        train_dir = (
+            Path(os.getcwd()).joinpath(
+                self._created, 'train'
+            )
+            if train_dir is None else Path(train_dir)
+        )
+        train_dir.mkdir(exist_ok=True, parents=True)
+
+        if x is None:
+            x = self.g.random(list(self.xshape)).flatten(1)
+
+        nera = self.config.steps.nera if nera is None else nera
+        nepoch = self.config.steps.nepoch if nepoch is None else nepoch
+        extend = self.config.steps.extend_last_era
+        assert isinstance(nera, int)
+        assert isinstance(nepoch, int)
+
+        if beta is not None:
+            assert isinstance(beta, (float, list))
+            if isinstance(beta, list):
+                assert len(beta) == nera, 'Expected len(beta) == nera'
+            else:
+                beta = nera * [beta]
+
+            betas = {f'{i}': b for i, b in zip(range(nera), beta)}
+
+        else:
+            betas = self.config.annealing_schedule.setup(
+                nera=nera,
+                nepoch=nepoch,
+            )
+
+        beta_final = list(betas.values())[-1]
+        assert beta_final is not None and isinstance(beta_final, float)
+        # assert b is not None and isinstance(b, float)
+        # while b < beta_final:
+        self.dynamics.train()
+        era = 0
+        epoch = 0
+        extend = 1
+        # for era in range(nera):
+        b = torch.tensor(betas.get(str(era), beta_final))
+        while b < beta_final:
+            # b = torch.tensor(betas.get(str(era), beta_final))
+            if era == (nera - 1) and self.steps.extend_last_era is not None:
+                extend = int(self.steps.extend_last_era)
+
+            if self._is_chief:
+                if era > 1 and str(era - 1) in self.summaries['train']:
+                    esummary = self.histories['train'].era_summary(f'{era-1}')
+                    log.info(f'Avgs over last era:\n {esummary}\n')
+
+                self.console.rule(f'ERA: {era} / {nera}, BETA: {b:.3f}')
+
+            epoch_start = time.time()
+            x, edata = self.train_epoch(
+                x=x,
+                beta=b,
+                era=era,
+                run=run,
+                arun=arun,
+                writer=writer,
+                extend=extend,
+                nepoch=nepoch,
+            )
+            st0 = time.time()
+
+            losses = torch.stack(edata['losses'][1:])
+            if self.config.annealing_schedule.dynamic:
+                dy_avg = (losses[1:] - losses[:-1]).mean().item()
+                # if losses[-1] < losses[0]:
+                if dy_avg > 0:
+                    b -= (b / 10.)  # self.config.annealing_schedule._dbeta
+                else:
+                    b += (b / 10.)  # self.config.annealing_schedule._dbeta
 
             self.rows['train'][str(era)] = edata['rows']
             self.tables['train'][str(era)] = edata['table']
