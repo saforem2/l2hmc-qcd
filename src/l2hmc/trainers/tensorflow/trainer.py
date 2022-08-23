@@ -255,16 +255,11 @@ class Trainer(BaseTrainer):
     def save_ckpt(
             self,
             manager: CheckpointManager,
-            train_dir: os.PathLike,
     ) -> os.PathLike | None:
         if not self._is_chief:
             return
 
         ckpt = manager.save()
-        # try:
-        #     self.dynamics.save_networks(train_dir)
-        # except Exception as exc:
-        #     log.exception(exc)
         return ckpt
 
     def should_log(self, epoch):
@@ -762,19 +757,16 @@ class Trainer(BaseTrainer):
 
         return x, data
 
-    def train(
+    def _setup_training(
             self,
             x: Optional[Tensor] = None,
             skip: Optional[str | list[str]] = None,
             train_dir: Optional[os.PathLike] = None,
-            run: Optional[Any] = None,
-            arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
     ) -> dict:
-        """Perform training and return dictionary of results."""
         skip = [skip] if isinstance(skip, str) else skip
 
         # -- Tensorflow specific
@@ -817,16 +809,53 @@ class Trainer(BaseTrainer):
 
         beta_final = list(betas.values())[-1]
         assert beta_final is not None and isinstance(beta_final, float)
+        return {
+            'x': x,
+            'nera': nera,
+            'nepoch': nepoch,
+            'extend': extend,
+            'betas': betas,
+            'manager': manager,
+            'train_dir': train_dir,
+            'beta_final': beta_final,
+        }
 
-        # ┏━------------------------------------━┓
-        # ┃         MAIN TRAINING LOOP           ┃
-        # ┗-------------------------------------━┛
+    def train(
+            self,
+            x: Optional[Tensor] = None,
+            skip: Optional[str | list[str]] = None,
+            train_dir: Optional[os.PathLike] = None,
+            run: Optional[Any] = None,
+            arun: Optional[Any] = None,
+            writer: Optional[Any] = None,
+            nera: Optional[int] = None,
+            nepoch: Optional[int] = None,
+            beta: Optional[float | list[float] | dict[str, float]] = None,
+    ) -> dict:
+        """Perform training and return dictionary of results."""
+        setup = self._setup_training(
+            x=x,
+            skip=skip,
+            train_dir=train_dir,
+            nera=nera,
+            nepoch=nepoch,
+            beta=beta,
+        )
         era = 0
+        # epoch = 0
         extend = 1
-        assert x is not None
-        # for era in range(nera):
+        x = setup['x']
+        nera = setup['nera']
+        betas = setup['betas']
+        nepoch = setup['nepoch']
+        extend = setup['extend']
+        manager = setup['manager']
+        train_dir = setup['train_dir']
+        beta_final = setup['beta_final']
         b = tf.constant(betas.get(str(era), beta_final))
-        # while b < beta_final:
+        assert x is not None
+        assert nera is not None
+        assert train_dir is not None
         for era in range(nera):
             b = tf.constant(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
@@ -864,7 +893,7 @@ class Trainer(BaseTrainer):
                     b += (b / 10.)
 
             if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
-                self.save_ckpt(manager, train_dir)
+                self.save_ckpt(manager)
 
             if self._is_chief:
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
@@ -891,58 +920,29 @@ class Trainer(BaseTrainer):
             beta: Optional[float | list[float] | dict[str, float]] = None,
     ) -> dict:
         """Perform training and return dictionary of results."""
-        skip = [skip] if isinstance(skip, str) else skip
-
-        # -- Tensorflow specific
-        if writer is not None:
-            writer.set_as_default()
-
-        if train_dir is None:
-            train_dir = Path(os.getcwd()).joinpath(
-                self._created, 'train'
-            )
-            train_dir.mkdir(exist_ok=True, parents=True)
-
-        if x is None:
-            x = flatten(self.g.random(list(self.xshape)))
-
-        # -- Setup checkpoint manager for TensorFlow --------
-        manager = self.setup_CheckpointManager(train_dir)
-        self._gstep = K.get_value(self.optimizer.iterations)
-        # ----------------------------------------------------
-        # -- Setup Step information (nera, nepoch, etc). -----
-        nera = self.config.steps.nera if nera is None else nera
-        nepoch = self.config.steps.nepoch if nepoch is None else nepoch
-        extend = self.config.steps.extend_last_era
-        assert isinstance(nera, int)
-        assert isinstance(nepoch, int)
-
-        if beta is not None:
-            assert isinstance(beta, (float, list))
-            if isinstance(beta, list):
-                assert len(beta) == nera, 'Expected len(beta) == nera'
-            else:
-                beta = nera * [beta]
-
-            betas = {f'{i}': b for i, b in zip(range(nera), beta)}
-        else:
-            betas = self.config.annealing_schedule.setup(
-                nera=nera,
-                nepoch=nepoch,
-            )
-
-        beta_final = list(betas.values())[-1]
-        assert beta_final is not None and isinstance(beta_final, float)
-
-        # ┏━------------------------------------━┓
-        # ┃         MAIN TRAINING LOOP           ┃
-        # ┗-------------------------------------━┛
+        setup = self._setup_training(
+            x=x,
+            skip=skip,
+            train_dir=train_dir,
+            nera=nera,
+            nepoch=nepoch,
+            beta=beta,
+        )
         era = 0
+        # epoch = 0
         extend = 1
-        assert x is not None
-        # for era in range(nera):
+        x = setup['x']
+        nera = setup['nera']
+        betas = setup['betas']
+        nepoch = setup['nepoch']
+        extend = setup['extend']
+        manager = setup['manager']
+        train_dir = setup['train_dir']
+        beta_final = setup['beta_final']
         b = tf.constant(betas.get(str(era), beta_final))
-        # for era in range(nera):
+        assert x is not None
+        assert nera is not None
+        assert train_dir is not None
         while b < beta_final:
             b = tf.constant(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
@@ -980,11 +980,13 @@ class Trainer(BaseTrainer):
                     b += (b / 10.)
 
             if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
-                self.save_ckpt(manager, train_dir)
+                _ = self.save_ckpt(manager)
 
             if self._is_chief:
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
                 log.info(f'Era {era} took: {time.time() - epoch_start:<5g}s')
+
+            era += 1
 
         return {
             'timer': self.timers['train'],

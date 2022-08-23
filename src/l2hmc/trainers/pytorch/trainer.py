@@ -1007,52 +1007,30 @@ class Trainer(BaseTrainer):
             beta: Optional[float | list[float] | dict[str, float]] = None,
     ) -> dict:
         """Perform training and return dictionary of results."""
-        skip = [skip] if isinstance(skip, str) else skip
-        # steps = self.steps if steps is None else steps
-        train_dir = (
-            Path(os.getcwd()).joinpath(
-                self._created, 'train'
-            )
-            if train_dir is None else Path(train_dir)
-        )
-        train_dir.mkdir(exist_ok=True, parents=True)
-
-        if x is None:
-            x = self.g.random(list(self.xshape)).flatten(1)
-
-        nera = self.config.steps.nera if nera is None else nera
-        nepoch = self.config.steps.nepoch if nepoch is None else nepoch
-        extend = self.config.steps.extend_last_era
-        assert isinstance(nera, int)
-        assert isinstance(nepoch, int)
-
-        if beta is not None:
-            assert isinstance(beta, (float, list))
-            if isinstance(beta, list):
-                assert len(beta) == nera, 'Expected len(beta) == nera'
-            else:
-                beta = nera * [beta]
-
-            betas = {f'{i}': b for i, b in zip(range(nera), beta)}
-
-        else:
-            betas = self.config.annealing_schedule.setup(
-                nera=nera,
-                nepoch=nepoch,
-            )
-
-        beta_final = list(betas.values())[-1]
-        assert beta_final is not None and isinstance(beta_final, float)
-        # assert b is not None and isinstance(b, float)
-        # while b < beta_final:
         self.dynamics.train()
+        setup = self._setup_training(
+            x=x,
+            skip=skip,
+            train_dir=train_dir,
+            nera=nera,
+            nepoch=nepoch,
+            beta=beta,
+        )
         era = 0
         epoch = 0
         extend = 1
-        # for era in range(nera):
+        x = setup['x']
+        nera = setup['nera']
+        betas = setup['betas']
+        nepoch = setup['nepoch']
+        extend = setup['extend']
+        train_dir = setup['train_dir']
+        beta_final = setup['beta_final']
         b = torch.tensor(betas.get(str(era), beta_final))
+        assert x is not None
+        assert nera is not None
+        assert train_dir is not None
         while b < beta_final:
-            # b = torch.tensor(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
                 extend = int(self.steps.extend_last_era)
 
@@ -1079,7 +1057,6 @@ class Trainer(BaseTrainer):
             losses = torch.stack(edata['losses'][1:])
             if self.config.annealing_schedule.dynamic:
                 dy_avg = (losses[1:] - losses[:-1]).mean().item()
-                # if losses[-1] < losses[0]:
                 if dy_avg > 0:
                     b -= (b / 10.)  # self.config.annealing_schedule._dbeta
                 else:
@@ -1090,12 +1067,13 @@ class Trainer(BaseTrainer):
             self.summaries['train'][str(era)] = edata['summaries']
 
             if (era + 1) == nera or (era + 1) % 5 == 0:
-                # ckpt_metrics = {'loss': metrics.get('loss', 0.0)}
                 self.save_ckpt(era, epoch, train_dir, run=run)
 
             if self._is_chief:
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
                 log.info(f'Era {era} took: {time.time() - epoch_start:<5g}s')
+
+            era += 1
 
         return {
             'timer': self.timers['train'],
