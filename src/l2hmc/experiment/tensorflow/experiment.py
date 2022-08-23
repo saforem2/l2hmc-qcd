@@ -221,17 +221,30 @@ class Experiment(BaseExperiment):
         if RANK == 0:
             writer = self.get_summary_writer()
 
-        output = self.trainer.train(
-            x=x,
-            nera=nera,
-            nepoch=nepoch,
-            run=self.run,
-            arun=self.arun,
-            writer=writer,
-            train_dir=jobdir,
-            skip=skip,
-            beta=beta,
-        )
+        if self.config.annealing_schedule.dynamic:
+            output = self.trainer.train_dynamic(
+                x=x,
+                nera=nera,
+                nepoch=nepoch,
+                run=self.run,
+                arun=self.arun,
+                writer=writer,
+                train_dir=jobdir,
+                skip=skip,
+                beta=beta,
+            )
+        else:
+            output = self.trainer.train(
+                x=x,
+                nera=nera,
+                nepoch=nepoch,
+                run=self.run,
+                arun=self.arun,
+                writer=writer,
+                train_dir=jobdir,
+                skip=skip,
+                beta=beta,
+            )
         if self.trainer._is_chief:
             output['dataset'] = self.save_dataset(
                 output=output,

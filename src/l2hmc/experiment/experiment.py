@@ -319,9 +319,12 @@ class BaseExperiment(ABC):
         outdir = self._outdir if outdir is None else outdir
         assert outdir is not None
         self.save_timers(job_type=job_type, outdir=outdir)
+        assert isinstance(self.config, ExperimentConfig)
+        logfreq = self.config.steps.log
         _ = save_and_analyze_data(dset,
                                   run=self.run,
                                   arun=self.arun,
+                                  logfreq=logfreq,
                                   outdir=outdir,
                                   output=output,
                                   nchains=nchains,
