@@ -358,7 +358,7 @@ class BaseHistory:
             plot_kwargs['color'] = color
 
             _, subfigs, ax = self.plot(
-                val=val.values.T,
+                val=val.values.T.real,
                 key=str(key),
                 title=title,
                 outdir=outdir,
@@ -391,7 +391,7 @@ class BaseHistory:
             x: Union[list, np.ndarray],
             therm_frac: Optional[float] = 0.0,
     ) -> xr.DataArray:
-        arr = np.array(x)
+        arr = np.array(x).real
         if therm_frac is not None and therm_frac > 0:
             drop = int(therm_frac * arr.shape[0])
             arr = arr[drop:]
