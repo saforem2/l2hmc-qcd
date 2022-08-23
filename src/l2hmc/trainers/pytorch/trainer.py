@@ -663,15 +663,7 @@ class Trainer(BaseTrainer):
                                                         job_type=job_type)
 
                     if not isinstance(ctx, Live) and step % nprint == 0:
-                        log.info(
-                            ', '.join([
-                                '='.join(
-                                    zip(list(avgs.keys()),
-                                        list(avgs.values()))
-                                )
-                            ])
-                        )
-                        # log.info(summary)
+                        log.info(summary)
 
                     summaries.append(summary)
                     if step == 0:
@@ -860,19 +852,15 @@ class Trainer(BaseTrainer):
 
         return x, data
 
-    def train(
+    def _setup_training(
             self,
             x: Optional[Tensor] = None,
             skip: Optional[str | list[str]] = None,
             train_dir: Optional[os.PathLike] = None,
-            run: Optional[Any] = None,
-            arun: Optional[Any] = None,
-            writer: Optional[Any] = None,
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
     ) -> dict:
-        """Perform training and return dictionary of results."""
         skip = [skip] if isinstance(skip, str) else skip
         # steps = self.steps if steps is None else steps
         train_dir = (
@@ -909,17 +897,52 @@ class Trainer(BaseTrainer):
 
         beta_final = list(betas.values())[-1]
         assert beta_final is not None and isinstance(beta_final, float)
-        # assert b is not None and isinstance(b, float)
-        # while b < beta_final:
+        return {
+            'x': x,
+            'nera': nera,
+            'nepoch': nepoch,
+            'extend': extend,
+            'betas': betas,
+            'beta_final': beta_final,
+        }
+
+    def train(
+            self,
+            x: Optional[Tensor] = None,
+            skip: Optional[str | list[str]] = None,
+            train_dir: Optional[os.PathLike] = None,
+            run: Optional[Any] = None,
+            arun: Optional[Any] = None,
+            writer: Optional[Any] = None,
+            nera: Optional[int] = None,
+            nepoch: Optional[int] = None,
+            beta: Optional[float | list[float] | dict[str, float]] = None,
+    ) -> dict:
+        """Perform training and return dictionary of results."""
         self.dynamics.train()
+        setup = self._setup_training(
+            x=x,
+            skip=skip,
+            train_dir=train_dir,
+            nera=nera,
+            nepoch=nepoch,
+            beta=beta,
+        )
         era = 0
         epoch = 0
         extend = 1
-        # for era in range(nera):
+        x = setup['x']
+        nera = setup['nera']
+        betas = setup['betas']
+        nepoch = setup['nepoch']
+        extend = setup['extend']
+        train_dir = setup['train_dir']
+        beta_final = setup['beta_final']
         b = torch.tensor(betas.get(str(era), beta_final))
-        # while b < beta_final:
+        assert x is not None
+        assert nera is not None
+        assert train_dir is not None
         for era in range(nera):
-            # b = torch.tensor(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
                 extend = int(self.steps.extend_last_era)
 
@@ -946,7 +969,6 @@ class Trainer(BaseTrainer):
             losses = torch.stack(edata['losses'][1:])
             if self.config.annealing_schedule.dynamic:
                 dy_avg = (losses[1:] - losses[:-1]).mean().item()
-                # if losses[-1] < losses[0]:
                 if dy_avg > 0:
                     b -= (b / 10.)  # self.config.annealing_schedule._dbeta
                 else:
@@ -957,7 +979,6 @@ class Trainer(BaseTrainer):
             self.summaries['train'][str(era)] = edata['summaries']
 
             if (era + 1) == nera or (era + 1) % 5 == 0:
-                # ckpt_metrics = {'loss': metrics.get('loss', 0.0)}
                 self.save_ckpt(era, epoch, train_dir, run=run)
 
             if self._is_chief:
