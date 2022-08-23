@@ -63,14 +63,11 @@ def eyeOf1(m: Tensor):
 def eyeOf(x: torch.Tensor) -> torch.Tensor:
     # NOTE:
     #  batch_dims = [[1], [1], [1], ..., [1]]
-    #  len(batch_dims) = len(m) - 2
+    #  len(batch_dims) = len(x.shape) - 2
     batch_dims = [1] * (len(x.shape) - 2)
     eye = torch.zeros(batch_dims + [*x.shape[-2:]], device=DEVICE)
     eye[-2:] = torch.eye(x.shape[-1], device=DEVICE)
     return eye
-    # return torch.eye(n, n, dtype=x.dtype, device=x.device).unsqueeze(0).repeat(
-    #     x.shape[0], 1, 1
-    # )
 
 
 def eye_like(x: Tensor):
