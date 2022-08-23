@@ -451,6 +451,7 @@ class Dynamics(Model):
     ) -> dict:
         """Returns dict of various metrics about input State."""
         energy = self.hamiltonian(state)
+        logdet = tf.cast(logdet, energy.dtype)
         logprob = tf.subtract(energy, logdet)
         metrics = {
             'energy': energy,
@@ -507,7 +508,7 @@ class Dynamics(Model):
         """Run the generic HMC transition kernel."""
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         assert isinstance(state.x, Tensor)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
         history = {}
         if self.config.verbose:
             history = self.update_history(
@@ -551,7 +552,7 @@ class Dynamics(Model):
         """
         state_ = State(state.x, state.v, state.beta)
         assert isinstance(state.x, Tensor)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
         sldf = tf.zeros_like(sumlogdet)
         sldb = tf.zeros_like(sumlogdet)
 
@@ -624,7 +625,7 @@ class Dynamics(Model):
         # Copy initial state into proposed state
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         assert isinstance(state.x, Tensor)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
 
         history = {}
         if self.config.verbose:
@@ -656,6 +657,7 @@ class Dynamics(Model):
         """Compute the acceptance probability."""
         h_init = self.hamiltonian(state_init)
         h_prop = self.hamiltonian(state_prop)
+        sumlogdet = tf.cast(sumlogdet, h_init.dtype)
         dh = tf.add(tf.subtract(h_init, h_prop), sumlogdet)
         # dh = h_init - h_prop + sumlogdet
         prob = tf.exp(tf.minimum(dh, tf.zeros_like(dh)))
@@ -785,7 +787,9 @@ class Dynamics(Model):
         """Complete update (leapfrog step) in the forward direction."""
         m, mb = self._get_mask(step)
         assert isinstance(state.x, Tensor)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        m = tf.cast(m, state.x.dtype)
+        mb = tf.cast(mb, state.x.dtype)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
 
         state, logdet = self._update_v_fwd(step, state, training=training)
         sumlogdet = sumlogdet + logdet
@@ -815,7 +819,9 @@ class Dynamics(Model):
         step_r = self.config.nleapfrog - step - 1
 
         m, mb = self._get_mask(step_r)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        m = tf.cast(m, state.x.dtype)
+        mb = tf.cast(mb, state.x.dtype)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
 
         state, logdet = self._update_v_bwd(step_r, state, training=training)
         sumlogdet = sumlogdet + logdet
@@ -840,8 +846,11 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         """Update the momentum in the forward direction."""
-        eps = self.veps[step]
-        force = self.grad_potential(state.x, state.beta)
+        eps = tf.cast(self.veps[step], state.x.dtype)
+        force = tf.reshape(
+            self.grad_potential(state.x, state.beta),
+            state.v.shape
+        )
         s, t, q = self._call_vnet(step, (state.x, force), training=training)
 
         jac = eps * s / 2.  # jacobian factor, also used in exp_s below
@@ -860,7 +869,7 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         """Update the momentum in the backward direction."""
-        eps = self.veps[step]
+        eps = tf.cast(self.veps[step], state.x.dtype)
         force = self.grad_potential(state.x, state.beta)
         s, t, q = self._call_vnet(step, (state.x, force), training=training)
         logjac = (-eps * s / 2.)
@@ -880,9 +889,10 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         """Single x update in the forward direction"""
-        eps = self.xeps[step]
+        eps = tf.cast(self.xeps[step], state.x.dtype)
         mb = tf.ones_like(m) - m
-        xm_init = tf.multiply(m, state.x)
+        x = tf.reshape(state.x, (state.x.shape[0], -1))
+        xm_init = tf.multiply(m, x)
         inputs = (xm_init, state.v)
         s, t, q = self._call_xnet(step, inputs, first=first, training=training)
         s = eps * s
@@ -915,6 +925,7 @@ class Dynamics(Model):
             raise ValueError('Unexpected value for `self.g`')
 
         xf = self.g.compat_proj(xf)
+        logdet = tf.cast(logdet, TF_FLOAT)
         return State(x=xf, v=state.v, beta=state.beta), logdet
 
     def _update_x_bwd(
@@ -926,7 +937,7 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         """Update the position in the backward direction."""
-        eps = self.xeps[step]
+        eps = tf.cast(self.xeps[step], state.x.dtype)
         mb = tf.ones_like(m) - m
         xm_init = tf.multiply(m, state.x)
         inputs = (xm_init, state.v)
@@ -982,15 +993,6 @@ class Dynamics(Model):
 
     def grad_potential(self, x: Tensor, beta: Tensor) -> Tensor:
         """Compute the gradient of the potential function."""
-        # if tf.executing_eagerly():
-        #     with tf.GradientTape() as tape:
-        #         tape.watch(x)
-        #         pe = self.potential_energy(x, beta)
-        #     grad = tape.gradient(pe, x)
-        # else:
-        #     grad = tf.gradients(self.potential_energy(x, beta), [x])[0]
-
-        # return grad
         return self.lattice.grad_action(x, beta)
 
     def load_networks(self, d: os.PathLike):
