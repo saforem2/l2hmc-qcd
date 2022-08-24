@@ -63,7 +63,7 @@ class LatticeSU3(Lattice):
             self,
             nchains: int,
             shape: list[int],
-            c1: float = C1DBW2,
+            c1: float = 0.0,
     ) -> None:
         """4D SU(3) Lattice object for dealing with lattice quantities.
 
@@ -122,8 +122,8 @@ class LatticeSU3(Lattice):
     def deriv_action_plaq(self, x):
         stf = [[None] * 4 for _ in range(4)]
         stu = [[None] * 4 for _ in range(4)]
-        for u in range(1, 4):
-            for v in range(0, u):
+        for u in tf.range(1, 4):
+            for v in tf.range(0, u):
                 xu = tf.roll(x[:, u], shift=-1, axis=v+1)
                 xv = tf.roll(x[:, v], shift=-1, axis=u+1)
                 xuv = self.g.mul(xu, xv, adjoint_b=True)
@@ -158,45 +158,41 @@ class LatticeSU3(Lattice):
         # assert isinstance(x, Tensor)
         pcount = 0
         rcount = 0
-        # plaqs = tf.TensorArray(x.dtype, size=0, dynamic_size=True)
-        # rects = tf.TensorArray(x.dtype, size=0, dynamic_size=True)
-        plaqs = []
-        rects = []
+        plaqs = tf.TensorArray(x.dtype, size=0, dynamic_size=True)
+        rects = tf.TensorArray(x.dtype, size=0, dynamic_size=True)
         for u in range(1, 4):
             for v in range(0, u):
-                xu = x[:, u]  # type:ignore
-                xv = x[:, v]  # type:ignore
-                yu = tf.roll(xu, shift=-1, axis=v+1)
-                yv = tf.roll(xv, shift=-1, axis=u+1)
-                xuv = self.g.mul(xu, yv)
-                xvu = self.g.mul(xv, yu)
-                plaq = self.g.trace(self.g.mul(xuv, xvu, adjoint_b=True))
-                # plaqs = plaqs.write(pcount, plaq)
-                plaqs.append(plaq)
+                xu = x[:, u]  # type: ignore
+                xv = x[:, v]  # type: ignore
+                yuv = self.g.mul(xu, tf.roll(xv, shift=-1, axis=u+1))
+                yvu = self.g.mul(xv, tf.roll(xu, shift=-1, axis=v+1))
+                plaq = self.g.trace(self.g.mul(yuv, yvu, adjoint_b=True))
+                plaqs = plaqs.write(pcount, plaq)
                 pcount += 1
 
                 # plaqs.append(plaq)
                 if needs_rect:
-                    uu = self.g.mul(xv, xuv, adjoint_a=True)
-                    ur = self.g.mul(xu, xvu, adjoint_a=True)
-                    ul = self.g.mul(xuv, yu, adjoint_b=True)
-                    ud = self.g.mul(xvu, yv, adjoint_b=True)
+                    xu = x[:, u]  # type: ignore
+                    xv = x[:, v]  # type: ignore
+                    yu = tf.roll(xu, shift=-1, axis=v+1)
+                    yv = tf.roll(xv, shift=-1, axis=u+1)
+                    uu = self.g.mul(xv, yuv, adjoint_a=True)
+                    ur = self.g.mul(xu, yvu, adjoint_a=True)
+                    ul = self.g.mul(yuv, yu, adjoint_b=True)
+                    ud = self.g.mul(yvu, yv, adjoint_b=True)
                     ul_ = tf.roll(ul, shift=-1, axis=u+1)
                     ud_ = tf.roll(ud, shift=-1, axis=v+1)
-                    tr_urul = self.g.trace(
-                        self.g.mul(ur, ul_, adjoint_b=True)
+                    tr_urul_ = (
+                        self.g.trace(self.g.mul(ur, ul_, adjoint_b=True))
                     )
-                    tr_uuud = self.g.trace(
-                        self.g.mul(uu, ud_, adjoint_b=True)
+                    tr_uuud_ = (
+                        self.g.trace(self.g.mul(uu, ud_, adjoint_b=True))
                     )
-                    rects.append(tr_urul)
-                    rects.append(tr_uuud)
-                    # rects.write(rcount, tr_urul)
-                    # rects.write(rcount + 1, tr_uuud)
+                    rects.write(rcount, tr_urul_)
+                    rects.write(rcount + 1, tr_uuud_)
                     rcount += 1
 
-        # return plaqs.stack(), rects.stack().mark_used()
-        return tf.stack(plaqs), tf.stack(rects)
+        return plaqs.stack(), rects.stack()
 
     def _plaquettes(self, x: Tensor) -> Tensor:
         ps, rs = self._wilson_loops(x)
