@@ -66,6 +66,6 @@ defaults:
   # verbose: [src.train, src.utils]
 
 hydra:
-  verbose: true
+  verbose: false
   job:
     chdir: true
