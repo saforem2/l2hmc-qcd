@@ -67,12 +67,13 @@ class BaseHistory:
 
     def era_summary(self, era) -> str:
         emetrics = self.era_metrics.get(str(era), None)
-        if emetrics is not None:
-            return ', '.join([
-                f'{k}={np.mean(v):<5.4f}' for k, v in emetrics.items()
-                if k not in ['era', 'epoch']
-            ])
-        raise ValueError
+        if emetrics is None:
+            return ''
+        return ', '.join([
+            f'{k}={np.mean(v):<5.4f}' for k, v in emetrics.items()
+            if k not in ['era', 'epoch']
+            and v is not None
+        ])
 
     def _update(self, key: str, val: TensorLike) -> float:
         if val is None:
@@ -105,18 +106,24 @@ class BaseHistory:
         avgs = {}
         era = metrics.get('era', 0)
         for key, val in metrics.items():
+            if val is None:
+                continue
             avg = None
             if isinstance(val, (float, int)):
                 avg = val
             else:
                 if isinstance(val, dict):
                     for k, v in val.items():
+                        if v is None:
+                            continue
                         key = f'{key}/{k}'
                         try:
                             avg = self._update(key=key, val=v)
                         # TODO: Figure out how to deal with exception
                         except tf.errors.InvalidArgumentError as e:
                             raise e
+                        except ValueError:
+                            continue
                 else:
                     avg = self._update(key=key, val=val)
 
