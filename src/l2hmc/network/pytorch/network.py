@@ -13,7 +13,6 @@ import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
-from torch.nn.modules.conv import Conv2d
 
 from l2hmc.configs import (
     NetWeight,
@@ -211,7 +210,8 @@ class ConvStack(nn.Module):
             self.layers.append(PeriodicPadding(n - 1))
             self.layers.append(nn.LazyConv2d(f, n))
             if (idx + 1) % 2 == 0:
-                self.layers.append(nn.MaxPool2d(conv_config.pool[idx]))
+                p = 2 if conv_config.pool is None else conv_config.pool[idx]
+                self.layers.append(nn.MaxPool2d(p))
 
             self.layers.append(self.activation_fn)
         # iterable = zip([
@@ -477,6 +477,12 @@ def get_and_call_network(
     x = torch.rand(xshape)
     v = torch.rand_like(x)
     if is_xnet:
+        # x = torch.view_as_real(
+        #     torch.complex(
+        #         x.cos(),
+        #         x.sin()
+        #     )
+        # )
         x = torch.cat([x.cos(), x.sin()], dim=1)
 
     _ = net((x, v))

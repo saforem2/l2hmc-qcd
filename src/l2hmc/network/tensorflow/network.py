@@ -61,11 +61,6 @@ def get_activation(act_fn: str | Callable) -> Callable:
     assert callable(act_fn)
     return act_fn
 
-# FUNCTIONAL_ACTIVATIONS = {
-#     'relu': tf.keras.layers.ReLU,
-#     'tanh': tf.keras.layers.T
-# }
-
 
 def zero_weights(model: Model) -> Model:
     for layer in model.layers:
@@ -138,7 +133,7 @@ class ConvStack(tf.keras.Model):
                 Conv2D(filters=f, kernel_size=n, activation=self.activation_fn)
             )
             if (idx + 1) % 2 == 0:
-                p = conv_config.pool[idx]
+                p = 2 if conv_config.pool is None else conv_config.pool[idx]
                 self.conv_layers.append(
                     MaxPooling2D((p, p), name=f'{name}/xPool{idx}')
                 )
@@ -241,6 +236,7 @@ class InputLayer(tf.keras.Model):
 
         v = self.vlayer(self.flatten(v))
         x = self.xlayer(self.flatten(x))
+        assert x is not None and v is not None
         # v = self.vlayer(tf.reshape(v, [v.shape[0], -1]))
         # x = self.xlayer(tf.reshape(x, [x.shape[0], -1]))
         return self.activation_fn(x + v)
@@ -311,15 +307,22 @@ class LeapfrogLayer(tf.keras.Model):
         if self.net_config.use_batch_norm and self.batch_norm is not None:
             z = self.batch_norm(z, training=training)
 
-        scale = self.scale(z)
-        transf = self.transf(z)
-        transl = self.transl(z)
-
-        return (
-            tf.cast(self.nw.s * scale, inputs[0].dtype),
-            tf.cast(self.nw.t * transl, inputs[0].dtype),
-            tf.cast(self.nw.q * transf, inputs[0].dtype)
+        dt = inputs[0].dtype
+        s = tf.cast(tf.scalar_mul(self.nw.s, self.scale(z)), dt)
+        t = tf.cast(tf.scalar_mul(self.nw.t, self.transl(z)), dt)
+        q = tf.cast(tf.scalar_mul(self.nw.q, self.transf(z)), dt)
+        assert (
+            isinstance(s, Tensor)
+            and isinstance(t, Tensor)
+            and isinstance(q, Tensor)
         )
+
+        # return (
+        #     tf.cast(self.nw.s * scale, inputs[0].dtype),
+        #     tf.cast(self.nw.t * transl, inputs[0].dtype),
+        #     tf.cast(self.nw.q * transf, inputs[0].dtype)
+        # )
+        return s, t, q
 
 
 class NetworkFactory(BaseNetworkFactory):
@@ -582,7 +585,8 @@ def get_network(
             x = Conv2D(f, n, name=f'{name}/xConv{idx}',
                        activation=network_config.activation_fn)(x)
             if (idx + 1) % 2 == 0:
-                p = conv_config.pool[idx]
+                p = 2 if conv_config.pool is None else conv_config.pool[idx]
+                # p = conv_config.pool[idx]
                 x = MaxPooling2D((p, p), name=f'{name}/xPool{idx}')(x)
 
         x = Flatten()(x)
