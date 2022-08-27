@@ -238,9 +238,15 @@ class BaseTrainer(ABC):
     ) -> dict[str, list[np.ndarray]]:
         m = {}
         for key, val in metrics.items():
+            if val is None:
+                m[key] = np.nan
+
             if isinstance(val, dict):
                 for k, v in val.items():
                     m[f'{key}/{k}'] = self.metric_to_numpy(v)
+
+            elif isinstance(val, (float, int, bool, np.floating)):
+                m[key] = val
 
             else:
                 try:
