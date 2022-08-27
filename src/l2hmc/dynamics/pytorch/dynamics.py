@@ -412,8 +412,14 @@ class Dynamics(nn.Module):
 
         # NOTE: We construct output states by combining
         #   output = (acc_mask * proposed) + (reject_mask * init)
-        v_out = ma * data['proposed'].v + mr * data['init'].v
-        x_out = ma * data['proposed'].x + mr * data['init'].x
+        v_out = (
+            ma * data['proposed'].v.flatten(1)
+            + mr * data['init'].v.flatten(1)
+        )
+        x_out = (
+            ma * data['proposed'].x.flatten(1)
+            + mr * data['init'].x.flatten(1)
+        )
 
         # NOTE: sumlogdet = (accept * logdet) + (reject * 0)
         sumlogdet = ma_ * data['metrics']['sumlogdet']
@@ -1119,6 +1125,7 @@ class Dynamics(nn.Module):
         assert isinstance(self.veps, nn.ParameterList)
         eps = self.veps[step]
         force = self.grad_potential(state.x, state.beta)
+        force = force.reshape_as(state.v)
         s, t, q = self._call_vnet(step, (state.x, force))
 
         jac = eps * s / 2.  # jacobian factor, also used in exp_s below
@@ -1157,7 +1164,9 @@ class Dynamics(nn.Module):
         assert isinstance(self.xeps, nn.ParameterList)
         eps = self.xeps[step]
         mb = (torch.ones_like(m) - m).to(self.device)
-        xm_init = m * state.x
+        x = state.x.flatten(1)
+        v = state.v.reshape_as(x)
+        xm_init = m * x
         inputs = (xm_init, state.v)
         s, t, q = self._call_xnet(step, inputs, first=first)
         # s, t, q = self._call_xnet_dummy(step, inputs, first=first)
@@ -1167,16 +1176,16 @@ class Dynamics(nn.Module):
         exp_q = q.exp()
         if isinstance(self.g, U1Phase):
             if self.config.use_ncp:
-                halfx = state.x / 2.
+                halfx = (x / 2.).flatten(1)
                 _x = 2. * (halfx.tan() * exp_s).atan()
-                xp = _x + eps * (state.v * exp_q + t)
+                xp = _x + eps * (v * exp_q + t)
                 xf = xm_init + (mb * xp)
                 cterm = (halfx.cos()) ** 2
                 sterm = (exp_s * halfx.sin()) ** 2
                 logdet_ = (exp_s / (cterm + sterm)).log()
                 logdet = (mb * logdet_).sum(dim=1)
             else:
-                xp = state.x * exp_s + eps * (state.v * exp_q + t)
+                xp = x * exp_s + eps * (v * exp_q + t)
                 xf = xm_init + (mb * xp)
                 logdet = (mb * s).sum(dim=1)
 
