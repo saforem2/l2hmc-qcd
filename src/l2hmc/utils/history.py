@@ -14,7 +14,7 @@ import matplotx
 import numpy as np
 import seaborn as sns
 import tensorflow as tf
-from tensorflow.python.framework.ops import EagerTensor
+# from tensorflow.python.framework.ops import EagerTensor
 import torch
 import xarray as xr
 from l2hmc.common import grab_tensor
@@ -23,12 +23,12 @@ from l2hmc.configs import MonteCarloStates, Steps
 import l2hmc.utils.plot_helpers as hplt
 
 # TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray]
-TensorLike = tf.Tensor | torch.Tensor | np.ndarray | list
-ScalarLike = float | int | bool | np.floating
+TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray, list]
+ScalarLike = Union[float, int, bool, np.floating]
 
 PT_FLOAT = torch.get_default_dtype()
 TF_FLOAT = tf.dtypes.as_dtype(tf.keras.backend.floatx())
-Scalar = float | int | np.floating | bool
+Scalar = Union[float, int, np.floating, bool]
 # Scalar = TF_FLOAT | PT_FLOAT | np.floating | int | bool
 
 log = logging.getLogger(__name__)
@@ -85,7 +85,7 @@ class BaseHistory:
         except KeyError:
             self.history[key] = [val]
 
-        avg = np.mean(val)
+        avg = np.mean(val).real
         assert isinstance(avg, np.floating)
         return avg
 
