@@ -59,7 +59,11 @@ class State:
     def __post_init__(self):
         assert isinstance(self.x, Tensor)
         assert isinstance(self.v, Tensor)
-        assert isinstance(self.beta, Tensor)
+        # self.beta = tf.constant(self.beta)
+        # if not isinstance(self.beta, Tensor):
+        #     self.beta = tf.constant(self.beta)
+
+        # assert isinstance(self.beta, Tensor)
 
     def to_numpy(self):
         return {
@@ -252,13 +256,13 @@ class Dynamics(Model):
         mr_ = tf.cast(mr_, dtype=TF_FLOAT)  # data['proposed'].x.dtype)
         v_out = tf.where(
             tf.cast(ma, bool),
-            data['proposed'].v,
-            data['init'].v
+            self.flatten(data['proposed'].v),
+            self.flatten(data['init'].v)
         )
         x_out = tf.where(
             tf.cast(ma, bool),
-            data['proposed'].x,
-            data['init'].x,
+            self.flatten(data['proposed'].x),
+            self.flatten(data['init'].x),
         )
         # v_out = ma * data['proposed'].v + mr * data['init'].v
         # x_out = ma * data['proposed'].x + mr * data['init'].x
@@ -892,6 +896,7 @@ class Dynamics(Model):
         eps = tf.cast(self.xeps[step], state.x.dtype)
         mb = tf.ones_like(m) - m
         x = tf.reshape(state.x, (state.x.shape[0], -1))
+        v = tf.reshape(state.v, x.shape)
         xm_init = tf.multiply(m, x)
         inputs = (xm_init, state.v)
         s, t, q = self._call_xnet(step, inputs, first=first, training=training)
@@ -901,16 +906,16 @@ class Dynamics(Model):
         exp_q = tf.exp(q)
         if isinstance(self.g, U1Phase):
             if self.config.use_ncp:
-                halfx = state.x / TWO
+                halfx = x / TWO
                 _x = TWO * tf.math.atan(tf.math.tan(halfx) * exp_s)
-                xp = _x + eps * (state.v * exp_q + t)
+                xp = _x + eps * (v * exp_q + t)
                 xf = xm_init + (mb * xp)
                 cterm = tf.math.square(tf.math.cos(halfx))
                 sterm = (exp_s * tf.math.sin(halfx)) ** 2
                 logdet_ = tf.math.log(exp_s / (cterm + sterm))
                 logdet = tf.reduce_sum(mb * logdet_, axis=1)
             else:
-                xp = state.x * exp_s + eps * (state.v * exp_q + t)
+                xp = x * exp_s + eps * (v * exp_q + t)
                 xf = xm_init + (mb * xp)
                 logdet = tf.reduce_sum((mb * s), axis=1)
 
