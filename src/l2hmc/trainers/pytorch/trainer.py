@@ -627,6 +627,10 @@ class Trainer(BaseTrainer):
 
         assert isinstance(x, Tensor)
         assert isinstance(beta, float)
+        assert isinstance(nlog, int)
+        assert isinstance(nprint, int)
+        assert isinstance(eval_steps, int)
+        assert isinstance(nleapfrog, int)
         ctx = self.get_context_manager(table)
         return {
             'x': x,
@@ -665,6 +669,8 @@ class Trainer(BaseTrainer):
             x=x,
             run=run,
             beta=beta,
+            eps=eps,
+            nleapfrog=nleapfrog,
             skip=skip,
             nchains=nchains,
             job_type=job_type,
@@ -672,8 +678,8 @@ class Trainer(BaseTrainer):
         )
         x = setup['x']
         eps = setup['eps']
-        table = setup['table']
         beta = setup['beta']
+        table = setup['table']
         nleapfrog = setup['nleapfrog']
         eval_steps = setup['eval_steps']
         timer = self.timers[job_type]
@@ -715,12 +721,11 @@ class Trainer(BaseTrainer):
                             else:
                                 eps += (eps / 10.)
 
-                            metrics['eps'] = eps
+                            record['eps'] = eps
 
                     avgs, summary = self.record_metrics(run=run,
                                                         arun=arun,
                                                         step=step,
-                                                        # record={},
                                                         writer=writer,
                                                         metrics=record,
                                                         job_type=job_type)

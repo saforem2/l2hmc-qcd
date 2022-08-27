@@ -597,6 +597,7 @@ class Trainer(BaseTrainer):
             run=run,
             skip=skip,
             beta=beta,
+            eps=eps,
             writer=writer,
             nchains=nchains,
             job_type=job_type,
@@ -604,8 +605,8 @@ class Trainer(BaseTrainer):
         )
         x = setup['x']
         eps = setup['eps']
-        table = setup['table']
         beta = setup['beta']
+        table = setup['table']
         nleapfrog = setup['nleapfrog']
         eval_steps = setup['eval_steps']
         timer = self.timers.get(job_type, None)
