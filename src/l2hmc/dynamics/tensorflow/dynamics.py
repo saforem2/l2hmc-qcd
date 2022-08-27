@@ -90,10 +90,10 @@ def xy_repr(x: Tensor) -> Tensor:
     return tf.stack([tf.math.cos(x), tf.math.sin(x)], axis=-1)
 
 
-CallableNetwork = (
-    tf.keras.Model | Callable[[Tuple[Tensor, Tensor], bool],
-                              Tuple[Tensor, Tensor, Tensor]]
-)
+# CallableNetwork = (
+#     tf.keras.Model | Callable[[Tuple[Tensor, Tensor], bool],
+#                               Tuple[Tensor, Tensor, Tensor]]
+# )
 
 
 def dummy_network(
@@ -494,8 +494,8 @@ class Dynamics(Model):
         """Perform standard HMC leapfrog update."""
         x = tf.reshape(state.x, state.v.shape)
         force = self.grad_potential(x, state.beta)        # f = dU / dx
-        eps = tf.constant(eps, dtype=force.dtype)
-        halfeps = tf.constant(eps / 2.0, dtype=force.dtype)
+        eps = tf.cast(eps, dtype=force.dtype)
+        halfeps = tf.cast(eps / 2.0, dtype=force.dtype)
         v = state.v - halfeps * force
         x = self.g.update_gauge(x, eps * v)
         force = self.grad_potential(x, state.beta)       # calc force, again
