@@ -49,6 +49,7 @@ log = logging.getLogger(__name__)
 size = shutil.get_terminal_size()
 WIDTH = size.columns
 HEIGHT = size.lines
+os.environ['COLUMNS'] = f'{WIDTH}'
 # os.environ['COLUMNS'] = f'{size.columns}'
 
 
@@ -167,6 +168,7 @@ def build_layout(
     # total = sum(task.total for task in job_progress.tasks)
     # overall_progress = Progress()
     # overall_task = overall_progress.add_task("All jobs", total=int(total))
+
 
     progress_table = Table.grid(expand=True)
     progress_table.add_row(
@@ -327,8 +329,18 @@ def print_config(
     else:
         dbfpath = Path(OUTPUTS_DIR).joinpath('logdirs-debug.csv')
 
+    if dbfpath.is_file():
+        mode = 'a'
+        header = False
+    else:
+        mode = 'w'
+        header = True
     df = pd.DataFrame({logdir: cfgdict})
-    df.T.to_csv(dbfpath.resolve().as_posix(), mode='a')
+    df.T.to_csv(
+        dbfpath.resolve().as_posix(),
+        mode=mode,
+        header=header
+    )
     os.environ['LOGDIR'] = logdir
 
 
