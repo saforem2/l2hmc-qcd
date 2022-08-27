@@ -281,6 +281,7 @@ class Experiment(BaseExperiment):
             arun=self.arun,
             writer=writer,
             nchains=nchains,
+            beta=beta,
             job_type=job_type,
             eps=eps,
             nleapfrog=nleapfrog,
