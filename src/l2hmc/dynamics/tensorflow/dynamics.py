@@ -20,6 +20,7 @@ from l2hmc import configs as cfgs
 from l2hmc.network.tensorflow.network import NetworkFactory
 from l2hmc.group.u1.tensorflow.group import U1Phase
 from l2hmc.group.su3.tensorflow.group import SU3
+# from l2hmc.network.tensorflow.network import LeapfrogLayer
 from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
 from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
 # import l2hmc.group.tensorflow.group as g
@@ -53,17 +54,16 @@ class State:
     def flatten(self):
         x = tf.reshape(self.x, (self.x.shape[0], -1))
         v = tf.reshape(self.v, (self.v.shape[0], -1))
-        beta = tf.cast(self.beta, x.dtype)
+        beta = tf.constant(tf.cast(self.beta, x.dtype))
         return State(x, v, beta)
 
     def __post_init__(self):
         assert isinstance(self.x, Tensor)
         assert isinstance(self.v, Tensor)
+        assert isinstance(self.beta, Tensor)
         # self.beta = tf.constant(self.beta)
         # if not isinstance(self.beta, Tensor):
         #     self.beta = tf.constant(self.beta)
-
-        # assert isinstance(self.beta, Tensor)
 
     def to_numpy(self):
         return {
@@ -90,10 +90,10 @@ def xy_repr(x: Tensor) -> Tensor:
     return tf.stack([tf.math.cos(x), tf.math.sin(x)], axis=-1)
 
 
-# CallableNetwork = (
-#     tf.keras.Model | Callable[[Tuple[Tensor, Tensor], bool],
-#                               Tuple[Tensor, Tensor, Tensor]]
-# )
+CallableNetwork = (
+    tf.keras.Model | Callable[[Tuple[Tensor, Tensor], bool],
+                              Tuple[Tensor, Tensor, Tensor]]
+)
 
 
 def dummy_network(
@@ -212,8 +212,8 @@ class Dynamics(Model):
     ) -> tuple[Tensor, dict]:
         data = self.generate_proposal_hmc(inputs, eps, nleapfrog=nleapfrog)
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
-        ma_ = tf.cast(ma_, dtype=TF_FLOAT)
-        mr_ = tf.cast(mr_, dtype=TF_FLOAT)
+        ma_ = tf.constant(ma_, dtype=TF_FLOAT)
+        mr_ = tf.constant(mr_, dtype=TF_FLOAT)
         ma = ma_[:, None]
         # mr = mr_[:, None]
 
@@ -455,8 +455,7 @@ class Dynamics(Model):
     ) -> dict:
         """Returns dict of various metrics about input State."""
         energy = self.hamiltonian(state)
-        logdet = tf.cast(logdet, energy.dtype)
-        logprob = tf.subtract(energy, logdet)
+        logprob = tf.subtract(energy, tf.cast(logdet, energy.dtype))
         metrics = {
             'energy': energy,
             'logprob': logprob,
@@ -495,8 +494,8 @@ class Dynamics(Model):
         """Perform standard HMC leapfrog update."""
         x = tf.reshape(state.x, state.v.shape)
         force = self.grad_potential(x, state.beta)        # f = dU / dx
-        eps = tf.cast(eps, dtype=force.dtype)
-        halfeps = tf.cast(eps / 2.0, dtype=force.dtype)
+        eps = tf.constant(eps, dtype=force.dtype)
+        halfeps = tf.constant(eps / 2.0, dtype=force.dtype)
         v = state.v - halfeps * force
         x = self.g.update_gauge(x, eps * v)
         force = self.grad_potential(x, state.beta)       # calc force, again
@@ -585,7 +584,9 @@ class Dynamics(Model):
 
         # Flip momentum
         # m1 = -1.0 * tf.ones_like(state_.v)
-        state_ = State(state_.x, tf.negative(state_.v), state_.beta)
+        vneg = tf.negative(state_.v)
+        assert isinstance(vneg, tf.Tensor)
+        state_ = State(state_.x, vneg, state_.beta)
 
         # Backward
         for step in range(self.config.nleapfrog):
@@ -661,8 +662,10 @@ class Dynamics(Model):
         """Compute the acceptance probability."""
         h_init = self.hamiltonian(state_init)
         h_prop = self.hamiltonian(state_prop)
-        sumlogdet = tf.cast(sumlogdet, h_init.dtype)
-        dh = tf.add(tf.subtract(h_init, h_prop), sumlogdet)
+        dh = tf.add(
+            tf.subtract(h_init, h_prop),
+            tf.cast(sumlogdet, h_init.dtype)
+        )
         # dh = h_init - h_prop + sumlogdet
         prob = tf.exp(tf.minimum(dh, tf.zeros_like(dh)))
 
@@ -710,7 +713,7 @@ class Dynamics(Model):
 
         return masks
 
-    def _get_vnet(self, step: int) -> tf.keras.Model | Callable:
+    def _get_vnet(self, step: int) -> Callable:
         """Returns momentum network to be used for updating v."""
         if not self._networks_built:
             return self.vnet
@@ -718,13 +721,14 @@ class Dynamics(Model):
         assert isinstance(vnet, (dict, tf.keras.Model))
         if self.config.use_separate_networks and isinstance(vnet, dict):
             return vnet[str(step)]
-        return vnet
+        # assert isinstance(vnet, (CallableNetwork))
+        return self.vnet
 
     def _get_xnet(
             self,
             step: int,
             first: bool
-    ) -> tf.keras.Model | Callable:
+    ) -> Callable:
         """Returns position network to be used for updating x."""
         if not self._networks_built:
             return self.xnet
@@ -777,10 +781,14 @@ class Dynamics(Model):
             s, t, q: Scaling, Translation, and Transformation functions
         """
         x, v = inputs
+        assert isinstance(x, Tensor) and isinstance(v, Tensor)
         xnet = self._get_xnet(step, first)
-        assert callable(xnet)
         x = self.g.group_to_vec(x)
-        return xnet((x, v), training)
+        # assert xnet is not None and isinstance(xnet, LeapfrogLayer)
+        assert callable(xnet)
+        s, t, q = xnet((x, v), training)
+        # return xnet((x, v), training)
+        return (s, t, q)
 
     def _forward_lf(
             self,
@@ -790,10 +798,11 @@ class Dynamics(Model):
     ) -> tuple[State, Tensor]:
         """Complete update (leapfrog step) in the forward direction."""
         m, mb = self._get_mask(step)
-        assert isinstance(state.x, Tensor)
         m = tf.cast(m, state.x.dtype)
         mb = tf.cast(mb, state.x.dtype)
         sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
+        assert isinstance(state.x, Tensor)
+        assert isinstance(m, Tensor) and isinstance(mb, Tensor)
 
         state, logdet = self._update_v_fwd(step, state, training=training)
         sumlogdet = sumlogdet + logdet
@@ -826,6 +835,7 @@ class Dynamics(Model):
         m = tf.cast(m, state.x.dtype)
         mb = tf.cast(mb, state.x.dtype)
         sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
+        assert isinstance(m, Tensor) and isinstance(mb, Tensor)
 
         state, logdet = self._update_v_bwd(step_r, state, training=training)
         sumlogdet = sumlogdet + logdet
@@ -857,12 +867,16 @@ class Dynamics(Model):
         )
         s, t, q = self._call_vnet(step, (state.x, force), training=training)
 
-        jac = eps * s / 2.  # jacobian factor, also used in exp_s below
+        # jacobian factor, used in exp_s below
+        halfeps = tf.scalar_mul(0.5, eps)
+        jac = tf.scalar_mul(halfeps, s)
+        # jac = eps * s / 2.  # jacobian factor, also used in exp_s below
         logdet = tf.reduce_sum(jac, axis=1)
 
         exp_s = tf.exp(jac)
-        exp_q = tf.exp(eps * q)
-        vf = exp_s * state.v - 0.5 * eps * (force * exp_q + t)
+        exp_q = tf.exp(tf.scalar_mul(eps, q))
+        # exp_q = tf.exp(eps * q)
+        vf = exp_s * state.v - tf.scalar_mul(halfeps, (force * exp_q + t))
 
         return State(state.x, vf, state.beta), logdet
 
@@ -876,11 +890,13 @@ class Dynamics(Model):
         eps = tf.cast(self.veps[step], state.x.dtype)
         force = self.grad_potential(state.x, state.beta)
         s, t, q = self._call_vnet(step, (state.x, force), training=training)
-        logjac = (-eps * s / 2.)
+        halfeps = tf.scalar_mul(0.5, eps)
+        logjac = tf.scalar_mul(tf.scalar_mul(-1., halfeps), s)
+        # logjac = (-eps * s / 2.)
         logdet = tf.reduce_sum(logjac, axis=1)
         exp_s = tf.exp(logjac)
-        exp_q = tf.exp(eps * q)
-        vb = exp_s * (state.v + 0.5 * eps * (force * exp_q + t))
+        exp_q = tf.exp(tf.scalar_mul(eps, q))
+        vb = exp_s * (state.v + halfeps * (force * exp_q + t))
 
         return State(state.x, vb, state.beta), logdet
 
@@ -900,8 +916,10 @@ class Dynamics(Model):
         xm_init = tf.multiply(m, x)
         inputs = (xm_init, state.v)
         s, t, q = self._call_xnet(step, inputs, first=first, training=training)
-        s = eps * s
-        q = eps * q
+        s = tf.scalar_mul(eps, s)
+        q = tf.scalar_mul(eps, q)
+        # s = eps * s
+        # q = eps * q
         exp_s = tf.exp(s)
         exp_q = tf.exp(q)
         if isinstance(self.g, U1Phase):
@@ -931,6 +949,7 @@ class Dynamics(Model):
 
         xf = self.g.compat_proj(xf)
         logdet = tf.cast(logdet, TF_FLOAT)
+        assert isinstance(logdet, Tensor)
         return State(x=xf, v=state.v, beta=state.beta), logdet
 
     def _update_x_bwd(
@@ -947,7 +966,8 @@ class Dynamics(Model):
         xm_init = tf.multiply(m, state.x)
         inputs = (xm_init, state.v)
         s, t, q = self._call_xnet(step, inputs, first=first, training=training)
-        s = tf.scalar_mul(-eps, s)
+        s = tf.scalar_mul(tf.scalar_mul(-1., eps), s)
+        # s = tf.scalar_mul(-eps, s)
         q = tf.scalar_mul(eps, q)
         exp_q = tf.exp(q)
         exp_s = tf.exp(s)
@@ -988,7 +1008,7 @@ class Dynamics(Model):
     def kinetic_energy(self, v: Tensor) -> Tensor:
         """Returns the kinetic energy, KE = 0.5 * v ** 2."""
         return self.g.kinetic_energy(
-            tf.reshape(v, self.xshape)
+            tf.reshape(v, (-1, *self.xshape[1:]))
         )
         # return tf.reduce_sum(tf.math.square(v), axis=range(1, len(v.shape)))
 
