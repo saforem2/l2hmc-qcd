@@ -7,7 +7,7 @@ import logging
 import os
 from pathlib import Path
 import time
-from typing import Any, Callable, Optional, Type
+from typing import Any, Callable, Optional
 from omegaconf import DictConfig
 
 import tensorflow as tf
@@ -116,7 +116,7 @@ def flatten(x: Tensor):
 def is_dist(z: Tensor | ops.EagerTensor | np.ndarray) -> bool:
     return len(z.shape) > 1 or (
         len(z.shape) == 1
-        and z.shape[0] > 1
+        and z.shape[0] > 1  # type:ignore
     )
 
 
@@ -167,15 +167,18 @@ class Trainer(BaseTrainer):
         self.dynamics = self.build_dynamics(
             build_networks=build_networks
         )
+        assert (
+            self.dynamics is not None
+            and isinstance(self.dynamics, Dynamics)
+        )
         self.optimizer = self.build_optimizer()
-        # self.lr_schedule = self.build_lr_schedule()
-        assert isinstance(self.dynamics, Dynamics)
         self.verbose = self.config.dynamics.verbose
-        # skip_tracking = os.environ.get('SKIP_TRACKING', False)
-        # self.verbose = not skip_tracking
-        self.clip_norm = self.config.learning_rate.clip_norm
         # compression = 'fp16'
+        # self.verbose = not skip_tracking
         # self.compression = HVD_FP_MAP['fp16']
+        # self.lr_schedule = self.build_lr_schedule()
+        # skip_tracking = os.environ.get('SKIP_TRACKING', False)
+        self.clip_norm = self.config.learning_rate.clip_norm
         self.reduce_lr = ReduceLROnPlateau(self.config.learning_rate)
         self.reduce_lr.set_model(self.dynamics)
         self.reduce_lr.set_optimizer(self.optimizer)
@@ -440,7 +443,8 @@ class Trainer(BaseTrainer):
             self,
             inputs: tuple[Tensor, Tensor],
     ) -> tuple[Tensor, dict]:
-        xout, metrics = self.dynamics(inputs, training=False)
+        assert self.dynamics is not None
+        xout, metrics = self.dynamics(inputs, training=False)  # type:ignore
         xout = self.g.compat_proj(xout)
         xp = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=inputs[0], x_prop=xp, acc=metrics['acc'])
@@ -618,9 +622,15 @@ class Trainer(BaseTrainer):
                 x, metrics = eval_fn((x, beta))  # type:ignore
                 dt = timer.stop()
                 if step % setup['nprint'] == 0 or step % setup['nlog'] == 0:
-                    metrics.update({
-                        'step': step, 'beta': beta, 'dt': dt, 'eps': eps,
-                    })
+                    record = {
+                        f'{job_type}_step': step,
+                        'beta': beta,
+                        'dt': dt,
+                        'loss': metrics.pop('loss', None),
+                        'dQsin': metrics.pop('dQsin', None),
+                        'dQint': metrics.pop('dQint', None),
+                    }
+                    record.update(metrics)
                     if job_type == 'hmc' and eps is not None:
                         acc = metrics.get('acc_mask', None)
                         if acc is not None:
@@ -639,7 +649,7 @@ class Trainer(BaseTrainer):
                                                         step=step,
                                                         # record={},
                                                         writer=writer,
-                                                        metrics=metrics,
+                                                        metrics=record,
                                                         job_type=job_type)
 
                     if (
@@ -703,25 +713,25 @@ class Trainer(BaseTrainer):
         #     if clip_grads is None else clip_grads
         # )
         aw = self.config.loss.aux_weight
+        assert (
+            self.dynamics is not None
+            and isinstance(self.dynamics, Dynamics)
+        )
         with tf.GradientTape() as tape:
             tape.watch(xinit)
-            xout, metrics = self.dynamics((xinit, beta), training=True)
-            # xprop = self.dynamics.g.compat_proj(
-            #     metrics.pop('mc_states').proposed.x
-            # )
+            xout, metrics = self.dynamics(  # type:ignore
+                (xinit, beta),
+                training=True
+            )
             xprop = metrics.pop('mc_states').proposed.x
             loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
-            # xout = self.dynamics.g.compat_proj(xout)
-            # xout = to_u1(xout)
 
             if aw > 0:
-                # yinit = to_u1(self.draw_x())
                 yinit = self.draw_x()
-                _, metrics_ = self.dynamics((yinit, beta), training=True)
-                # yprop = to_u1(metrics_.pop('mc_states').proposed.x)
-                # yprop = self.dynamics.g.compat_proj(
-                #     metrics_.pop('mc_states').proposed.x
-                # )
+                _, metrics_ = self.dynamics(  # type:ignore
+                    (yinit, beta),
+                    training=True
+                )
                 yprop = metrics_.pop('mc_states').proposed.x
                 aux_loss = aw * self.loss_fn(x_init=yinit,
                                              x_prop=yprop,
@@ -749,12 +759,6 @@ class Trainer(BaseTrainer):
 
         metrics['loss'] = loss
         if self.verbose:
-            # lmetrics = self.lattice.calc_metrics(
-            #     x=xout,
-            #     xinit=xinit,
-            # )
-            # lmetrics = self.lattice.calc_loss(xinit)
-            # lmetrics = self.loss_fn.lattice_metrics(xinit=inputs[0], xout=xo)
             lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
             metrics.update(lmetrics)
 
@@ -809,19 +813,23 @@ class Trainer(BaseTrainer):
                 #         )
                 # ):
                 if self.should_print(epoch) or self.should_log(epoch):
-                    metrics.update({
-                        'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt
-                    })
-                    # record = {
-                    #     'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
-                    # }
+                    record = {
+                        'era': era,
+                        'epoch': epoch,
+                        'train_step': self._gstep,
+                        'dt': dt,
+                        'beta': beta,
+                        'loss': metrics.pop('loss', None),
+                        'dQsin': metrics.pop('dQsin', None),
+                        'dQint': metrics.pop('dQint', None)
+                    }
+                    record.update(metrics)
                     avgs, summary = self.record_metrics(
                         run=run,
                         arun=arun,
                         step=self._gstep,
                         writer=writer,
-                        # record=record,    # template w/ step info
-                        metrics=metrics,  # metrics from Dynamics
+                        metrics=record,  # metrics from Dynamics
                         job_type='train',
                         model=self.dynamics,
                         optimizer=self.optimizer,
@@ -980,7 +988,9 @@ class Trainer(BaseTrainer):
             self.summaries['train'][str(era)] = edata['summaries']
             losses = tf.stack(edata['losses'][1:])
             if self.config.annealing_schedule.dynamic:
-                dy_avg = tf.reduce_mean(losses[1:] - losses[:-1])
+                dy_avg = tf.reduce_mean(
+                    losses[1:] - losses[:-1]  # type:ignore
+                )
                 if dy_avg > 0:
                     b -= (b / 10.)
                 else:
@@ -1067,7 +1077,9 @@ class Trainer(BaseTrainer):
             self.summaries['train'][str(era)] = edata['summaries']
             losses = tf.stack(edata['losses'][1:])
             if self.config.annealing_schedule.dynamic:
-                dy_avg = tf.reduce_mean(losses[1:] - losses[:-1])
+                dy_avg = tf.reduce_mean(
+                    losses[1:] - losses[:-1]  # type:ignore
+                )
                 if dy_avg > 0:
                     b -= (b / 10.)
                 else:
