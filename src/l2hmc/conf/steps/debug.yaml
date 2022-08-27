@@ -1,7 +1,7 @@
 _target_: l2hmc.configs.Steps
 
-nera: 2
-nepoch: 5
-test: 50
+nera: 5
+nepoch: 10 
+test: 200
 log: null
 print: null
