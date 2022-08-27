@@ -372,11 +372,11 @@ class Trainer(BaseTrainer):
         if step is not None:
             metrics.update({f'{job_type}_step': step})
 
-        metrics.update({
-            'loss': metrics.get('loss', None),
-            'dQint': metrics.get('dQint', None),
-            'dQsin': metrics.get('dQsin', None),
-        })
+        # metrics.update({
+        #     'loss': metrics.get('loss', None),
+        #     'dQint': metrics.get('dQint', None),
+        #     'dQsin': metrics.get('dQsin', None),
+        # })
         # if job_type in ['hmc', 'eval']:
         #     _ = metrics.pop('xeps', None)
         #     _ = record.pop('veps', None)
@@ -697,9 +697,15 @@ class Trainer(BaseTrainer):
                 x, metrics = eval_fn((x, beta))
                 dt = timer.stop()
                 if step % setup['nlog'] == 0 or step % setup['nprint'] == 0:
-                    metrics.update({
-                        'step': step, 'beta': beta, 'dt': dt
-                    })
+                    record = {
+                        f'{job_type}_step': step,
+                        'dt': dt,
+                        'beta': beta,
+                        'loss': metrics.pop('loss', None),
+                        'dQsin': metrics.pop('dQsin', None),
+                        'dQint': metrics.pop('dQint', None),
+                    }
+                    record.update(metrics)
                     if job_type == 'hmc':
                         acc = metrics.get('acc_mask', None)
                         if acc is not None and eps is not None:
@@ -716,7 +722,7 @@ class Trainer(BaseTrainer):
                                                         step=step,
                                                         # record={},
                                                         writer=writer,
-                                                        metrics=metrics,
+                                                        metrics=record,
                                                         job_type=job_type)
 
                     if (
@@ -880,16 +886,24 @@ class Trainer(BaseTrainer):
                 #         )
                 # ):
                 if self.should_print(epoch) or self.should_log(epoch):
-                    metrics.update({
-                        'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
-                    })
+                    record = {
+                        'era': era,
+                        'epoch': epoch,
+                        'train_step': self._gstep,
+                        'dt': dt,
+                        'beta': beta,
+                        'loss': metrics.pop('loss', None),
+                        'dQsin': metrics.pop('dQsin', None),
+                        'dQint': metrics.pop('dQint', None)
+                    }
+                    record.update(metrics)
                     avgs, summary = self.record_metrics(
                         run=run,
                         arun=arun,
                         step=self._gstep,
                         writer=writer,
                         # record=record,    # template w/ step info
-                        metrics=metrics,  # metrics from Dynamics
+                        metrics=record,  # metrics from Dynamics
                         job_type='train',
                         model=self.dynamics,
                         optimizer=self._optimizer,
