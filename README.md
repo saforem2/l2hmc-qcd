@@ -10,6 +10,8 @@
 <a href="https://arxiv.org/abs/2112.01582"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg"></a> <a href="https://arxiv.org/abs/2105.03418"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg"></a> 
 <br>
 <a href="https://hydra.cc"><img alt="hydra" src="https://img.shields.io/badge/Config-Hydra-89b8cd"></a> <a href="https://pytorch.org/get-started/locally/"><img alt="pyTorch" src="https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&logoColor=white"></a> <a href="https://www.tensorflow.org"><img alt="tensorflow" src="https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white"></a> 
+<br>
+[<img src="https://raw.githubusercontent.com/wandb/assets/main/wandb-github-badge-28.svg" alt="Weights & Biases monitoring" height=20>](https://wandb.ai/l2hmc-qcd/l2hmc-qcd)
 
 </div>
 
@@ -40,13 +42,20 @@
 
 
 ## Background
-The L2HMC algorithm aims to improve upon [HMC](https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo) by optimizing a carefully chosen loss function which is designed to minimize autocorrelations within the Markov Chain, thereby improving the efficiency of the sampler.
+The L2HMC algorithm aims to improve upon
+[HMC](https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo) by optimizing a
+carefully chosen loss function which is designed to minimize autocorrelations
+within the Markov Chain, thereby improving the efficiency of the sampler.
 
 A detailed description of the original L2HMC algorithm can be found in the paper:
 
 [*Generalizing Hamiltonian Monte Carlo with Neural Network*](https://arxiv.org/abs/1711.09268)
 
-with implementation available at [brain-research/l2hmc/](https://github.com/brain-research/l2hmc) by [Daniel Levy](http://ai.stanford.edu/~danilevy), [Matt D. Hoffman](http://matthewdhoffman.com/) and [Jascha Sohl-Dickstein](sohldickstein.com).
+with implementation available at
+[brain-research/l2hmc/](https://github.com/brain-research/l2hmc) by [Daniel
+Levy](http://ai.stanford.edu/~danilevy), [Matt D.
+Hoffman](http://matthewdhoffman.com/) and [Jascha
+Sohl-Dickstein](sohldickstein.com).
 
 Broadly, given an *analytically* described target distribution, π(x), L2HMC provides a *statistically exact* sampler that:
 
@@ -67,23 +76,33 @@ $ python3 -m pip install l2hmc
 
 # Training
 
-This project uses [`hydra`](https://hydra.cc) for configuration management and supports both TensorFlow (+ Horovod) and PyTorch (+ DDP) training frameworks.
+This project uses [`hydra`](https://hydra.cc) for configuration management and
+supports distributed training for both PyTorch and TensorFlow.
 
-The [`l2hmc/conf/config.yaml`](./src/l2hmc/conf/config.yaml) contains a brief explanation of each of the various parameter options, and values can be overriden either by modifying the `config.yaml` file, or directly through the command line, e.g.
+The [`l2hmc/conf/config.yaml`](./src/l2hmc/conf/config.yaml) contains a brief
+explanation of each of the various parameter options, and values can be
+overriden either by modifying the `config.yaml` file, or directly through the
+command line, e.g.
 
 ```bash
-python3 main.py framework=tensorflow network.activation_fn=swish
+cd src/l2hmc
+./train.sh mode=debug framework=pytorch > train.log 2>&1 &
+tail -f train.log $(tail -1 logs/latest)
 ```
 
-for more information on how this works I encourage you to read [Hydra's Documentation Page](https://hydra.cc).
+for more information on how this works I encourage you to read [Hydra's
+Documentation Page](https://hydra.cc).
 
 
 # Details
 ## L2HMC for LatticeQCD
 
-**Goal:** Use L2HMC to **efficiently** generate _gauge configurations_ for calculating observables in lattice QCD.
+**Goal:** Use L2HMC to **efficiently** generate _gauge configurations_ for
+calculating observables in lattice QCD.
 
-A detailed description of the (ongoing) work to apply this algorithm to simulations in lattice QCD (specifically, a 2D U(1) lattice gauge theory model) can be found in [arXiv:2105.03418](https://arxiv.org/abs/2105.03418).
+A detailed description of the (ongoing) work to apply this algorithm to
+simulations in lattice QCD (specifically, a 2D U(1) lattice gauge theory model)
+can be found in [arXiv:2105.03418](https://arxiv.org/abs/2105.03418).
 
 <div align="center">
  <img src="assets/l2hmc_poster.jpeg" alt="l2hmc-qcd poster" width="66%" />
@@ -93,10 +112,14 @@ A detailed description of the (ongoing) work to apply this algorithm to simulati
 
 ### Dynamics / Network
 
-For a given target distribution, π(x), the `Dynamics` object ([`src/l2hmc/dynamics/`](src/l2hmc/dynamics)) implements methods for generating proposal configurations (x' ~ π) using the generalized leapfrog update.
+For a given target distribution, π(x), the `Dynamics` object
+([`src/l2hmc/dynamics/`](src/l2hmc/dynamics)) implements methods for generating
+proposal configurations (x' ~ π) using the generalized leapfrog update.
 
 
-This generalized leapfrog update takes as input a buffer of lattice configurations `x` and generates a proposal configuration `x' = Dynamics(x)` by evolving the 
+This generalized leapfrog update takes as input a buffer of lattice
+configurations `x` and generates a proposal configuration `x' = Dynamics(x)` by
+evolving generalized L2HMC dynamics.
 
 <!--The [`GaugeDynamics`](l2hmc-qcd/dynamics/gauge_dynamics.py) is a subclass of `BaseDynamics` containing modifications for the 2D U(1) pure gauge theory.-->
 
@@ -116,14 +139,14 @@ An illustration of the `leapfrog layer` updating `(x, v) --> (x', v')` can be se
 
 <!---**Note:** In the image above, the quantities `x', v''` represent the outputs of a Dense layer followed by a `ReLu` nonlinearity.--->
 
-### Lattice
+<!-- ### Lattice -->
 
-Lattice code can be found in [`lattice/`](./lattice/), specifically:
+<!-- Lattice code can be found in [`lattice/`](./lattice/), specifically: -->
 
 
-specifically the `GaugeLattice` object that provides the base structure on which our target distribution exists.
+<!-- specifically the `GaugeLattice` object that provides the base structure on which our target distribution exists. -->
 
-Additionally, the `GaugeLattice` object implements a variety of methods for calculating physical observables such as the average plaquette, ɸₚ, and the topological charge Q,
+<!-- Additionally, the `GaugeLattice` object implements a variety of methods for calculating physical observables such as the average plaquette, ɸₚ, and the topological charge Q, -->
 
 <!--### Training
 
