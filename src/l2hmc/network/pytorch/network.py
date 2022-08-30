@@ -327,6 +327,8 @@ class InputLayer(nn.Module):
     ) -> Tensor:
         x, v = inputs
 
+        self.vlayer.to(v.dtype)
+        self.xlayer.to(x.dtype)
         x.requires_grad_(True)
         v.requires_grad_(True)
         if self._with_cuda:
@@ -417,8 +419,10 @@ class Network(nn.Module):
             v = v.cuda()
         # x = x.to(DEVICE)
         # v = v.to(DEVICE)
+        self.input_layer.to(x.dtype)
         z = self.input_layer((x, v))
         for layer in self.hidden_layers:
+            layer.to(z.dtype)
             z = self.activation_fn(layer(z))
 
         if self.net_config.dropout_prob > 0:
@@ -427,6 +431,9 @@ class Network(nn.Module):
         if self.net_config.use_batch_norm:
             z = self.batch_norm(z)
 
+        self.scale.to(z.dtype)
+        self.transf.to(z.dtype)
+        self.transl.to(z.dtype)
         scale = self.scale(z)
         transf = self.transf(z)
         transl = self.transl(z)
