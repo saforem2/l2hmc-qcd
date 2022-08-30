@@ -95,6 +95,11 @@ def set_plot_style(**kwargs):
     )
     plt.rcParams['axes.labelcolor'] = '#bdbdbd'
     plt.rcParams.update(**kwargs)
+    figsize = plt.rcParamsDefault.get('figure.figsize', (4.5, 3))
+    x = figsize[0]
+    y = figsize[1]
+    assert isinstance(x, float) and isinstance(y, float)
+    plt.rcParams['figure.figsize'] = [2.5 * x, 2. * y]
 
 
 def get_timestamp(fstr=None):
@@ -125,6 +130,12 @@ def savefig(fig: plt.Figure, outfile: os.PathLike):
     fig.savefig(fout.as_posix(), dpi=400, bbox_inches='tight')
 
 
+def subplots(**kwargs) -> tuple[plt.Figure, plt.Axes]:
+    fig, ax = plt.subplots(**kwargs)
+    assert isinstance(ax, plt.Axes)
+    return fig, ax
+
+
 def measure_improvement(
         experiment: Any,
         title: Optional[str] = None,
@@ -133,29 +144,45 @@ def measure_improvement(
     hhist = experiment.trainer.histories.get('hmc', None)
     improvement = 0.0
     set_plot_style()
+    lw = plt.rcParams.get('axes.linewidth', 1.25)
     if ehist is not None and hhist is not None:
         edset = ehist.get_dataset()
         hdset = hhist.get_dataset()
         dQint_eval = edset.dQint.mean('chain')[1:]
         dQint_hmc = hdset.dQint.mean('chain')[1:]
-        fig, ax = plt.subplots()
+        fig, ax = subplots()
         _ = ax.plot(
             dQint_eval,
             label='Trained',
-            lw=2.,
+            lw=1.25 * lw,
             color=COLORS['blue'],
+        )
+        _ = ax.axhline(
+            y=dQint_eval.values.mean(),
+            lw=1.25 * lw,
+            color=COLORS['blue'],
+            ls=':',
+            label=f'avg:{dQint_eval.values.mean():.3f}'
         )
         _ = ax.plot(
             dQint_hmc,
             label='HMC',
+            ls='-',
+            lw=lw,
+            color=COLORS['red'],
+        )
+        _ = ax.axhline(
+            y=dQint_hmc.values.mean(),
+            lw=1.25 * lw,
+            color=COLORS['red'],
             ls=':',
-            lw=1.5,
-            color=COLORS['blue'],
+            label=f'avg:{dQint_hmc.values.mean():.3f}'
         )
         _ = ax.grid(True, alpha=0.2)
-        xticks = ax.get_xticks()
+        assert isinstance(ax, plt.Axes)
+        xticks = ax.get_xticks()  # type:ignore
         # xticklabels = ax.get_xticklabels()
-        _ = ax.set_xticklabels([
+        _ = ax.set_xticklabels([  # type:ignore
             f'{experiment.config.steps.log * int(i)}' for i in xticks
         ])
         _ = ax.set_xlabel('MD Step')
@@ -169,6 +196,12 @@ def measure_improvement(
         )
         if title is not None:
             _ = ax.set_title(title)
+
+        # try:
+        #     _ = matplotx.line_labels()
+        # except Exception as ex:
+        #     log.exception(ex)
+        #     pass
 
         outdir = experiment._outdir
         improvement = np.mean(dQint_eval.values / dQint_hmc.values)
@@ -198,7 +231,7 @@ def plot_scalar(
         x = np.arange(len(y))
 
     if fig_axes is None:
-        fig, ax = plt.subplots()
+        fig, ax = subplots()
     else:
         fig, ax = fig_axes
 
@@ -235,7 +268,7 @@ def plot_chains(
         x = np.arange(y.shape[0])
 
     if fig_axes is None:
-        fig, ax = plt.subplots()
+        fig, ax = subplots()
     else:
         fig, ax = fig_axes
 
@@ -274,7 +307,7 @@ def plot_leapfrogs(
     assert len(y.shape) == 3
 
     if fig_axes is None:
-        fig, ax = plt.subplots()
+        fig, ax = subplots()
     else:
         fig, ax = fig_axes
 
@@ -409,7 +442,7 @@ def plot_dataArray(
                                   subplots_kwargs=subplots_kwargs)
     else:
         if len(arr.shape) == 1:
-            fig, ax = plt.subplots(**subplots_kwargs)
+            fig, ax = subplots(**subplots_kwargs)
             try:
                 ax.plot(steps, arr, **plot_kwargs)
             except ValueError:
@@ -420,7 +453,7 @@ def plot_dataArray(
             _ = ax.grid(True, alpha=0.2)
             axes = ax
         elif len(arr.shape) == 3:
-            fig, ax = plt.subplots(**subplots_kwargs)
+            fig, ax = subplots(**subplots_kwargs)
             cmap = plt.get_cmap('viridis')
             y = val.mean('chain')
             for idx in range(len(val.coords['leapfrog'])):
@@ -434,6 +467,7 @@ def plot_dataArray(
             raise ValueError('Unexpected shape encountered')
 
         ax = plt.gca()
+        assert isinstance(ax, plt.Axes)
         ax.set_ylabel(key)
         ax.set_xlabel('draw')
         # matplotx.line_labels()
@@ -457,6 +491,7 @@ def plot_dataArray(
 
     if logfreq is not None:
         ax = plt.gca()
+        assert isinstance(ax, plt.Axes)
         xticks = ax.get_xticks()
         _ = ax.set_xticklabels([
             f'{logfreq * int(i)}' for i in xticks
@@ -487,7 +522,7 @@ def plot_array(
         outdir: Optional[str | Path] = None,
         **kwargs,
 ) -> tuple[plt.Figure, plt.Axes]:
-    fig, ax = plt.subplots(constrained_layout=True)
+    fig, ax = subplots(constrained_layout=True)
     arr = np.array(val)
     if num_chains is None:
         num_chains = 10
@@ -647,13 +682,13 @@ def plot_metric(
     else:
         # arr.shape = [draws]
         if len(arr.shape) == 1:
-            fig, ax = plt.subplots(**subplots_kwargs)
+            fig, ax = subplots(**subplots_kwargs)
             ax.plot(steps, arr, **plot_kwargs)
             ax.grid(True, alpha=0.2)
             axes = ax
         # arr.shape = [draws, nleapfrog, chains]
         elif len(arr.shape) == 3:
-            fig, ax = plt.subplots(**subplots_kwargs)
+            fig, ax = subplots(**subplots_kwargs)
             cmap = plt.get_cmap('viridis', lut=arr.shape[1])
             _ = plot_kwargs.pop('color', None)
             for idx in range(arr.shape[1]):
@@ -695,8 +730,9 @@ def plot_metric(
         fig.suptitle(title)
 
     if logfreq is not None:
-        xticks = ax.get_xticks()
-        _ = ax.set_xticklabels([
+        assert isinstance(ax, plt.Axes)
+        xticks = ax.get_xticks()  # type:ignore
+        _ = ax.set_xticklabels([  # type:ignore
             f'{logfreq * int(i)}' for i in xticks
         ])
 
@@ -862,6 +898,7 @@ def make_ridgeplots(
                 # label the plot in axes coords:
                 def label(_, color, label):  # type:ignore #noqa
                     ax = plt.gca()
+                    assert isinstance(ax, plt.Axes)
                     ax.set_ylabel('')
                     ax.set_yticks([])
                     ax.set_yticklabels([])
@@ -907,7 +944,7 @@ def plot_plaqs(
     assert len(plaqs.shape) == 2
     ndraws, nchains = plaqs.shape
     xplot = np.arange(ndraws)
-    fig, ax = plt.subplots(constrained_layout=True)
+    fig, ax = subplots(constrained_layout=True)
     plaq_avg = plaqs.mean()
     label = f'avg: {plaq_avg:.4g}'
     _ = ax.plot(xplot, plaqs.mean(-1), label=label, lw=2.0, color='C0')
