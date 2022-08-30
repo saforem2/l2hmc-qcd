@@ -11,13 +11,21 @@ import warnings
 import time
 from pathlib import Path
 
+import torch
+import torch.distributed as dist
+
 import hydra
 from typing import Optional
 import numpy as np
 from omegaconf.dictconfig import DictConfig
 
+# from rich.logging import RichHandler
 from l2hmc.configs import ExperimentConfig
 from l2hmc.utils.rich import print_config
+
+# log = logging.getLogger('root')
+# handler = RichHandler(show_path=False, rich_tracebacks=True)
+# log.handlers = [handler]
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +48,20 @@ def seed_everything(seed: int):
 def setup(cfg: DictConfig):
     if cfg.get('ignore_warnings'):
         warnings.filterwarnings('ignore')
+
+
+def run_ddp(fn, world_size):
+    import torch.multiprocessing as mp
+    mp.spawn(  # type:ignore
+        fn,
+        args=(world_size,),
+        nprocs=world_size,
+        join=True
+    )
+
+
+def cleanup() -> None:
+    dist.destroy_process_group()
 
 
 def setup_tensorflow(precision: Optional[str] = None) -> int:
@@ -95,8 +117,10 @@ def setup_tensorflow(precision: Optional[str] = None) -> int:
 
 
 def setup_torch(
-        precision: Optional[str] = None,
-        seed: Optional[int] = None,
+        seed: int,
+        backend: str = 'horovod',
+        precision: str = 'float32',
+        port: str = '2345',
 ) -> int:
     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     import torch
@@ -104,30 +128,42 @@ def setup_torch(
     torch.backends.cudnn.benchmark = True       # type:ignore
     torch.use_deterministic_algorithms(True)
     # torch.manual_seed(cfg.seed)
-    import horovod.torch as hvd
+    from l2hmc.common import setup_torch_distributed
+    dsetup = setup_torch_distributed(backend=backend, port=port)
+    rank = dsetup['rank']
+    size = dsetup['size']
+    local_rank = dsetup['local_rank']
+    # if backend in ['ddp', 'DDP']:
+    #     init_process_group(
+    #         rank=rank,
+    #         world_size=size,
+    #         backend='nccl' if torch.cuda.is_available() else 'gloo'
+    #     )
 
-    hvd.init() if not hvd.is_initialized() else None
-
-    nthreads = os.environ.get('OMP_NUM_THREADS', '1')
-    torch.set_num_threads(int(nthreads))
+    nthreads = os.environ.get(
+        'OMP_NUM_THREADS',
+        None
+    )
+    if nthreads is not None:
+        torch.set_num_threads(int(nthreads))
 
     if precision == 'float64':
         torch.set_default_dtype(torch.float64)
 
     if torch.cuda.is_available():
-        torch.cuda.set_device(hvd.local_rank())
+        torch.cuda.set_device(local_rank)
         # torch.cuda.manual_seed(cfg.seed + hvd.local_rank())
     # else:
     #     torch.set_default_dtype(torch.float32)
-    RANK = hvd.rank()
-    LOCAL_RANK = hvd.local_rank()
-    SIZE = hvd.size()
-    LOCAL_SIZE = hvd.local_size()
+    # RANK = hvd.rank()
+    # LOCAL_RANK = hvd.local_rank()
+    # SIZE = hvd.size()
+    # LOCAL_SIZE = hvd.local_size()
 
-    log.info(f'Global Rank: {RANK} / {SIZE-1}')
-    log.info(f'[{RANK}]: Local rank: {LOCAL_RANK} / {LOCAL_SIZE-1}')
-    seed_everything(seed * (RANK + 1) * (LOCAL_RANK + 1))
-    return RANK
+    log.info(f'Global Rank: {rank} / {size-1}')
+    log.info(f'[{rank}]: Local rank: {local_rank}')
+    seed_everything(seed * (rank + 1) * (local_rank + 1))
+    return rank
 
 
 def get_experiment(
@@ -149,34 +185,21 @@ def get_experiment(
 
     if framework in ['pt', 'pytorch', 'torch']:
         _ = setup_torch(
+            seed=cfg.seed,
             precision=cfg.precision,
-            seed=cfg.seed
+            backend=cfg.get('backend', 'horovod'),
+            port=cfg.get('port', '2345')
         )
         from l2hmc.experiment.pytorch.experiment import Experiment
-        # init = (RANK == 0) and not os.environ.get('WANDB_OFFLINE', False)
-        # init_wandb = (RANK == 0 and cfg.get('init_wandb', False))
-        # init_aim = (RANK == 0 and cfg.get('init_aim', False))
-        experiment = Experiment(
-            cfg,
-            keep=keep,
-            skip=skip,
-            # init_wandb=init_wandb,
-            # init_aim=init_aim,
-        )
-        # init = (RANK == 0)
-        # _ = experiment.build(init_wandb=init, init_aim=init)
+        experiment = Experiment(cfg, keep=keep, skip=skip)
         return experiment
-        # log.warning('Initializing network weights...')
-        # ex.dynamics.networks['xnet'].apply(init_weights)
-        # ex.dynamics.networks['vnet'].apply(init_weights)
 
     raise ValueError(
         'Framework must be specified, one of: [pytorch, tensorflow]'
     )
 
 
-@hydra.main(version_base=None, config_path='./conf', config_name='config')
-def main(cfg: DictConfig) -> str:
+def run(cfg: DictConfig) -> str:
     # --- [0.] Setup ------------------------------------------------------
     setup(cfg)
     ex = get_experiment(cfg)
@@ -216,12 +239,24 @@ def main(cfg: DictConfig) -> str:
         _ = ex.evaluate(job_type='hmc')
         log.info(f'HMC took: {time.time() - hstart:.5f}s')
         from l2hmc.utils.plot_helpers import measure_improvement
-        measure_improvement(
+        improvement = measure_improvement(
             experiment=ex,
             title=f'{ex.config.framework}',
         )
+        log.critical(f'Model improvement: {improvement:.8f}')
 
     return Path(ex._outdir).as_posix()
+
+
+@hydra.main(version_base=None, config_path='./conf', config_name='config')
+def main(cfg: DictConfig):
+    # framework = cfg.get('framework', None)
+    # if framework in ['pt', 'torch', 'pytorch']:
+    #     ngpus = torch.cuda.device_count()
+    #     if ngpus >= 2 and cfg.get('backend', None) in ['DDP', 'ddp']:
+    #         return run_ddp(run, ngpus)
+    #     return run(cfg)
+    run(cfg)
 
 
 if __name__ == '__main__':

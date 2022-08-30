@@ -9,12 +9,13 @@ from typing import Optional, Union
 import numpy as np
 import torch
 from torch.utils.tensorboard.writer import SummaryWriter
+from l2hmc.common import grab_tensor
 
 # from l2hmc.common import grab_tensor
 
 Tensor = torch.Tensor
 Array = np.ndarray
-Scalar = Union[float, int, bool]
+Scalar = Union[float, int, bool, np.floating]
 ArrayLike = Union[Tensor, Array, Scalar]
 
 log = logging.getLogger(__name__)
@@ -44,8 +45,9 @@ def log_list(
 ):
     """Create TensorBoard summaries for all entries in `x`."""
     for t in x:
-        if isinstance(t, Tensor):
-            t = t.detach().numpy()
+        # if isinstance(t, Tensor):
+        #     # t = grab_tensor(t)
+        #     t = t.detach().numpy()
 
         name = getattr(t, 'name', getattr(t, '__name__', None))
         tag = name if prefix is None else f'{prefix}/{name}'
@@ -68,8 +70,8 @@ def log_item(
 
     elif isinstance(val, (Tensor, Array)):
         if isinstance(val, torch.Tensor):
-            arr = val.detach().cpu().numpy()
-            # arr = grab_tensor(val)
+            # arr = val.detach().cpu().numpy()
+            arr = grab_tensor(val)
         else:
             arr = np.array(val)
 
@@ -85,28 +87,14 @@ def log_item(
                     # log.exception(e)
 
     elif (
-            isinstance(val, (int, float, bool, np.floating))
-            or len(val.shape) ==0
+            isinstance(val, Scalar)
+            or len(val.shape) == 0
     ):
         writer.add_scalar(tag=tag, scalar_value=val, global_step=step)
 
     else:
         log.warning(f'Unexpected type encountered for: {tag}')
         log.warning(f'{tag}.type: {type(val)}')
-
-    # if isinstance(val, (Tensor, Array)):
-    #     if isinstance(val, Tensor):
-    #         val = val.detach()
-
-    #     if len(val.shape) > 0:
-    #         writer.add_histogram(tag=tag, values=val, global_step=step)
-    #         writer.add_scalar(f'{tag}/avg', val.mean())
-
-    #     elif isinstance(val, (int, float, bool)) or len(val.shape) == 0:
-    #         writer.add_scalar(tag=tag, scalar_value=val, global_step=step)
-    #     else:
-    #         log.warning(f'Unexpected type encountered for: {tag}')
-    #         log.warning(f'{tag}.type: {type(val)}')
 
 
 def update_summaries(
