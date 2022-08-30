@@ -89,8 +89,6 @@ class U1Phase(Group):
         return torch.cat([x.cos(), x.sin()], dim=1)
 
     def compat_proj(self, x: Tensor) -> Tensor:
-        # return (x + PI % TWO_PI) - PI
-        # return self.floormod(x + PI, TWO_PI) - PI
         return ((x + PI) % TWO_PI) - PI
 
     def random(self, shape: list[int]) -> Tensor:
