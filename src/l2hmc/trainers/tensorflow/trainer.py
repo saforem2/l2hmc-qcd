@@ -641,7 +641,7 @@ class Trainer(BaseTrainer):
                     if job_type == 'hmc':
                         acc = metrics.get('acc_mask', None)
                         record['eps'] = eps
-                        if acc is not None:
+                        if acc is not None and eps is not None:
                             acc_avg = tf.reduce_mean(acc)
                             if acc_avg < 0.66:
                                 eps -= (eps / 10.)
@@ -719,7 +719,7 @@ class Trainer(BaseTrainer):
         aw = self.config.loss.aux_weight
         assert (
             self.dynamics is not None
-            and isinstance(self.dynamics, Dynamics)
+            # and isinstance(self.dynamics, Dynamics)
         )
         with tf.GradientTape() as tape:
             tape.watch(xinit)
