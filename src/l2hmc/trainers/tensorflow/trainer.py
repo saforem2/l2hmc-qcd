@@ -623,7 +623,7 @@ class Trainer(BaseTrainer):
                 return self.hmc_step(inputs, eps=eps, nleapfrog=nleapfrog)
             return self.eval_step(inputs)  # type:ignore
 
-        with self.get_context_manager(table):
+        with self.get_context_manager(table) as ctx:
             for step in range(eval_steps):
                 timer.start()
                 x, metrics = eval_fn((x, beta))  # type:ignore
@@ -675,6 +675,9 @@ class Trainer(BaseTrainer):
                             self.console.log('Chains are stuck! Re-drawing x!')
                             x = self.lattice.random()
                             stuck_counter = 0
+
+                if isinstance(ctx, Live):
+                    ctx.console.clear_live()
 
         tables[str(0)] = table
 
