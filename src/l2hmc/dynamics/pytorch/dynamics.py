@@ -648,7 +648,7 @@ class Dynamics(nn.Module):
     ) -> tuple[State, dict]:
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = torch.zeros(state.x.shape[0],
-                                dtype=state.x.real.dtype,
+                                # dtype=state.x.real.dtype,
                                 device=state.x.device)
         history = {}
         if self.config.verbose:
@@ -698,7 +698,7 @@ class Dynamics(nn.Module):
     ) -> tuple[State, dict]:
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = torch.zeros(state.x.shape[0],
-                                dtype=state.x.real.dtype,
+                                # dtype=state.x.real.dtype,
                                 device=state.x.device)
         history = {}
         if self.config.verbose:
@@ -736,7 +736,11 @@ class Dynamics(nn.Module):
             self,
             state: State,
     ) -> tuple[State, dict]:
-        sumlogdet = torch.zeros((state.x.shape[0],), device=state.x.device)
+        sumlogdet = torch.zeros(
+            (state.x.shape[0],),
+            dtype=state.x.dtype,
+            device=state.x.device,
+        )
         sldf = torch.zeros_like(sumlogdet)
         sldb = torch.zeros_like(sumlogdet)
 
@@ -840,6 +844,10 @@ class Dynamics(nn.Module):
     ) -> Tensor:
         h_init = self.hamiltonian(state_init)
         h_prop = self.hamiltonian(state_prop)
+        if sumlogdet.is_complex():
+            log.warning('Complex sumlogdet! Taking norm...?')
+            sumlogdet = sumlogdet.norm()
+
         dh = h_init - h_prop + sumlogdet
         prob = torch.exp(
             torch.minimum(dh, torch.zeros_like(dh, device=dh.device))
@@ -925,11 +933,11 @@ class Dynamics(nn.Module):
         Returns:
             s, t, q: Scaling, Translation, and Transformation functions
         """
-        vnet = self._get_vnet(step)
-        assert callable(vnet)
         x, force = inputs
         if torch.cuda.is_available():
             x, force = x.cuda(), force.cuda()
+        vnet = self._get_vnet(step)
+        assert callable(vnet)
 
         return vnet((x, force))
 
@@ -1000,10 +1008,14 @@ class Dynamics(nn.Module):
         xnet = self._get_xnet(step, first)
         assert callable(xnet)
         x, v = inputs
-        x = self.g.group_to_vec(x)
-
         if torch.cuda.is_available():
             x, v = x.cuda(), v.cuda()
+
+        if isinstance(self.g, SU3):
+            x = x.reshape(self.xshape)
+            x = torch.stack([x.real, x.imag], 1)
+        elif isinstance(self.g, U1Phase):
+            x = self.g.group_to_vec(x.reshape(self.xshape))
 
         return xnet((x, v))
 
@@ -1062,8 +1074,9 @@ class Dynamics(nn.Module):
 
         jac = eps * s / 2.  # jacobian factor, also used in exp_s below
         logdet = jac.sum(dim=1)
-        exp_s = jac.exp()
-        exp_q = (eps * q).exp()
+        exp_s = jac.exp().reshape_as(state.v)
+        exp_q = (eps * q).exp().reshape_as(force)
+        t = t.reshape_as(force)
         vf = exp_s * state.v - 0.5 * eps * (force * exp_q + t)
 
         return State(state.x, vf, state.beta), logdet
@@ -1077,8 +1090,9 @@ class Dynamics(nn.Module):
 
         logjac = (-eps * s / 2.)  # jacobian factor, also used in exp_s below
         logdet = logjac.sum(dim=1)
-        exp_s = torch.exp(logjac)
-        exp_q = torch.exp(eps * q)
+        exp_s = torch.exp(logjac).reshape_as(state.v)
+        exp_q = torch.exp(eps * q).reshape_as(force)
+        t = t.reshape_as(force)
         vb = exp_s * (state.v + 0.5 * eps * (force * exp_q + t))
 
         return State(state.x, vb, state.beta), logdet
@@ -1119,11 +1133,16 @@ class Dynamics(nn.Module):
                 logdet = (mb * s).sum(dim=1)
 
         elif isinstance(self.g, SU3):
-            x = self.g.group_to_vec(state.x)
+            x = state.x.reshape(self.xshape)
+            xm_init = xm_init.reshape(self.xshape)
+            exp_s = exp_s.reshape(self.xshape)
+            exp_q = exp_q.reshape(self.xshape)
+            t = t.reshape(self.xshape)
+            # x = self.g.group_to_vec(state.x)
             # v = self.g.group_to_vec(state.v)
-            xm_init = self.g.group_to_vec(xm_init)
+            # xm_init = self.g.group_to_vec(xm_init)
             xp = x * exp_s + eps * (state.v * exp_q + t)
-            xf = xm_init + (mb * xp)
+            xf = xm_init + (mb * xp.flatten(1)).reshape_as(xm_init)
             logdet = (mb * s).sum(dim=1)
         else:
             raise ValueError('Unexpected value for `self.g`')
@@ -1142,13 +1161,14 @@ class Dynamics(nn.Module):
         assert isinstance(self.xeps, nn.ParameterList)
         eps = self.xeps[step]
         mb = (torch.ones_like(m) - m).to(self.device)
-        xm_init = m * state.x
+        xm_init = (m * state.x.flatten(1)).reshape_as(state.x)
         inputs = (xm_init, state.v)
         s, t, q = self._call_xnet(step, inputs, first=first)
         s = (-eps) * s
         q = eps * q
-        exp_s = s.exp()
-        exp_q = q.exp()
+        exp_s = s.exp().reshape_as(state.x)
+        exp_q = q.exp().reshape_as(state.v)
+        t = t.reshape_as(state.v)
         if isinstance(self.g, U1Phase):
             if self.config.use_ncp:
                 halfx = state.x / 2.
@@ -1168,7 +1188,8 @@ class Dynamics(nn.Module):
                 logdet = (mb * s).sum(dim=1)
         elif isinstance(self.g, SU3):
             xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
-            xb = xm_init + (mb * xnew)
+            xmb = (mb * xnew.flatten(1))
+            xb = xm_init + xmb.reshape_as(xm_init)
             logdet = (mb * s).sum(dim=1)
         else:
             raise ValueError('Unexpected value for `self.g`')
