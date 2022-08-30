@@ -616,23 +616,37 @@ class ExperimentConfig(BaseConfig):
     dynamics: DynamicsConfig
     learning_rate: LearningRateConfig
     annealing_schedule: AnnealingSchedule
-    # ----- optional below -------------------
-    # outdir: Optional[Any] = None
-    c1: Optional[float] = 0.0                # rectangle coefficient for SU3
+    # ----- Optional (w/ defaults) ------------
+    c1: float = 0.0
+    port: str = '2345'
+    backend: str = 'horovod'
+    compile: bool = True
+    profile: bool = False
+    init_aim: bool = True
+    init_wandb: bool = True
+    debug_mode: bool = False
+    default_mode: bool = True
+    print_config: bool = True
+    precision: str = 'float32'
+    ignore_warnings: bool = True
+    # ----- Optional (w/o defaults) -----------
+    name: Optional[str] = None
     name: Optional[str] = None
     width: Optional[int] = None
     nchains: Optional[int] = None
-    init_aim: Optional[bool] = None
-    init_wandb: Optional[bool] = None
-    compile: Optional[bool] = True
-    profile: Optional[bool] = False
     compression: Optional[str] = None
-    debug_mode: Optional[bool] = False
-    default_mode: Optional[bool] = True
-    print_config: Optional[bool] = True
-    precision: Optional[str] = 'float32'
-    ignore_warnings: Optional[bool] = True
     conv: Optional[ConvolutionConfig] = None
+    # outdir: Optional[Any] = None
+    # c1: Optional[float] = 0.0                # rectangle coefficient for SU3
+    # init_aim: Optional[bool] = None
+    # init_wandb: Optional[bool] = None
+    # compile: Optional[bool] = True
+    # profile: Optional[bool] = False
+    # debug_mode: Optional[bool] = False
+    # default_mode: Optional[bool] = True
+    # print_config: Optional[bool] = True
+    # precision: Optional[str] = 'float32'
+    # ignore_warnings: Optional[bool] = True
 
     def rank(self):
         if self.framework in SYNONYMS['pytorch']:

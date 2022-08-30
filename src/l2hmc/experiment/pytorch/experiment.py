@@ -22,15 +22,16 @@ from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
 # from l2hmc.trainers.pytorch.trainer import Trainer
 from l2hmc.trainers.pytorch.trainer import Trainer
 from l2hmc.utils.rich import get_console
+from l2hmc.common import setup_torch_distributed
 
 log = logging.getLogger(__name__)
 
 # LOCAL_RANK = os.environ.get('OMPI_COMM_WORLD_LOCAL_RANK', '0')
 
 Tensor = torch.Tensor
-SIZE = hvd.size()
-RANK = hvd.rank()
-LOCAL_RANK = hvd.local_rank()
+# SIZE = hvd.size()
+# RANK = hvd.rank()
+# LOCAL_RANK = hvd.local_rank()
 
 
 class Experiment(BaseExperiment):
@@ -47,9 +48,13 @@ class Experiment(BaseExperiment):
             skip=skip,
             build_networks=build_networks,
         )
+        dsetup = setup_torch_distributed(self.config.backend)
+        self._size = dsetup['size']
+        self._rank = dsetup['rank']
+        self._local_rank = dsetup['local_rank']
 
-        self._rank = hvd.rank()
-        self._local_rank = hvd.local_rank()
+        # self._rank = hvd.rank()
+        # self._local_rank = hvd.local_rank()
         run = None
         arun = None
         if self._rank == 0 and self.config.init_wandb:
@@ -66,19 +71,19 @@ class Experiment(BaseExperiment):
                 criterion=self.trainer.loss_fn,
             )
             assert run is wandb.run
-            run.config['SIZE'] = SIZE
+            run.config['SIZE'] = self._size
 
         if self._rank == 0 and self.config.init_aim:
             log.warning(
                 f'Initializing Aim from {self._rank}:{self._local_rank}'
             )
             arun = self.init_aim()
-            arun['SIZE'] = SIZE
+            arun['SIZE'] = self._size
             if arun is not None:
                 if torch.cuda.is_available():
-                    arun['ngpus'] = SIZE
+                    arun['ngpus'] = self._size
                 else:
-                    arun['ncpus'] = SIZE
+                    arun['ncpus'] = self._size
 
         self.run = run
         self.arun = arun
@@ -231,7 +236,7 @@ class Experiment(BaseExperiment):
         )
         run = None
         arun = None
-        if RANK == 0:
+        if self._rank == 0:
             if init_wandb:
                 import wandb
                 log.warning(f'Initialize WandB from {rank}:{local_rank}')
@@ -241,15 +246,15 @@ class Experiment(BaseExperiment):
                 #     self.trainer.dynamics,
                 #     log="all"
                 # )
-                run.config['SIZE'] = SIZE
+                run.config['SIZE'] = self._size
             if init_aim:
                 log.warning(f'Initializing Aim from {rank}:{local_rank}')
                 arun = self.init_aim()
                 if arun is not None:
                     if torch.cuda.is_available():
-                        arun['ngpus'] = SIZE
+                        arun['ngpus'] = self._size
                     else:
-                        arun['ncpus'] = SIZE
+                        arun['ncpus'] = self._size
 
         self.run = run
         self.arun = arun
@@ -292,7 +297,7 @@ class Experiment(BaseExperiment):
         # nchains = 16 if nchains is None else nchains
         jobdir = self.get_jobdir(job_type='train')
         writer = None
-        if RANK == 0:
+        if self._rank == 0:
             writer = self.get_summary_writer()
 
         # logfile = jobdir.joinpath(f'train-{RANK}.log')
@@ -325,6 +330,10 @@ class Experiment(BaseExperiment):
                 skip=skip,
                 beta=beta,
             )
+        if self.trainer._is_chief:
+            summaryfile = jobdir.joinpath('summaries.txt')
+            with open(summaryfile.as_posix(), 'w') as f:
+                f.writelines(output['summaries'])
         # fname = f'train-{RANK}'
         # txtfile = jobdir.joinpath(f'{fname}.txt')
         # htmlfile = jobdir.joinpath(f'{fname}.html')
@@ -376,6 +385,10 @@ class Experiment(BaseExperiment):
             nleapfrog=nleapfrog,
             eval_steps=eval_steps,
         )
+        if self.trainer._is_chief:
+            summaryfile = jobdir.joinpath('summaries.txt')
+            with open(summaryfile.as_posix(), 'w') as f:
+                f.writelines(output['summaries'])
 
         output['dataset'] = self.save_dataset(
             output=output,

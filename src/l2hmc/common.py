@@ -38,11 +38,16 @@ os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 
 log = logging.getLogger(__name__)
 
-# TensorLike = tf.Tensor | ops.EagerTensor | torch.Tensor | np.ndarray
+TensorLike = tf.Tensor | ops.EagerTensor | torch.Tensor | np.ndarray | list
 ScalarLike = Union[int, float, bool, np.floating]
 
 
-def grab_tensor(x: Any) -> np.ndarray | ScalarLike:
+def grab_tensor(x: TensorLike) -> np.ndarray | ScalarLike:
+    if isinstance(x, list):
+        if isinstance(x[0], torch.Tensor):
+            return grab_tensor(torch.stack(x))
+        if isinstance(x[0], tf.Tensor):
+            return grab_tensor(tf.stack(x))
     if isinstance(x, np.ndarray):
         return x
     if isinstance(x, (tf.Tensor, ops.EagerTensor)):
@@ -55,8 +60,7 @@ def grab_tensor(x: Any) -> np.ndarray | ScalarLike:
     if isinstance(x, torch.Tensor):
         return x.detach().cpu().numpy()
 
-    else:
-        return x
+    raise ValueError
 
 
 def clear_cuda_cache():
@@ -73,6 +77,96 @@ def get_timestamp(fstr=None):
     if fstr is None:
         return now.strftime('%Y-%m-%d-%H%M%S')
     return now.strftime(fstr)
+
+
+def init_process_group(
+        rank: int | str,
+        world_size: int | str,
+        backend: Optional[str] = None,
+) -> None:
+    import torch.distributed as dist
+    if torch.cuda.is_available():
+        backend = 'nccl' if backend is None else str(backend)
+    else:
+        backend = 'gloo' if backend is None else str(backend)
+
+    dist.init_process_group(
+        backend=backend,
+        rank=int(rank),
+        world_size=int(world_size),
+        init_method='env://',
+    )
+
+
+def setup_torch_distributed(
+        backend: str,
+        port: str = '2345',
+) -> dict:
+    rank = os.environ.get('RANK', None)
+    size = os.environ.get('WORLD_SIZE', None)
+    local_rank = os.environ.get('LOCAL_RANK', None)
+    INITIALIZED = False
+    if rank is not None and size is not None and local_rank is not None:
+        INITIALIZED = True
+    assert backend in ['ddp', 'DDP', 'horovod', 'hvd']
+    log.info(f'Using {backend} for distributed training')
+    if backend in ['ddp', 'DDP']:
+        import socket
+        from mpi4py import MPI
+        local_rank = int(os.environ.get(
+            'PMI_LOCAL_RANK',
+            os.environ.get(
+                'OMPI_COMM_WORLD_LOCAL_RANK',
+                '0',
+            )
+        ))
+        size = int(MPI.COMM_WORLD.Get_size())
+        rank = int(MPI.COMM_WORLD.Get_rank())
+        os.environ['LOCAL_RANK'] = str(local_rank)
+        os.environ['RANK'] = str(rank)
+        os.environ['WORLD_SIZE'] = str(size)
+        master_addr = (
+            socket.gethostname() if rank == 0 else None
+        )
+        master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
+        os.environ['MASTER_ADDR'] = master_addr
+        os.environ['MASTER_PORT'] = port
+        if not INITIALIZED:
+            init_process_group(
+                rank=rank,
+                world_size=size,
+                backend='nccl' if torch.cuda.is_available() else 'gloo'
+            )
+        # if local_rank == 0 and rank == 0:
+        #     log.info('DDP INFO:')
+        #     log.info('---------')
+        #     log.info(f'SIZE: {size}')
+        #     log.info(f'RANK: {rank}')
+        #     log.info(f'LOCAL_RANK: {local_rank}')
+
+    elif backend in ['horovod', 'hvd']:
+        import horovod.torch as hvd
+        hvd.init() if not hvd.is_initialized() else None
+        rank = hvd.rank()
+        size = hvd.size()
+        local_rank = hvd.local_rank()
+        # if local_rank == 0 and rank == 0:
+        #     log.info('\n'.join([
+        #         'Horovod info:',
+        #         '-------------',
+        #         f'SIZE: {size}',
+        #         f'RANK: {rank}',
+        #         f'LOCAL_RANK: {local_rank}',
+        #         '-------------',
+        #     ]))
+    else:
+        log.warning(f'Unexpected backend specified: {backend}')
+        log.error('Setting size = 1, rank = 0, local_rank = 0')
+        size = 1
+        rank = 0
+        local_rank = 0
+
+    return {'size': size, 'rank': rank, 'local_rank': local_rank}
 
 
 def check_diff(x, y, name: Optional[str] = None):
@@ -192,7 +286,19 @@ def save_dataset(
     if use_hdf5:
         fname = 'dataset.h5' if job_type is None else f'{job_type}_data.h5'
         outfile = Path(outdir).joinpath(fname)
-        dataset_to_h5pyfile(outfile, dataset=dataset, **kwargs)
+        try:
+            dataset_to_h5pyfile(outfile, dataset=dataset, **kwargs)
+        except TypeError:
+            log.warning(
+                'Unable to save as `.h5` file, falling back to `netCDF4`'
+            )
+            save_dataset(
+                dataset,
+                outdir=outdir,
+                use_hdf5=False,
+                job_type=job_type,
+                **kwargs
+            )
     else:
         fname = 'dataset.nc' if job_type is None else f'{job_type}_dataset.nc'
         outfile = Path(outdir).joinpath(fname)
@@ -611,10 +717,10 @@ def make_dataset(metrics: dict) -> xr.Dataset:
             import torch
             import tensorflow as tf
             if isinstance(val[0], torch.Tensor):
-                val = torch.stack(val).detach().numpy()
+                val = grab_tensor(torch.stack(val))
             elif isinstance(val[0], tf.Tensor):
                 import tensorflow as tf
-                val = tf.stack(val).numpy()
+                val = grab_tensor(tf.stack(val))
 
         assert isinstance(val, np.ndarray)
         assert len(val.shape) in [1, 2, 3]
