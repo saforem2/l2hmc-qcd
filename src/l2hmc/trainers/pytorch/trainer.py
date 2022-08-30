@@ -50,6 +50,7 @@ from l2hmc.trainers.trainer import BaseTrainer
 from l2hmc.utils.history import summarize_dict
 from l2hmc.utils.rich import add_columns, get_console
 from l2hmc.utils.step_timer import StepTimer
+from l2hmc.common import setup_torch_distributed
 
 # from mpi4py import MPI
 # from torchinfo import summary as model_summary
@@ -83,9 +84,9 @@ Module = torch.nn.modules.Module
 
 
 # LOCAL_RANK = os.environ.get('OMPI_COMM_WORLD_LOCAL_RANK', '0')
-SIZE = hvd.size()
-RANK = hvd.rank()
-LOCAL_RANK = hvd.local_rank()
+# SIZE = hvd.size()
+# RANK = hvd.rank()
+# LOCAL_RANK = hvd.local_rank()
 
 WITH_CUDA = torch.cuda.is_available()
 
@@ -110,22 +111,36 @@ class Trainer(BaseTrainer):
         super(Trainer, self).__init__(cfg=cfg, keep=keep, skip=skip)
         assert isinstance(self.config, ExperimentConfig)
         self._gstep = 0
+        dsetup = setup_torch_distributed(self.config.backend)
+        self.size = dsetup['size']
+        self.rank = dsetup['rank']
+        self.local_rank = dsetup['local_rank']
+        self._is_chief = (self.local_rank == 0 and self.rank == 0)
         self._with_cuda = torch.cuda.is_available()
         self.lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
         self.dynamics = self.build_dynamics(
             build_networks=build_networks,
         )
+        self.dynamics_ddp = None
+        if self.config.backend == 'DDP':
+            from torch.nn.parallel import DistributedDataParallel as DDP
+            self.dynamics_ddp = DDP(self.dynamics)
+
         self._optimizer = torch.optim.Adam(
             self.dynamics.parameters(),
             lr=self.config.learning_rate.lr_init
         )
+        self._lr_warmup = torch.linspace(
+            self.config.learning_rate.min_lr,
+            self.config.learning_rate.lr_init,
+            2 * self.steps.nepoch
+        )
         # self.optimizer = self.build_optimizer()
         # self.lr_schedule = self.build_lr_schedule()
-        self.rank = hvd.local_rank()
-        self.global_rank = hvd.rank()
+        # self.rank = hvd.local_rank()
+        # self.global_rank = hvd.rank()
         # self._is_chief = self.rank == 0
-        self._is_chief = (self.rank == 0 and self.global_rank == 0)
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         assert (
             isinstance(self.dynamics, Dynamics)
@@ -148,18 +163,21 @@ class Trainer(BaseTrainer):
         # skip_tracking = os.environ.get('SKIP_TRACKING', False)
         # self.verbose = not skip_tracking
         self.clip_norm = self.config.learning_rate.clip_norm
-        compression = (
-            hvd.Compression.fp16
-            if self.config.compression == 'fp16'
-            else hvd.Compression.none
-        )
-        self.optimizer = hvd.DistributedOptimizer(
-            self._optimizer,
-            named_parameters=self.dynamics.named_parameters(),
-            compression=compression,  # type: ignore
-        )
-        hvd.broadcast_parameters(self.dynamics.state_dict(), root_rank=0)
-        hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
+        if self.config.backend in ['hvd', 'horovod']:
+            compression = (
+                hvd.Compression.fp16
+                if self.config.compression == 'fp16'
+                else hvd.Compression.none
+            )
+            self.optimizer = hvd.DistributedOptimizer(
+                self._optimizer,
+                named_parameters=self.dynamics.named_parameters(),
+                compression=compression,  # type: ignore
+            )
+            hvd.broadcast_parameters(self.dynamics.state_dict(), root_rank=0)
+            hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
+        else:
+            self.optimizer = self._optimizer
         # self.optimizer = hvd.DistributedOptimizer(
         #         self.optimizer,
         #         # named_parameters=self.dynamics.named_parameters(),
@@ -227,11 +245,15 @@ class Trainer(BaseTrainer):
                 network_config=self.config.network,
                 net_weights=self.config.net_weights,
             )
-        dynamics = Dynamics(config=self.config.dynamics,
-                            potential_fn=self.lattice.action,
-                            network_factory=net_factory)
+        dynamics = Dynamics(
+            config=self.config.dynamics,
+            potential_fn=self.lattice.action,
+            # backend=self.config.backend,
+            network_factory=net_factory,
+        )
         if torch.cuda.is_available():
             dynamics.cuda()
+
         # state = dynamics.random_state(1.)
         # for step in range(self.config.dynamics.nleapfrog):
         #     xn0 = dynamics._get_xnet(step, first=True)
@@ -259,16 +281,11 @@ class Trainer(BaseTrainer):
         return torch.optim.Adam(self.dynamics.parameters(), lr=lr)
 
     def get_lr(self, step: int) -> float:
-        # if step < len(self._lr_warmup):
-        #     return self._lr_warmup[step].item()
+        if step < len(self._lr_warmup):
+            return self.config.learning_rate.lr_init
         return self.config.learning_rate.lr_init
 
     def build_lr_schedule(self):
-        self._lr_warmup = torch.linspace(
-            self.config.learning_rate.min_lr,
-            self.config.learning_rate.lr_init,
-            2 * self.steps.nepoch
-        )
         return LambdaLR(
             optimizer=self._optimizer,
             lr_lambda=lambda step: self.get_lr(step)
@@ -329,8 +346,8 @@ class Trainer(BaseTrainer):
 
     def should_emit(self, epoch: int, nepoch: int) -> bool:
         nprint = min(
-            getattr(self.steps, 'print', int(nepoch // 2)),
-            int(nepoch // 2)
+            getattr(self.steps, 'print', int(nepoch // 10)),
+            int(nepoch // 5)
         )
         nlog = min(
             getattr(self.steps, 'log', int(nepoch // 4)),
@@ -355,14 +372,12 @@ class Trainer(BaseTrainer):
             metrics: dict,
             job_type: str,
             step: Optional[int] = None,
-            # record: Optional[dict] = None,
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             model: Optional[nn.Module | Dynamics] = None,
             optimizer: Optional[Any] = None
     ):
-        # record = {} if record is None else record
         assert job_type in ['train', 'eval', 'hmc']
         if step is None:
             timer = self.timers.get(job_type, None)
@@ -371,17 +386,6 @@ class Trainer(BaseTrainer):
 
         if step is not None:
             metrics.update({f'{job_type}_step': step})
-
-        # metrics.update({
-        #     'loss': metrics.get('loss', None),
-        #     'dQint': metrics.get('dQint', None),
-        #     'dQsin': metrics.get('dQsin', None),
-        # })
-        # if job_type in ['hmc', 'eval']:
-        #     _ = metrics.pop('xeps', None)
-        #     _ = record.pop('veps', None)
-        #     if job_type == 'hmc':
-        #         _ = record.pop('sumlogdet', None)
 
         if job_type == 'train' and step is not None:
             metrics['lr'] = self.get_lr(step)
@@ -427,7 +431,7 @@ class Trainer(BaseTrainer):
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
     ) -> None:
-        if self.rank != 0:
+        if self.local_rank != 0:
             return
         # assert self.config.init_aim or self.config.init_wandb
         dQdict = None
@@ -472,12 +476,14 @@ class Trainer(BaseTrainer):
         assert isinstance(self.config, ExperimentConfig)
         self.optimizer.zero_grad()
         xinit = self.g.compat_proj(xinit)  # .to(self.accelerator.device)
-        xout, metrics = self.dynamics((xinit, beta))
+        if self.dynamics_ddp is not None:
+            xout, metrics = self.dynamics_ddp((xinit, beta))
+        else:
+            xout, metrics = self.dynamics((xinit, beta))
         xout = self.g.compat_proj(xout)
         xprop = self.g.compat_proj(metrics.pop('mc_states').proposed.x)
 
         beta = beta  # .to(self.accelerator.device)
-        xout, metrics = self.dynamics((xinit, beta))
         # xprop = to_u1(metrics.pop('mc_states').proposed.x)
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
         loss.backward()
@@ -537,9 +543,10 @@ class Trainer(BaseTrainer):
         xinit, beta = inputs
         if WITH_CUDA:
             xinit, beta = xinit.cuda(), torch.tensor(beta).cuda()
-        # xinit = xinit.to(self.device)
-        xout, metrics = self.dynamics((xinit, beta))
-        # xout = self.g.compat_proj(xout)
+        if self.dynamics_ddp is not None:
+            xout, metrics = self.dynamics_ddp((xinit, beta))
+        else:
+            xout, metrics = self.dynamics((xinit, beta))
         xprop = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
         if self.config.dynamics.verbose:
@@ -555,15 +562,17 @@ class Trainer(BaseTrainer):
     def get_context_manager(self, table: Table):
         width = get_width()
         make_live = (
-            int(width) > 150          # make sure wide enough to fit table
-            and hvd.size() > 1        # not worth the trouble when distributed
-            and self.rank == 0        # only display from (one) main rank
-            and not is_interactive()  # AND not in a jupyter / ipython kernel
+            int(width) > 150            # make sure wide enough to fit table
+            and self._is_chief
+            and self.size == 1          # not worth the trouble when dist.
+            and not is_interactive()    # AND not in a jupyter / ipython kernel
         )
         if make_live:
             return Live(
                 table,
                 # screen=True,
+                transient=True,
+                # auto_refresh=False,
                 console=self.console,
                 vertical_overflow='visible'
             )
@@ -590,16 +599,16 @@ class Trainer(BaseTrainer):
         if beta is None:
             beta = self.config.annealing_schedule.beta_final
 
+        if nleapfrog is None and str(job_type).lower() == 'hmc':
+            nleapfrog = int(self.config.dynamics.nleapfrog)
+            # assert isinstance(nleapfrog, int)
+            if self.config.dynamics.merge_directions:
+                nleapfrog *= 2
+
         if eps is None and str(job_type).lower() == 'hmc':
             eps = self.config.dynamics.eps_hmc
             assert eps is not None
             log.warn(f'Using step size eps: {eps:.4f} for generic HMC')
-
-        if nleapfrog is None and str(job_type).lower() == 'hmc':
-            nleapfrog = self.config.dynamics.nleapfrog
-            assert isinstance(nleapfrog, int)
-            if self.config.dynamics.merge_directions:
-                nleapfrog *= 2
 
         if x is None:
             x = self.lattice.random()
@@ -630,11 +639,10 @@ class Trainer(BaseTrainer):
         assert isinstance(nlog, int)
         assert isinstance(nprint, int)
         assert isinstance(eval_steps, int)
-        assert isinstance(nleapfrog, int)
-        ctx = self.get_context_manager(table)
-        return {
+        # assert isinstance(eps, float)
+        # assert isinstance(nleapfrog, int)
+        output = {
             'x': x,
-            'ctx': ctx,
             'eps': eps,
             'beta': beta,
             'nlog': nlog,
@@ -643,6 +651,13 @@ class Trainer(BaseTrainer):
             'eval_steps': eval_steps,
             'nleapfrog': nleapfrog,
         }
+        log.info(
+            '\n'.join([
+                f'{k} = {v}' for k, v in output.items()
+                if k != 'x'
+            ])
+        )
+        return output
 
     def eval(
             self,
@@ -697,7 +712,7 @@ class Trainer(BaseTrainer):
             return self.eval_step(z)
 
         self.dynamics.eval()
-        with setup['ctx']:
+        with self.get_context_manager(table):
             for step in range(eval_steps):
                 timer.start()
                 x, metrics = eval_fn((x, beta))
@@ -713,7 +728,8 @@ class Trainer(BaseTrainer):
                     }
                     record.update(metrics)
                     if job_type == 'hmc':
-                        acc = metrics.get('acc_mask', None)
+                        acc = record.get('acc_mask', None)
+                        record['eps'] = eps
                         if acc is not None and eps is not None:
                             acc_avg = acc.mean()
                             if acc_avg < 0.66:
@@ -721,22 +737,19 @@ class Trainer(BaseTrainer):
                             else:
                                 eps += (eps / 10.)
 
-                            record['eps'] = eps
-
                     avgs, summary = self.record_metrics(run=run,
                                                         arun=arun,
                                                         step=step,
                                                         writer=writer,
                                                         metrics=record,
                                                         job_type=job_type)
-
+                    summaries.append(summary)
                     if (
-                            not isinstance(setup['ctx'], Live)
-                            and step % setup['nprint'] == 0
+                            # not isinstance(setup['ctx'], Live)
+                            step % setup['nprint'] == 0
                     ):
                         log.info(summary)
 
-                    summaries.append(summary)
                     if step == 0:
                         table = add_columns(avgs, setup['table'])
                     else:
@@ -749,11 +762,12 @@ class Trainer(BaseTrainer):
                             stuck_counter += 1
                         else:
                             self.console.log('Chains are stuck! Redrawing x')
-                            x = self.g.random(list(x.shape))
                             x = self.lattice.random()
                             stuck_counter = 0
 
-        # console.log(table)
+                if isinstance(setup['ctx'], Live):
+                    setup['ctx'].console.clear_live()
+
         tables[str(0)] = setup['table']
 
         return {
@@ -790,7 +804,11 @@ class Trainer(BaseTrainer):
         xinit.requires_grad_(True)
 
         self.optimizer.zero_grad()
-        xout, metrics = self.dynamics((xinit, beta))
+        if self.dynamics_ddp is not None:
+            xout, metrics = self.dynamics_ddp((xinit, beta))
+        else:
+            xout, metrics = self.dynamics((xinit, beta))
+
         xprop = metrics.pop('mc_states').proposed.x
 
         # [2.] Calc loss
@@ -803,7 +821,11 @@ class Trainer(BaseTrainer):
             if WITH_CUDA:
                 yinit = yinit.cuda()
 
-            _, metrics_ = self.dynamics((yinit, beta))
+            if self.dynamics_ddp is not None:
+                _, metrics_ = self.dynamics_ddp((yinit, beta))
+            else:
+                _, metrics_ = self.dynamics((yinit, beta))
+
             yprop = metrics_.pop('mc_states').proposed.x
             aux_loss = aw * self.loss_fn(x_init=yinit,
                                          x_prop=yprop,
@@ -873,6 +895,7 @@ class Trainer(BaseTrainer):
                 #     f'ERA: {era}',
                 #     f'BETA: {beta:.3f}',
                 # ])
+                # ctx._redirect_stdout = T
                 ctx.console.clear_live()
                 # ctx.console.rule(tstr)
                 ctx.update(table)
@@ -916,7 +939,11 @@ class Trainer(BaseTrainer):
                     rows[self._gstep] = avgs
                     summaries.append(summary)
 
-                    if self.should_print(epoch) and not isinstance(ctx, Live):
+                    # if self.should_print(epoch):
+                    if (
+                            self.should_print(epoch)
+                            # and not isinstance(ctx, Live)
+                    ):
                         log.info(summary)
 
                     if epoch == 0:
@@ -963,6 +990,10 @@ class Trainer(BaseTrainer):
         nera = self.config.steps.nera if nera is None else nera
         nepoch = self.config.steps.nepoch if nepoch is None else nepoch
         extend = self.config.steps.extend_last_era
+        # nprint = min(
+        #     getattr(self.steps, 'print', int(nepoch // 10)),
+        #     int(nepoch // 5)
+        # )
         assert isinstance(nera, int)
         assert isinstance(nepoch, int)
 
@@ -1053,6 +1084,9 @@ class Trainer(BaseTrainer):
             )
             st0 = time.time()
 
+            self.rows['train'][str(era)] = edata['rows']
+            self.tables['train'][str(era)] = edata['table']
+            self.summaries['train'][str(era)] = edata['summaries']
             losses = torch.stack(edata['losses'][1:])
             if self.config.annealing_schedule.dynamic:
                 dy_avg = (losses[1:] - losses[:-1]).mean().item()
@@ -1060,10 +1094,6 @@ class Trainer(BaseTrainer):
                     b -= (b / 10.)  # self.config.annealing_schedule._dbeta
                 else:
                     b += (b / 10.)  # self.config.annealing_schedule._dbeta
-
-            self.rows['train'][str(era)] = edata['rows']
-            self.tables['train'][str(era)] = edata['table']
-            self.summaries['train'][str(era)] = edata['summaries']
 
             if (era + 1) == nera or (era + 1) % 5 == 0:
                 self.save_ckpt(era, epoch, train_dir, run=run)

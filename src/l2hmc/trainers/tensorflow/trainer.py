@@ -436,13 +436,15 @@ class Trainer(BaseTrainer):
 
         return xo, metrics
 
-    # @tf.function(experimental_follow_type_hints=True,
-    #         jit_compile=JIT_COMPILE)
     @tf.function
     def eval_step(
             self,
             inputs: tuple[Tensor, Tensor],
     ) -> tuple[Tensor, dict]:
+        """
+        # @tf.function(experimental_follow_type_hints=True,
+                       jit_compile=JIT_COMPILE)
+        """
         assert self.dynamics is not None
         xout, metrics = self.dynamics(inputs, training=False)  # type:ignore
         xout = self.g.compat_proj(xout)
@@ -461,18 +463,19 @@ class Trainer(BaseTrainer):
 
         return xout, metrics
 
-    def get_context_manager(self, table: Table):
-        width = get_width()
+    def get_context_manager(self, table: Table) -> Live | nullcontext:
         make_live = (
-            int(width) > 150          # make sure wide enough to fit table
-            and hvd.size() > 1        # not worth the trouble when distributed
-            and self.rank == 0        # only display from (one) main rank
+            int(get_width()) > 150    # make sure wide enough to fit table
+            and self._is_chief
+            and hvd.size() == 1       # not worth the trouble when distributed
             and not is_interactive()  # AND not in a jupyter / ipython kernel
         )
         if make_live:
             return Live(
                 table,
                 # screen=True,
+                transient=True,
+                # auto_refresh=False,
                 console=self.console,
                 vertical_overflow='visible'
             )
@@ -505,18 +508,18 @@ class Trainer(BaseTrainer):
         elif isinstance(beta, float):
             beta = tf.constant(beta, dtype=TF_FLOAT)
 
-        if eps is None and str(job_type).lower() == 'hmc':
-            eps = tf.constant(self.dynamics.config.eps_hmc, dtype=TF_FLOAT)
-            log.warn(
-                'Step size `eps` not specified for HMC! '
-                f'Using default: {self.dynamics.config.eps_hmc:.3f}'
-            )
-
         if nleapfrog is None and str(job_type).lower() == 'hmc':
             nleapfrog = self.config.dynamics.nleapfrog
             assert isinstance(nleapfrog, int)
             if self.config.dynamics.merge_directions:
                 nleapfrog *= 2
+
+        if eps is None and str(job_type).lower() == 'hmc':
+            eps = self.dynamics.config.eps_hmc
+            log.warn(
+                'Step size `eps` not specified for HMC! '
+                f'Using default: {eps:.4f} for generic HMC'
+            )
 
         if x is None:
             x = self.lattice.random()
@@ -547,10 +550,8 @@ class Trainer(BaseTrainer):
 
         assert x is not None and isinstance(x, Tensor)
         assert beta is not None and isinstance(beta, Tensor)
-        ctx = self.get_context_manager(table)
-        return {
+        output = {
             'x': x,
-            'ctx': ctx,
             'eps': eps,
             'beta': beta,
             'nlog': nlog,
@@ -559,6 +560,13 @@ class Trainer(BaseTrainer):
             'eval_steps': eval_steps,
             'nleapfrog': nleapfrog,
         }
+        log.info(
+            '\n'.join([
+                f'{k} = {v}' for k, v in output.items()
+                if k != 'x'
+            ])
+        )
+        return output
 
     def eval(
             self,
@@ -576,17 +584,6 @@ class Trainer(BaseTrainer):
     ) -> dict:
         """Evaluate model."""
         assert job_type in ['hmc', 'eval']
-
-        def eval_fn(inputs: tuple[Tensor, Tensor]) -> tuple[Tensor, dict]:
-            if job_type == 'eval':
-                return self.eval_step(inputs)  # type:ignore
-
-            if job_type == 'hmc':
-                return self.hmc_step(
-                    inputs, eps=eps, nleapfrog=nleapfrog
-                )  # type: ignore
-
-            raise ValueError
 
         tables = {}
         summaries = []
@@ -609,15 +606,24 @@ class Trainer(BaseTrainer):
         table = setup['table']
         nleapfrog = setup['nleapfrog']
         eval_steps = setup['eval_steps']
+        assert eps is not None and isinstance(eps, float)
         timer = self.timers.get(job_type, None)
         history = self.histories.get(job_type, None)
         assert (
             eval_steps is not None
             and timer is not None
             and history is not None
+            and x is not None
+            and beta is not None
         )
 
-        with setup['ctx']:
+        def eval_fn(inputs: tuple[Tensor, Tensor]) -> tuple[Tensor, dict]:
+            if job_type == 'hmc':
+                assert eps is not None
+                return self.hmc_step(inputs, eps=eps, nleapfrog=nleapfrog)
+            return self.eval_step(inputs)  # type:ignore
+
+        with self.get_context_manager(table):
             for step in range(eval_steps):
                 timer.start()
                 x, metrics = eval_fn((x, beta))  # type:ignore
@@ -625,25 +631,22 @@ class Trainer(BaseTrainer):
                 if step % setup['nprint'] == 0 or step % setup['nlog'] == 0:
                     record = {
                         f'{job_type}_step': step,
-                        'beta': beta,
                         'dt': dt,
+                        'beta': beta,
                         'loss': metrics.pop('loss', None),
                         'dQsin': metrics.pop('dQsin', None),
                         'dQint': metrics.pop('dQint', None),
                     }
                     record.update(metrics)
-                    if job_type == 'hmc' and eps is not None:
+                    if job_type == 'hmc':
                         acc = metrics.get('acc_mask', None)
+                        record['eps'] = eps
                         if acc is not None:
                             acc_avg = tf.reduce_mean(acc)
                             if acc_avg < 0.66:
                                 eps -= (eps / 10.)
                             else:
                                 eps += (eps / 10.)
-
-                            metrics['eps'] = eps
-
-                            # record['eps'] = eps
 
                     avgs, summary = self.record_metrics(run=run,
                                                         arun=arun,
@@ -652,14 +655,14 @@ class Trainer(BaseTrainer):
                                                         writer=writer,
                                                         metrics=record,
                                                         job_type=job_type)
+                    summaries.append(summary)
 
                     if (
-                            not isinstance(setup['ctx'], Live)
-                            and step % setup['nprint'] == 0
+                            # not isinstance(setup['ctx'], Live)
+                            step % setup['nprint'] == 0
                     ):
                         log.info(summary)
 
-                    summaries.append(summary)
                     if step == 0:
                         table = add_columns(avgs, table)
                     else:
@@ -669,11 +672,8 @@ class Trainer(BaseTrainer):
                         if stuck_counter < patience:
                             stuck_counter += 1
                         else:
-                            self.console.log(
-                                'Chains are stuck! Re-drawing x !'
-                            )
-                            assert isinstance(x, Tensor)
-                            x = self.draw_x()
+                            self.console.log('Chains are stuck! Re-drawing x!')
+                            x = self.lattice.random()
                             stuck_counter = 0
 
         tables[str(0)] = table
@@ -838,7 +838,10 @@ class Trainer(BaseTrainer):
                     rows[self._gstep] = avgs
                     summaries.append(summary)
 
-                    if not isinstance(ctx, Live) and self.should_print(epoch):
+                    if (
+                            self.should_print(epoch)
+                            # and not isinstance(ctx, Live)
+                    ):
                         log.info(summary)
 
                     if epoch == 0:
@@ -955,7 +958,6 @@ class Trainer(BaseTrainer):
         manager = setup['manager']
         train_dir = setup['train_dir']
         beta_final = setup['beta_final']
-        b = tf.constant(betas.get(str(era), beta_final))
         assert x is not None
         assert nera is not None
         assert train_dir is not None
