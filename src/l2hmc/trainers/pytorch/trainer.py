@@ -783,7 +783,7 @@ class Trainer(BaseTrainer):
     ) -> tuple[Tensor, dict]:
         """Logic for performing a single training step"""
         xinit, beta = inputs
-        xinit = self.g.compat_proj(xinit)
+        xinit = self.g.compat_proj(xinit.reshape(self.xshape))
         # xinit = self.to_u1(xinit)
         beta = torch.tensor(beta) if isinstance(beta, float) else beta
         if WITH_CUDA:
