@@ -861,8 +861,9 @@ class Dynamics(Model):
     ) -> tuple[State, Tensor]:
         """Update the momentum in the forward direction."""
         eps = tf.cast(self.veps[step], state.x.dtype)
+        x = tf.reshape(state.x, self.xshape)
         force = tf.reshape(
-            self.grad_potential(state.x, state.beta),
+            self.grad_potential(x, state.beta),
             state.v.shape
         )
         s, t, q = self._call_vnet(step, (state.x, force), training=training)
