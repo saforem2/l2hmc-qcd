@@ -169,7 +169,6 @@ def build_layout(
     # overall_progress = Progress()
     # overall_task = overall_progress.add_task("All jobs", total=int(total))
 
-
     progress_table = Table.grid(expand=True)
     progress_table.add_row(
         Panel.fit(
