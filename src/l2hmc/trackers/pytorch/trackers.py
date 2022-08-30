@@ -87,7 +87,7 @@ def log_item(
                     # log.exception(e)
 
     elif (
-            isinstance(val, Scalar)
+            isinstance(val, (float, int, bool, np.floating))
             or len(val.shape) == 0
     ):
         writer.add_scalar(tag=tag, scalar_value=val, global_step=step)
