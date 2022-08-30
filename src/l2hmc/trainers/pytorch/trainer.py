@@ -712,7 +712,7 @@ class Trainer(BaseTrainer):
             return self.eval_step(z)
 
         self.dynamics.eval()
-        with self.get_context_manager(table):
+        with self.get_context_manager(table) as ctx:
             for step in range(eval_steps):
                 timer.start()
                 x, metrics = eval_fn((x, beta))
@@ -765,8 +765,8 @@ class Trainer(BaseTrainer):
                             x = self.lattice.random()
                             stuck_counter = 0
 
-                if isinstance(setup['ctx'], Live):
-                    setup['ctx'].console.clear_live()
+                if isinstance(ctx, Live):
+                    ctx.console.clear_live()
 
         tables[str(0)] = setup['table']
 
