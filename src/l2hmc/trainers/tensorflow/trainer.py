@@ -606,7 +606,7 @@ class Trainer(BaseTrainer):
         table = setup['table']
         nleapfrog = setup['nleapfrog']
         eval_steps = setup['eval_steps']
-        assert eps is not None and isinstance(eps, float)
+        # assert eps is not None and isinstance(eps, (float, tf.Tensor))
         timer = self.timers.get(job_type, None)
         history = self.histories.get(job_type, None)
         assert (
