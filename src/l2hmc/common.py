@@ -38,7 +38,7 @@ os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 
 log = logging.getLogger(__name__)
 
-TensorLike = tf.Tensor | ops.EagerTensor | torch.Tensor | np.ndarray | list
+TensorLike = Union[tf.Tensor, ops.EagerTensor, torch.Tensor, np.ndarray, list]
 ScalarLike = Union[int, float, bool, np.floating]
 
 
