@@ -72,6 +72,11 @@ def setup_tensorflow(precision: Optional[str] = None) -> int:
     hvd.init() if not hvd.is_initialized() else None
     tf.keras.backend.set_floatx(precision)
     TF_FLOAT = tf.keras.backend.floatx()
+    eager_mode = os.environ.get('TF_EAGER', None)
+    if eager_mode is not None:
+        log.warning('Detected `TF_EAGER` from env. Running eagerly.')
+        tf.config.run_functions_eagerly(True)
+
     # if debug:
     #     tf.config.run_functions_eagerly(True)
     # assert tf.keras.backend.floatx() == tf.float32
@@ -123,7 +128,6 @@ def setup_torch(
         port: str = '2345',
 ) -> int:
     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
-    import torch
     torch.backends.cudnn.deterministic = True   # type:ignore
     torch.backends.cudnn.benchmark = True       # type:ignore
     torch.use_deterministic_algorithms(True)
