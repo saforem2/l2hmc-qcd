@@ -32,6 +32,15 @@ l2hmc-qcd.code-workspace
 src/l2hmc/outputs/runs/
 src/l2hmc/outputs/multirun/
 src/l2hmc/outputs/debug
+src/l2hmc/notebooks/SU3d4-cpu.ipynb
+src/l2hmc/notebooks/example-cpu.ipynb
+src/l2hmc/notebooks/experiment-Copy1.ipynb
+src/l2hmc/notebooks/experiment-cpu.ipynb
+src/l2hmc/notebooks/pngs/
+src/l2hmc/notebooks/ridgeplots/
+src/l2hmc/notebooks/su3-cpu.ipynb
+src/l2hmc/notebooks/svgs/
+src/l2hmc/notebooks/tests.ipynb
 
 .vscode/
 bin/restore.sh
