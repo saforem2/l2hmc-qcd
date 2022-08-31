@@ -98,9 +98,10 @@ def xy_repr(x: Tensor) -> Tensor:
 
 def dummy_network(
         x: Tensor,
-        v: Tensor
+        _: Tensor,
+        training: Optional[bool] = None,
 ) -> tuple[Tensor, Tensor, Tensor]:
-    assert x.shape == v.shape
+    # assert x.shape == v.shape
     return (
         tf.zeros_like(x),
         tf.zeros_like(x),
@@ -494,8 +495,8 @@ class Dynamics(Model):
         """Perform standard HMC leapfrog update."""
         x = tf.reshape(state.x, state.v.shape)
         force = self.grad_potential(x, state.beta)        # f = dU / dx
-        eps = tf.cast(eps, dtype=force.dtype)
-        halfeps = tf.cast(eps / 2.0, dtype=force.dtype)
+        eps = tf.constant(eps, dtype=force.dtype)
+        halfeps = tf.constant(eps / 2.0, dtype=force.dtype)
         v = state.v - halfeps * force
         x = self.g.update_gauge(x, eps * v)
         force = self.grad_potential(x, state.beta)       # calc force, again
@@ -908,9 +909,10 @@ class Dynamics(Model):
         v = tf.reshape(state.v, self.xshape)
         logdet = tf.reduce_sum(logjac, axis=1)
         exp_s = tf.reshape(tf.exp(logjac), v.shape)
-        exp_q = tf.reshape(tf.exp(tf.scalar_mul(eps, q)), force.shape)
-        t = tf.reshape(t, force.shape)
-        vb = exp_s * (v + halfeps * (force * exp_q + t))
+        exp_q = tf.reshape(tf.exp(tf.scalar_mul(eps, q)), v.shape)
+        t = tf.reshape(t, v.shape)
+        force = tf.reshape(force, v.shape)
+        vb = exp_s * (v + tf.scalar_mul(halfeps, (force * exp_q + t)))
 
         return State(state.x, vb, state.beta), logdet
 
@@ -1000,16 +1002,25 @@ class Dynamics(Model):
 
         if isinstance(self.g, U1Phase):
             if self.config.use_ncp:
-                halfx = state.x / TWO
+                halfx = tf.reshape(state.x / TWO, state.v.shape)
+                exp_s = tf.reshape(exp_s, state.v.shape)
+                exp_q = tf.reshape(exp_q, state.v.shape)
+                t = tf.reshape(t, state.v.shape)
                 halfx_scale = exp_s * tf.tan(halfx)
                 x1 = TWO * tf.atan(halfx_scale)
                 x2 = exp_s * eps * (state.v * exp_q + t)
                 xnew = x1 - x2
-                xb = xm_init + (mb * xnew)
+                xb = (
+                    xm_init
+                    + tf.reshape(mb * self.flatten(xnew), xm_init.shape)
+                )
 
                 cterm = tf.math.square(tf.cos(halfx))
                 sterm = (exp_s * tf.sin(halfx)) ** 2
-                logdet_ = tf.math.log(exp_s / (cterm + sterm))
+                logdet_ = tf.reshape(
+                    tf.math.log(exp_s / (cterm + sterm)),
+                    (self.xshape[0], -1)
+                )
                 logdet = tf.reduce_sum(mb * logdet_, axis=1)
             else:
                 xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
@@ -1020,8 +1031,11 @@ class Dynamics(Model):
             exp_q = tf.cast(tf.reshape(exp_q, state.x.shape), state.x.dtype)
             t = tf.cast(tf.reshape(t, state.x.shape), state.x.dtype)
             eps = tf.cast(eps, state.x.dtype)
-
-            xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
+            xnew = exp_s * self.g.update_gauge(
+                state.x,
+                -(eps * (state.v * exp_q + t))  # type:ignore
+            )
+            # xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
             xmb = xm_init * tf.reshape(mb * self.flatten(xnew), state.x.shape)
             xb = xm_init + xmb
             logdet = tf.reduce_sum(mb * tf.cast(s, mb.dtype), axis=1)
