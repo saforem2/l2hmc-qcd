@@ -6,6 +6,7 @@ Contains entry point for training Dynamics.
 from __future__ import absolute_import, annotations, division, print_function
 import logging
 import os
+import sys
 import random
 import warnings
 import time
@@ -260,11 +261,15 @@ def main(cfg: DictConfig):
     #     if ngpus >= 2 and cfg.get('backend', None) in ['DDP', 'ddp']:
     #         return run_ddp(run, ngpus)
     #     return run(cfg)
-    run(cfg)
+    return run(cfg)
 
 
 if __name__ == '__main__':
     import wandb
     wandb.require(experiment='service')
+    start = time.time()
     outdir = main()
-    log.info(f'Run completed in: {outdir}')
+    end = time.time()
+    log.info(f'Run completed in: {end - start:4.4f} s')
+    log.info(f'Run located in: {outdir}')
+    sys.exit(0)
