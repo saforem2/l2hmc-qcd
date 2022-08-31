@@ -195,13 +195,6 @@ class ConvStack(nn.Module):
                 # padding='same',
                 # padding_mode='circular',
             )
-            # Conv2d(
-            #     d,
-            #     conv_config.filters[0],
-            #     conv_config.sizes[0],
-            #     padding='same',
-            #     padding_mode='circular'
-            # )
         ])
         for idx, (f, n) in enumerate(zip(
                 conv_config.filters[1:],
@@ -214,33 +207,6 @@ class ConvStack(nn.Module):
                 self.layers.append(nn.MaxPool2d(p))
 
             self.layers.append(self.activation_fn)
-        # iterable = zip([
-        #     conv_config.filters[:-1],
-        #     conv_config.filters[1:],
-        #     conv_config.sizes[1:]
-        # ])
-        # for idx, (in, out, size) in enumerate(iterable):
-        # for idx, (i, o, n) in enumerate(zip(
-        #         conv_config.filters[:-1],
-        #         conv_config.filters[1:],
-        #         conv_config.sizes[1:],
-        # )):
-        #     # self.layers.append(PeriodicPadding(o - 1))
-        #     # self.layers.append(PeriodicPadding(o - 1))
-        #     self.layers.append(
-        #         Conv2d(
-        #             i, o, n,
-        #             padding='same',
-        #             padding_mode='circular'
-        #         )
-        #     )
-        #     # self.layers.append(nn.LazyConv2d(n, f))
-        #     # , padding=(n-1), padding_mode='circular'))
-        #     # conv_stack.append(self.activation_fn)
-        #     if (idx + 1) % 2 == 0:
-        #         self.layers.append(nn.MaxPool2d(conv_config.pool[idx]))
-
-        #     self.layers.append(self.activation_fn)
 
         self.layers.append(nn.Flatten())
         if use_batch_norm:
@@ -256,10 +222,6 @@ class ConvStack(nn.Module):
                 x = x.reshape(x.shape[0], self.d + 2, self.nt, self.nx)
             except (ValueError, RuntimeError):
                 x = x.reshape(*self.xshape)
-        # try:
-        #     x = x.reshape(x.shape[0], self.d + 2, self.nt, self.nx)
-        # except ValueError:
-        #     x = x.reshape(x.shape[0], self.d, self.nt, self.nx)
 
         for layer in self.layers:
             x = layer(x)
@@ -278,7 +240,6 @@ class InputLayer(nn.Module):
     ) -> None:
         super(InputLayer, self).__init__()
         self.xshape = xshape
-        self.activation_fn = activation_fn
         self.net_config = network_config
         self.units = self.net_config.units
         self.xdim = np.cumprod(xshape[1:])[-1]
@@ -303,6 +264,7 @@ class InputLayer(nn.Module):
         self.conv_stack = None
         self.conv_config = conv_config
         # if conv_config is not None:
+        self.activation_fn = activation_fn
         if conv_config is not None and len(conv_config.filters) > 0:
             self.conv_stack = ConvStack(
                 xshape=xshape,
@@ -310,32 +272,27 @@ class InputLayer(nn.Module):
                 activation_fn=self.activation_fn,
             )
 
-        # self.xlayer = nn.Linear(
-        #     self.input_shapes['x'],
-        #     self.net_config.units[0]
-        # )
-        # self.vlayer = nn.Linear(
-        #     self.input_shapes['v'],
-        #     self.net_config.units[0]
-        # )
-        self.xlayer = nn.LazyLinear(self.net_config.units[0], device=DEVICE)
-        self.vlayer = nn.LazyLinear(self.net_config.units[0], device=DEVICE)
+        self.xlayer = nn.LazyLinear(
+            self.net_config.units[0],
+            device=DEVICE
+        )
+        self.vlayer = nn.LazyLinear(
+            self.net_config.units[0],
+            device=DEVICE
+        )
 
     def forward(
             self,
             inputs: tuple[Tensor, Tensor]
     ) -> Tensor:
         x, v = inputs
-
-        self.vlayer.to(v.dtype)
-        self.xlayer.to(x.dtype)
         x.requires_grad_(True)
         v.requires_grad_(True)
         if self._with_cuda:
             x = x.cuda()
             v = v.cuda()
-        # x = x.to(DEVICE)
-        # v = v.to(DEVICE)
+        self.vlayer.to(v.dtype)
+        self.xlayer.to(x.dtype)
         if self.conv_stack is not None:
             x = self.conv_stack(x)
 
@@ -344,7 +301,7 @@ class InputLayer(nn.Module):
         return self.activation_fn(x + v)
 
 
-class Network(nn.Module):
+class LeapfrogLayer(nn.Module):
     def __init__(
             self,
             xshape: list[int],
@@ -354,14 +311,14 @@ class Network(nn.Module):
             conv_config: Optional[ConvolutionConfig] = None,
             name: Optional[str] = None,
     ):
-        super(Network, self).__init__()
+        super(LeapfrogLayer, self).__init__()
         if net_weight is None:
             net_weight = NetWeight(1., 1., 1.)
 
-        self.name = name if name is not None else 'network'
         self.xshape = xshape
-        self.net_config = network_config
         self.nw = net_weight
+        self.net_config = network_config
+        self.name = name if name is not None else 'network'
         self.xdim = np.cumprod(xshape[1:])[-1]
         self._with_cuda = torch.cuda.is_available()
         act_fn = self.net_config.activation_fn
@@ -411,14 +368,11 @@ class Network(nn.Module):
             inputs: tuple[Tensor, Tensor],
     ) -> tuple[Tensor, Tensor, Tensor]:
         x, v = inputs
-
         x.requires_grad_(True)
         v.requires_grad_(True)
         if self._with_cuda:
             x = x.cuda()
             v = v.cuda()
-        # x = x.to(DEVICE)
-        # v = v.to(DEVICE)
         self.input_layer.to(x.dtype)
         z = self.input_layer((x, v))
         for layer in self.hidden_layers:
@@ -452,8 +406,8 @@ def get_network(
         net_weight: Optional[NetWeight] = None,
         conv_config: Optional[ConvolutionConfig] = None,
         name: Optional[str] = None,
-) -> Network:
-    return Network(
+) -> LeapfrogLayer:
+    return LeapfrogLayer(
         xshape=xshape,
         network_config=network_config,
         input_shapes=input_shapes,
@@ -472,7 +426,8 @@ def get_and_call_network(
         net_weight: Optional[NetWeight] = None,
         conv_config: Optional[ConvolutionConfig] = None,
         name: Optional[str] = None,
-) -> Network:
+) -> LeapfrogLayer:
+    """Wrapper function for instantiating created LeapfrogLayers."""
     net = get_network(
         xshape=xshape,
         network_config=network_config,
@@ -484,12 +439,7 @@ def get_and_call_network(
     x = torch.rand(xshape)
     v = torch.rand_like(x)
     if is_xnet:
-        # x = torch.view_as_real(
-        #     torch.complex(
-        #         x.cos(),
-        #         x.sin()
-        #     )
-        # )
+        # TODO: Generalize for 4D SU(3)
         x = torch.cat([x.cos(), x.sin()], dim=1)
 
     _ = net((x, v))
@@ -519,7 +469,6 @@ class NetworkFactory(BaseNetworkFactory):
                 is_xnet=False,
                 name=f'vnet/{lf}',
             )
-            # vnet[f'{lf}'] = Network(**cfg['vnet'], name=f'vnet/{lf}')
             if split_xnets:
                 xnet[f'{lf}'] = nn.ModuleDict({
                     'first': get_and_call_network(
@@ -539,7 +488,5 @@ class NetworkFactory(BaseNetworkFactory):
                     is_xnet=True,
                     name=f'xnet/{lf}'
                 )
-                # xnet[f'{lf}'] = Network(**cfg['xnet'], name=f'xnet/{lf}')
-                # xnet[f'{lf}'] = Network(**cfg['xnet'], name=f'xnet/{lf}')
 
         return nn.ModuleDict({'xnet': xnet, 'vnet': vnet})
