@@ -307,7 +307,6 @@ class Trainer(BaseTrainer):
             metrics: dict,
             job_type: str,
             step: Optional[int] = None,
-            # record: Optional[dict] = None,
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
@@ -344,16 +343,14 @@ class Trainer(BaseTrainer):
         summary = summarize_dict(avgs)
 
         # if writer is not None and self.verbose and step is not None:
-        if (
-                step is not None
-                and writer is not None
-        ):
+        if step is not None:
             update_summaries(step=step,
                              model=model,
                              metrics=metrics,
                              prefix=job_type,
                              optimizer=optimizer)
-            writer.flush()
+            if writer is not None:
+                writer.flush()
 
         if self.config.init_wandb or self.config.init_aim:
             self.track_metrics(
@@ -651,7 +648,6 @@ class Trainer(BaseTrainer):
                     avgs, summary = self.record_metrics(run=run,
                                                         arun=arun,
                                                         step=step,
-                                                        # record={},
                                                         writer=writer,
                                                         metrics=record,
                                                         job_type=job_type)
@@ -793,13 +789,13 @@ class Trainer(BaseTrainer):
         assert isinstance(nepoch, int)
         nepoch *= extend
         losses = []
-        ctx = self.get_context_manager(table)
-        with ctx:
+        with self.get_context_manager(table) as ctx:
             if isinstance(ctx, Live):
                 tstr = ' '.join([
                     f'ERA: {era}/{self.steps.nera}',
                     f'BETA: {beta:.3f}',
                 ])
+                ctx.console.clear()
                 ctx.console.clear_live()
                 ctx.console.rule(tstr)
                 ctx.update(table)
@@ -856,6 +852,9 @@ class Trainer(BaseTrainer):
                         self.reset_optimizer()
                         log.warning('Chains are stuck! Re-drawing x !')
                         x = self.draw_x()
+                if isinstance(ctx, Live):
+                    ctx.console.clear()
+                    ctx.console.clear_live()
 
         data = {
             'rows': rows,
@@ -925,6 +924,7 @@ class Trainer(BaseTrainer):
             'extend': extend,
             'betas': betas,
             'manager': manager,
+            'writer': writer,
             'train_dir': train_dir,
             'beta_final': beta_final,
         }
@@ -961,6 +961,7 @@ class Trainer(BaseTrainer):
         manager = setup['manager']
         train_dir = setup['train_dir']
         beta_final = setup['beta_final']
+        writer = setup['writer']
         assert x is not None
         assert nera is not None
         assert train_dir is not None

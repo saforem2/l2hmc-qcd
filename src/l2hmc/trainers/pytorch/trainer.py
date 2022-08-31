@@ -930,8 +930,7 @@ class Trainer(BaseTrainer):
                         arun=arun,
                         step=self._gstep,
                         writer=writer,
-                        # record=record,    # template w/ step info
-                        metrics=record,  # metrics from Dynamics
+                        metrics=record,
                         job_type='train',
                         model=self.dynamics,
                         optimizer=self._optimizer,
