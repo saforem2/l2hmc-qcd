@@ -97,14 +97,14 @@ class Experiment(BaseExperiment):
         #     assert isinstance(self.config, ExperimentConfig)
 
     def set_net_weights(self, net_weights: NetWeights):
-        from l2hmc.network.pytorch.network import Network
+        from l2hmc.network.pytorch.network import LeapfrogLayer
         for step in range(self.config.dynamics.nleapfrog):
             xnet0 = self.trainer.dynamics._get_xnet(step, first=True)
             xnet1 = self.trainer.dynamics._get_xnet(step, first=False)
             vnet = self.trainer.dynamics._get_vnet(step)
-            assert isinstance(xnet0, Network)
-            assert isinstance(xnet1, Network)
-            assert isinstance(vnet, Network)
+            assert isinstance(xnet0, LeapfrogLayer)
+            assert isinstance(xnet1, LeapfrogLayer)
+            assert isinstance(vnet, LeapfrogLayer)
             xnet0.set_net_weight(net_weights.x)
             xnet1.set_net_weight(net_weights.x)
             vnet.set_net_weight(net_weights.v)
@@ -190,9 +190,12 @@ class Experiment(BaseExperiment):
         return super()._init_wandb()
 
     def get_summary_writer(self):
-        # sdir = super()._get_summary_dir(job_type=job_type)
-        # sdir = os.getcwd()
         return SummaryWriter(self._outdir)
+        # if job_type is None:
+        #     return SummaryWriter(self._outdir)
+        # # sdir = super()._get_summary_dir(job_type=job_type)
+        # # sdir = os.getcwd()
+        # return SummaryWriter(job_type)
 
     def build(
             self,
@@ -330,10 +333,10 @@ class Experiment(BaseExperiment):
                 skip=skip,
                 beta=beta,
             )
-        if self.trainer._is_chief:
-            summaryfile = jobdir.joinpath('summaries.txt')
-            with open(summaryfile.as_posix(), 'w') as f:
-                f.writelines(output['summaries'])
+        # if self.trainer._is_chief:
+        #     summaryfile = jobdir.joinpath('summaries.txt')
+        #     with open(summaryfile.as_posix(), 'w') as f:
+        #         f.writelines(output['summaries'])
         # fname = f'train-{RANK}'
         # txtfile = jobdir.joinpath(f'{fname}.txt')
         # htmlfile = jobdir.joinpath(f'{fname}.html')
@@ -385,10 +388,6 @@ class Experiment(BaseExperiment):
             nleapfrog=nleapfrog,
             eval_steps=eval_steps,
         )
-        if self.trainer._is_chief:
-            summaryfile = jobdir.joinpath('summaries.txt')
-            with open(summaryfile.as_posix(), 'w') as f:
-                f.writelines(output['summaries'])
 
         output['dataset'] = self.save_dataset(
             output=output,

@@ -288,6 +288,16 @@ class BaseExperiment(ABC):
                 )
                 timer.save_and_write(outdir=timerdir, fname=fname)
 
+    def save_summaries(
+            self,
+            summaries: list[str],
+            job_type: str,
+    ) -> None:
+        outdir = self.get_jobdir(job_type)
+        outfile = outdir.joinpath('summaries.txt')
+        with open(outfile.as_posix(), 'a') as f:
+            f.write('\n'.join(summaries))
+
     def save_dataset(
             self,
             job_type: str,
@@ -300,9 +310,13 @@ class BaseExperiment(ABC):
     ) -> xr.Dataset:
         assert isinstance(self.trainer, BaseTrainer)
         if output is None:
+            summaries = self.trainer.summaries.get(job_type, None)
             history = self.trainer.histories.get(job_type, None)
         else:
+            summaries = output.get('summaries', None)
             history = output.get('history', None)
+        if summaries is not None:
+            self.save_summaries(summaries, job_type=job_type)
         if history is None:
             raise ValueError(f'Unable to recover history for {job_type}')
 

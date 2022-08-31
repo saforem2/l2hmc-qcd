@@ -5,6 +5,7 @@ Contains implementation of tensorflow-specific Experiment object,
 a subclass of the base `l2hmc/Experiment` object.
 """
 from __future__ import absolute_import, division, print_function, annotations
+import os
 
 import logging
 from omegaconf import DictConfig
@@ -133,11 +134,10 @@ class Experiment(BaseExperiment):
         run = super()._init_aim()
         return run
 
-    def get_summary_writer(self):
-        # sdir = super()._get_summary_dir(job_type=job_type)
-        # sdir = os.getcwd()
+    def get_summary_writer(self, outdir: Optional[os.PathLike] = None):
+        outdir = self._outdir if outdir is None else outdir
         return tf.summary.create_file_writer(  # type:ignore
-            self._outdir.as_posix()
+            Path(outdir).as_posix()
         )
 
     def build(
@@ -220,6 +220,7 @@ class Experiment(BaseExperiment):
         writer = None
         if RANK == 0:
             writer = self.get_summary_writer()
+            writer.set_as_default()  # type:ignore
 
         if self.config.annealing_schedule.dynamic:
             output = self.trainer.train_dynamic(
@@ -274,7 +275,8 @@ class Experiment(BaseExperiment):
 
         assert job_type in ['eval', 'hmc']
         jobdir = self.get_jobdir(job_type)
-        writer = self.get_summary_writer()
+        writer = self.get_summary_writer(jobdir)
+        writer.set_as_default()  # type:ignore
 
         output = self.trainer.eval(
             run=self.run,
