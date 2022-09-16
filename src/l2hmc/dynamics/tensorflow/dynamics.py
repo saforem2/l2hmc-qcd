@@ -99,9 +99,8 @@ def xy_repr(x: Tensor) -> Tensor:
 def dummy_network(
         x: Tensor,
         _: Tensor,
-        training: Optional[bool] = None,
+        training: Optional[bool] = None
 ) -> tuple[Tensor, Tensor, Tensor]:
-    # assert x.shape == v.shape
     return (
         tf.zeros_like(x),
         tf.zeros_like(x),
@@ -941,7 +940,7 @@ class Dynamics(Model):
         exp_q = tf.exp(q)
         if isinstance(self.g, U1Phase):
             if self.config.use_ncp:
-                halfx = x / TWO
+                halfx = self.flatten(x / TWO)
                 _x = TWO * tf.math.atan(tf.math.tan(halfx) * exp_s)
                 xp = _x + eps * (v * exp_q + t)
                 xf = xm_init + (mb * xp)
@@ -987,28 +986,28 @@ class Dynamics(Model):
         """Update the position in the backward direction."""
         # eps = tf.cast(self.xeps[step], state.x.dtype)
         eps = self.xeps[step]
+
         mb = tf.ones_like(m) - m
-        xm_init = tf.reshape(
-            tf.multiply(m, self.flatten(state.x)),
-            state.x.shape
-        )
+        x = tf.reshape(state.x, (state.x.shape[0], -1))
+        v = tf.reshape(state.v, x.shape)
+        xm_init = tf.multiply(m, x)
         inputs = (xm_init, state.v)
         s, t, q = self._call_xnet(step, inputs, first=first, training=training)
         s = tf.scalar_mul(tf.scalar_mul(-1., eps), s)
-        # s = tf.scalar_mul(-eps, s)
         q = tf.scalar_mul(eps, q)
         exp_q = tf.exp(q)
         exp_s = tf.exp(s)
 
         if isinstance(self.g, U1Phase):
             if self.config.use_ncp:
-                halfx = tf.reshape(state.x / TWO, state.v.shape)
-                exp_s = tf.reshape(exp_s, state.v.shape)
-                exp_q = tf.reshape(exp_q, state.v.shape)
-                t = tf.reshape(t, state.v.shape)
+                halfx = x / TWO
+                # halfx = tf.reshape(state.x / TWO, state.v.shape)
+                # exp_s = tf.reshape(exp_s, state.v.shape)
+                # exp_q = tf.reshape(exp_q, state.v.shape)
+                # t = tf.reshape(t, state.v.shape)
                 halfx_scale = exp_s * tf.tan(halfx)
                 x1 = TWO * tf.atan(halfx_scale)
-                x2 = exp_s * eps * (state.v * exp_q + t)
+                x2 = exp_s * eps * (v * exp_q + t)
                 xnew = x1 - x2
                 xb = (
                     xm_init
@@ -1036,13 +1035,24 @@ class Dynamics(Model):
                 -(eps * (state.v * exp_q + t))  # type:ignore
             )
             # xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
-            xmb = xm_init * tf.reshape(mb * self.flatten(xnew), state.x.shape)
-            xb = xm_init + xmb
-            logdet = tf.reduce_sum(mb * tf.cast(s, mb.dtype), axis=1)
+            # xmb = mb * self.flatten(xnew)
+            # xmb = xm_init + (mb * self.flatten(xnew))
+            # xmb = (
+            #     xm_init
+            #     + tf.reshape(mb * self.flatten(xnew), state.x.shape)
+            # )
+            xb = tf.reshape(
+                xm_init + (mb * self.flatten(xnew)),
+                self.xshape
+            )
+            logdet = tf.math.real(
+                tf.reduce_sum(mb * tf.cast(s, mb.dtype), axis=1)
+            )
         else:
             raise ValueError('Unexpected value for `self.g`')
 
         # xb = self.g.compat_proj(xb)
+        xb = self.g.compat_proj(xb)
         return State(x=xb, v=state.v, beta=state.beta), logdet
 
     def hamiltonian(self, state: State) -> Tensor:
