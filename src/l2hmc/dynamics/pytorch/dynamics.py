@@ -998,7 +998,8 @@ class Dynamics(nn.Module):
             inputs: tuple[Tensor, Tensor],
             first: bool = False
     ) -> tuple[Tensor, Tensor, Tensor]:
-        """Call the position network used to update x.
+        """
+        Call the position network used to update x.
 
         Args:
             inputs: (m * x, v) tuple, where (m * x) is a masking operation.
@@ -1015,7 +1016,7 @@ class Dynamics(nn.Module):
             x = x.reshape(self.xshape)
             x = torch.stack([x.real, x.imag], 1)
         elif isinstance(self.g, U1Phase):
-            x = self.g.group_to_vec(x.reshape(self.xshape))
+            x = self.g.group_to_vec(x.reshape(-1, *self.xshape[1:]))
 
         return xnet((x, v))
 
@@ -1161,23 +1162,25 @@ class Dynamics(nn.Module):
         assert isinstance(self.xeps, nn.ParameterList)
         eps = self.xeps[step]
         mb = (torch.ones_like(m) - m).to(self.device)
-        xm_init = (m * state.x.flatten(1)).reshape_as(state.x)
-        inputs = (xm_init, state.v)
+        x = state.x.flatten(1)
+        v = state.v.reshape_as(x)
+        xm_init = m * x
+        inputs = (xm_init, v)
+        # xm_init = (m * state.x.flatten(1)).reshape_as(state.x)
+        # inputs = (xm_init, state.v)
         s, t, q = self._call_xnet(step, inputs, first=first)
         s = (-eps) * s
         q = eps * q
-        exp_s = s.exp().reshape_as(state.x)
-        exp_q = q.exp().reshape_as(state.v)
-        t = t.reshape_as(state.v)
+        exp_s = s.exp()
+        exp_q = q.exp()
         if isinstance(self.g, U1Phase):
             if self.config.use_ncp:
-                halfx = state.x / 2.
+                halfx = x / 2.
                 halfx_scale = exp_s * halfx.tan()
                 x1 = 2. * halfx_scale.atan()
-                x2 = exp_s * eps * (state.v * exp_q + t)
+                x2 = exp_s * eps * (v * exp_q + t)
                 xnew = x1 - x2
                 xb = xm_init + (mb * xnew)
-
                 cterm = halfx.cos() ** 2
                 sterm = (exp_s * halfx.sin()) ** 2
                 logdet_ = (exp_s / (cterm + sterm)).log()
@@ -1187,13 +1190,26 @@ class Dynamics(nn.Module):
                 xb = xm_init + (mb * xnew)
                 logdet = (mb * s).sum(dim=1)
         elif isinstance(self.g, SU3):
-            xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
-            xmb = (mb * xnew.flatten(1))
-            xb = xm_init + xmb.reshape_as(xm_init)
-            logdet = (mb * s).sum(dim=1)
+            t = t.reshape_as(state.x).to(state.x.dtype)
+            exp_s = exp_s.reshape_as(state.x).to(state.x.dtype)
+            exp_q = exp_q.reshape_as(state.x).to(state.x.dtype)
+            eps = eps.to(state.x.dtype)
+            xnew = exp_s * self.g.update_gauge(
+                state.x,
+                -(eps * (state.v * exp_q + t))
+            )
+            xb = (xm_init + (mb * xnew.flatten(1))).reshape(self.xshape)
+            logdet = (mb * s.to(mb.dtype)).sum(1).real
+
+            # xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
+            # xmb = (mb * xnew.flatten(1)).reshape_as(state.x)
+            # xb = xm_init.reshape_as(state.x) + xmb  # .reshape_as(xm_init)
+            # logdet = (mb * s).sum(dim=1)
+            # import pdb; pdb.set_trace()
         else:
             raise ValueError('Unexpected value for `self.g`')
 
+        xb = self.g.compat_proj(xb)
         return State(x=xb, v=state.v, beta=state.beta), logdet
 
     def hamiltonian(self, state: State) -> Tensor:
