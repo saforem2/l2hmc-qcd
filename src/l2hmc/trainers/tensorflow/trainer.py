@@ -659,10 +659,15 @@ class Trainer(BaseTrainer):
                     ):
                         log.info(summary)
 
-                    if step == 0:
-                        table = add_columns(avgs, table)
-                    else:
-                        table.add_row(*[f'{v}' for _, v in avgs.items()])
+                    table = self.update_table(
+                        table=setup['table'],
+                        step=step,
+                        avgs=avgs,
+                    )
+                    # if step == 0:
+                    #     table = add_columns(avgs, table)
+                    # else:
+                    #     table.add_row(*[f'{v}' for _, v in avgs.items()])
 
                     if avgs.get('acc', 1.0) <= 1e-5:
                         if stuck_counter < patience:
@@ -805,7 +810,6 @@ class Trainer(BaseTrainer):
                 x, metrics = self.train_step((x, beta))  # type:ignore
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
-                self._gstep += 1
                 # if (
                 #         self._is_chief and (
                 #             self.should_print(epoch)
@@ -843,15 +847,22 @@ class Trainer(BaseTrainer):
                     ):
                         log.info(summary)
 
-                    if epoch == 0:
-                        table = add_columns(avgs, table)
-                    else:
-                        table.add_row(*[f'{v}' for _, v in avgs.items()])
+                    table = self.update_table(
+                        table=table,
+                        step=epoch,
+                        avgs=avgs
+                    )
+                    # if epoch == 0:
+                    #     table = add_columns(avgs, table)
+                    # else:
+                    #     table.add_row(*[f'{v}' for _, v in avgs.items()])
 
                     if avgs.get('acc', 1.0) < 1e-5:
                         self.reset_optimizer()
                         log.warning('Chains are stuck! Re-drawing x !')
                         x = self.draw_x()
+
+                self._gstep += 1
                 if isinstance(ctx, Live):
                     ctx.console.clear()
                     ctx.console.clear_live()

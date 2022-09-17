@@ -17,9 +17,10 @@ from rich.console import Console
 from l2hmc.common import get_timestamp
 from l2hmc.configs import ExperimentConfig, InputSpec
 from hydra.utils import instantiate
+from rich.table import Table
 
 from l2hmc.utils.history import BaseHistory
-from l2hmc.utils.rich import get_console
+from l2hmc.utils.rich import get_console, add_columns
 from l2hmc.utils.step_timer import StepTimer
 
 
@@ -231,6 +232,20 @@ class BaseTrainer(ABC):
     @abstractmethod
     def metric_to_numpy(self, metric: Any):
         pass
+
+    def update_table(
+            self,
+            table: Table,
+            step: int,
+            avgs: dict,
+    ) -> Table:
+        if step == 0:
+            table = add_columns(avgs, table)
+        else:
+            table.add_row(
+                *[f'{v:5}' for _, v in avgs.items()]
+            )
+        return table
 
     def metrics_to_numpy(
             self,

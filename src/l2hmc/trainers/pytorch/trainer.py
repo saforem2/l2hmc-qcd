@@ -717,7 +717,11 @@ class Trainer(BaseTrainer):
                 timer.start()
                 x, metrics = eval_fn((x, beta))
                 dt = timer.stop()
-                if step % setup['nlog'] == 0 or step % setup['nprint'] == 0:
+                if (
+                        step == 0
+                        or step % setup['nlog'] == 0
+                        or step % setup['nprint'] == 0
+                ):
                     record = {
                         f'{job_type}_step': step,
                         'dt': dt,
@@ -744,18 +748,16 @@ class Trainer(BaseTrainer):
                                                         metrics=record,
                                                         job_type=job_type)
                     summaries.append(summary)
+                    table = self.update_table(
+                        table=setup['table'],
+                        step=step,
+                        avgs=avgs,
+                    )
                     if (
                             # not isinstance(setup['ctx'], Live)
                             step % setup['nprint'] == 0
                     ):
                         log.info(summary)
-
-                    if step == 0:
-                        table = add_columns(avgs, setup['table'])
-                    else:
-                        table.add_row(
-                            *[f'{v}' for _, v in avgs.items()]
-                        )
 
                     if avgs.get('acc', 1.0) < 1e-5:
                         if stuck_counter < patience:
@@ -905,7 +907,6 @@ class Trainer(BaseTrainer):
                 x, metrics = self.train_step((x, beta))  # type:ignore
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
-                self._gstep += 1
                 # if self.should_emit(epoch, nepoch):
                 # if (
                 #         self._is_chief and (
@@ -913,7 +914,11 @@ class Trainer(BaseTrainer):
                 #             or self.should_log(epoch)
                 #         )
                 # ):
-                if self.should_print(epoch) or self.should_log(epoch):
+                if (
+                        epoch == 0
+                        or self.should_print(epoch)
+                        or self.should_log(epoch)
+                ):
                     record = {
                         'era': era,
                         'epoch': epoch,
@@ -938,22 +943,31 @@ class Trainer(BaseTrainer):
                     rows[self._gstep] = avgs
                     summaries.append(summary)
 
-                    # if self.should_print(epoch):
                     if (
                             self.should_print(epoch)
                             # and not isinstance(ctx, Live)
                     ):
                         log.info(summary)
 
-                    if epoch == 0:
-                        table = add_columns(avgs, table)
-                    else:
-                        table.add_row(*[f'{v}' for _, v in avgs.items()])
+                    table = self.update_table(
+                        table=table,
+                        avgs=avgs,
+                        step=epoch,
+                    )
+                    # if epoch == 0:
+                    #     table = add_columns(avgs, table)
+                    # else:
+                    #     table.add_row(*[f'{v}' for _, v in avgs.items()])
 
                     if avgs.get('acc', 1.0) < 1e-5:
                         self.reset_optimizer()
                         self.warning('Chains are stuck! Re-drawing x !')
                         x = self.draw_x()
+
+                self._gstep += 1
+                if isinstance(ctx, Live):
+                    ctx.console.clear()
+                    ctx.console.clear_live()
 
         data = {
             'rows': rows,
