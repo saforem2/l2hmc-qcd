@@ -62,7 +62,7 @@ def su3_to_eigs(x: Tensor) -> Tensor:
 
 def log3x3(x: Tensor):
     eigs = su3_to_eigs(x)
-    q, _ = torch.solve(
+    q, _ = torch.linalg.solve(
         torch.log(eigs).unsqueeze(-1), (
             1e-6 * torch.eye(3).unsqueeze(0)
             + eigs.unsqueeze(-1) ** (
