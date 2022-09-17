@@ -23,10 +23,13 @@ from omegaconf.dictconfig import DictConfig
 # from rich.logging import RichHandler
 from l2hmc.configs import ExperimentConfig
 from l2hmc.utils.rich import print_config
+from l2hmc.utils.plot_helpers import set_plot_style
 
 # log = logging.getLogger('root')
 # handler = RichHandler(show_path=False, rich_tracebacks=True)
 # log.handlers = [handler]
+
+set_plot_style()
 
 log = logging.getLogger(__name__)
 
