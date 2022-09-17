@@ -53,9 +53,11 @@ os.environ['COLUMNS'] = f'{WIDTH}'
 # os.environ['COLUMNS'] = f'{size.columns}'
 
 
-def is_interactive():
+def is_interactive() -> bool:
     from IPython import get_ipython
-    return get_ipython() is not None
+    eval = os.environ.get('INTERACTIVE', None) is not None
+    bval = get_ipython() is not None
+    return (eval or bval)
 
 
 def get_width():
