@@ -56,26 +56,9 @@ PARENT=$(dirname $DIR)
 ROOT=$(dirname $PARENT)
 # ROOT=$(dirname $PARENT)
 
-LOGDIR="${DIR}/logs"
-LOGFILE="${LOGDIR}/${TSTAMP}-${HOST}_ngpu${NGPUS}.log"
-if [ ! -d "${LOGDIR}" ]; then
-  mkdir -p ${LOGDIR}
-fi
-
 echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
 echo "┃  Job started at: ${TSTAMP} on ${HOST}                         ┃"
 echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
-
-# Keep track of latest logfile for easy access
-echo $LOGFILE >> "${DIR}/logs/latest"
-
-# Double check everythings in the right spot
-echo "DIR=${DIR}"
-echo "MAIN=${MAIN}"
-echo "PARENT=${PARENT}"
-echo "ROOT=${ROOT}"
-echo "LOGDIR=${LOGDIR}"
-echo "LOGFILE=${LOGFILE}"
 
 NCPUS=$(getconf _NPROCESSORS_ONLN)
 # Load conda module and activate base environment
@@ -99,19 +82,23 @@ if [[ $(hostname) == theta* ]]; then
     -npernode ${NGPU_PER_RANK} \
     -x PATH \
     -x LD_LIBRARY_PATH"
-  module load conda/2022-07-01
+  module load conda
   conda activate base
+  # VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-21/"
   # cd /lus/grand/projects/DLHMC/foremans/l2hmc-qcd/src/l2hmc/
 # ---- Check if running on Polaris -----------------------------
 elif [[ $(hostname) == x* ]]; then
+  export IBV_FORK_SAFE=1
   NRANKS=$(wc -l < ${PBS_NODEFILE})
   HOSTFILE=${PBS_NODEFILE}
   NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
   NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
   MPI_COMMAND=$(which mpiexec)
+  # VENV_DIR="${ROOT}/venvs/polaris/2022-09-08/"
   MPI_FLAGS="--verbose \
     --envall \
     -n ${NGPUS} \
+    --depth ${NCPUS} \
     --ppn ${NGPU_PER_RANK} \
     --hostfile ${HOSTFILE}"
   module load conda/2022-07-19
@@ -146,47 +133,65 @@ VENV_DIR="${ROOT}/venv/"
 if [[ -f "${VENV_DIR}/bin/activate" ]]; then
   echo "Found venv at: ${VENV_DIR}"
   source "${VENV_DIR}/bin/activate"
+  python3 -m pip install --upgrade pip
   python3 -m pip install -e "${ROOT}" --no-deps
 else
   echo "Creating new venv at: ${VENV_DIR}"
   python3 -m venv "${ROOT}/venv/" --system-site-packages
+  python3 -m pip install --upgrade pip
   source "${VENV_DIR}/bin/activate"
   python3 -m pip install -e "${ROOT}" --no-deps
 fi
 
-python3 -m pip install --upgrade pip
 # ---- Install required packages ------------------------------------------
-conda run python3 -m pip install \
-  hydra-core \
-  hydra_colorlog \
-  arviz \
-  ipython \
-  pyright \
-  celerite \
-  joblib \
-  xarray \
-  seaborn \
-  bokeh \
-  nodejs \
-  h5py \
-  accelerate \
-  matplotx \
-  torchviz
+# conda run python3 -m pip install \
+#   hydra-core \
+#   hydra_colorlog \
+#   arviz \
+#   ipython \
+#   pyright \
+#   celerite \
+#   joblib \
+#   xarray \
+#   seaborn \
+#   bokeh \
+#   nodejs \
+#   h5py \
+#   accelerate \
+#   matplotx \
+#   torchviz \
 
-python3 -m pip install --upgrade aim
-python3 -m pip install --pre --upgrade wandb
+# python3 -m pip install --upgrade aim
+# python3 -m pip install --pre --upgrade wandb
 
 # ---- Environment settings -----------------------------------------------
-export NCCL_DEBUG=INFO
-export KMP_SETTINGS=TRUE
-export OMP_NUM_THREADS=16
+# export NCCL_DEBUG=INFO
+# export KMP_SETTINGS=TRUE
+# export OMP_NUM_THREADS=16
 # export OMPI_MCA_opal_cuda_support=TRUE
 # export TF_ENABLE_AUTO_MIXED_PRECISION=1
 # export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/cuda/lib64"
 # export KMP_AFFINITY='granularity=fine,verbose,compact,1,0'
 # export TF_XLA_FLAGS="--tf_xla_auto_jit=2 --tf_xla_enable_xla_devices"
+#
+LOGDIR="${DIR}/logs"
+LOGFILE="${LOGDIR}/${TSTAMP}-${HOST}_ngpu${NGPUS}_ncpu${NCPUS}.log"
+if [ ! -d "${LOGDIR}" ]; then
+  mkdir -p ${LOGDIR}
+fi
 
-EXEC="${MPI_COMMAND} ${MPI_FLAGS} $(which python3) ${MAIN}"
+# Keep track of latest logfile for easy access
+echo $LOGFILE >> "${DIR}/logs/latest"
+
+# Double check everythings in the right spot
+echo "DIR=${DIR}"
+echo "MAIN=${MAIN}"
+echo "PARENT=${PARENT}"
+echo "ROOT=${ROOT}"
+echo "LOGDIR=${LOGDIR}"
+echo "LOGFILE=${LOGFILE}"
+echo "IBV_FORK_SAFE=${IBV_FORK_SAFE}"
+printf '%.s─' $(seq 1 $(tput cols))
 
 
 # ---- Print job information -------------------------------------------------
@@ -209,8 +214,33 @@ echo "┃  - exec: ${EXEC} $@"
 printf '%.s─' $(seq 1 $(tput cols))
 echo -e '\n'
 
+
+EXEC="${MPI_COMMAND} ${MPI_FLAGS} $(which python3) ${MAIN}"
+
 # Run executable command
-${EXEC} $@ > ${LOGFILE}
+${EXEC} $@ > ${LOGFILE}; ret_code=$?
+
+if [[ $ret_code != 0 ]]; then exit $ret_code; fi
+#
+# ---- Run executable --------------------------------------------------------
+# start=$(date +%s)
+# start_fmt=$(date +%Y-%m-%d\ %r)
+# echo "STARTING TIMING RUN AT $start_fmt"
+# ${EXEC} $@ > ${LOGFILE}; ret_code=$?
+# # ----------------------------------------------------------------------------
+#
+# end=$(date +%s)
+# end_fmt=$(date +%Y-%m-%d\ %r)
+# echo "ENDING TIMING RUN AT: ${end_fmt}"
+# result=$(( $end - $start ))
+# result_name="l2hmc-qcd"
+# echo "RESULT,$result_name,$result,$USER,$start_fmt"
+#
+# RESULT_FILE="${LOGDIR}/result.csv"
+# echo "# EXEC: ${EXEC} $@" >> "${RESULT_FILE}"
+# echo "${result}" >> "${RESULT_FILE}"
+#
+# if [[ $ret_code != 0 ]]; then exit $ret_code; fi
 
 # if [[ -x "${MPI_COMMAND}" ]]; then
 #   ${MPI_COMMAND} ${MPI_FLAGS} $(which python3) ${MAIN} $@ > ${LOGFILE}
@@ -234,5 +264,5 @@ ${EXEC} $@ > ${LOGFILE}
 # fi
 
 exit
-
+#
 # vim:tw=4
