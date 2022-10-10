@@ -93,13 +93,14 @@ def set_plot_style(**kwargs):
         'color',
         list(COLORS.values())
     )
-    plt.rcParams['axes.labelcolor'] = '#bdbdbd'
+    plt.rcParams['axes.labelcolor'] = '#666666'
     plt.rcParams.update(**kwargs)
     figsize = plt.rcParamsDefault.get('figure.figsize', (4.5, 3))
     x = figsize[0]
     y = figsize[1]
     assert isinstance(x, float) and isinstance(y, float)
     plt.rcParams['figure.figsize'] = [2.5 * x, 2. * y]
+    plt.rcParams['figure.dpi'] = 400
 
 
 def get_timestamp(fstr=None):

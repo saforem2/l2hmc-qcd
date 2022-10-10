@@ -57,9 +57,10 @@ SYNONYMS = {
 
 def add_to_outdirs_file(outdir: os.PathLike):
     with open(OUTDIRS_FILE, 'a') as f:
-        f.writelines([
-            Path(outdir).resolve.as_posix()
-        ])
+        f.write(Path(outdir).resolve.as_posix() + '\n')
+        # f.writelines([
+        #     Path(outdir).resolve.as_posix()
+        # ])
 
 
 def get_jobdir(cfg: DictConfig, job_type: str) -> Path:
