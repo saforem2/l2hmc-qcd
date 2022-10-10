@@ -38,7 +38,7 @@ LW = plt.rcParams.get('axes.linewidth', 1.75)
 
 
 def summarize_dict(d: dict) -> str:
-    return ', '.join([f'{k}={v:<3.2f}' for k, v in d.items()])
+    return ' '.join([f'{k}={v:<3.2}' for k, v in d.items()])
 
 
 @dataclass
