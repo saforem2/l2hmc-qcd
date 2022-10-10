@@ -30,14 +30,14 @@ xplt = xr.plot  # type: ignore
 LW = plt.rcParams.get('axes.linewidth', 1.75)
 
 COLORS = {
-    'blue':     '#007DFF',
-    'red':      '#FF5252',
-    'green':    '#63FF5B',
-    'orange':   '#FD971F',
+    'blue':     '#2196F3',
+    'red':      '#EF5350',
+    'green':    '#4CAF50',
+    'orange':   '#FFA726',
     'purple':   '#AE81FF',
     'yellow':   '#ffeb3b',
-    'pink':     '#F92672',
-    'teal':     '#00CC99',
+    'pink':     '#EC407A',
+    'teal':     '#009688',
     'white':    '#CFCFCF',
 }
 
