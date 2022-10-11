@@ -151,7 +151,7 @@ def measure_improvement(
         hdset = hhist.get_dataset()
         dQint_eval = edset.dQint.mean('chain')[1:]
         dQint_hmc = hdset.dQint.mean('chain')[1:]
-        fig, ax = subplots()
+        fig, ax = subplots(figsize=(4, 3))
         _ = ax.plot(
             dQint_eval,
             label='Trained',
