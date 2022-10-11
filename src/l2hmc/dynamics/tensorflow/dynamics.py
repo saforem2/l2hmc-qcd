@@ -98,8 +98,7 @@ def xy_repr(x: Tensor) -> Tensor:
 
 def dummy_network(
         x: Tensor,
-        _: Tensor,
-        training: Optional[bool] = None
+        *_,
 ) -> tuple[Tensor, Tensor, Tensor]:
     return (
         tf.zeros_like(x),

@@ -127,10 +127,19 @@ class Trainer(BaseTrainer):
             from torch.nn.parallel import DistributedDataParallel as DDP
             self.dynamics_ddp = DDP(self.dynamics)
 
-        self._optimizer = torch.optim.Adam(
-            self.dynamics.parameters(),
-            lr=self.config.learning_rate.lr_init
-        )
+        if self.config.dynamics.group == 'U1':
+            log.warning('Using `torch.optim.Adam` optimizer')
+            self._optimizer = torch.optim.Adam(
+                self.dynamics.parameters(),
+                lr=self.config.learning_rate.lr_init
+            )
+        else:
+            log.warning('Using `torch.optim.SGD` optimizer')
+            self._optimizer = torch.optim.SGD(
+                self.dynamics.parameters(),
+                lr=self.config.learning_rate.lr_init,
+            )
+
         self._lr_warmup = torch.linspace(
             self.config.learning_rate.min_lr,
             self.config.learning_rate.lr_init,
