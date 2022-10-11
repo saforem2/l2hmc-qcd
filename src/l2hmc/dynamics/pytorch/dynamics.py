@@ -108,12 +108,13 @@ def grab(x: Tensor) -> Array:
     return x.detach().cpu().numpy()
 
 
-def dummy_network(x: Tensor, v: Tensor):
-    assert x.shape == v.shape
+def dummy_network(inputs: tuple[Tensor, Tensor]):
+    x, v = inputs
+    # assert x.shape == v.shape
     return (
-        torch.zeros_like(x),
-        torch.zeros_like(x),
-        torch.zeros_like(x),
+        torch.zeros_like(v),
+        torch.zeros_like(v),
+        torch.zeros_like(v),
     )
 
 
@@ -1073,9 +1074,9 @@ class Dynamics(nn.Module):
         force = force.reshape_as(state.v)
         s, t, q = self._call_vnet(step, (state.x, force))
 
-        jac = eps * s / 2.  # jacobian factor, also used in exp_s below
-        logdet = jac.sum(dim=1)
-        exp_s = jac.exp().reshape_as(state.v)
+        logjac = eps * s / 2.  # jacobian factor, also used in exp_s below
+        logdet = logjac.flatten(1).sum(dim=1)
+        exp_s = logjac.exp().reshape_as(state.v)
         exp_q = (eps * q).exp().reshape_as(force)
         t = t.reshape_as(force)
         vf = exp_s * state.v - 0.5 * eps * (force * exp_q + t)
@@ -1090,7 +1091,7 @@ class Dynamics(nn.Module):
         s, t, q = self._call_vnet(step, (state.x, force))
 
         logjac = (-eps * s / 2.)  # jacobian factor, also used in exp_s below
-        logdet = logjac.sum(dim=1)
+        logdet = logjac.flatten(1).sum(dim=1)
         exp_s = torch.exp(logjac).reshape_as(state.v)
         exp_q = torch.exp(eps * q).reshape_as(force)
         t = t.reshape_as(force)
@@ -1144,7 +1145,7 @@ class Dynamics(nn.Module):
             # xm_init = self.g.group_to_vec(xm_init)
             xp = x * exp_s + eps * (state.v * exp_q + t)
             xf = xm_init + (mb * xp.flatten(1)).reshape_as(xm_init)
-            logdet = (mb * s).sum(dim=1)
+            logdet = (mb * s.flatten(1)).sum(dim=1).real
         else:
             raise ValueError('Unexpected value for `self.g`')
 
@@ -1199,7 +1200,7 @@ class Dynamics(nn.Module):
                 -(eps * (state.v * exp_q + t))
             )
             xb = (xm_init + (mb * xnew.flatten(1))).reshape(self.xshape)
-            logdet = (mb * s.to(mb.dtype)).sum(1).real
+            logdet = (mb * s.flatten(1).to(mb.dtype)).sum(1).real
 
             # xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
             # xmb = (mb * xnew.flatten(1)).reshape_as(state.x)
