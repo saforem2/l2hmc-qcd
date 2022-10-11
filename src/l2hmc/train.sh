@@ -82,30 +82,33 @@ if [[ $(hostname) == theta* ]]; then
     -npernode ${NGPU_PER_RANK} \
     -x PATH \
     -x LD_LIBRARY_PATH"
-  module load conda
+  module load conda/2022-07-01
   conda activate base
-  # VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-21/"
-  # cd /lus/grand/projects/DLHMC/foremans/l2hmc-qcd/src/l2hmc/
+  VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-01/"
+
 # ---- Check if running on Polaris -----------------------------
 elif [[ $(hostname) == x* ]]; then
+  echo Working directory is $PBS_O_WORKDIR
+  cd $PBS_O_WORKDIR
   export IBV_FORK_SAFE=1
   NRANKS=$(wc -l < ${PBS_NODEFILE})
   HOSTFILE=${PBS_NODEFILE}
   NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
   NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
   MPI_COMMAND=$(which mpiexec)
-  # VENV_DIR="${ROOT}/venvs/polaris/2022-09-08/"
   MPI_FLAGS="--verbose \
     --envall \
     -n ${NGPUS} \
     --depth ${NCPUS} \
     --ppn ${NGPU_PER_RANK} \
     --hostfile ${HOSTFILE}"
-  module load conda/2022-07-19
+  module load conda/2022-09-08
   conda activate base
-  # cd /lus/grand/projects/datascience/foremans/polaris/projects/l2hmc-qcd/src/l2hmc
+  VENV_DIR="${ROOT}/venvs/polaris/2022-09-08/"
+
 # ---- Check if running on MacOS --------------------------------
 else
+  VENV_DIR="${ROOT}/venv/"
   if [[ $(uname) == Darwin* ]]; then
     # ---- Check if environment has an mpirun executable ----------
     if [[ -x $(which mpirun) ]]; then
@@ -128,7 +131,7 @@ fi
 # 2. If so, activate environment and make sure we have an 
 #    editable install
 # -----------------------------------------------------------
-VENV_DIR="${ROOT}/venv/"
+# VENV_DIR="${ROOT}/venv/"
 # if [ -d ${VENV_DIR} ]; then
 if [[ -f "${VENV_DIR}/bin/activate" ]]; then
   echo "Found venv at: ${VENV_DIR}"
@@ -167,7 +170,7 @@ fi
 # ---- Environment settings -----------------------------------------------
 # export NCCL_DEBUG=INFO
 # export KMP_SETTINGS=TRUE
-# export OMP_NUM_THREADS=16
+export OMP_NUM_THREADS=$NCPUS
 # export OMPI_MCA_opal_cuda_support=TRUE
 # export TF_ENABLE_AUTO_MIXED_PRECISION=1
 # export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/cuda/lib64"
@@ -179,6 +182,7 @@ LOGFILE="${LOGDIR}/${TSTAMP}-${HOST}_ngpu${NGPUS}_ncpu${NCPUS}.log"
 if [ ! -d "${LOGDIR}" ]; then
   mkdir -p ${LOGDIR}
 fi
+
 
 # Keep track of latest logfile for easy access
 echo $LOGFILE >> "${DIR}/logs/latest"
@@ -192,6 +196,8 @@ echo "LOGDIR=${LOGDIR}"
 echo "LOGFILE=${LOGFILE}"
 echo "IBV_FORK_SAFE=${IBV_FORK_SAFE}"
 printf '%.s─' $(seq 1 $(tput cols))
+
+EXEC="${MPI_COMMAND} ${MPI_FLAGS} $(which python3) ${MAIN}"
 
 
 # ---- Print job information -------------------------------------------------
@@ -215,9 +221,8 @@ printf '%.s─' $(seq 1 $(tput cols))
 echo -e '\n'
 
 
-EXEC="${MPI_COMMAND} ${MPI_FLAGS} $(which python3) ${MAIN}"
-
 # Run executable command
+# ${EXEC} $@ > ${LOGFILE}; ret_code=$?
 ${EXEC} $@ > ${LOGFILE}; ret_code=$?
 
 if [[ $ret_code != 0 ]]; then exit $ret_code; fi
@@ -263,6 +268,6 @@ if [[ $ret_code != 0 ]]; then exit $ret_code; fi
 #   fi
 # fi
 
-exit
+# exit
 #
 # vim:tw=4
