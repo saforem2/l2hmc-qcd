@@ -6,57 +6,45 @@ Implements methods for training L2HMC sampler.
 """
 from __future__ import absolute_import, annotations, division, print_function
 from collections import defaultdict
-# from contextlib import nullcontext
-# from dataclasses import asdict
+from contextlib import nullcontext
 import logging
 import os
 from pathlib import Path
 import time
 from typing import Any, Callable, Optional
-from contextlib import nullcontext
-# from accelerate import Accelerator
-
 
 import aim
 from aim import Distribution
-# from accelerate import Accelerator
-# from accelerate.utils import extract_model_from_parallel
+import horovod.torch as hvd
 import numpy as np
 from omegaconf import DictConfig
 from rich import box
-# from rich.console import Console
 from rich.live import Live
+from rich.logging import RichHandler
 from rich.table import Table
+from rich_logger import RichTablePrinter
 import torch
-import horovod.torch as hvd
 from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
+from tqdm import trange
 import wandb
-# from l2hmc.learning_rate.pytorch.learning_rate import rate
 
-from l2hmc.configs import (
-    ExperimentConfig,
-)
-from l2hmc.utils.rich import get_width, is_interactive
+from l2hmc.common import setup_torch_distributed
+from l2hmc.configs import ExperimentConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
-from l2hmc.group.u1.pytorch.group import U1Phase
 from l2hmc.group.su3.pytorch.group import SU3
-from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
+from l2hmc.group.u1.pytorch.group import U1Phase
 from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
+from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
 from l2hmc.loss.pytorch.loss import LatticeLoss
 from l2hmc.network.pytorch.network import NetworkFactory
 from l2hmc.trackers.pytorch.trackers import update_summaries
 from l2hmc.trainers.trainer import BaseTrainer
 from l2hmc.utils.history import summarize_dict
-from l2hmc.utils.rich import add_columns, get_console
+from l2hmc.utils.rich import get_width, is_interactive
+from l2hmc.utils.rich import get_console
+from l2hmc.utils.rich_logger import LOGGER_FIELDS
 from l2hmc.utils.step_timer import StepTimer
-from l2hmc.common import setup_torch_distributed
-
-# from mpi4py import MPI
-# from torchinfo import summary as model_summary
-
-
-from rich.logging import RichHandler
 # WIDTH = int(os.environ.get('COLUMNS', 150))
 
 log = logging.getLogger(__name__)
@@ -721,66 +709,74 @@ class Trainer(BaseTrainer):
             return self.eval_step(z)
 
         self.dynamics.eval()
-        with self.get_context_manager(table) as ctx:
-            for step in range(eval_steps):
-                timer.start()
-                x, metrics = eval_fn((x, beta))
-                dt = timer.stop()
-                if (
-                        step == 0
-                        or step % setup['nlog'] == 0
-                        or step % setup['nprint'] == 0
-                ):
-                    record = {
-                        f'{job_type}_step': step,
-                        'dt': dt,
-                        'beta': beta,
-                        'loss': metrics.pop('loss', None),
-                        'dQsin': metrics.pop('dQsin', None),
-                        'dQint': metrics.pop('dQint', None),
-                    }
-                    record.update(metrics)
-                    if job_type == 'hmc':
-                        acc = record.get('acc_mask', None)
-                        record['eps'] = eps
-                        if acc is not None and eps is not None:
-                            acc_avg = acc.mean()
-                            if acc_avg < 0.66:
-                                eps -= (eps / 10.)
-                            else:
-                                eps += (eps / 10.)
-
-                    avgs, summary = self.record_metrics(run=run,
-                                                        arun=arun,
-                                                        step=step,
-                                                        writer=writer,
-                                                        metrics=record,
-                                                        job_type=job_type)
-                    summaries.append(summary)
-                    table = self.update_table(
-                        table=setup['table'],
-                        step=step,
-                        avgs=avgs,
-                    )
-                    if (
-                            # not isinstance(setup['ctx'], Live)
-                            step % setup['nprint'] == 0
-                    ):
-                        log.info(summary)
-
-                    if avgs.get('acc', 1.0) < 1e-5:
-                        if stuck_counter < patience:
-                            stuck_counter += 1
+        # with self.get_context_manager(table) as ctx:
+        printer = RichTablePrinter(
+            key=f'{job_type}_step',
+            fields=LOGGER_FIELDS  # type:ignore
+        )
+        printer.hijack_tqdm()
+        for step in trange(eval_steps, disable=(not self._is_chief)):
+            timer.start()
+            x, metrics = eval_fn((x, beta))
+            dt = timer.stop()
+            if (
+                    step == 0
+                    or step % setup['nlog'] == 0
+                    or step % setup['nprint'] == 0
+            ):
+                record = {
+                    f'{job_type}_step': step,
+                    'dt': dt,
+                    'beta': beta,
+                    'loss': metrics.pop('loss', None),
+                    'dQsin': metrics.pop('dQsin', None),
+                    'dQint': metrics.pop('dQint', None),
+                }
+                record.update(metrics)
+                if job_type == 'hmc':
+                    acc = record.get('acc_mask', None)
+                    record['eps'] = eps
+                    if acc is not None and eps is not None:
+                        acc_avg = acc.mean()
+                        if acc_avg < 0.66:
+                            eps -= (eps / 10.)
                         else:
-                            self.console.log('Chains are stuck! Redrawing x')
-                            x = self.lattice.random()
-                            stuck_counter = 0
+                            eps += (eps / 10.)
 
-                if isinstance(ctx, Live):
-                    ctx.console.clear_live()
+                avgs, summary = self.record_metrics(run=run,
+                                                    arun=arun,
+                                                    step=step,
+                                                    writer=writer,
+                                                    metrics=record,
+                                                    job_type=job_type)
+                summaries.append(summary)
+                # table = self.update_table(
+                #     table=setup['table'],
+                #     step=step,
+                #     avgs=avgs,
+                # )
+                if (
+                        # not isinstance(setup['ctx'], Live)
+                        step > 0 and
+                        step % setup['nprint'] == 0
+                ):
+                    printer.log(avgs)
+                    # log.info(summary)
 
-        tables[str(0)] = setup['table']
+                if avgs.get('acc', 1.0) < 1e-5:
+                    if stuck_counter < patience:
+                        stuck_counter += 1
+                    else:
+                        self.console.log('Chains are stuck! Redrawing x')
+                        x = self.lattice.random()
+                        stuck_counter = 0
 
+            # if isinstance(ctx, Live):
+            #     ctx.console.clear_live()
+
+        # tables[str(0)] = setup['table']
+
+        printer.finalize()
         return {
             'timer': timer,
             'history': history,
@@ -874,6 +870,104 @@ class Trainer(BaseTrainer):
                 metrics.update(lmetrics)
 
         return xout.detach(), metrics
+
+    def train_epoch_rich(
+            self,
+            x: Tensor,
+            beta: float | Tensor,
+            era: Optional[int] = None,
+            run: Optional[Any] = None,
+            arun: Optional[Any] = None,
+            nepoch: Optional[int] = None,
+            writer: Optional[Any] = None,
+            extend: int = 1,
+    ) -> tuple[Tensor, dict]:
+        rows = {}
+        summaries = []
+        extend = 1 if extend is None else extend
+        table = Table(
+            box=box.HORIZONTALS,
+            row_styles=['dim', 'none'],
+        )
+
+        nepoch = self.steps.nepoch if nepoch is None else nepoch
+        assert isinstance(nepoch, int)
+        nepoch *= extend
+        losses = []
+        # ctx = self.get_context_manager(table)
+        printer = RichTablePrinter(
+            key='train_step',
+            fields=LOGGER_FIELDS  # type:ignore
+        )
+        printer.hijack_tqdm()
+        # with ctx:
+        for epoch in trange(nepoch, disable=(not self._is_chief)):
+            self.timers['train'].start()
+            x, metrics = self.train_step((x, beta))  # type:ignore
+            dt = self.timers['train'].stop()
+            losses.append(metrics['loss'])
+            if (
+                    epoch == 0
+                    or self.should_print(epoch)
+                    or self.should_log(epoch)
+            ):
+                record = {
+                    'era': era,
+                    'epoch': epoch,
+                    'train_step': self._gstep,
+                    'dt': dt,
+                    'beta': beta,
+                    'loss': metrics.pop('loss', None),
+                    'dQsin': metrics.pop('dQsin', None),
+                    'dQint': metrics.pop('dQint', None)
+                }
+                record.update(metrics)
+                avgs, summary = self.record_metrics(
+                    run=run,
+                    arun=arun,
+                    step=self._gstep,
+                    writer=writer,
+                    metrics=record,
+                    job_type='train',
+                    model=self.dynamics,
+                    optimizer=self._optimizer,
+                )
+                rows[self._gstep] = avgs
+                summaries.append(summary)
+
+                if (
+                        epoch > 0 and
+                        self.should_print(epoch)
+                        # and not isinstance(ctx, Live)
+                ):
+                    # log.info(summary)
+                    printer.log(avgs)
+
+                # table = self.update_table(
+                #     table=table,
+                #     avgs=avgs,
+                #     step=epoch,
+                # )
+
+                if avgs.get('acc', 1.0) < 1e-5:
+                    self.reset_optimizer()
+                    self.warning('Chains are stuck! Re-drawing x !')
+                    x = self.draw_x()
+
+            self._gstep += 1
+            # if isinstance(ctx, Live):
+            #     ctx.console.clear()
+            #     ctx.console.clear_live()
+
+        printer.finalize()
+        data = {
+            'rows': rows,
+            'table': table,
+            'losses': losses,
+            'summaries': summaries,
+        }
+
+        return x, data
 
     def train_epoch(
             self,
@@ -1094,7 +1188,7 @@ class Trainer(BaseTrainer):
                 self.console.rule(f'ERA: {era} / {nera}, BETA: {b:.3f}')
 
             epoch_start = time.time()
-            x, edata = self.train_epoch(
+            x, edata = self.train_epoch_rich(
                 x=x,
                 beta=b,
                 era=era,
