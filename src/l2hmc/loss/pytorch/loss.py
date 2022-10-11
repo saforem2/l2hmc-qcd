@@ -46,7 +46,13 @@ class LatticeLoss:
     def mixed_loss(loss: Tensor, weight: Tensor) -> Tensor:
         return (weight / loss) - (loss / weight)
 
-    def _plaq_loss(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
+    def _plaq_loss(
+            self,
+            w1: Tensor,
+            w2: Tensor,
+            acc: Tensor,
+            use_mixed_loss: Optional[bool] = None,
+    ) -> Tensor:
         dw = w2 - w1
         dwloops = 2. * (torch.ones_like(w1) - dw.cos())
         if isinstance(self.g, U1Phase):
@@ -57,18 +63,33 @@ class LatticeLoss:
             raise ValueError(f'Unexpected value for `self.g`: {self.g}')
 
         # dwloops = 2. * (1. - torch.cos(w2 - w1))
-        if self.config.use_mixed_loss:
+        use_mixed = (
+            self.config.use_mixed_loss
+            if use_mixed_loss is None else use_mixed_loss
+        )
+        if use_mixed:
             ploss += 1e-4
             return self.mixed_loss(ploss, self.plaq_weight).mean()
 
         return (-ploss / self.plaq_weight).mean()
 
-    def _charge_loss(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
+    def _charge_loss(
+            self,
+            w1: Tensor,
+            w2: Tensor,
+            acc: Tensor,
+            use_mixed_loss: Optional[bool] = None,
+    ) -> Tensor:
         q1 = self.lattice._sin_charges(wloops=w1)  # type:ignore
         q2 = self.lattice._sin_charges(wloops=w2)  # type:ignore
         dqsq = (q2 - q1) ** 2
         qloss = acc * dqsq
-        if self.config.use_mixed_loss:
+
+        use_mixed = (
+            self.config.use_mixed_loss
+            if use_mixed_loss is None else use_mixed_loss
+        )
+        if use_mixed:
             qloss += 1e-4
             return self.mixed_loss(qloss, self.charge_weight).mean()
 
@@ -92,15 +113,65 @@ class LatticeLoss:
 
         return metrics
 
+    def plaq_loss(
+            self,
+            x_init: Tensor,
+            x_prop: Tensor,
+            acc: Tensor,
+            use_mixed_loss: Optional[bool] = None
+    ) -> Tensor:
+        wl_init = self.lattice.wilson_loops(x=x_init)
+        wl_prop = self.lattice.wilson_loops(x=x_prop)
+        return self._plaq_loss(w1=wl_init, w2=wl_prop, acc=acc)
+
+    def charge_loss(
+            self,
+            x_init: Tensor,
+            x_prop: Tensor,
+            acc: Tensor,
+            use_mixed_loss: Optional[bool] = None
+    ) -> Tensor:
+        wl_init = self.lattice.wilson_loops(x=x_init)
+        wl_prop = self.lattice.wilson_loops(x=x_prop)
+        return self._charge_loss(w1=wl_init, w2=wl_prop, acc=acc)
+
+    def general_loss(
+            self,
+            x_init: Tensor,
+            x_prop: Tensor,
+            acc: Tensor,
+            plaq_weight: Optional[float] = None,
+            charge_weight: Optional[float] = None,
+            use_mixed_loss: Optional[bool] = None
+    ) -> Tensor | float:
+        wl_init = self.lattice.wilson_loops(x=x_init)
+        wl_prop = self.lattice.wilson_loops(x=x_prop)
+        pw = self.plaq_weight if plaq_weight is None else plaq_weight
+        qw = self.charge_weight if charge_weight is None else charge_weight
+        ploss = 0.0
+        qloss = 0.0
+        loss = 0.0
+        # loss = torch.tensor(0.)
+        if pw > 0:
+            ploss = self._plaq_loss(w1=wl_init, w2=wl_prop, acc=acc,
+                                    use_mixed_loss=use_mixed_loss)
+            loss += pw * ploss
+        if qw > 0:
+            qloss = self._charge_loss(w1=wl_init, w2=wl_prop, acc=acc,
+                                      use_mixed_loss=use_mixed_loss)
+            loss += qw * qloss
+
+        return loss
+
     def calc_loss(self, x_init: Tensor, x_prop: Tensor, acc: Tensor) -> Tensor:
         wl_init = self.lattice.wilson_loops(x=x_init)
         wl_prop = self.lattice.wilson_loops(x=x_prop)
 
-        plaq_loss = torch.tensor(0., dtype=torch.float)
+        plaq_loss = torch.tensor(0.).to(x_init.real.dtype).to(x_init.device)
         if self.plaq_weight > 0:
             plaq_loss = self._plaq_loss(w1=wl_init, w2=wl_prop, acc=acc)
 
-        charge_loss = torch.tensor(0., dtype=torch.float)
+        charge_loss = torch.tensor(0.).to(x_init.real.dtype).to(x_init.device)
         if self.charge_weight > 0:
             charge_loss = self._charge_loss(w1=wl_init, w2=wl_prop, acc=acc)
 
