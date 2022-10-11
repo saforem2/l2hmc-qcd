@@ -130,7 +130,11 @@ def setup_torch_distributed(
         )
         master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
         os.environ['MASTER_ADDR'] = master_addr
-        os.environ['MASTER_PORT'] = port
+        if (eport := os.environ.get('MASTER_PORT', None)) is None:
+            os.environ['MASTER_PORT'] = port
+        else:
+            log.info(f'Caught MASTER_PORT:{eport} from environment!')
+            os.environ['MASTER_PORT'] = eport
         if not INITIALIZED:
             init_process_group(
                 rank=rank,
