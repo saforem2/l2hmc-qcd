@@ -61,14 +61,7 @@ echo "┃  Job started at: ${TSTAMP} on ${HOST}                         ┃"
 echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
 
 NCPUS=$(getconf _NPROCESSORS_ONLN)
-# Load conda module and activate base environment
-# CONDA_EXEC="/lus/theta-fs0/software/thetagpu/conda/2022-07-01/mconda3/bin/conda"
-# if [[ -f ${CONDA_EXEC} ]]; then
-  # eval "$(/lus/theta-fs0/software/thetagpu/conda/2022-07-01/mconda3/bin/conda shell.zsh hook)"
-# fi
 
-# # ---- Check if running on Linux ---------------------------------
-# if [[ $(uname) == Linux* ]]; then
 # ---- Check if running on ThetaGPU ----------------------------
 if [[ $(hostname) == theta* ]]; then
   NRANKS=$(wc -l < ${COBALT_NODEFILE})
@@ -133,17 +126,25 @@ fi
 # -----------------------------------------------------------
 # VENV_DIR="${ROOT}/venv/"
 # if [ -d ${VENV_DIR} ]; then
+#
 if [[ -f "${VENV_DIR}/bin/activate" ]]; then
   echo "Found venv at: ${VENV_DIR}"
   source "${VENV_DIR}/bin/activate"
   python3 -m pip install --upgrade pip
   python3 -m pip install -e "${ROOT}" --no-deps
 else
-  echo "Creating new venv at: ${VENV_DIR}"
-  python3 -m venv "${ROOT}/venv/" --system-site-packages
-  python3 -m pip install --upgrade pip
-  source "${VENV_DIR}/bin/activate"
-  python3 -m pip install -e "${ROOT}" --no-deps
+  if [[ -f "${ROOT}/venv/bin/activate" ]]; then
+    echo "Found venv at: ${ROOT}/venv/, using that"
+    source "${VENV_DIR}/bin/activate"
+    python3 -m pip install --upgrade pip
+    python3 -m pip install -e "${ROOT}" --no-deps
+  else
+    echo "Creating new venv at: ${VENV_DIR}"
+    python3 -m venv "${ROOT}/venv/" --system-site-packages
+    python3 -m pip install --upgrade pip
+    source "${VENV_DIR}/bin/activate"
+    python3 -m pip install -e "${ROOT}" --no-deps
+  fi
 fi
 
 # ---- Install required packages ------------------------------------------
@@ -168,9 +169,9 @@ fi
 # python3 -m pip install --pre --upgrade wandb
 
 # ---- Environment settings -----------------------------------------------
+export OMP_NUM_THREADS=$NCPUS
 # export NCCL_DEBUG=INFO
 # export KMP_SETTINGS=TRUE
-export OMP_NUM_THREADS=$NCPUS
 # export OMPI_MCA_opal_cuda_support=TRUE
 # export TF_ENABLE_AUTO_MIXED_PRECISION=1
 # export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/cuda/lib64"
@@ -222,52 +223,6 @@ echo -e '\n'
 
 
 # Run executable command
-# ${EXEC} $@ > ${LOGFILE}; ret_code=$?
 ${EXEC} $@ > ${LOGFILE}; ret_code=$?
 
 if [[ $ret_code != 0 ]]; then exit $ret_code; fi
-#
-# ---- Run executable --------------------------------------------------------
-# start=$(date +%s)
-# start_fmt=$(date +%Y-%m-%d\ %r)
-# echo "STARTING TIMING RUN AT $start_fmt"
-# ${EXEC} $@ > ${LOGFILE}; ret_code=$?
-# # ----------------------------------------------------------------------------
-#
-# end=$(date +%s)
-# end_fmt=$(date +%Y-%m-%d\ %r)
-# echo "ENDING TIMING RUN AT: ${end_fmt}"
-# result=$(( $end - $start ))
-# result_name="l2hmc-qcd"
-# echo "RESULT,$result_name,$result,$USER,$start_fmt"
-#
-# RESULT_FILE="${LOGDIR}/result.csv"
-# echo "# EXEC: ${EXEC} $@" >> "${RESULT_FILE}"
-# echo "${result}" >> "${RESULT_FILE}"
-#
-# if [[ $ret_code != 0 ]]; then exit $ret_code; fi
-
-# if [[ -x "${MPI_COMMAND}" ]]; then
-#   ${MPI_COMMAND} ${MPI_FLAGS} $(which python3) ${MAIN} $@ > ${LOGFILE}
-# else
-#   $(which python3) ${MAIN} $@ > ${LOGFILE}
-# fi
-# $EXEC
-
-# # if [ -f ${MAIN} ]; then
-# # ---- Run Job --------------------------------------------
-# if (( ${NGPUS} > 1 )); then
-#   ${MPI_COMMAND} ${MPI_FLAGS} python3 ${MAIN} $@ > ${LOGFILE}
-# else
-#   NCPUS=$(getconf _NPROCESSORS_ONLN)
-#   MPI_COMMAND=$(which mpirun)
-#   if [ -x "${MPI_COMMAND}" ]; then
-#     ${MPI_COMMAND} -np ${NCPUS} python3 ${MAIN} $@ > ${LOGFILE}
-#   else
-#     python3 ${MAIN} $@ > ${LOGFILE}
-#   fi
-# fi
-
-# exit
-#
-# vim:tw=4
