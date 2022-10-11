@@ -261,17 +261,20 @@ class InputLayer(nn.Module):
                     f'\t  val: {val}'
                 )
 
-        self.conv_stack = None
         self.conv_config = conv_config
         # if conv_config is not None:
         self.activation_fn = activation_fn
         if conv_config is not None and len(conv_config.filters) > 0:
-            self.conv_stack = ConvStack(
+            conv_stack = ConvStack(
                 xshape=xshape,
                 conv_config=conv_config,
                 activation_fn=self.activation_fn,
             )
+        else:
+            conv_stack = None
 
+        self.conv_stack = conv_stack
+        # self.register_module('conv_stack', self.conv_stack)
         self.xlayer = nn.LazyLinear(
             self.net_config.units[0],
             device=DEVICE
