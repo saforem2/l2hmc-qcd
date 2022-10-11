@@ -68,7 +68,10 @@ def cleanup() -> None:
     dist.destroy_process_group()
 
 
-def setup_tensorflow(precision: Optional[str] = None) -> int:
+def setup_tensorflow(
+        precision: Optional[str] = None,
+        ngpus: Optional[int] = None,
+) -> int:
     import tensorflow as tf
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
@@ -81,14 +84,14 @@ def setup_tensorflow(precision: Optional[str] = None) -> int:
         log.warning('Detected `TF_EAGER` from env. Running eagerly.')
         tf.config.run_functions_eagerly(True)
 
-    # if debug:
-    #     tf.config.run_functions_eagerly(True)
-    # assert tf.keras.backend.floatx() == tf.float32
     gpus = tf.config.experimental.list_physical_devices('GPU')
-    cpus = tf.config.experimental.list_physical_devices('GPU')
+    cpus = tf.config.experimental.list_physical_devices('CPU')
     if gpus:
         try:
             # Currently memory growth needs to be the same across GPUs
+            if ngpus is not None:
+                gpus = gpus[-ngpus:]
+
             for gpu in gpus:
                 tf.config.experimental.set_memory_growth(gpu, True)
             tf.config.experimental.set_visible_devices(
