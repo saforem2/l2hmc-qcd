@@ -21,7 +21,40 @@ Scalar = Union[float, int, bool]
 ArrayLike = Union[Tensor, Array, Scalar]
 
 
-def log_dict(d: dict, step: int, prefix: Optional[str] = None) -> None:
+def log_item(
+        tag: str,
+        val: ArrayLike,
+        step: Optional[int] = None,
+):
+    if step is not None:
+        iter_tag = '/'.join([tag.split('/')[0]] + ['iter'])
+        tf.summary.scalar(iter_tag, step, step=step)
+
+    if isinstance(val, list):
+        log_list(val, step=step, prefix=tag)
+
+    if isinstance(val, (Tensor, Array)):
+        if len(val.shape) > 0:
+            tf.summary.histogram(tag, val, step=step)
+            tf.summary.scalar(f'{tag}/avg', tf.reduce_mean(val), step=step)
+    elif isinstance(val, (int, float, bool)) or len(val.shape) == 0:
+        tf.summary.scalar(tag, val, step=step)
+
+    # if (
+    #         'dt' in tag
+    #         # or 'beta' in tag
+    #         or 'era' in tag
+    #         or 'epoch' in tag
+    #         or 'loss' in tag
+    #         or isinstance(val, (int, float, bool))
+    # ):
+    #     tf.summary.scalar(tag, val, step=step)
+    # else:
+    #     tf.summary.histogram(tag, val, step=step)
+    #     tf.summary.scalar(f'{tag}/avg', tf.reduce_mean(val), step=step)
+
+
+def log_dict(d: dict, step: int, prefix: Optional[str] = None):
     """Create tensorboard summaries for all items in `d`"""
     for key, val in d.items():
         pre = key if prefix is None else f'{prefix}/{key}'
@@ -33,7 +66,7 @@ def log_dict(d: dict, step: int, prefix: Optional[str] = None) -> None:
             log_item(pre, val, step=step)
 
 
-def log_list(x, step, prefix: Optional[str] = None) -> None:
+def log_list(x, step, prefix: Optional[str] = None):
     for idx, t in enumerate(x):
         name = getattr(t, 'name', getattr(t, '__name__', None))
         if name is None:
@@ -41,31 +74,6 @@ def log_list(x, step, prefix: Optional[str] = None) -> None:
         tag = name if prefix is None else f'{prefix}/{name}'
         assert tag is not None
         log_item(tag, t, step=step)
-
-
-def log_item(
-        tag: str,
-        val: ArrayLike,
-        step: Optional[int] = None,
-) -> None:
-    if step is not None:
-        iter_tag = '/'.join([tag.split('/')[0]] + ['iter'])
-        tf.summary.scalar(iter_tag, step, step=step)
-
-    if isinstance(val, list):
-        log_list(val, step=step, prefix=tag)
-
-    if isinstance(val, (Tensor, Array)):
-        tf.summary.scalar(f'{tag}/avg', tf.reduce_mean(val), step=step)
-        if len(val.shape) > 0:
-            tf.summary.histogram(tag, val, step=step)
-
-    elif isinstance(val, (int, float, bool)) or len(val.shape) == 0:
-        tf.summary.scalar(f'{tag}', val, step=step)
-
-    else:
-        log.warning(f'Unexpected type encountered for: {tag} ')
-        log.warning(f'type({tag}): {type(val)}')
 
 
 def update_summaries(

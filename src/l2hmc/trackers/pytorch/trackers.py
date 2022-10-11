@@ -76,15 +76,34 @@ def log_item(
             arr = np.array(val)
 
         assert isinstance(arr, np.ndarray)
+
         arr = arr[~np.isnan(arr)]
-        if len(arr) > 0:
-            writer.add_scalar(f'{tag}/avg', arr.mean(), global_step=step)
-            if len(arr.shape) > 0:
-                try:
-                    writer.add_histogram(tag=tag, values=val, global_step=step)
-                except ValueError:
-                    log.error(f'Error adding histogram for: {tag}')
-                    # log.exception(e)
+        if np.iscomplexobj(arr):
+            log_item(
+                tag=f'{tag}.real',
+                val=arr.real,
+                writer=writer,
+                step=step
+            )
+            log_item(
+                tag=f'{tag}.imag',
+                val=arr.imag,
+                writer=writer,
+                step=step
+            )
+        else:
+            if len(arr) > 0:
+                writer.add_scalar(f'{tag}/avg', arr.mean(), global_step=step)
+                if len(arr.shape) > 0:
+                    try:
+                        writer.add_histogram(
+                            tag=tag,
+                            values=val,
+                            global_step=step
+                        )
+                    except ValueError:
+                        log.error(f'Error adding histogram for: {tag}')
+                        # log.exception(e)
 
     elif (
             isinstance(val, (float, int, bool, np.floating))
