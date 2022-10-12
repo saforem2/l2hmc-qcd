@@ -46,6 +46,46 @@ def xy_repr(x: torch.Tensor) -> torch.Tensor:
     return torch.stack((torch.cos(x), torch.sin(x)), dim=1)
 
 
+def init_all(model, init_func, *params, **kwargs):
+    """Recursively initialize all parameters in model using init_func.
+
+    Example:
+        >>> model = Network()
+        >>> init_all(model, torch.nn.init.normal_, mean=0., std=1.)
+        >>> # or
+        >>> init_all(model, torch.nn.init.constant_, 1.)
+    """
+    for p in model.parameters():
+        init_func(p, *params, **kwargs)
+
+
+def init_all_by_shape(model: nn.Module, init_funcs: dict[str | int, Callable]):
+    """Recursively initialize parameters in model using init_funcs.
+
+    Example:
+
+    ```python
+    >>> model = nn.Module()
+    >>> init_funcs = {
+        'default': lambda x: torch.nn.init.constant(x, 1.),
+        1: lambda x: torch.nn.init.normal(x, mean=0., std=1.)  # e.g. bias
+        2: lambda x: torch.nn.init.xavier_normal_(x, gain=1.)   # weight
+        3: lambda x: torch.nn.init.xavier_uniform_(x, gain=1.)  # conv1D
+        4: lambda x: torch.nn.init.xavier_uniform_(x, gain=1.)  # conv2D
+    }
+    >>> init_all(model, init_funcs)
+    ```
+    """
+    assert 'default' in init_funcs, 'init_funcs must have `default` entry'
+    for p in model.parameters():
+        if hasattr(p, 'shape'):
+            init_func = init_funcs.get(
+                str(len(p.shape)),
+                init_funcs['default']
+            )
+            init_func(p)
+
+
 @torch.no_grad()
 def init_weights(m, method='xavier_uniform'):
     if isinstance(m, nn.Linear):
