@@ -498,6 +498,8 @@ class ConvolutionConfig(BaseConfig):
     def __post_init__(self):
         if self.pool is None:
             self.pool = len(self.filters) * [2]
+        if len(self.pool) != len(self.filters):
+            self.pool = len(self.filters) * [self.pool[0]]
         assert self.pool is not None
 
     def to_str(self):
