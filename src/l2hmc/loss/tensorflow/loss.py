@@ -61,40 +61,49 @@ class LatticeLoss:
     def _plaq_loss(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
         dw = tf.subtract(w2, w1)
         dwloops = 2. * (tf.ones_like(w1) - tf.math.cos(dw))
-        if isinstance(self.g, U1Phase):
-            ploss = acc * tf.reduce_sum(dwloops, axis=(1, 2))
-        elif isinstance(self.g, SU3):
-            # ploss = acc * tf.cast(
-            #     tf.reduce_sum(
-            #         dwloops, tuple(range(2, 3, len(w1.shape)))
-            #     ),
-            #     acc.dtype
-            # )
-            # TODO: Update / implement plaquette loss for 4D SU(3) model
-            ploss = tf.constant(0.0)
-        else:
-            raise ValueError(f'Unexpected value for self.g: {self.g}')
+        dwsum = tf.reduce_sum(
+            dwloops,
+            axis=tuple(range(1, len(dwloops.shape)))
+        )
+        ploss = tf.multiply(acc, dwsum)
+        # if isinstance(self.g, U1Phase):
+        #     ploss = acc * tf.reduce_sum(dwloops, axis=(1, 2))
+        # elif isinstance(self.g, SU3):
+        #     # ploss = acc * tf.cast(
+        #     #     tf.reduce_sum(
+        #     #         dwloops, tuple(range(2, 3, len(w1.shape)))
+        #     #     ),
+        #     #     acc.dtype
+        #     # )
+        #     # TODO: Update / implement plaquette loss for 4D SU(3) model
+        #     ploss = tf.constant(0.0)
+        # else:
+        #     raise ValueError(f'Unexpected value for self.g: {self.g}')
 
         if self.config.use_mixed_loss:
             ploss += 1e-4  # to prevent division by zero in mixed_loss
+            # will compute loss = [ (const / loss) - (loss / const) ]
             tf.reduce_mean(self.mixed_loss(ploss, self.plaq_weight))
 
-        ploss = tf.cast(ploss, self.plaq_weight.dtype)
-        return tf.reduce_mean(-ploss / self.plaq_weight)
+        # only use second term:
+        # loss = [ - (loss / const) ]
+        # ploss = tf.cast(ploss, self.plaq_weight.dtype)
+        return (- tf.reduce_mean(ploss / self.plaq_weight))
 
     def _charge_loss(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
         dq2 = tf.math.square(tf.subtract(
             self.lattice._sin_charges(wloops=w2),
             self.lattice._sin_charges(wloops=w1),
         ))
-        qloss = acc * dq2
+        qloss = tf.multiply(acc, dq2)
+        # qloss = acc * dq2
         # qloss = (acc * (q2 - q1) ** 2)
         if self.config.use_mixed_loss:
             qloss += 1e-4
             return tf.reduce_mean(
                 self.mixed_loss(qloss, self.charge_weight)
             )
-        return tf.reduce_mean(-qloss / self.charge_weight)
+        return (- tf.reduce_mean(qloss / self.charge_weight))
 
     def lattice_metrics(
             self,

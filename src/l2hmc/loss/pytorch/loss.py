@@ -122,7 +122,12 @@ class LatticeLoss:
     ) -> Tensor:
         wl_init = self.lattice.wilson_loops(x=x_init)
         wl_prop = self.lattice.wilson_loops(x=x_prop)
-        return self._plaq_loss(w1=wl_init, w2=wl_prop, acc=acc)
+        return self._plaq_loss(
+            w1=wl_init,
+            w2=wl_prop,
+            acc=acc,
+            use_mixed_loss=use_mixed_loss
+        )
 
     def charge_loss(
             self,
@@ -133,7 +138,12 @@ class LatticeLoss:
     ) -> Tensor:
         wl_init = self.lattice.wilson_loops(x=x_init)
         wl_prop = self.lattice.wilson_loops(x=x_prop)
-        return self._charge_loss(w1=wl_init, w2=wl_prop, acc=acc)
+        return self._charge_loss(
+            w1=wl_init,
+            w2=wl_prop,
+            acc=acc,
+            use_mixed_loss=use_mixed_loss
+        )
 
     def general_loss(
             self,
