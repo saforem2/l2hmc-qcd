@@ -24,6 +24,7 @@ from rich import box
 from tensorflow._api.v2.train import CheckpointManager
 
 from tensorflow.python.keras import backend as K
+from l2hmc.common import ScalarLike
 
 from l2hmc.utils.rich import get_width, is_interactive
 from l2hmc.configs import ExperimentConfig
@@ -41,7 +42,6 @@ from l2hmc.network.tensorflow.network import NetworkFactory
 from l2hmc.trackers.tensorflow.trackers import update_summaries
 from l2hmc.trainers.trainer import BaseTrainer
 from l2hmc.utils.history import summarize_dict
-from l2hmc.utils.rich import add_columns
 from l2hmc.utils.step_timer import StepTimer
 
 
@@ -60,6 +60,11 @@ NP_INT = (np.int8, np.int16, np.int32, np.int64)
 Model = tf.keras.Model
 Optimizer = tf.keras.optimizers.Optimizer
 TensorLike = tf.types.experimental.TensorLike
+
+HVD_FP_MAP = {
+    'fp16': hvd.Compression.fp16,
+    'none': hvd.Compression.none
+}
 
 
 def plot_models(dynamics: Dynamics, logdir: os.PathLike):
@@ -90,15 +95,10 @@ def plot_models(dynamics: Dynamics, logdir: os.PathLike):
             pass
 
 
-HVD_FP_MAP = {
-    'fp16': hvd.Compression.fp16,
-    'none': hvd.Compression.none
-}
-
-
 def reset_optimizer(optimizer: Optimizer):
     """Reset optimizer states when changing beta during training."""
-    # NOTE: We don't want to reset iteration counter. From tf docs:
+    # > [!NOTE] Preserve Iterations
+    # > We don't want to reset iteration counter. From tf docs:
     # > The first value is always the iterations count of the optimizer,
     # > followed by the optimizer's state variables in the order they are
     # > created.
@@ -120,32 +120,8 @@ def is_dist(z: Tensor | ops.EagerTensor | np.ndarray) -> bool:
     )
 
 
-METRICS = {
-    'step': 0,
-    'beta': 0.,
-    'dt': 0.0,
-    'hmc_step': 0,
-    'loss': 0.0,
-    'dQint': 0.0,
-    'dQsin': 0.0,
-    'energy': 0.0,
-    'logprob': 0.0,
-    'eps': 0.0,
-    'logdet': 0.0,
-    'acc': 0.0,
-    'acc_mask': 0.0,
-    'sumlogdet': 0.0,
-    'plaqs': 0.0,
-    'sinQ': 0.0,
-    'intQ': 0.0,
-    'eps': 0.0,
-    'acc': 0.0,
-}
-
-# Metric = tf.Tensor | ops.EagerTensor | list | np.ndarray | int | float | bool
-
-
 # TODO: Replace arguments in __init__ call below with configs.TrainerConfig
+
 class Trainer(BaseTrainer):
     def __init__(
             self,
@@ -321,13 +297,8 @@ class Trainer(BaseTrainer):
                 step = timer.iterations
 
         if step is not None:
-            metrics.update({f'{job_type}_step': step})
+            metrics.update({f'{job_type[0]}step': step})
 
-        # record.update({
-        #     'loss': metrics.get('loss', None),
-        #     'dQint': metrics.get('dQint', None),
-        #     'dQsin': metrics.get('dQsin', None),
-        # })
         if job_type == 'train' and step is not None:
             metrics['lr'] = K.get_value(self.optimizer.lr)
 
@@ -366,8 +337,8 @@ class Trainer(BaseTrainer):
 
     def track_metrics(
             self,
-            record: dict[str, Tensor],
-            avgs: dict[str, Tensor],
+            record: dict[str, TensorLike | ScalarLike],
+            avgs: dict[str, TensorLike | ScalarLike],
             job_type: str,
             step: Optional[int],
             run: Optional[Any] = None,
@@ -443,6 +414,12 @@ class Trainer(BaseTrainer):
                        jit_compile=JIT_COMPILE)
         """
         assert self.dynamics is not None
+        if inputs[0].shape != self.dynamics.xshape:
+            x = tf.reshape(
+                    inputs[0],
+                    (inputs[0].shape[0],
+                     *self.dynamics.xshape[1:]))
+            inputs = (x, *inputs[1:])
         xout, metrics = self.dynamics(inputs, training=False)  # type:ignore
         xout = self.g.compat_proj(xout)
         xp = metrics.pop('mc_states').proposed.x
@@ -455,7 +432,6 @@ class Trainer(BaseTrainer):
             'beta': inputs[1],
             'loss': loss,
         })
-        metrics.update({'loss': loss})
         assert isinstance(metrics, dict)
 
         return xout, metrics
@@ -578,6 +554,7 @@ class Trainer(BaseTrainer):
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
+            dynamic_step_size:  Optional[bool] = None,
     ) -> dict:
         """Evaluate model."""
         assert job_type in ['hmc', 'eval']
@@ -613,10 +590,11 @@ class Trainer(BaseTrainer):
             and x is not None
             and beta is not None
         )
+        if job_type == 'hmc':
+            assert eps is not None
 
         def eval_fn(inputs: tuple[Tensor, Tensor]) -> tuple[Tensor, dict]:
             if job_type == 'hmc':
-                assert eps is not None
                 return self.hmc_step(inputs, eps=eps, nleapfrog=nleapfrog)
             return self.eval_step(inputs)  # type:ignore
 
@@ -627,7 +605,7 @@ class Trainer(BaseTrainer):
                 dt = timer.stop()
                 if step % setup['nprint'] == 0 or step % setup['nlog'] == 0:
                     record = {
-                        f'{job_type}_step': step,
+                        f'{job_type[0]}step': step,
                         'dt': dt,
                         'beta': beta,
                         'loss': metrics.pop('loss', None),
@@ -635,7 +613,7 @@ class Trainer(BaseTrainer):
                         'dQint': metrics.pop('dQint', None),
                     }
                     record.update(metrics)
-                    if job_type == 'hmc':
+                    if job_type == 'hmc' and dynamic_step_size:
                         acc = metrics.get('acc_mask', None)
                         record['eps'] = eps
                         if acc is not None and eps is not None:
@@ -712,11 +690,6 @@ class Trainer(BaseTrainer):
             ```
         """
         xinit, beta = inputs
-        # xinit = self.dynamics.g.compat_proj(xinit)
-        # should_clip = (
-        #     (self.lr_config.clip_norm > 0)
-        #     if clip_grads is None else clip_grads
-        # )
         aw = self.config.loss.aux_weight
         assert (
             self.dynamics is not None
@@ -816,7 +789,8 @@ class Trainer(BaseTrainer):
                 #             or self.should_log(epoch)
                 #         )
                 # ):
-                if self.should_print(epoch) or self.should_log(epoch):
+                # if self.should_print(epoch) or self.should_log(epoch):
+                if self.should_log(epoch):
                     record = {
                         'era': era,
                         'epoch': epoch,
@@ -840,12 +814,12 @@ class Trainer(BaseTrainer):
                     )
                     rows[self._gstep] = avgs
                     summaries.append(summary)
+                    log.info(summary)
 
-                    if (
-                            self.should_print(epoch)
-                            # and not isinstance(ctx, Live)
-                    ):
-                        log.info(summary)
+                    # if (
+                    #         self.should_print(epoch)
+                    #         # and not isinstance(ctx, Live)
+                    # ):
 
                     table = self.update_table(
                         table=table,
@@ -1126,49 +1100,24 @@ class Trainer(BaseTrainer):
             # key: str = '',
     ):
         """Consistently convert `metric` to np.ndarray."""
-        if isinstance(metric, np.ScalarType):
-            return metric
+        if isinstance(metric, (float, np.ScalarType)):
+            return np.array(metric)
 
-        if isinstance(metric, np.ndarray):
-            return metric  # [~np.isnan(metric)]
-
+        if isinstance(metric, list):
+            if isinstance(metric[0], Tensor):
+                return tf.stack(metric)
+            if isinstance(metric[0], np.ndarray):
+                return np.stack(metric)
         if (
                 isinstance(metric, Tensor)
                 and hasattr(metric, 'numpy')
                 and isinstance(metric.numpy, Callable)
         ):
-            # tmp = metric.numpy()
-            # return tmp[~np.isnan(tmp)]
             return metric.numpy()
 
-        elif isinstance(metric, list):
-            if isinstance(metric[0], np.ndarray):
-                # metric = np.stack(metric)
-                # return metric[~np.isnan(metric)]
-                metric = np.stack(metric)
-
-            if isinstance(metric[0], Tensor):
-                stack = tf.stack(metric)
-                # stack = tf.stack(metric)
-                # stack = stack[~tf.math.is_nan(stack)]
-                if (
-                        hasattr(stack, 'numpy')
-                        and isinstance(stack.numpy, Callable)
-                ):
-                    return stack.numpy()
-            else:
-                return np.array(metric)
-                # tmp = np.array(metric)
-                # return tmp[~np.isnan(tmp)]
-
-            # tmp = np.array(metric)
-            # return tmp[~np.isnan(tmp)]
-            return np.array(metric)
-
-        else:
-            raise ValueError(
-                f'Unexpected type for metric: {type(metric)}'
-            )
+        raise ValueError(
+            f'Unexpected type for metric: {type(metric)}'
+        )
 
     def aim_track(
             self,
@@ -1182,7 +1131,7 @@ class Trainer(BaseTrainer):
         dtype = getattr(step, 'dtype', None)
         if dtype is not None and dtype in NP_INT:
             try:
-                step = step.item()  # type:ignore
+                step = step.item()
             except AttributeError:
                 pass
 

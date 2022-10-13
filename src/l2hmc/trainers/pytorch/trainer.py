@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 trainer.py
 
@@ -29,7 +28,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from tqdm import trange
 import wandb
 
-from l2hmc.common import setup_torch_distributed
+from l2hmc.common import ScalarLike, TensorLike, setup_torch_distributed
 from l2hmc.configs import ExperimentConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.group.su3.pytorch.group import SU3
@@ -48,7 +47,6 @@ from l2hmc.utils.step_timer import StepTimer
 # WIDTH = int(os.environ.get('COLUMNS', 150))
 
 log = logging.getLogger(__name__)
-# console = Console(theme=Theme({'logging.level.custom': 'green'}))
 console = get_console()
 
 logging.basicConfig(
@@ -69,12 +67,6 @@ logging.addLevelName(70, 'CUSTOM')
 
 Tensor = torch.Tensor
 Module = torch.nn.modules.Module
-
-
-# LOCAL_RANK = os.environ.get('OMPI_COMM_WORLD_LOCAL_RANK', '0')
-# SIZE = hvd.size()
-# RANK = hvd.rank()
-# LOCAL_RANK = hvd.local_rank()
 
 WITH_CUDA = torch.cuda.is_available()
 
@@ -97,6 +89,8 @@ class Trainer(BaseTrainer):
             skip: Optional[str | list[str]] = None,
     ) -> None:
         super(Trainer, self).__init__(cfg=cfg, keep=keep, skip=skip)
+        # skip_tracking = os.environ.get('SKIP_TRACKING', False)
+        # self.verbose = not skip_tracking
         assert isinstance(self.config, ExperimentConfig)
         self._gstep = 0
         dsetup = setup_torch_distributed(self.config.backend)
@@ -133,11 +127,6 @@ class Trainer(BaseTrainer):
             self.config.learning_rate.lr_init,
             2 * self.steps.nepoch
         )
-        # self.optimizer = self.build_optimizer()
-        # self.lr_schedule = self.build_lr_schedule()
-        # self.rank = hvd.local_rank()
-        # self.global_rank = hvd.rank()
-        # self._is_chief = self.rank == 0
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         assert (
             isinstance(self.dynamics, Dynamics)
@@ -150,15 +139,6 @@ class Trainer(BaseTrainer):
             self.g = SU3()
         else:
             raise ValueError
-        # if self.config.dynamics.group == 'U1':
-        #     self.g = U1Phase()
-        # elif self.config.dynamics.group == 'SU3':
-        #     self.g = SU3()
-        # else:
-        #     raise ValueError
-        # self.verbose = self.config.dynamics.verbose
-        # skip_tracking = os.environ.get('SKIP_TRACKING', False)
-        # self.verbose = not skip_tracking
         self.clip_norm = self.config.learning_rate.clip_norm
         if self.config.backend in ['hvd', 'horovod']:
             compression = (
@@ -175,18 +155,6 @@ class Trainer(BaseTrainer):
             hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
         else:
             self.optimizer = self._optimizer
-        # self.optimizer = hvd.DistributedOptimizer(
-        #         self.optimizer,
-        #         # named_parameters=self.dynamics.named_parameters(),
-        #         # op=hvd.Average,
-        #         # op=hvd.Adasum if cfg.use_adasum else hvd.Average,
-        # )
-        # hvd.broadcast_parameters(self.dynamics.networks.state_dict(),
-        #                          root_rank=0)
-        # hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
-        # self.device = hvd.local_rank()
-        # self.rank = hvd.local_rank()
-        # self.rank = self.accelerator.local_process_index
 
     def warning(self, s: str):
         if self._is_chief:
@@ -251,20 +219,6 @@ class Trainer(BaseTrainer):
         if torch.cuda.is_available():
             dynamics.cuda()
 
-        # state = dynamics.random_state(1.)
-        # for step in range(self.config.dynamics.nleapfrog):
-        #     xn0 = dynamics._get_xnet(step, first=True)
-        #     xn1 = dynamics._get_xnet(step, first=True)
-        #     vn = dynamics._get_vnet(step)
-        #     if torch.cuda.is_available():
-        #         xn0, xn1, vn = xn0.cuda(), xn1.cuda(), vn.cuda()
-        #     xn0 = xn0.float()
-        #     xn1 = xn1.float()
-        #     vn = vn.float()
-        #     _ = dynamics._call_xnet(step, (state.x, state.v), first=True)
-        #     _ = dynamics._call_xnet(step, (state.x, state.v), first=False)
-        #     _ = dynamics._call_vnet(step, (state.x, state.v))
-
         return dynamics
 
     def build_optimizer(
@@ -309,12 +263,6 @@ class Trainer(BaseTrainer):
         assert isinstance(self.dynamics.veps, nn.ParameterList)
         xeps = [e.detach().cpu().numpy() for e in self.dynamics.xeps]
         veps = [e.detach().cpu().numpy() for e in self.dynamics.veps]
-        # xeps = {
-        #     k: grab(v) for k, v in self.dynamics.xeps
-        # }
-        # veps = {
-        #     k: grab(v) for k, v in self.dynamics.veps
-        # }
         ckpt = {
             'era': era,
             'epoch': epoch,
@@ -355,13 +303,6 @@ class Trainer(BaseTrainer):
             or epoch % nlog == 0
         )
 
-        # LOCAL_RANK == 0
-        # return (
-        #     self._is_chief and (
-        #         (epoch % nprint == 0
-        #          or epoch % nlog == 0)
-        #     )
-        # )
         return self._is_chief and emit
 
     def record_metrics(
@@ -374,7 +315,7 @@ class Trainer(BaseTrainer):
             writer: Optional[Any] = None,
             model: Optional[nn.Module | Dynamics] = None,
             optimizer: Optional[Any] = None
-    ):
+    ) -> tuple[dict[str, ScalarLike], str]:
         assert job_type in ['train', 'eval', 'hmc']
         if step is None:
             timer = self.timers.get(job_type, None)
@@ -382,7 +323,7 @@ class Trainer(BaseTrainer):
                 step = timer.iterations
 
         if step is not None:
-            metrics.update({f'{job_type}_step': step})
+            metrics.update({f'{job_type[0]}step': step})
 
         if job_type == 'train' and step is not None:
             metrics['lr'] = self.get_lr(step)
@@ -421,8 +362,8 @@ class Trainer(BaseTrainer):
 
     def track_metrics(
             self,
-            record: dict[str, Tensor],
-            avgs: dict[str, Tensor],
+            record: dict[str, TensorLike | ScalarLike],
+            avgs: dict[str, ScalarLike],
             job_type: str,
             step: Optional[int],
             run: Optional[Any] = None,
@@ -438,7 +379,7 @@ class Trainer(BaseTrainer):
                 f'dQint/{job_type}': {
                     'val': dQint,
                     'step': step,
-                    'avg': dQint.mean(),
+                    'avg': dQint.mean(),  # type:ignore
                 }
             }
 
@@ -490,9 +431,6 @@ class Trainer(BaseTrainer):
                     self.config.learning_rate.clip_norm,
             )
 
-        # self.accelerator.backward(loss)
-        # self.accelerator.clip_grad_norm_(self.dynamics.parameters(),
-        #                                  max_norm=self.clip_norm,)
         self.optimizer.step()
 
         return xout.detach(), metrics
@@ -529,7 +467,7 @@ class Trainer(BaseTrainer):
             lmetrics = self.loss_fn.lattice_metrics(xinit=xi, xout=xo)
             metrics.update(lmetrics)
 
-        metrics.update({'loss': loss.detach().cpu().numpy()})
+        metrics.update({'loss': loss.item()})
         return xo.detach(), metrics
 
     def eval_step(
@@ -551,7 +489,7 @@ class Trainer(BaseTrainer):
             metrics.update(lmetrics)
 
         metrics.update({
-            'loss': loss.detach().cpu().numpy(),
+            'loss': loss.item(),
         })
 
         return xout.detach(), metrics
@@ -575,6 +513,19 @@ class Trainer(BaseTrainer):
             )
 
         return nullcontext()
+
+    def get_printer(self, job_type: str) -> RichTablePrinter | None:
+        if self._is_chief and int(get_width()) > 100:
+            printer = RichTablePrinter(
+                key=f'{job_type[0]}step',
+                fields=LOGGER_FIELDS  # type:ignore
+            )
+
+            printer.hijack_tqdm()
+            # printer.expand = True
+
+            return printer
+        return None
 
     def _setup_eval(
             self,
@@ -650,7 +601,7 @@ class Trainer(BaseTrainer):
         }
         log.info(
             '\n'.join([
-                f'{k} = {v}' for k, v in output.items()
+                f'{k}={v}' for k, v in output.items()
                 if k != 'x'
             ])
         )
@@ -669,6 +620,7 @@ class Trainer(BaseTrainer):
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
+            dynamic_step_size: Optional[bool] = None,
     ) -> dict:
         """Evaluate dynamics."""
 
@@ -691,7 +643,7 @@ class Trainer(BaseTrainer):
         x = setup['x']
         eps = setup['eps']
         beta = setup['beta']
-        table = setup['table']
+        # table = setup['table']
         nleapfrog = setup['nleapfrog']
         eval_steps = setup['eval_steps']
         timer = self.timers[job_type]
@@ -710,12 +662,12 @@ class Trainer(BaseTrainer):
 
         self.dynamics.eval()
         # with self.get_context_manager(table) as ctx:
-        printer = RichTablePrinter(
-            key=f'{job_type}_step',
-            fields=LOGGER_FIELDS  # type:ignore
-        )
-        printer.hijack_tqdm()
-        for step in trange(eval_steps, disable=(not self._is_chief)):
+        printer = self.get_printer(job_type=job_type)
+        for step in trange(
+                eval_steps,
+                dynamic_ncols=True,
+                disable=(not self._is_chief),
+        ):
             timer.start()
             x, metrics = eval_fn((x, beta))
             dt = timer.stop()
@@ -725,7 +677,7 @@ class Trainer(BaseTrainer):
                     or step % setup['nprint'] == 0
             ):
                 record = {
-                    f'{job_type}_step': step,
+                    f'{job_type[0]}step': step,
                     'dt': dt,
                     'beta': beta,
                     'loss': metrics.pop('loss', None),
@@ -733,7 +685,7 @@ class Trainer(BaseTrainer):
                     'dQint': metrics.pop('dQint', None),
                 }
                 record.update(metrics)
-                if job_type == 'hmc':
+                if job_type == 'hmc' and dynamic_step_size:
                     acc = record.get('acc_mask', None)
                     record['eps'] = eps
                     if acc is not None and eps is not None:
@@ -760,8 +712,10 @@ class Trainer(BaseTrainer):
                         step > 0 and
                         step % setup['nprint'] == 0
                 ):
-                    printer.log(avgs)
-                    # log.info(summary)
+                    if printer is not None:
+                        printer.log(avgs)
+                    else:
+                        log.info(summary)
 
                 if avgs.get('acc', 1.0) < 1e-5:
                     if stuck_counter < patience:
@@ -776,7 +730,9 @@ class Trainer(BaseTrainer):
 
         # tables[str(0)] = setup['table']
 
-        printer.finalize()
+        if printer is not None:
+            printer.finalize()
+
         return {
             'timer': timer,
             'history': history,
@@ -863,6 +819,9 @@ class Trainer(BaseTrainer):
         # self.optimizer.step()
         # ---------------------------------------
 
+        if isinstance(loss, Tensor):
+            loss = loss.item()
+
         metrics['loss'] = loss
         if self.config.dynamics.verbose:
             with torch.no_grad():
@@ -895,12 +854,8 @@ class Trainer(BaseTrainer):
         nepoch *= extend
         losses = []
         # ctx = self.get_context_manager(table)
-        printer = RichTablePrinter(
-            key='train_step',
-            fields=LOGGER_FIELDS  # type:ignore
-        )
-        printer.hijack_tqdm()
         # with ctx:
+        printer = self.get_printer(job_type='train')
         for epoch in trange(nepoch, disable=(not self._is_chief)):
             self.timers['train'].start()
             x, metrics = self.train_step((x, beta))  # type:ignore
@@ -908,13 +863,13 @@ class Trainer(BaseTrainer):
             losses.append(metrics['loss'])
             if (
                     epoch == 0
-                    or self.should_print(epoch)
+                    # or self.should_print(epoch)
                     or self.should_log(epoch)
             ):
                 record = {
                     'era': era,
                     'epoch': epoch,
-                    'train_step': self._gstep,
+                    'tstep': self._gstep,
                     'dt': dt,
                     'beta': beta,
                     'loss': metrics.pop('loss', None),
@@ -937,11 +892,14 @@ class Trainer(BaseTrainer):
 
                 if (
                         epoch > 0 and
-                        self.should_print(epoch)
+                        self.should_log(epoch)
+                        # self.should_print(epoch)
                         # and not isinstance(ctx, Live)
                 ):
-                    # log.info(summary)
-                    printer.log(avgs)
+                    if printer is not None:
+                        printer.log(avgs)
+                    else:
+                        log.info(summary)
 
                 # table = self.update_table(
                 #     table=table,
@@ -959,7 +917,9 @@ class Trainer(BaseTrainer):
             #     ctx.console.clear()
             #     ctx.console.clear_live()
 
-        printer.finalize()
+        if printer is not None:
+            printer.finalize()
+
         data = {
             'rows': rows,
             'table': table,
@@ -1019,13 +979,13 @@ class Trainer(BaseTrainer):
                 # ):
                 if (
                         epoch == 0
-                        or self.should_print(epoch)
+                        # or self.should_print(epoch)
                         or self.should_log(epoch)
                 ):
                     record = {
                         'era': era,
                         'epoch': epoch,
-                        'train_step': self._gstep,
+                        'tstep': self._gstep,
                         'dt': dt,
                         'beta': beta,
                         'loss': metrics.pop('loss', None),
@@ -1175,6 +1135,7 @@ class Trainer(BaseTrainer):
         assert x is not None
         assert nera is not None
         assert train_dir is not None
+        # for era in trange(nera, disable=(not self._is_chief)):
         for era in range(nera):
             b = torch.tensor(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
@@ -1203,7 +1164,7 @@ class Trainer(BaseTrainer):
             self.rows['train'][str(era)] = edata['rows']
             self.tables['train'][str(era)] = edata['table']
             self.summaries['train'][str(era)] = edata['summaries']
-            losses = torch.stack(edata['losses'][1:])
+            losses = torch.Tensor([i for i in edata['losses'][1:]])
             if self.config.annealing_schedule.dynamic:
                 dy_avg = (losses[1:] - losses[:-1]).mean().item()
                 if dy_avg > 0:
@@ -1337,10 +1298,6 @@ class Trainer(BaseTrainer):
             except TypeError:
                 metric = torch.tensor(0.0)
 
-        # arr = metric.detach().cpu().numpy()
-        # arr = arr[~np.isnan(arr)]
-        # arr = arr[~np.isnan(arr)]
-        # return arr
         return metric.detach().cpu().numpy()
 
     def aim_track(
