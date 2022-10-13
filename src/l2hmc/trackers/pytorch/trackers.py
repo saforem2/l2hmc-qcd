@@ -9,7 +9,7 @@ from typing import Optional, Union
 import numpy as np
 import torch
 from torch.utils.tensorboard.writer import SummaryWriter
-from l2hmc.common import grab_tensor
+# from l2hmc.common import grab_tensor
 
 # from l2hmc.common import grab_tensor
 
@@ -26,7 +26,7 @@ def log_dict(
         d: dict,
         step: Optional[int] = None,
         prefix: Optional[str] = None
-):
+) -> None:
     """Create TensorBoard summaries for all items in `d`."""
     for key, val in d.items():
 
@@ -42,7 +42,7 @@ def log_list(
         x: list,
         prefix: str,
         step: Optional[int] = None,
-):
+) -> None:
     """Create TensorBoard summaries for all entries in `x`."""
     for t in x:
         # if isinstance(t, Tensor):
@@ -55,55 +55,55 @@ def log_list(
         log_item(writer=writer, val=t, step=step, tag=tag)
 
 
+def log_step(
+        tag: str,
+        step: int,
+        writer: SummaryWriter
+) -> None:
+    iter_tag = '/'.join([tag.split('/')[0]] + ['iter'])
+    writer.add_scalar(tag=iter_tag, scalar_value=step, global_step=step)
+
+
+def check_tag(tag: str) -> str:
+    tags = tag.split('/')
+    if len(tags) > 2 and (tags[0] == tags[1]):
+        return '/'.join(tags[1:])
+    return tag
+
+
 def log_item(
         tag: str,
         val: float | int | bool | list | np.ndarray | torch.Tensor,
         writer: SummaryWriter,
         step: Optional[int] = None,
-):
+) -> None:
     if step is not None:
-        iter_tag = '/'.join([tag.split('/')[0]] + ['iter'])
-        writer.add_scalar(tag=iter_tag, scalar_value=step, global_step=step)
+        log_step(tag, step, writer)
 
-    if isinstance(val, list):
+    tag = check_tag(tag)
+    if isinstance(val, (Tensor, Array)):
+        if (
+                (isinstance(val, Tensor) and torch.is_complex(val))
+                or (isinstance(val, Array) and np.iscomplexobj(val))
+        ):
+            log_item(tag=f'{tag}.real', val=val.real, writer=writer, step=step)
+            log_item(tag=f'{tag}.imag', val=val.imag, writer=writer, step=step)
+        elif len(val.shape) > 0:
+            writer.add_scalar(f'{tag}/avg', val.mean(), global_step=step)
+            if len(val.shape) > 0:
+                try:
+                    writer.add_histogram(
+                        tag=tag,
+                        values=val,
+                        global_step=step
+                    )
+                except ValueError:
+                    log.error(f'Error adding histogram for: {tag}')
+        else:
+            writer.add_scalar(tag, val, global_step=step)
+
+    elif isinstance(val, list):
         log_list(writer=writer, x=val, step=step, prefix=tag)
-
-    elif isinstance(val, (Tensor, Array)):
-        if isinstance(val, torch.Tensor):
-            # arr = val.detach().cpu().numpy()
-            arr = grab_tensor(val)
-        else:
-            arr = np.array(val)
-
-        assert isinstance(arr, np.ndarray)
-
-        arr = arr[~np.isnan(arr)]
-        if np.iscomplexobj(arr):
-            log_item(
-                tag=f'{tag}.real',
-                val=arr.real,
-                writer=writer,
-                step=step
-            )
-            log_item(
-                tag=f'{tag}.imag',
-                val=arr.imag,
-                writer=writer,
-                step=step
-            )
-        else:
-            if len(arr) > 0:
-                writer.add_scalar(f'{tag}/avg', arr.mean(), global_step=step)
-                if len(arr.shape) > 0:
-                    try:
-                        writer.add_histogram(
-                            tag=tag,
-                            values=val,
-                            global_step=step
-                        )
-                    except ValueError:
-                        log.error(f'Error adding histogram for: {tag}')
-                        # log.exception(e)
 
     elif (
             isinstance(val, (float, int, bool, np.floating))

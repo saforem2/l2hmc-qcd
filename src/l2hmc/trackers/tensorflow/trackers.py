@@ -20,38 +20,73 @@ Array = np.ndarray
 Scalar = Union[float, int, bool]
 ArrayLike = Union[Tensor, Array, Scalar]
 
+tfComplex = [tf.dtypes.complex64, tf.dtypes.complex128]
+
+
+def log_step(tag: str, step: int) -> None:
+    iter_tag = '/'.join([tag.split('/')[0]] + ['iter'])
+    tf.summary.scalar(iter_tag, step, step=step)
+
+
+def check_tag(tag: str) -> str:
+    tags = tag.split('/')
+    if len(tags) > 2 and (tags[0] == tags[1]):
+        return '/'.join(tags[1:])
+    return tag
+
 
 def log_item(
         tag: str,
-        val: ArrayLike,
+        val: float | int | bool | list | np.ndarray | tf.Tensor,
         step: Optional[int] = None,
 ):
     if step is not None:
-        iter_tag = '/'.join([tag.split('/')[0]] + ['iter'])
-        tf.summary.scalar(iter_tag, step, step=step)
+        log_step(tag, step)
 
+    tag = check_tag(tag)
+    # if tf.math.reduce_sum(tf.math.imag(val)) != 0.0:
+    # if tf.math.conj(val) == tf.constant(val):
+    # if isinstance(val, (tf.Tensor, np.ndarray)):
     if isinstance(val, list):
         log_list(val, step=step, prefix=tag)
 
-    if isinstance(val, (Tensor, Array)):
-        if len(val.shape) > 0:
+    elif (
+            isinstance(val, (float, int, np.floating, np.integer, bool))
+            or len(val.shape) == 0
+    ):
+        tf.summary.scalar(f'{tag}', val, step=step)
+
+    elif isinstance(val, (tf.Tensor, np.ndarray)):
+        if (
+            (isinstance(val, tf.Tensor) and val.dtype in tfComplex)
+            or isinstance(val, np.ndarray) and np.iscomplexobj(val)
+        ):
+            log_item(
+                tag=f'{tag}.imag',
+                val=tf.math.imag(val),
+                step=step
+            )
+            log_item(
+                tag=f'{tag}.real',
+                val=tf.math.real(val),
+                step=step
+            )
+        elif hasattr(val, 'shape') and len(getattr(val, 'shape', [])) > 0:
+            tf.summary.scalar(f'{tag}/avg', tf.reduce_mean(val), step=step)
+            tf.summary.histogram(tag, val, step=step)
+        else:
+            tf.summary.scalar(f'{tag}', val, step=step)
+    else:
+        if hasattr(val, 'shape') and len(getattr(val, 'shape', [])) > 0:
             tf.summary.histogram(tag, val, step=step)
             tf.summary.scalar(f'{tag}/avg', tf.reduce_mean(val), step=step)
-    elif isinstance(val, (int, float, bool)) or len(val.shape) == 0:
-        tf.summary.scalar(tag, val, step=step)
-
-    # if (
-    #         'dt' in tag
-    #         # or 'beta' in tag
-    #         or 'era' in tag
-    #         or 'epoch' in tag
-    #         or 'loss' in tag
-    #         or isinstance(val, (int, float, bool))
-    # ):
-    #     tf.summary.scalar(tag, val, step=step)
-    # else:
-    #     tf.summary.histogram(tag, val, step=step)
-    #     tf.summary.scalar(f'{tag}/avg', tf.reduce_mean(val), step=step)
+        else:
+            try:
+                tf.summary.scalar(tag, val, step=step)
+            except Exception as e:
+                log.exception(e)
+                log.warning(f'Unexpected type encountered for: {tag}')
+                log.warning(f'{tag}.type: {type(val)}')
 
 
 def log_dict(d: dict, step: int, prefix: Optional[str] = None):
