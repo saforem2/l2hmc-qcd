@@ -1,16 +1,8 @@
 #!/bin/bash
-#COBALT -n 1
-#COBALT -q single-gpu
-#COBALT -A DLHMC
-#COBALT --attrs filesystems=home,theta-fs0,grand,eagle
 # -------------------------------------------------------
 # UG Section 2.5, page UG-24 Job Submission Options
 # Add another # at the beginning of the line to comment out a line
 # NOTE: adding a switch to the command line will override values in this file.
-
-# These options are MANDATORY at ALCF; Your qsub will fail if you don't provide them.
-#PBS -A <short project name>
-#PBS -l walltime=HH:MM:SS
 
 # Highly recommended 
 # The first 15 characters of the job name are displayed in the qstat output:
@@ -27,11 +19,6 @@
 #PBS -o <path for stdout>
 #PBS -k doe
 #PBS -e <path for stderr>
-# Setting job dependencies
-# UG Section 6.2, page UG-107 Using Job Dependencies
-# There are many options for how to set up dependancies;  afterok will give behavior similar
-# to Cobalt (uncomment to use)
-##PBS depend=afterok:<jobid>:<jobid>
 
 # Environment variables (uncomment to use)
 # Section 6.12, page UG-126 Using Environment Variables
@@ -54,10 +41,9 @@ echo "DIR:$DIR"
 MAIN="${DIR}/main.py"
 PARENT=$(dirname $DIR)
 ROOT=$(dirname $PARENT)
-# ROOT=$(dirname $PARENT)
 
 echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
-echo "┃  Job started at: ${TSTAMP} on ${HOST}                         ┃"
+echo "┃  Job started at: ${TSTAMP} on ${HOST}           ┃"
 echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
 
 NCPUS=$(getconf _NPROCESSORS_ONLN)
@@ -77,18 +63,20 @@ if [[ $(hostname) == theta* ]]; then
     -x LD_LIBRARY_PATH"
   module load conda/2022-07-01
   conda activate base
-  VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-01/"
+  VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-01"
 
 # ---- Check if running on Polaris -----------------------------
 elif [[ $(hostname) == x* ]]; then
-  echo Working directory is $PBS_O_WORKDIR
-  cd $PBS_O_WORKDIR
+  # echo Working directory is $PBS_O_WORKDIR
+  # cd $PBS_O_WORKDIR
   export IBV_FORK_SAFE=1
+  export NCCL_COLLNET_ENABLE=1
   NRANKS=$(wc -l < ${PBS_NODEFILE})
   HOSTFILE=${PBS_NODEFILE}
   NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
   NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
   MPI_COMMAND=$(which mpiexec)
+  # --cpu-bind verbose,list:0,8,16,24 \
   MPI_FLAGS="--verbose \
     --envall \
     -n ${NGPUS} \
@@ -97,7 +85,7 @@ elif [[ $(hostname) == x* ]]; then
     --hostfile ${HOSTFILE}"
   module load conda/2022-09-08
   conda activate base
-  VENV_DIR="${ROOT}/venvs/polaris/2022-09-08/"
+  VENV_DIR="${ROOT}/venvs/polaris/2022-09-08"
 
 # ---- Check if running on MacOS --------------------------------
 else
@@ -170,6 +158,9 @@ fi
 
 # ---- Environment settings -----------------------------------------------
 export OMP_NUM_THREADS=$NCPUS
+export WIDTH=$COLUMNS
+export COLUMNS=$COLUMNS
+echo "WIDTH: ${COLUMNS}"
 # export NCCL_DEBUG=INFO
 # export KMP_SETTINGS=TRUE
 # export OMPI_MCA_opal_cuda_support=TRUE
@@ -203,7 +194,7 @@ EXEC="${MPI_COMMAND} ${MPI_FLAGS} $(which python3) ${MAIN}"
 
 # ---- Print job information -------------------------------------------------
 echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
-echo "┃  STARTING A NEW RUN ON ${NGPU} GPUs ${NCPUS}   ┃"
+echo "┃  STARTING A NEW RUN ON ${NGPUS} GPUs ${NCPUS}  ┃"
 echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
 echo -e '\n'
 printf '%.s─' $(seq 1 $(tput cols))
@@ -223,6 +214,9 @@ echo -e '\n'
 
 
 # Run executable command
-${EXEC} $@ > ${LOGFILE}; ret_code=$?
+# WIDTH=$COLUMNS COLUMNS=$COLUMNS ${EXEC} $@ 2>&1 | tee ${LOGFILE}  # > ${LOGFILE}; ret_code=$?
+WIDTH=$COLUMNS COLUMNS=$COLUMNS ${EXEC} $@ 2>&1 > ${LOGFILE}; ret_code=$?
 
 if [[ $ret_code != 0 ]]; then exit $ret_code; fi
+
+wait
