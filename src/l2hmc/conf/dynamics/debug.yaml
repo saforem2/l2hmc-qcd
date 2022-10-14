@@ -1,10 +1,10 @@
 _target_: l2hmc.configs.DynamicsConfig
 
-eps: 0.125
+eps: 0.05
 group: 'U1'
 verbose: true
-nchains: 128
-nleapfrog: 5
+nchains: 512
+nleapfrog: 6
 eps_hmc: null
 use_ncp: true
 eps_fixed: false
