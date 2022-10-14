@@ -490,16 +490,25 @@ class Annealear:
 @dataclass
 class ConvolutionConfig(BaseConfig):
     filters: List[int]
-    sizes: List[int]
-    pool: Optional[List[int]] = None
+    sizes: int | List[int]
+    pool: Optional[int | List[int]] = None
     # activation: str
     # paddings: list[int]
 
     def __post_init__(self):
+        if isinstance(self.sizes, int):
+            self.sizes = len(self.filters) * self.sizes
+        if isinstance(self.pool, int):
+            self.pool = len(self.filters) * self.pool
+
         if self.pool is None:
             self.pool = len(self.filters) * [2]
+        try:
+            p = self.pool[0]
+        except IndexError:
+            p = 2
         if len(self.pool) != len(self.filters):
-            self.pool = len(self.filters) * [self.pool[0]]
+            self.pool = len(self.filters) * [p]
         assert self.pool is not None
 
     def to_str(self):
@@ -539,7 +548,6 @@ class DynamicsConfig(BaseConfig):
     nchains: int
     group: str
     latvolume: List[int]
-    # xshape: List[int]
     nleapfrog: int
     eps: float = 0.01
     eps_hmc: float = 0.01
