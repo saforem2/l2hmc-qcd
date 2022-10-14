@@ -29,6 +29,8 @@ xplt = xr.plot  # type: ignore
 
 LW = plt.rcParams.get('axes.linewidth', 1.75)
 
+plt.rcParams['svg.fonttype'] = 'none'
+
 COLORS = {
     'blue':     '#2196F3',
     'red':      '#EF5350',
@@ -925,8 +927,8 @@ def make_ridgeplots(
                     pngdir.mkdir(exist_ok=True, parents=True)
 
                     log.warning(f'Saving figure to: {fsvg.as_posix()}')
-                    plt.savefig(fsvg.as_posix(), dpi=500, bbox_inches='tight')
-                    plt.savefig(fpng.as_posix(), dpi=500, bbox_inches='tight')
+                    plt.savefig(fsvg.as_posix(), bbox_inches='tight')  # , dpi=500)
+                    plt.savefig(fpng.as_posix(), bbox_inches='tight')  # , dpi=500)
 
         # plt.close('all')
 
