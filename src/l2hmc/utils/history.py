@@ -24,7 +24,7 @@ import l2hmc.utils.plot_helpers as hplt
 
 # TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray]
 TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray, list]
-ScalarLike = Union[float, int, bool, np.floating]
+ScalarLike = Union[float, int, bool, np.floating, np.integer]
 
 PT_FLOAT = torch.get_default_dtype()
 TF_FLOAT = tf.dtypes.as_dtype(tf.keras.backend.floatx())
@@ -37,8 +37,14 @@ xplt = xr.plot  # type:ignore
 LW = plt.rcParams.get('axes.linewidth', 1.75)
 
 
+def format_pair(k: str, v: ScalarLike) -> str:
+    if isinstance(v, (int, bool, np.integer)):
+        return f'{k}={v:<3}'
+    return f'{k}={v:<3.4f}'
+
+
 def summarize_dict(d: dict) -> str:
-    return ' '.join([f'{k}={v:<3.2}' for k, v in d.items()])
+    return ' '.join([format_pair(k, v) for k, v in d.items()])
 
 
 @dataclass
@@ -79,16 +85,6 @@ class BaseHistory:
             and v is not None
         ])
 
-    def _update(self, key: str, val: Any) -> np.floating:
-        try:
-            self.history[key].append(val)
-        except KeyError:
-            self.history[key] = [val]
-
-        avg = np.mean(val).real
-        assert isinstance(avg, np.floating)
-        return avg
-
     def metric_to_numpy(
             self,
             metric: Any,
@@ -112,7 +108,38 @@ class BaseHistory:
 
         return np.array(metric)
 
-    def update(self, metrics: dict) -> dict:
+    def _update(
+            self,
+            key: str,
+            val: Any
+    ) -> float | int | bool | np.floating | np.integer:
+        try:
+            self.history[key].append(val)
+        except KeyError:
+            self.history[key] = [val]
+
+        # ScalarLike = Union[float, int, bool, np.floating]
+        if isinstance(val, (float, int, bool, np.floating, np.integer)):
+            return val
+        # if (
+        #         isinstance(
+        #             val,
+        #             (float, int, bool, np.floating, np.integer)
+        #         )
+        #         # or key in ['era', 'epoch']
+        #         # or 'step' in key
+        # ):
+        #     # assert val is not None and isinstance(val, ScalarLike)
+        #     return val
+
+        avg = np.mean(val).real
+        assert isinstance(avg, np.floating)
+        return avg
+
+    def update(
+            self,
+            metrics: dict
+    ) -> dict[str, Any]:
         avgs = {}
         era = metrics.get('era', None)
         avg = 0.0

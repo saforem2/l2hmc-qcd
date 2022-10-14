@@ -5,11 +5,20 @@ from __future__ import absolute_import, annotations, division, print_function
 
 
 LOGGER_FIELDS = {
-    'era': {'format': '{:^1g}'},
-    'epoch': {'format': '{:^2g}'},
-    'train_step': {'format': '{:^3g}'},
-    'eval_step': {'format': '{:^3g}'},
-    'hmc_step': {'format': '{:^3g}'},
+    'era': {},
+    'epoch': {},
+    'tstep': {
+        # 'format': '{:^1g}',
+        # 'name': r'tstep',
+    },
+    'estep': {
+        # 'format': '{:^1g}',
+        # 'name': 'estep',
+    },
+    'hstep': {
+        # 'format': '{:^1g}',
+        # 'name': 'hstep',
+    },
     'dt': {
         'format': '{:^3.4f}',
     },
