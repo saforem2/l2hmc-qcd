@@ -50,6 +50,8 @@ NCPUS=$(getconf _NPROCESSORS_ONLN)
 
 # ---- Check if running on ThetaGPU ----------------------------
 if [[ $(hostname) == theta* ]]; then
+  module load conda/2022-07-01
+  conda activate base
   NRANKS=$(wc -l < ${COBALT_NODEFILE})
   HOSTFILE=${COBALT_NODEFILE}
   NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
@@ -59,10 +61,12 @@ if [[ $(hostname) == theta* ]]; then
     -n ${NGPUS} \
     --hostfile ${HOSTFILE} \
     -npernode ${NGPU_PER_RANK} \
+    -x PYTHONUSERBASE \
+    -x PYTHONSTARTUP \
+    -x http_proxy \
+    -x https_proxy \
     -x PATH \
     -x LD_LIBRARY_PATH"
-  module load conda/2022-07-01
-  conda activate base
   VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-01"
 
 # ---- Check if running on Polaris -----------------------------
@@ -161,8 +165,8 @@ export OMP_NUM_THREADS=$NCPUS
 export WIDTH=$COLUMNS
 export COLUMNS=$COLUMNS
 echo "WIDTH: ${COLUMNS}"
-# export NCCL_DEBUG=INFO
-# export KMP_SETTINGS=TRUE
+export NCCL_DEBUG=INFO
+export KMP_SETTINGS=TRUE
 # export OMPI_MCA_opal_cuda_support=TRUE
 # export TF_ENABLE_AUTO_MIXED_PRECISION=1
 # export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/cuda/lib64"
