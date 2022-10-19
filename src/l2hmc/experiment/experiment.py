@@ -293,6 +293,7 @@ class BaseExperiment(ABC):
             summaries: list[str],
             job_type: str,
     ) -> None:
+        # TODO: Deal with `self.trainer.summaries` being dict
         outdir = self.get_jobdir(job_type)
         outfile = outdir.joinpath('summaries.txt')
         with open(outfile.as_posix(), 'a') as f:
