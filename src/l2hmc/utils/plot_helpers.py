@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import xarray as xr
+from l2hmc.utils.rich import is_interactive
 
 # from l2hmc.experiment.pytorch.experiment import Experiment as ptExperiment
 # from l2hmc.experiment.tensorflow.experiment import Experiment as tfExperiment
@@ -97,12 +98,13 @@ def set_plot_style(**kwargs):
     )
     plt.rcParams['axes.labelcolor'] = '#666666'
     plt.rcParams.update(**kwargs)
-    figsize = plt.rcParamsDefault.get('figure.figsize', (4.5, 3))
-    x = figsize[0]
-    y = figsize[1]
-    assert isinstance(x, float) and isinstance(y, float)
-    plt.rcParams['figure.figsize'] = [2.5 * x, 2. * y]
-    plt.rcParams['figure.dpi'] = 400
+    if not is_interactive():
+        assert isinstance(x, float) and isinstance(y, float)
+        figsize = plt.rcParamsDefault.get('figure.figsize', (4.5, 3))
+        x = figsize[0]
+        y = figsize[1]
+        plt.rcParams['figure.figsize'] = [2.5 * x, 2. * y]
+        plt.rcParams['figure.dpi'] = 400
 
 
 def get_timestamp(fstr=None):
@@ -927,8 +929,10 @@ def make_ridgeplots(
                     pngdir.mkdir(exist_ok=True, parents=True)
 
                     log.warning(f'Saving figure to: {fsvg.as_posix()}')
-                    plt.savefig(fsvg.as_posix(), bbox_inches='tight')  # , dpi=500)
-                    plt.savefig(fpng.as_posix(), bbox_inches='tight')  # , dpi=500)
+                    # , dpi=500)
+                    plt.savefig(fsvg.as_posix(), bbox_inches='tight')
+                    # , dpi=500)
+                    plt.savefig(fpng.as_posix(), bbox_inches='tight')
 
         # plt.close('all')
 

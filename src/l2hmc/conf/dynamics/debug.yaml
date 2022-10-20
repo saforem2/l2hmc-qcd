@@ -8,7 +8,7 @@ nleapfrog: 6
 eps_hmc: null
 use_ncp: true
 eps_fixed: false
-latvolume: [8, 8]
+latvolume: [16, 16]
 use_split_xnets: true
 merge_directions: true
 use_separate_networks: true
