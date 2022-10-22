@@ -270,12 +270,12 @@ class Experiment(BaseExperiment):
             eval_steps: Optional[int] = None,
     ) -> dict:
         """Evaluate model."""
+        assert job_type in ['eval', 'hmc']
         if not self.trainer._is_chief:
             return {}
 
-        assert job_type in ['eval', 'hmc']
-        jobdir = self.get_jobdir(job_type)
-        writer = self.get_summary_writer(jobdir)
+        jobdir = self.get_jobdir(job_type=job_type)
+        writer = self.get_summary_writer()
         writer.set_as_default()  # type:ignore
 
         output = self.trainer.eval(
