@@ -44,49 +44,58 @@ def log_item(
         log_step(tag, step)
 
     tag = check_tag(tag)
-    # if tf.math.reduce_sum(tf.math.imag(val)) != 0.0:
-    # if tf.math.conj(val) == tf.constant(val):
-    # if isinstance(val, (tf.Tensor, np.ndarray)):
-    if isinstance(val, list):
+    if isinstance(val, (Tensor, Array)):
+        if (
+            (isinstance(val, Tensor) and val.dtype in tfComplex)
+            or (isinstance(val, Array) and np.iscomplexobj(val))
+        ):
+            log_item(tag=f'{tag}.real', val=tf.math.real(val), step=step)
+            log_item(tag=f'{tag}.imag', val=tf.math.imag(val), step=step)
+        elif hasattr(val, 'shape') and len(getattr(val, 'shape', [])) > 0:
+            tf.summary.scalar(f'{tag}/avg', tf.reduce_mean(val), step=step)
+            tf.summary.histogram(tag, val, step=step)
+        else:
+            tf.summary.scalar(tag, val, step=step)
+    elif isinstance(val, list):
         log_list(val, step=step, prefix=tag)
 
     elif (
             isinstance(val, (float, int, np.floating, np.integer, bool))
             or len(val.shape) == 0
     ):
-        tf.summary.scalar(f'{tag}', val, step=step)
+        tf.summary.scalar(tag, val, step=step)
 
-    elif isinstance(val, (tf.Tensor, np.ndarray)):
-        if (
-            (isinstance(val, tf.Tensor) and val.dtype in tfComplex)
-            or isinstance(val, np.ndarray) and np.iscomplexobj(val)
-        ):
-            log_item(
-                tag=f'{tag}.imag',
-                val=tf.math.imag(val),
-                step=step
-            )
-            log_item(
-                tag=f'{tag}.real',
-                val=tf.math.real(val),
-                step=step
-            )
-        elif hasattr(val, 'shape') and len(getattr(val, 'shape', [])) > 0:
-            tf.summary.scalar(f'{tag}/avg', tf.reduce_mean(val), step=step)
-            tf.summary.histogram(tag, val, step=step)
-        else:
-            tf.summary.scalar(f'{tag}', val, step=step)
-    else:
-        if hasattr(val, 'shape') and len(getattr(val, 'shape', [])) > 0:
-            tf.summary.histogram(tag, val, step=step)
-            tf.summary.scalar(f'{tag}/avg', tf.reduce_mean(val), step=step)
-        else:
-            try:
-                tf.summary.scalar(tag, val, step=step)
-            except Exception as e:
-                log.exception(e)
-                log.warning(f'Unexpected type encountered for: {tag}')
-                log.warning(f'{tag}.type: {type(val)}')
+    # elif isinstance(val, (tf.Tensor, np.ndarray)):
+    #     if (
+    #         (isinstance(val, tf.Tensor) and val.dtype in tfComplex)
+    #         or isinstance(val, np.ndarray) and np.iscomplexobj(val)
+    #     ):
+    #         log_item(
+    #             tag=f'{tag}.imag',
+    #             val=tf.math.imag(val),
+    #             step=step
+    #         )
+    #         log_item(
+    #             tag=f'{tag}.real',
+    #             val=tf.math.real(val),
+    #             step=step
+    #         )
+    #     elif hasattr(val, 'shape') and len(getattr(val, 'shape', [])) > 0:
+    #         tf.summary.scalar(f'{tag}/avg', tf.reduce_mean(val), step=step)
+    #         tf.summary.histogram(tag, val, step=step)
+    #     else:
+    #         tf.summary.scalar(f'{tag}', val, step=step)
+    # else:
+    #     if hasattr(val, 'shape') and len(getattr(val, 'shape', [])) > 0:
+    #         tf.summary.histogram(tag, val, step=step)
+    #         tf.summary.scalar(f'{tag}/avg', tf.reduce_mean(val), step=step)
+    #     else:
+    #         try:
+    #             tf.summary.scalar(tag, val, step=step)
+    #         except Exception as e:
+    #             log.exception(e)
+    #             log.warning(f'Unexpected type encountered for: {tag}')
+    #             log.warning(f'{tag}.type: {type(val)}')
 
 
 def log_dict(d: dict, step: int, prefix: Optional[str] = None):
