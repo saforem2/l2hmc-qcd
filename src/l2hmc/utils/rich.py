@@ -72,15 +72,40 @@ def get_width():
 
 def get_console(width: Optional[int] = None, *args, **kwargs) -> Console:
     interactive = is_interactive()
+    from rich.style import Style
+    styles={
+        'yellow': Style(color='#FFFF00'),
+        'repr.attrib_name': Style(color="#666666"),
+        "hidden": Style(color="#383b3d", dim=True),
+        "error": Style(color="rgb(255,85,85)", bold=True),
+        'info': Style(color='#007DFF'),
+        'logging.level.info': Style(color='#29B6F6'),
+        'logging.level.WARNING': Style(color='#FD971F'),
+        'logging.level.ERROR': Style(color='#FF5252'),
+        'repr.number': Style(color='#AE81FF', bold=False),
+        'log.time': Style(color='#505050'),
+        "highlight": Style(color="#000000", bgcolor="#d73a49", bold=True),
+        "num": Style(color="rgb(139,233,253)", bold=False),
+        "time": Style(color="rgb(139,233,253)", bold=False),
+        "warning": Style(color="rgb(241,250,140)", bold=True),
+    }
+    try:
+        from rich_theme_manager import Theme
+        theme = Theme('dark', styles=styles)
+    except ImportError:
+        from rich.theme import Theme
+        theme = Theme(styles)
+
     console = Console(
         force_jupyter=interactive,
         log_path=False,
-        # color_system='truecolor',
+        theme=theme,
         *args,
-        **kwargs)
+        **kwargs
+    )
     if width is None:
         if is_interactive():
-            columns = 100
+            columns = 120
         else:
             columns = os.environ.get('COLUMNS', os.environ.get('WIDTH', None))
             if columns is None:
