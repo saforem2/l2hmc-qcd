@@ -55,8 +55,14 @@ plt.rcParams.update({
     'xtick.labelcolor': '#666666',
     'axes.edgecolor': '#66666600',
     'axes.labelcolor': '#666666',
+    'grid.linestyle': ':',
+    'grid.alpha': 0.4,
+    'grid.color': '#353535',
+    'path.simplify': True,
+    'savefig.bbox': 'tight',
     # 'axes.labelcolor': (189, 189, 189, 1.0),
-    'grid.color': (0.434, 0.434, 0.434, 0.2),  # #66666602
+    # 'grid.color': (0.434, 0.434, 0.434, 0.2),  # #66666602
+    'legend.labelcolor': '#666666',
     'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
     'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
 })
@@ -99,7 +105,6 @@ def set_plot_style(**kwargs):
     plt.rcParams['axes.labelcolor'] = '#666666'
     plt.rcParams.update(**kwargs)
     if not is_interactive():
-        assert isinstance(x, float) and isinstance(y, float)
         figsize = plt.rcParamsDefault.get('figure.figsize', (4.5, 3))
         x = figsize[0]
         y = figsize[1]
