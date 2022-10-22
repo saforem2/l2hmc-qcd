@@ -890,7 +890,7 @@ class Trainer(BaseTrainer):
                 nera=(self.config.steps.nera if nera is None else nera),
                 nepoch=(self.config.steps.nepoch if nepoch is None else nepoch)
             )
-        elif isinstance(beta, list):
+        elif isinstance(beta, (list, np.ndarray)):
             nera = len(beta)
             betas = {f'{i}': b for i, b in zip(range(nera), beta)}
         elif isinstance(beta, (int, float)):
@@ -911,7 +911,6 @@ class Trainer(BaseTrainer):
             'x': x,
             'nera': nera,
             'nepoch': nepoch,
-            'extend': extend,
             'betas': betas,
             'manager': manager,
             'writer': writer,
@@ -947,7 +946,6 @@ class Trainer(BaseTrainer):
         nera = setup['nera']
         betas = setup['betas']
         nepoch = setup['nepoch']
-        extend = setup['extend']
         manager = setup['manager']
         train_dir = setup['train_dir']
         beta_final = setup['beta_final']
@@ -984,6 +982,7 @@ class Trainer(BaseTrainer):
             self.tables['train'][str(era)] = edata['table']
             self.summaries['train'][str(era)] = edata['summaries']
             losses = tf.stack(edata['losses'][1:])
+
             if self.config.annealing_schedule.dynamic:
                 dy_avg = tf.reduce_mean(
                     losses[1:] - losses[:-1]  # type:ignore

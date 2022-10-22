@@ -1060,23 +1060,20 @@ class Trainer(BaseTrainer):
                 nera=nera,
                 nepoch=nepoch
             )
-
+        elif isinstance(beta, (list, np.ndarray)):
+            nera = len(beta)
+            betas = {f'{i}': b for i, b in zip(range(nera), beta)}
+        elif isinstance(beta, (int, float)):
+            nera = self.config.steps.nera if nera is None else nera
+            betas = {f'{i}': b for i, b in zip(range(nera), nera * [beta])}
+        elif isinstance(beta, dict):
+            nera = len(list(beta.keys()))
+            betas = {f'{i}': b for i, b in beta.items()}
         else:
-            assert isinstance(beta, (float, list, dict))
-            if isinstance(beta, list):
-                nera = len(beta)
-                betas = {f'{i}': b for i, b in zip(range(nera), beta)}
-            elif isinstance(beta, (int, float)):
-                nera = self.config.steps.nera if nera is None else nera
-                betas = {f'{i}': b for i, b in zip(range(nera), nera * [beta])}
-            elif isinstance(beta, dict):
-                nera = len(list(beta.keys()))
-                betas = {f'{i}': b for i, b in beta.items()}
-            else:
-                raise TypeError(
-                    'Expected `beta` to be one of: `float, list, dict`,'
-                    f' received: {type(beta)}'
-                )
+            raise TypeError(
+                'Expected `beta` to be one of: `float, list, dict`,'
+                f' received: {type(beta)}'
+            )
 
         beta_final = list(betas.values())[-1]
         assert beta_final is not None and isinstance(beta_final, float)
@@ -1084,7 +1081,6 @@ class Trainer(BaseTrainer):
             'x': x,
             'nera': nera,
             'nepoch': nepoch,
-            # 'extend': extend,
             'betas': betas,
             'train_dir': train_dir,
             'beta_final': beta_final,
