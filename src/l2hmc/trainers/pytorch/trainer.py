@@ -427,8 +427,8 @@ class Trainer(BaseTrainer):
         loss.backward()
         if self.config.learning_rate.clip_norm > 0.0:
             torch.nn.utils.clip_grad.clip_grad_norm(
-                    self.dynamics.parameters(),
-                    self.config.learning_rate.clip_norm,
+                self.dynamics.parameters(),
+                self.config.learning_rate.clip_norm,
             )
 
         self.optimizer.step()
@@ -572,7 +572,7 @@ class Trainer(BaseTrainer):
         table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
         eval_steps = self.steps.test if eval_steps is None else eval_steps
         assert isinstance(eval_steps, int)
-        nprint = max(1, eval_steps // 50)
+        nprint = max(1, min(50, eval_steps // 50))
         nlog = max((1, min((10, eval_steps))))
         if nlog <= eval_steps:
             nlog = min(10, max(1, eval_steps // 100))
@@ -672,8 +672,8 @@ class Trainer(BaseTrainer):
             x, metrics = eval_fn((x, beta))
             dt = timer.stop()
             if (
-                    step == 0
-                    or step % setup['nlog'] == 0
+                    # step == 0
+                    step % setup['nlog'] == 0
                     or step % setup['nprint'] == 0
             ):
                 record = {
@@ -956,13 +956,7 @@ class Trainer(BaseTrainer):
         ctx = self.get_context_manager(table)
         with ctx:
             if isinstance(ctx, Live):
-                # tstr = ' '.join([
-                #     f'ERA: {era}',
-                #     f'BETA: {beta:.3f}',
-                # ])
-                # ctx._redirect_stdout = T
                 ctx.console.clear_live()
-                # ctx.console.rule(tstr)
                 ctx.update(table)
 
             for epoch in range(nepoch):
@@ -970,17 +964,11 @@ class Trainer(BaseTrainer):
                 x, metrics = self.train_step((x, beta))  # type:ignore
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
-                # if self.should_emit(epoch, nepoch):
-                # if (
-                #         self._is_chief and (
-                #             self.should_print(epoch)
-                #             or self.should_log(epoch)
-                #         )
-                # ):
                 if (
-                        epoch == 0
+                        # epoch == 0
                         # or self.should_print(epoch)
-                        or self.should_log(epoch)
+                        self.should_log(epoch)
+                        or self.should_print(epoch)
                 ):
                     record = {
                         'era': era,
@@ -1008,7 +996,7 @@ class Trainer(BaseTrainer):
 
                     if (
                             self.should_print(epoch)
-                            # and not isinstance(ctx, Live)
+                            and not isinstance(ctx, Live)
                     ):
                         log.info(summary)
 
@@ -1017,10 +1005,6 @@ class Trainer(BaseTrainer):
                         avgs=avgs,
                         step=epoch,
                     )
-                    # if epoch == 0:
-                    #     table = add_columns(avgs, table)
-                    # else:
-                    #     table.add_row(*[f'{v}' for _, v in avgs.items()])
 
                     if avgs.get('acc', 1.0) < 1e-5:
                         self.reset_optimizer()
@@ -1059,34 +1043,40 @@ class Trainer(BaseTrainer):
             if train_dir is None else Path(train_dir)
         )
         train_dir.mkdir(exist_ok=True, parents=True)
-
-        if x is None:
-            x = self.g.random(list(self.xshape)).flatten(1)
-
-        nera = self.config.steps.nera if nera is None else nera
-        nepoch = self.config.steps.nepoch if nepoch is None else nepoch
-        extend = self.config.steps.extend_last_era
         # nprint = min(
         #     getattr(self.steps, 'print', int(nepoch // 10)),
         #     int(nepoch // 5)
         # )
-        assert isinstance(nera, int)
-        assert isinstance(nepoch, int)
 
-        if beta is not None:
-            assert isinstance(beta, (float, list))
-            if isinstance(beta, list):
-                assert len(beta) == nera, 'Expected len(beta) == nera'
-            else:
-                beta = nera * [beta]
+        if x is None:
+            x = self.g.random(list(self.xshape)).flatten(1)
 
-            betas = {f'{i}': b for i, b in zip(range(nera), beta)}
-
-        else:
+        if beta is None:
+            nera = self.config.steps.nera if nera is None else nera
+            nepoch = self.config.steps.nepoch if nepoch is None else nepoch
+            assert isinstance(nera, int)
+            assert isinstance(nepoch, int)
             betas = self.config.annealing_schedule.setup(
                 nera=nera,
-                nepoch=nepoch,
+                nepoch=nepoch
             )
+
+        else:
+            assert isinstance(beta, (float, list, dict))
+            if isinstance(beta, list):
+                nera = len(beta)
+                betas = {f'{i}': b for i, b in zip(range(nera), beta)}
+            elif isinstance(beta, (int, float)):
+                nera = self.config.steps.nera if nera is None else nera
+                betas = {f'{i}': b for i, b in zip(range(nera), nera * [beta])}
+            elif isinstance(beta, dict):
+                nera = len(list(beta.keys()))
+                betas = {f'{i}': b for i, b in beta.items()}
+            else:
+                raise TypeError(
+                    'Expected `beta` to be one of: `float, list, dict`,'
+                    f' received: {type(beta)}'
+                )
 
         beta_final = list(betas.values())[-1]
         assert beta_final is not None and isinstance(beta_final, float)
@@ -1094,7 +1084,7 @@ class Trainer(BaseTrainer):
             'x': x,
             'nera': nera,
             'nepoch': nepoch,
-            'extend': extend,
+            # 'extend': extend,
             'betas': betas,
             'train_dir': train_dir,
             'beta_final': beta_final,
@@ -1129,7 +1119,7 @@ class Trainer(BaseTrainer):
         nera = setup['nera']
         betas = setup['betas']
         nepoch = setup['nepoch']
-        extend = setup['extend']
+        # extend = setup['extend']
         train_dir = setup['train_dir']
         beta_final = setup['beta_final']
         assert x is not None
@@ -1149,7 +1139,7 @@ class Trainer(BaseTrainer):
                 self.console.rule(f'ERA: {era} / {nera}, BETA: {b:.3f}')
 
             epoch_start = time.time()
-            x, edata = self.train_epoch_rich(
+            x, edata = self.train_epoch(
                 x=x,
                 beta=b,
                 era=era,
@@ -1216,7 +1206,7 @@ class Trainer(BaseTrainer):
         nera = setup['nera']
         betas = setup['betas']
         nepoch = setup['nepoch']
-        extend = setup['extend']
+        # extend = setup['extend']
         train_dir = setup['train_dir']
         beta_final = setup['beta_final']
         b = torch.tensor(betas.get(str(era), beta_final))

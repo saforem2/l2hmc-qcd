@@ -416,9 +416,9 @@ class Trainer(BaseTrainer):
         assert self.dynamics is not None
         if inputs[0].shape != self.dynamics.xshape:
             x = tf.reshape(
-                    inputs[0],
-                    (inputs[0].shape[0],
-                     *self.dynamics.xshape[1:]))
+                inputs[0],
+                (inputs[0].shape[0],
+                 *self.dynamics.xshape[1:]))
             inputs = (x, *inputs[1:])
         xout, metrics = self.dynamics(inputs, training=False)  # type:ignore
         xout = self.g.compat_proj(xout)
@@ -511,7 +511,7 @@ class Trainer(BaseTrainer):
         table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
         eval_steps = self.steps.test if eval_steps is None else eval_steps
         assert isinstance(eval_steps, int)
-        nprint = max(1, eval_steps // 20)
+        nprint = max(1, min(50, eval_steps // 50))
         nlog = max((1, min((10, eval_steps))))
         if nlog <= eval_steps:
             nlog = min(10, max(1, eval_steps // 100))
@@ -575,6 +575,12 @@ class Trainer(BaseTrainer):
             eval_steps=eval_steps,
         )
         x = setup['x']
+        if nchains is not None:
+            if x.shape[0] != nchains:
+                log.warning(f'x.shape: {x.shape}')
+                x = x[:nchains, ...]
+                log.warning(f'x[:nchains].shape: {x.shape}')
+
         eps = setup['eps']
         beta = setup['beta']
         table = setup['table']
@@ -603,7 +609,12 @@ class Trainer(BaseTrainer):
                 timer.start()
                 x, metrics = eval_fn((x, beta))  # type:ignore
                 dt = timer.stop()
-                if step % setup['nprint'] == 0 or step % setup['nlog'] == 0:
+                # if step % setup['nprint'] == 0 or step % setup['nlog'] == 0:
+                if (
+                        step == 0
+                        or step % setup['nlog'] == 0
+                        or step % setup['nprint'] == 0
+                ):
                     record = {
                         f'{job_type[0]}step': step,
                         'dt': dt,
@@ -783,14 +794,7 @@ class Trainer(BaseTrainer):
                 x, metrics = self.train_step((x, beta))  # type:ignore
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
-                # if (
-                #         self._is_chief and (
-                #             self.should_print(epoch)
-                #             or self.should_log(epoch)
-                #         )
-                # ):
-                # if self.should_print(epoch) or self.should_log(epoch):
-                if self.should_log(epoch):
+                if self.should_log(epoch) or self.should_print(epoch):
                     record = {
                         'era': era,
                         'epoch': epoch,
@@ -814,22 +818,17 @@ class Trainer(BaseTrainer):
                     )
                     rows[self._gstep] = avgs
                     summaries.append(summary)
-                    log.info(summary)
-
-                    # if (
-                    #         self.should_print(epoch)
-                    #         # and not isinstance(ctx, Live)
-                    # ):
+                    if (
+                            self.should_print(epoch)
+                            and not isinstance(ctx, Live)
+                    ):
+                        log.info(summary)
 
                     table = self.update_table(
                         table=table,
                         step=epoch,
                         avgs=avgs
                     )
-                    # if epoch == 0:
-                    #     table = add_columns(avgs, table)
-                    # else:
-                    #     table.add_row(*[f'{v}' for _, v in avgs.items()])
 
                     if avgs.get('acc', 1.0) < 1e-5:
                         self.reset_optimizer()
@@ -875,29 +874,35 @@ class Trainer(BaseTrainer):
         if x is None:
             x = flatten(self.g.random(list(self.xshape)))
 
-        # -- Setup checkpoint manager for TensorFlow --------
+        # -- Setup checkpoint manager for TensorFlow --------------------------
         manager = self.setup_CheckpointManager(train_dir)
         self._gstep = K.get_value(self.optimizer.iterations)
-        # ----------------------------------------------------
-        # -- Setup Step information (nera, nepoch, etc). -----
+        # -- Setup Step information (nera, nepoch, etc). ----------------------
         nera = self.config.steps.nera if nera is None else nera
         nepoch = self.config.steps.nepoch if nepoch is None else nepoch
         extend = self.config.steps.extend_last_era
         assert isinstance(nera, int)
         assert isinstance(nepoch, int)
 
-        if beta is not None:
-            assert isinstance(beta, (float, list))
-            if isinstance(beta, list):
-                assert len(beta) == nera, 'Expected len(beta) == nera'
-            else:
-                beta = nera * [beta]
-
-            betas = {f'{i}': b for i, b in zip(range(nera), beta)}
-        else:
+        # -- Setup beta information -------------------------------------------
+        if beta is None:
             betas = self.config.annealing_schedule.setup(
-                nera=nera,
-                nepoch=nepoch,
+                nera=(self.config.steps.nera if nera is None else nera),
+                nepoch=(self.config.steps.nepoch if nepoch is None else nepoch)
+            )
+        elif isinstance(beta, list):
+            nera = len(beta)
+            betas = {f'{i}': b for i, b in zip(range(nera), beta)}
+        elif isinstance(beta, (int, float)):
+            nera = self.config.steps.nera if nera is None else nera
+            betas = {f'{i}': b for i, b in zip(range(nera), nera * [beta])}
+        elif isinstance(beta, dict):
+            nera = len(list(beta.keys()))
+            betas = {f'{i}': b for i, b in beta.items()}
+        else:
+            raise TypeError(
+                'Expected `beta` to be one of: `float, int, list, dict`',
+                f' received: {type(beta)}'
             )
 
         beta_final = list(betas.values())[-1]
