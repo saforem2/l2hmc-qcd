@@ -62,9 +62,9 @@ class State:
     def to_numpy(self):
         # type: ignore
         return {
-            'x': self.x.numpy(),
-            'v': self.v.numpy(),
-            'beta': self.beta.numpy(),
+            'x': self.x.numpy(),  # type:ignore
+            'v': self.v.numpy(),  # type:ignore
+            'beta': self.beta.numpy(),  # type:ignore
         }
 
 
@@ -281,13 +281,13 @@ class Dynamics(Model):
 
         x_prop = tf.where(
             tf.cast(mf, bool),
-            fwd['proposed'].x,
-            bwd['proposed'].x
+            self.flatten(fwd['proposed'].x),
+            self.flatten(bwd['proposed'].x)
         )
         v_prop = tf.where(
             tf.cast(mf, bool),
-            fwd['proposed'].v,
-            bwd['proposed'].v
+            self.flatten(fwd['proposed'].v),
+            self.flatten(bwd['proposed'].v)
         )
 
         mfwd = fwd['metrics']
@@ -305,13 +305,13 @@ class Dynamics(Model):
 
         v_out = tf.where(
             tf.cast(ma, bool),
-            v_prop,
-            v_init
+            self.flatten(v_prop),
+            self.flatten(v_init)
         )
         x_out = tf.where(
             tf.cast(ma, bool),
-            x_prop,
-            x_init,
+            self.flatten(x_prop),
+            self.flatten(x_init),
         )
         sumlogdet = tf.where(
             tf.cast(ma_, bool),
@@ -327,6 +327,8 @@ class Dynamics(Model):
 
         metrics = {}
         for (key, vf), (_, vb) in zip(mfwd.items(), mbwd.items()):
+            vf = tf.math.real(vf)
+            vb = tf.math.real(vb)
             try:
                 vfb = ma_ * (mf_ * vf + mb_ * vb)  # + mr_ * v0
             except ValueError:
@@ -720,7 +722,11 @@ class Dynamics(Model):
         x, force = inputs
         vnet = self._get_vnet(step)
         assert callable(vnet)
-        # x = self.g.group_to_vec(x)
+        # if isinstance(self.g, SU3):
+        #     x = tf.reshape(x, self.xshape)
+        #     x = tf.stack([tf.math.real(x), tf.math.imag(x)], 1)
+        #     # force = tf.reshape(force, self.xshape)
+        # # x = self.g.group_to_vec(x)
         return vnet((x, force), training)
 
     def _call_xnet(
