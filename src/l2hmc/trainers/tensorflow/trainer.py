@@ -3,50 +3,42 @@ trainer.py
 Implements methods for training L2HMC sampler
 """
 from __future__ import absolute_import, annotations, division, print_function
+from contextlib import nullcontext
 import logging
 import os
 from pathlib import Path
 import time
 from typing import Any, Callable, Optional
-from omegaconf import DictConfig
-
-import tensorflow as tf
-import tensorflow.python.framework.ops as ops
-import horovod.tensorflow as hvd  # type: ignore
 
 import aim
 from aim import Distribution
-
+import horovod.tensorflow as hvd
 import numpy as np
+from omegaconf import DictConfig
+from rich import box
 from rich.live import Live
 from rich.table import Table
-from rich import box
+import tensorflow as tf
 from tensorflow._api.v2.train import CheckpointManager
-
+import tensorflow.python.framework.ops as ops
 from tensorflow.python.keras import backend as K
+
 from l2hmc.common import ScalarLike
-
-from l2hmc.utils.rich import get_width, is_interactive
 from l2hmc.configs import ExperimentConfig
-from contextlib import nullcontext
-
-from l2hmc.learning_rate.tensorflow.learning_rate import ReduceLROnPlateau
-
+from l2hmc.configs import CHECKPOINTS_DIR
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
-from l2hmc.group.u1.tensorflow.group import U1Phase
 from l2hmc.group.su3.tensorflow.group import SU3
-from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
+from l2hmc.group.u1.tensorflow.group import U1Phase
 from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
+from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
+from l2hmc.learning_rate.tensorflow.learning_rate import ReduceLROnPlateau
 from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.network.tensorflow.network import NetworkFactory
 from l2hmc.trackers.tensorflow.trackers import update_summaries
 from l2hmc.trainers.trainer import BaseTrainer
 from l2hmc.utils.history import summarize_dict
+from l2hmc.utils.rich import get_width, is_interactive
 from l2hmc.utils.step_timer import StepTimer
-
-
-WIDTH = int(os.environ.get('COLUMNS', 150))
-
 # tf.autograph.set_verbosity(0)
 # os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 # JIT_COMPILE = (len(os.environ.get('JIT_COMPILE', '')) > 0)
@@ -121,12 +113,12 @@ def is_dist(z: Tensor | ops.EagerTensor | np.ndarray) -> bool:
 
 
 # TODO: Replace arguments in __init__ call below with configs.TrainerConfig
-
 class Trainer(BaseTrainer):
     def __init__(
             self,
             cfg: DictConfig | ExperimentConfig,
             build_networks: bool = True,
+            ckpt_dir: Optional[os.PathLike] = None,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
     ) -> None:
@@ -143,6 +135,13 @@ class Trainer(BaseTrainer):
         self.dynamics = self.build_dynamics(
             build_networks=build_networks
         )
+        self.ckpt_dir = (
+            Path(CHECKPOINTS_DIR).joinpath('checkpoints')
+            if ckpt_dir is None
+            else Path(ckpt_dir).resolve()
+        )
+        self.ckpt_dir.mkdir(exist_ok=True, parents=True)
+        # self.load_ckpt()
         assert (
             self.dynamics is not None
             and isinstance(self.dynamics, Dynamics)
@@ -233,26 +232,21 @@ class Trainer(BaseTrainer):
     def get_lr(self) -> float:
         return K.get_value(self.optimizer.lr)
 
-    def setup_CheckpointManager(self, outdir: os.PathLike):
-        ckptdir = Path(outdir).joinpath('checkpoints')
+    def setup_CheckpointManager(self):
+        # ckptdir = Path(outdir).joinpath('checkpoints')
+        log.info(f'Looking for checkpoints in: {self.ckpt_dir}')
         ckpt = tf.train.Checkpoint(dynamics=self.dynamics,
                                    optimizer=self.optimizer)
-        manager = tf.train.CheckpointManager(ckpt,
-                                             ckptdir.as_posix(),
-                                             max_to_keep=5)
+        manager = tf.train.CheckpointManager(
+            ckpt,
+            self.ckpt_dir.as_posix(),
+            max_to_keep=5
+        )
         if manager.latest_checkpoint:
             ckpt.restore(manager.latest_checkpoint)
-            log.info(f'Restored checkpoint from: {manager.latest_checkpoint}')
-
-            netdir = Path(outdir).joinpath('networks')
-            if netdir.is_dir():
-                log.info(f'Loading dynamics networks from: {netdir}')
-                nets = self.dynamics.load_networks(netdir)
-                self.dynamics.xnet = nets['xnet']
-                self.dynamics.vnet = nets['vnet']
-                self.dynamics.xeps = nets['xeps']
-                self.dynamics.veps = nets['veps']
-                log.info(f'Networks successfully loaded from {netdir}')
+            log.warning(f'Restored checkpoint from: {manager.latest_checkpoint}')
+        else:
+            log.info('No checkpoints found to load from. Continuing')
 
         return manager
 
@@ -575,11 +569,13 @@ class Trainer(BaseTrainer):
             eval_steps=eval_steps,
         )
         x = setup['x']
+        assert isinstance(x, Tensor)
+        xshape = x.shape
         if nchains is not None:
             if x.shape[0] != nchains:
-                log.warning(f'x.shape: {x.shape}')
-                x = x[:nchains, ...]
-                log.warning(f'x[:nchains].shape: {x.shape}')
+                log.warning(f'x.shape: {xshape}')
+                x = x[:nchains, ...]  # type:ignore
+                log.warning(f'x[:nchains].shape: {xshape}')
 
         eps = setup['eps']
         beta = setup['beta']
@@ -781,7 +777,7 @@ class Trainer(BaseTrainer):
         with self.get_context_manager(table) as ctx:
             if isinstance(ctx, Live):
                 tstr = ' '.join([
-                    f'ERA: {era}/{self.steps.nera}',
+                    f'ERA: {era}/{self.steps.nera - 1}',
                     f'BETA: {beta:.3f}',
                 ])
                 ctx.console.clear()
@@ -875,26 +871,29 @@ class Trainer(BaseTrainer):
             x = flatten(self.g.random(list(self.xshape)))
 
         # -- Setup checkpoint manager for TensorFlow --------------------------
-        manager = self.setup_CheckpointManager(train_dir)
+        # manager = None
+        # if self._is_chief:
+        manager = self.setup_CheckpointManager()
+
         self._gstep = K.get_value(self.optimizer.iterations)
         # -- Setup Step information (nera, nepoch, etc). ----------------------
         nera = self.config.steps.nera if nera is None else nera
         nepoch = self.config.steps.nepoch if nepoch is None else nepoch
-        extend = self.config.steps.extend_last_era
-        assert isinstance(nera, int)
-        assert isinstance(nepoch, int)
+        # extend = self.config.steps.extend_last_era
+        assert nera is not None and isinstance(nera, int)
+        assert nepoch is not None and isinstance(nepoch, int)
 
         # -- Setup beta information -------------------------------------------
         if beta is None:
             betas = self.config.annealing_schedule.setup(
-                nera=(self.config.steps.nera if nera is None else nera),
-                nepoch=(self.config.steps.nepoch if nepoch is None else nepoch)
+                nera=nera,
+                nepoch=nepoch
             )
         elif isinstance(beta, (list, np.ndarray)):
             nera = len(beta)
             betas = {f'{i}': b for i, b in zip(range(nera), beta)}
         elif isinstance(beta, (int, float)):
-            nera = self.config.steps.nera if nera is None else nera
+            # nera = self.config.steps.nera if nera is None else nera
             betas = {f'{i}': b for i, b in zip(range(nera), nera * [beta])}
         elif isinstance(beta, dict):
             nera = len(list(beta.keys()))
@@ -1053,7 +1052,7 @@ class Trainer(BaseTrainer):
                     esummary = self.histories['train'].era_summary(f'{era-1}')
                     log.info(f'Avgs over last era:\n {esummary}\n')
 
-                self.console.rule(f'ERA: {era} / {nera}, BETA: {b:.3f}')
+                self.console.rule(f'ERA: {era} / {nera - 1}, BETA: {b:.3f}')
 
             epoch_start = time.time()
             x, edata = self.train_epoch(
@@ -1134,10 +1133,14 @@ class Trainer(BaseTrainer):
         context = {'subset': job_type}
         dtype = getattr(step, 'dtype', None)
         if dtype is not None and dtype in NP_INT:
-            try:
-                step = step.item()
-            except AttributeError:
-                pass
+            if isinstance(step, int):
+                step = step
+            if callable(getattr(step, 'item', None)):
+                step = step.item()  # type:ignore
+            # try:
+            #     step = step.item()
+            # except AttributeError:
+            #     pass
 
         for key, val in metrics.items():
             if prefix is not None:
