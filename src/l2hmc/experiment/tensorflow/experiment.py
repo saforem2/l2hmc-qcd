@@ -19,7 +19,9 @@ from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
 import tensorflow as tf
 import horovod.tensorflow as hvd
 
+import l2hmc.configs as configs
 from l2hmc.trainers.tensorflow.trainer import Trainer
+from l2hmc.configs import ExperimentConfig
 
 
 from l2hmc.experiment.experiment import BaseExperiment
@@ -40,13 +42,21 @@ class Experiment(BaseExperiment):
             skip: Optional[str | list[str]] = None,
     ) -> None:
         super().__init__(cfg=cfg)
-        self.trainer = self.build_trainer(
-            keep=keep,
-            skip=skip,
-            build_networks=build_networks
+        assert isinstance(
+            self.config,
+            (ExperimentConfig,
+             configs.ExperimentConfig)
         )
         self._rank = hvd.rank()
         self._local_rank = hvd.local_rank()
+        self.ckpt_dir = self.config.get_checkpoint_dir()
+        self.trainer = self.build_trainer(
+            keep=keep,
+            skip=skip,
+            build_networks=build_networks,
+            ckpt_dir=self.ckpt_dir,
+        )
+
         run = None
         arun = None
         if self._rank == 0 and self.config.init_wandb:
@@ -119,11 +129,13 @@ class Experiment(BaseExperiment):
             build_networks: bool = True,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
+            ckpt_dir: Optional[os.PathLike] = None,
     ) -> Trainer:
         return Trainer(
             self.cfg,
             skip=skip,
             keep=keep,
+            ckpt_dir=ckpt_dir,
             build_networks=build_networks,
         )
 
@@ -248,10 +260,11 @@ class Experiment(BaseExperiment):
             )
         if self.trainer._is_chief:
             output['dataset'] = self.save_dataset(
-                output=output,
+                # output=output,
                 nchains=nchains,
                 job_type='train',
-                outdir=jobdir
+                outdir=jobdir,
+                tables=output.get('tables', None)
             )
 
         if writer is not None:
@@ -290,10 +303,11 @@ class Experiment(BaseExperiment):
             eval_steps=eval_steps,
         )
         output['dataset'] = self.save_dataset(
-            output=output,
+            # output=output,
             job_type=job_type,
             outdir=jobdir,
             therm_frac=therm_frac,
+            tables=output.get('tables', None),
         )
 
         if writer is not None:

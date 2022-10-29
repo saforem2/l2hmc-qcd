@@ -6,23 +6,25 @@ Experiment base class.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
-from typing import Optional, Any
+from os import PathLike
+from pathlib import Path
+from typing import Any, Optional
 
 import horovod.torch as hvd
 from omegaconf import DictConfig
 import torch
-from pathlib import Path
 from torch.utils.tensorboard.writer import SummaryWriter
-from l2hmc.configs import NetWeights
 
+from l2hmc.common import setup_torch_distributed
+from l2hmc.configs import NetWeights
+import l2hmc.configs as configs
+from l2hmc.configs import ExperimentConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.experiment.experiment import BaseExperiment
 from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
 from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
-# from l2hmc.trainers.pytorch.trainer import Trainer
 from l2hmc.trainers.pytorch.trainer import Trainer
 from l2hmc.utils.rich import get_console
-from l2hmc.common import setup_torch_distributed
 
 log = logging.getLogger(__name__)
 
@@ -43,10 +45,17 @@ class Experiment(BaseExperiment):
             skip: Optional[str | list[str]] = None,
     ) -> None:
         super().__init__(cfg=cfg)
+        assert isinstance(
+            self.config,
+            (ExperimentConfig,
+             configs.ExperimentConfig)
+        )
+        self.ckpt_dir = self.config.get_checkpoint_dir()
         self.trainer = self.build_trainer(
             keep=keep,
             skip=skip,
             build_networks=build_networks,
+            ckpt_dir=self.ckpt_dir,
         )
         dsetup = setup_torch_distributed(self.config.backend)
         self._size = dsetup['size']
@@ -176,12 +185,15 @@ class Experiment(BaseExperiment):
             build_networks: bool = True,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
+            ckpt_dir: Optional[PathLike] = None,
     ) -> Trainer:
+        ckpt_dir = self.ckpt_dir if ckpt_dir is None else ckpt_dir
         return Trainer(
             self.cfg,
             build_networks=build_networks,
             skip=skip,
             keep=keep,
+            ckpt_dir=ckpt_dir,
         )
 
     def init_wandb(
@@ -345,10 +357,11 @@ class Experiment(BaseExperiment):
 
         if self.trainer._is_chief:
             dset = self.save_dataset(
-                output=output,
+                # output=output,
                 nchains=nchains,
                 job_type='train',
-                outdir=jobdir
+                outdir=jobdir,
+                tables=output.get('tables', None),
             )
             output['dataset'] = dset
 
@@ -366,11 +379,11 @@ class Experiment(BaseExperiment):
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
             eval_steps: Optional[int] = None,
-    ):
+    ) -> dict | None:
         """Evaluate model."""
         # if RANK != 0:
         if not self.trainer._is_chief:
-            return
+            return None
 
         assert job_type in ['eval', 'hmc']
         jobdir = self.get_jobdir(job_type)
@@ -390,9 +403,10 @@ class Experiment(BaseExperiment):
         )
 
         output['dataset'] = self.save_dataset(
-            output=output,
+            # output=output,
             job_type=job_type,
             outdir=jobdir,
+            tables=output.get('tables', None),
             therm_frac=therm_frac,
         )
         if writer is not None:
