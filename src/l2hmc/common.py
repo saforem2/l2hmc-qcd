@@ -624,7 +624,7 @@ def table_to_dict(table: Table, data: Optional[dict] = None) -> dict:
 
 
 def save_logs(
-        tables: dict[str, Table],
+        tables: Optional[dict[str, Table]] = None,
         summaries: Optional[list[str]] = None,
         job_type: Optional[str] = None,
         logdir: Optional[os.PathLike] = None,
@@ -648,32 +648,33 @@ def save_logs(
 
     data = {}
     console = get_console(record=True, width=235)
-    for idx, table in tables.items():
-        if idx == 0:
-            data = table_to_dict(table)
-        else:
-            data = table_to_dict(table, data)
+    if tables is not None:
+        for idx, table in tables.items():
+            if idx == 0:
+                data = table_to_dict(table)
+            else:
+                data = table_to_dict(table, data)
 
-        console.print(table)
-        html = console.export_html(clear=False)
-        text = console.export_text()
-        with open(hfile.as_posix(), 'a') as f:
-            f.write(html)
-        with open(tfile, 'a') as f:
-            f.write(text)
+            console.print(table)
+            html = console.export_html(clear=False)
+            text = console.export_text()
+            with open(hfile.as_posix(), 'a') as f:
+                f.write(html)
+            with open(tfile, 'a') as f:
+                f.write(text)
 
-    df = pd.DataFrame.from_dict(data)
-    dfile = Path(logdir).joinpath(f'{job_type}_table.csv')
-    df.to_csv(dfile.as_posix(), mode='a')
+        df = pd.DataFrame.from_dict(data)
+        dfile = Path(logdir).joinpath(f'{job_type}_table.csv')
+        df.to_csv(dfile.as_posix(), mode='a')
 
-    if run is not None:
-        # with open(hfile.as_posix(), 'r') as f:
-        #     html = f.read()
+        if run is not None:
+            # with open(hfile.as_posix(), 'r') as f:
+            #     html = f.read()
 
-        # run.log({f'Media/{job_type}': wandb.Html(html)})
-        run.log({
-            f'DataFrames/{job_type}': wandb.Table(data=df)
-        })
+            # run.log({f'Media/{job_type}': wandb.Html(html)})
+            run.log({
+                f'DataFrames/{job_type}': wandb.Table(data=df)
+            })
 
     if summaries is not None:
         sfile = logdir.joinpath('summaries.txt').as_posix()
@@ -883,12 +884,12 @@ def save_and_analyze_data(
         logfreq: Optional[int] = None,
         run: Optional[Any] = None,
         arun: Optional[Any] = None,
-        output: Optional[dict] = None,
         job_type: Optional[str] = None,
         framework: Optional[str] = None,
+        summaries: Optional[list[str]] = None,
+        tables: Optional[dict[str, Table]] = None,
 ) -> xr.Dataset:
     jstr = f'{job_type}'
-    output = {} if output is None else output
     title = (
         jstr if framework is None
         else ': '.join([jstr, f'{framework}'])
@@ -912,8 +913,8 @@ def save_and_analyze_data(
         save_logs(run=run,
                   logdir=edir,
                   job_type=job_type,
-                  tables=output.get('tables', None),
-                  summaries=output.get('summaries'))
+                  tables=tables,
+                  summaries=summaries)
 
     return dataset
 
