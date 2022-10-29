@@ -48,7 +48,7 @@ defaults:
   - mode: default.yaml
   # experiment configs allow for version control of specific configurations
   # for example, use them to store best hyperparameters for each model configuration
-  - experiment: null
+  # - experiment: null
   # - hydra/run: default.yaml
   # - optional local: default.yaml
   #
