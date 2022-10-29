@@ -3,24 +3,23 @@ trainer.py
 
 Contains BaseTrainer (ABC) object for training L2HMC dynamics
 """
-from __future__ import absolute_import, division, print_function, annotations
-
-import logging
-
+from __future__ import absolute_import, annotations, division, print_function
 from abc import ABC, abstractmethod
+import logging
 from typing import Any, Optional
-import aim
 
+import aim
+from hydra.utils import instantiate
 import numpy as np
 from omegaconf.dictconfig import DictConfig
 from rich.console import Console
-from l2hmc.common import get_timestamp
-from l2hmc.configs import ExperimentConfig, InputSpec
-from hydra.utils import instantiate
 from rich.table import Table
 
+from l2hmc.common import get_timestamp
+from l2hmc.configs import ExperimentConfig, InputSpec
+import l2hmc.configs as configs
 from l2hmc.utils.history import BaseHistory
-from l2hmc.utils.rich import get_console, add_columns
+from l2hmc.utils.rich import add_columns, get_console
 from l2hmc.utils.step_timer import StepTimer
 
 
@@ -40,7 +39,9 @@ class BaseTrainer(ABC):
         else:
             self.config = cfg
 
-        assert isinstance(self.config, ExperimentConfig)
+        assert isinstance(self.config,
+                          (configs.ExperimentConfig,
+                           ExperimentConfig))
         assert self.config.framework in [
             'pt',
             'tf',
@@ -55,11 +56,6 @@ class BaseTrainer(ABC):
         self.schedule = None
         self.optimizer = None
         self.lr_schedule = None
-        # self.lattice = self.build_lattice()
-        # self.loss_fn = self.build_loss_fn()
-        # self.dynamics = self.build_dynamics()
-        # self.optimizer = self.build_optimizer()
-        # self.lr_schedule = self.build_lr_schedule()
         self.steps = self.config.steps
         self.console = get_console(record=False)
         self.xshape = self.config.dynamics.xshape

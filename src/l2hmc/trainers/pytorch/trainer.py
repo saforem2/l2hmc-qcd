@@ -28,8 +28,15 @@ from torch.optim.lr_scheduler import LambdaLR
 from tqdm import trange
 import wandb
 
-from l2hmc.common import ScalarLike, TensorLike, setup_torch_distributed
-from l2hmc.configs import ExperimentConfig
+
+import l2hmc.configs as configs
+from l2hmc.common import (
+    ScalarLike,
+    TensorLike,
+    get_timestamp,
+    setup_torch_distributed
+)
+from l2hmc.configs import CHECKPOINTS_DIR, ExperimentConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.group.su3.pytorch.group import SU3
 from l2hmc.group.u1.pytorch.group import U1Phase
@@ -46,9 +53,7 @@ from l2hmc.utils.rich_logger import LOGGER_FIELDS
 from l2hmc.utils.step_timer import StepTimer
 # WIDTH = int(os.environ.get('COLUMNS', 150))
 
-log = logging.getLogger(__name__)
 console = get_console()
-
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(message)s",
@@ -61,8 +66,16 @@ logging.basicConfig(
         )
     ]
 )
+log = logging.getLogger(__name__)
 
-logging.addLevelName(70, 'CUSTOM')
+# handler = RichHandler(
+#     rich_tracebacks=True,
+#     show_path=False,
+#     console=console,
+# )
+# log.handlers = [handler]
+
+# logging.addLevelName(70, 'CUSTOM')
 
 
 Tensor = torch.Tensor
@@ -85,13 +98,18 @@ class Trainer(BaseTrainer):
             self,
             cfg: DictConfig | ExperimentConfig,
             build_networks: bool = True,
+            ckpt_dir: Optional[os.PathLike] = None,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
     ) -> None:
         super(Trainer, self).__init__(cfg=cfg, keep=keep, skip=skip)
         # skip_tracking = os.environ.get('SKIP_TRACKING', False)
         # self.verbose = not skip_tracking
-        assert isinstance(self.config, ExperimentConfig)
+        assert isinstance(
+            self.config,
+            (configs.ExperimentConfig, ExperimentConfig)
+        )
+        # assert isinstance(self.dynamics, Dynamics)
         self._gstep = 0
         dsetup = setup_torch_distributed(self.config.backend)
         self.size = dsetup['size']
@@ -104,6 +122,13 @@ class Trainer(BaseTrainer):
         self.dynamics = self.build_dynamics(
             build_networks=build_networks,
         )
+        self.ckpt_dir = (
+            Path(CHECKPOINTS_DIR).joinpath('checkpoints')
+            if ckpt_dir is None
+            else Path(ckpt_dir).resolve()
+        )
+        self.ckpt_dir.mkdir(exist_ok=True, parents=True)
+        self.load_ckpt()
         self.dynamics_ddp = None
         if self.config.backend == 'DDP':
             from torch.nn.parallel import DistributedDataParallel as DDP
@@ -246,17 +271,14 @@ class Trainer(BaseTrainer):
             self,
             era: int,
             epoch: int,
-            train_dir: os.PathLike,
             metrics: Optional[dict] = None,
             run: Optional[Any] = None,
     ) -> None:
         if not self._is_chief:
             return
 
-        # assert isinstance(self.dynamics, Dynamics)
-        ckpt_dir = Path(train_dir).joinpath('checkpoints')
-        ckpt_dir.mkdir(exist_ok=True, parents=True)
-        ckpt_file = ckpt_dir.joinpath(f'ckpt-{era}-{epoch}.tar')
+        tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
+        ckpt_file = self.ckpt_dir.joinpath(f'ckpt-{era}-{epoch}-{tstamp}.tar')
         if self._is_chief:
             log.info(f'Saving checkpoint to: {ckpt_file.as_posix()}')
         assert isinstance(self.dynamics.xeps, nn.ParameterList)
@@ -275,13 +297,59 @@ class Trainer(BaseTrainer):
             ckpt.update(metrics)
 
         torch.save(ckpt, ckpt_file)
-        modelfile = ckpt_dir.joinpath('model.pth')
+        modelfile = self.ckpt_dir.joinpath('model.pth')
         torch.save(self.dynamics.state_dict(), modelfile)
         if run is not None:
             assert run is wandb.run
             artifact = wandb.Artifact('model', type='model')
             artifact.add_file(modelfile.as_posix())
             run.log_artifact(artifact)
+
+    def load_ckpt(
+            self,
+            era: Optional[int] = None,
+            epoch: Optional[int] = None,
+    ):
+        if not self._is_chief:
+            return
+
+        ckpt_file = None
+        ckpts = [
+            Path(self.ckpt_dir).joinpath(i)
+            for i in os.listdir(self.ckpt_dir)
+            if i.endswith('.tar')
+        ]
+
+        log.info(f'Looking for checkpoints in:\n {self.ckpt_dir}')
+        if len(ckpts) == 0:
+            log.warning('No checkpoints found to load from')
+            return
+
+        if era is not None:
+            match = f'ckpt-{era}'
+            if epoch is not None:
+                match += f'-{epoch}'
+            for ckpt in ckpts:
+                if match in ckpt.as_posix():
+                    ckpt_file = ckpt
+        else:
+            ckpts = sorted(
+                ckpts,
+                key=lambda t: os.stat(t).st_mtime
+            )
+            ckpt_file = ckpts[-1]
+
+        modelfile = self.ckpt_dir.joinpath('model.pth')
+        if modelfile is not None:
+            log.info(f'Loading model from: {modelfile}')
+            self.dynamics.load_state_dict(torch.load(modelfile))
+        if ckpt_file is not None:
+            ckpt_file = Path(self.ckpt_dir).joinpath(ckpt_file)
+            log.info(f'Loading checkpoint from: {ckpt_file}')
+            ckpt = torch.load(ckpt_file)
+            if isinstance(self.optimizer, torch.optim.Optimizer):
+                self.optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+            # self.optimizer.load_state_dict((ckpt.get('optimizer', {}))
 
     def should_log(self, epoch):
         return (epoch % self.steps.log == 0 and self._is_chief)
@@ -1051,11 +1119,11 @@ class Trainer(BaseTrainer):
         if x is None:
             x = self.g.random(list(self.xshape)).flatten(1)
 
+        nera = self.config.steps.nera if nera is None else nera
+        nepoch = self.config.steps.nepoch if nepoch is None else nepoch
+        assert nera is not None and isinstance(nera, int)
+        assert nepoch is not None and isinstance(nepoch, int)
         if beta is None:
-            nera = self.config.steps.nera if nera is None else nera
-            nepoch = self.config.steps.nepoch if nepoch is None else nepoch
-            assert isinstance(nera, int)
-            assert isinstance(nepoch, int)
             betas = self.config.annealing_schedule.setup(
                 nera=nera,
                 nepoch=nepoch
@@ -1064,7 +1132,6 @@ class Trainer(BaseTrainer):
             nera = len(beta)
             betas = {f'{i}': b for i, b in zip(range(nera), beta)}
         elif isinstance(beta, (int, float)):
-            nera = self.config.steps.nera if nera is None else nera
             betas = {f'{i}': b for i, b in zip(range(nera), nera * [beta])}
         elif isinstance(beta, dict):
             nera = len(list(beta.keys()))
@@ -1159,7 +1226,7 @@ class Trainer(BaseTrainer):
                     b += (b / 10.)  # self.config.annealing_schedule._dbeta
 
             if (era + 1) == nera or (era + 1) % 5 == 0:
-                self.save_ckpt(era, epoch, train_dir, run=run)
+                self.save_ckpt(era, epoch, run=run)
 
             if self._is_chief:
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
@@ -1246,7 +1313,7 @@ class Trainer(BaseTrainer):
             self.summaries['train'][str(era)] = edata['summaries']
 
             if (era + 1) == nera or (era + 1) % 5 == 0:
-                self.save_ckpt(era, epoch, train_dir, run=run)
+                self.save_ckpt(era, epoch, run=run)
 
             if self._is_chief:
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
