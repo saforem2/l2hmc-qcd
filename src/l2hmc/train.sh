@@ -32,19 +32,16 @@
 
 TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
 HOST=$(hostname)
-echo "Job ID: ${PBS_JOBID}"
-echo "Job started at: ${TSTAMP}"
+# echo "Job ID: ${PBS_JOBID}"
 
 # ---- Specify directories and executable for experiment ------------------
 DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd -LP)
-echo "DIR:$DIR"
 MAIN="${DIR}/main.py"
 PARENT=$(dirname $DIR)
 ROOT=$(dirname $PARENT)
 
-echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
-echo "┃  Job started at: ${TSTAMP} on ${HOST}           ┃"
-echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+echo "Job started at: ${TSTAMP} on ${HOST}"
+echo "Job running in: ${DIR}"
 
 NCPUS=$(getconf _NPROCESSORS_ONLN)
 
@@ -57,8 +54,7 @@ if [[ $(hostname) == theta* ]]; then
   NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
   NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
   MPI_COMMAND=$(which mpirun)
-  MPI_FLAGS="--verbose \
-    -n ${NGPUS} \
+  MPI_FLAGS="-n ${NGPUS} \
     --hostfile ${HOSTFILE} \
     -npernode ${NGPU_PER_RANK} \
     -x PYTHONUSERBASE \
@@ -71,8 +67,6 @@ if [[ $(hostname) == theta* ]]; then
 
 # ---- Check if running on Polaris -----------------------------
 elif [[ $(hostname) == x* ]]; then
-  # echo Working directory is $PBS_O_WORKDIR
-  # cd $PBS_O_WORKDIR
   export IBV_FORK_SAFE=1
   export NCCL_COLLNET_ENABLE=1
   NRANKS=$(wc -l < ${PBS_NODEFILE})
@@ -81,8 +75,7 @@ elif [[ $(hostname) == x* ]]; then
   NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
   MPI_COMMAND=$(which mpiexec)
   # --cpu-bind verbose,list:0,8,16,24 \
-  MPI_FLAGS="--verbose \
-    --envall \
+  MPI_FLAGS="--envall \
     -n ${NGPUS} \
     --depth ${NCPUS} \
     --ppn ${NGPU_PER_RANK} \
@@ -108,17 +101,16 @@ else
   fi
 fi
 
-
 # -----------------------------------------------------------
-# 1. Check if a virtual environment exists in project root: 
-#    `l2hmc-qcd/`
+# 1. Locate virtual envronment to use:
+#     a. Look for custom venv, unique to specific resource 
+#         (e.g. `l2hmc-qcd/venvs/polaris/2022-09-08`)
 #
-# 2. If so, activate environment and make sure we have an 
-#    editable install
+#     b. Otherwise, look for generic environment at:
+#         `l2hmc-qcd/venv/`
+#
+# 2. Perform Editable install
 # -----------------------------------------------------------
-# VENV_DIR="${ROOT}/venv/"
-# if [ -d ${VENV_DIR} ]; then
-#
 if [[ -f "${VENV_DIR}/bin/activate" ]]; then
   echo "Found venv at: ${VENV_DIR}"
   source "${VENV_DIR}/bin/activate"
@@ -139,27 +131,6 @@ else
   fi
 fi
 
-# ---- Install required packages ------------------------------------------
-# conda run python3 -m pip install \
-#   hydra-core \
-#   hydra_colorlog \
-#   arviz \
-#   ipython \
-#   pyright \
-#   celerite \
-#   joblib \
-#   xarray \
-#   seaborn \
-#   bokeh \
-#   nodejs \
-#   h5py \
-#   accelerate \
-#   matplotx \
-#   torchviz \
-
-# python3 -m pip install --upgrade aim
-# python3 -m pip install --pre --upgrade wandb
-
 # ---- Environment settings -----------------------------------------------
 export OMP_NUM_THREADS=$NCPUS
 export WIDTH=$COLUMNS
@@ -172,7 +143,7 @@ export KMP_SETTINGS=TRUE
 # export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/cuda/lib64"
 # export KMP_AFFINITY='granularity=fine,verbose,compact,1,0'
 # export TF_XLA_FLAGS="--tf_xla_auto_jit=2 --tf_xla_enable_xla_devices"
-#
+
 LOGDIR="${DIR}/logs"
 LOGFILE="${LOGDIR}/${TSTAMP}-${HOST}_ngpu${NGPUS}_ncpu${NCPUS}.log"
 if [ ! -d "${LOGDIR}" ]; then
@@ -197,9 +168,9 @@ EXEC="${MPI_COMMAND} ${MPI_FLAGS} $(which python3) ${MAIN}"
 
 
 # ---- Print job information -------------------------------------------------
-echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
-echo "┃  STARTING A NEW RUN ON ${NGPUS} GPUs ${NCPUS}  ┃"
-echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+echo "┃ STARTING A NEW RUN ON ${NGPUS} GPUs ${NCPUS} CPUS       ┃"
+echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
 echo -e '\n'
 printf '%.s─' $(seq 1 $(tput cols))
 echo "┃  - DATE: ${TSTAMP}"
