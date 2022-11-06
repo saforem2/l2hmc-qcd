@@ -50,7 +50,7 @@ class Experiment(BaseExperiment):
         self._rank = hvd.rank()
         self._local_rank = hvd.local_rank()
         self.ckpt_dir = self.config.get_checkpoint_dir()
-        self.trainer = self.build_trainer(
+        self.trainer: Trainer = self.build_trainer(
             keep=keep,
             skip=skip,
             build_networks=build_networks,
@@ -86,6 +86,7 @@ class Experiment(BaseExperiment):
         #     assert isinstance(self.config, ExperimentConfig)
 
     def visualize_model(self) -> None:
+        assert self.trainer is not None and isinstance(self.trainer, Trainer)
         state = self.trainer.dynamics.random_state(1.)
         x = self.trainer.dynamics.flatten(state.x)
         v = self.trainer.dynamics.flatten(state.v)
@@ -282,8 +283,6 @@ class Experiment(BaseExperiment):
             nleapfrog: Optional[int] = None,
             eval_steps: Optional[int] = None,
             nprint: Optional[int] = None,
-            nlog: Optional[int] = None,
-            rich: Optional[bool] = None,
     ) -> dict:
         """Evaluate model."""
         assert job_type in ['eval', 'hmc']
@@ -305,7 +304,6 @@ class Experiment(BaseExperiment):
             nleapfrog=nleapfrog,
             eval_steps=eval_steps,
             nprint=nprint,
-            nlog=nlog,
         )
         output['dataset'] = self.save_dataset(
             # output=output,

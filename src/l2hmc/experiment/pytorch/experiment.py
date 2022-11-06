@@ -51,7 +51,7 @@ class Experiment(BaseExperiment):
              configs.ExperimentConfig)
         )
         self.ckpt_dir = self.config.get_checkpoint_dir()
-        self.trainer = self.build_trainer(
+        self.trainer: Trainer = self.build_trainer(
             keep=keep,
             skip=skip,
             build_networks=build_networks,
@@ -345,7 +345,6 @@ class Experiment(BaseExperiment):
                 train_dir=jobdir,
                 skip=skip,
                 beta=beta,
-                rich=rich,
             )
         # if self.trainer._is_chief:
         #     summaryfile = jobdir.joinpath('summaries.txt')
@@ -382,8 +381,6 @@ class Experiment(BaseExperiment):
             nleapfrog: Optional[int] = None,
             eval_steps: Optional[int] = None,
             nprint: Optional[int] = None,
-            nlog: Optional[int] = None,
-            rich: Optional[bool] = None,
     ) -> dict | None:
         """Evaluate model."""
         # if RANK != 0:
@@ -406,7 +403,6 @@ class Experiment(BaseExperiment):
             nleapfrog=nleapfrog,
             eval_steps=eval_steps,
             nprint=nprint,
-            nlog=nlog
         )
 
         output['dataset'] = self.save_dataset(
