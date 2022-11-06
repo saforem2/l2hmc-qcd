@@ -7,6 +7,7 @@ from __future__ import absolute_import, annotations, division, print_function
 from abc import ABC, abstractmethod
 import logging
 from typing import Any, Optional
+from contextlib import nullcontext
 
 import aim
 from hydra.utils import instantiate
@@ -14,12 +15,15 @@ import numpy as np
 from omegaconf.dictconfig import DictConfig
 from rich.console import Console
 from rich.table import Table
+from rich_logger import RichTablePrinter
+from rich.live import Live
 
-from l2hmc.common import get_timestamp
+from l2hmc.common import TensorLike, get_timestamp
 from l2hmc.configs import ExperimentConfig, InputSpec
 import l2hmc.configs as configs
 from l2hmc.utils.history import BaseHistory
-from l2hmc.utils.rich import add_columns, get_console
+from l2hmc.utils.rich import add_columns, get_console, get_width, is_interactive
+from l2hmc.utils.rich_logger import LOGGER_FIELDS
 from l2hmc.utils.step_timer import StepTimer
 
 
@@ -49,6 +53,8 @@ class BaseTrainer(ABC):
             'pytorch',
             'tensorflow',
         ]
+        self._is_chief: bool = False
+        self.size: int = 1
         self._is_built = False
         self.loss_fn = None
         self.lattice = None
@@ -116,6 +122,37 @@ class BaseTrainer(ABC):
             'eval': StepTimer(evals_per_step=self._nlf),
             'hmc': StepTimer(evals_per_step=self._nlf),
         }
+
+    def get_printer(self, job_type: str) -> RichTablePrinter | None:
+        if self._is_chief:
+            printer = RichTablePrinter(
+                key=f'{job_type[0]}step',
+                fields=LOGGER_FIELDS,
+            )
+            printer.hijack_tqdm()
+            return printer
+        return None
+
+    def get_context_manager(
+            self,
+            table: Table,
+            disable: bool = False
+    ):
+        width = get_width()
+        make_live = (
+            self._is_chief
+            and self.size == 1
+            and not is_interactive()
+            and width > 100
+        )
+        if make_live and (not disable):
+            return Live(
+                table,
+                transient=True,
+                console=self.console,
+                vertical_overflow='visible',
+            )
+        return nullcontext()
 
     def set_console(self, console: Console) -> None:
         self.console = console
@@ -192,6 +229,10 @@ class BaseTrainer(ABC):
         pass
 
     @abstractmethod
+    def _setup_eval(self):
+        pass
+
+    @abstractmethod
     def eval(
             self,
             beta: Optional[float] = None,
@@ -219,6 +260,10 @@ class BaseTrainer(ABC):
             self,
             inputs: tuple[Any, float],
     ):
+        pass
+
+    @abstractmethod
+    def _setup_training(self):
         pass
 
     @abstractmethod
