@@ -68,7 +68,8 @@ def setup_tensorflow(precision: Optional[str] = None) -> int:
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     import horovod.tensorflow as hvd
-    hvd.init() if not hvd.is_initialized() else None
+    hvd.init()
+    # hvd.init() if not hvd.is_initialized() else None
     tf.keras.backend.set_floatx(precision)
     TF_FLOAT = tf.keras.backend.floatx()
     eager_mode = os.environ.get('TF_EAGER', None)
@@ -160,6 +161,9 @@ def get_experiment(
     framework = cfg.get('framework', None)
     os.environ['RUNDIR'] = str(os.getcwd())
     if framework in ['tf', 'tensorflow']:
+        import tensorflow as tf
+        import horovod.tensorflow as hvd
+        hvd.init()
         _ = setup_tensorflow(cfg.precision)
         from l2hmc.experiment.tensorflow.experiment import Experiment
         experiment = Experiment(
@@ -170,6 +174,11 @@ def get_experiment(
         return experiment
 
     if framework in ['pt', 'pytorch', 'torch']:
+        if cfg.get('backend', 'DDP') in ['hvd', 'horovod']:
+            import torch
+            import horovod.torch as hvd
+            hvd.init()
+
         _ = setup_torch(
             seed=cfg.seed,
             precision=cfg.precision,
