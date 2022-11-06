@@ -281,6 +281,9 @@ class Experiment(BaseExperiment):
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
             eval_steps: Optional[int] = None,
+            nprint: Optional[int] = None,
+            nlog: Optional[int] = None,
+            rich: Optional[bool] = None,
     ) -> dict:
         """Evaluate model."""
         assert job_type in ['eval', 'hmc']
@@ -301,6 +304,8 @@ class Experiment(BaseExperiment):
             eps=eps,
             nleapfrog=nleapfrog,
             eval_steps=eval_steps,
+            nprint=nprint,
+            nlog=nlog,
         )
         output['dataset'] = self.save_dataset(
             # output=output,
