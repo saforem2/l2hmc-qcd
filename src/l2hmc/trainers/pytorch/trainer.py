@@ -722,7 +722,7 @@ class Trainer(BaseTrainer):
         x = setup['x']
         eps = setup['eps']
         beta = setup['beta']
-        # table = setup['table']
+        table = setup['table']
         nleapfrog = setup['nleapfrog']
         eval_steps = setup['eval_steps']
         timer = self.timers[job_type]
@@ -740,77 +740,77 @@ class Trainer(BaseTrainer):
             return self.eval_step(z)
 
         self.dynamics.eval()
-        # with self.get_context_manager(table) as ctx:
-        printer = self.get_printer(job_type=job_type)
-        for step in trange(
-                eval_steps,
-                dynamic_ncols=True,
-                disable=(not self._is_chief),
-        ):
-            timer.start()
-            x, metrics = eval_fn((x, beta))
-            dt = timer.stop()
-            if (
-                    # step == 0
-                    step % setup['nlog'] == 0
-                    or step % setup['nprint'] == 0
+        # printer = self.get_printer(job_type=job_type)
+        with self.get_context_manager(table) as ctx:
+            for step in trange(
+                    eval_steps,
+                    dynamic_ncols=True,
+                    disable=(not self._is_chief),
             ):
-                record = {
-                    f'{job_type[0]}step': step,
-                    'dt': dt,
-                    'beta': beta,
-                    'loss': metrics.pop('loss', None),
-                    'dQsin': metrics.pop('dQsin', None),
-                    'dQint': metrics.pop('dQint', None),
-                }
-                record.update(metrics)
-                if job_type == 'hmc' and dynamic_step_size:
-                    acc = record.get('acc_mask', None)
-                    record['eps'] = eps
-                    if acc is not None and eps is not None:
-                        acc_avg = acc.mean()
-                        if acc_avg < 0.66:
-                            eps -= (eps / 10.)
-                        else:
-                            eps += (eps / 10.)
-
-                avgs, summary = self.record_metrics(run=run,
-                                                    arun=arun,
-                                                    step=step,
-                                                    writer=writer,
-                                                    metrics=record,
-                                                    job_type=job_type)
-                summaries.append(summary)
-                # table = self.update_table(
-                #     table=setup['table'],
-                #     step=step,
-                #     avgs=avgs,
-                # )
+                timer.start()
+                x, metrics = eval_fn((x, beta))
+                dt = timer.stop()
                 if (
-                        # not isinstance(setup['ctx'], Live)
-                        step > 0 and
-                        step % setup['nprint'] == 0
+                        # step == 0
+                        step % setup['nlog'] == 0
+                        or step % setup['nprint'] == 0
                 ):
-                    if printer is not None:
-                        printer.log(avgs)
-                    else:
+                    record = {
+                        f'{job_type[0]}step': step,
+                        'dt': dt,
+                        'beta': beta,
+                        'loss': metrics.pop('loss', None),
+                        'dQsin': metrics.pop('dQsin', None),
+                        'dQint': metrics.pop('dQint', None),
+                    }
+                    record.update(metrics)
+                    if job_type == 'hmc' and dynamic_step_size:
+                        acc = record.get('acc_mask', None)
+                        record['eps'] = eps
+                        if acc is not None and eps is not None:
+                            acc_avg = acc.mean()
+                            if acc_avg < 0.66:
+                                eps -= (eps / 10.)
+                            else:
+                                eps += (eps / 10.)
+
+                    avgs, summary = self.record_metrics(run=run,
+                                                        arun=arun,
+                                                        step=step,
+                                                        writer=writer,
+                                                        metrics=record,
+                                                        job_type=job_type)
+                    summaries.append(summary)
+                    table = self.update_table(
+                        table=table,
+                        step=step,
+                        avgs=avgs,
+                    )
+                    if (
+                            step > 0
+                            and step % setup['nprint'] == 0
+                            and (not isinstance(ctx, Live))
+                    ):
+                        # if printer is not None:
+                        #     printer.log(avgs)
+                        # else:
                         log.info(summary)
 
-                if avgs.get('acc', 1.0) < 1e-5:
-                    if stuck_counter < patience:
-                        stuck_counter += 1
-                    else:
-                        self.console.log('Chains are stuck! Redrawing x')
-                        x = self.lattice.random()
-                        stuck_counter = 0
+                    if avgs.get('acc', 1.0) < 1e-5:
+                        if stuck_counter < patience:
+                            stuck_counter += 1
+                        else:
+                            self.console.log('Chains are stuck! Redrawing x')
+                            x = self.lattice.random()
+                            stuck_counter = 0
 
-            # if isinstance(ctx, Live):
-            #     ctx.console.clear_live()
+                if isinstance(ctx, Live):
+                    ctx.console.clear_live()
 
-        # tables[str(0)] = setup['table']
+        tables[str(0)] = setup['table']
 
-        if printer is not None:
-            printer.finalize()
+        # if printer is not None:
+        #     printer.finalize()
 
         return {
             'timer': timer,
@@ -908,105 +908,6 @@ class Trainer(BaseTrainer):
                 metrics.update(lmetrics)
 
         return xout.detach(), metrics
-
-    def train_epoch_rich(
-            self,
-            x: Tensor,
-            beta: float | Tensor,
-            era: Optional[int] = None,
-            run: Optional[Any] = None,
-            arun: Optional[Any] = None,
-            nepoch: Optional[int] = None,
-            writer: Optional[Any] = None,
-            extend: int = 1,
-    ) -> tuple[Tensor, dict]:
-        rows = {}
-        summaries = []
-        extend = 1 if extend is None else extend
-        table = Table(
-            box=box.HORIZONTALS,
-            row_styles=['dim', 'none'],
-        )
-
-        nepoch = self.steps.nepoch if nepoch is None else nepoch
-        assert isinstance(nepoch, int)
-        nepoch *= extend
-        losses = []
-        # ctx = self.get_context_manager(table)
-        # with ctx:
-        printer = self.get_printer(job_type='train')
-        for epoch in trange(nepoch, disable=(not self._is_chief)):
-            self.timers['train'].start()
-            x, metrics = self.train_step((x, beta))  # type:ignore
-            dt = self.timers['train'].stop()
-            losses.append(metrics['loss'])
-            if (
-                    epoch == 0
-                    # or self.should_print(epoch)
-                    or self.should_log(epoch)
-            ):
-                record = {
-                    'era': era,
-                    'epoch': epoch,
-                    'tstep': self._gstep,
-                    'dt': dt,
-                    'beta': beta,
-                    'loss': metrics.pop('loss', None),
-                    'dQsin': metrics.pop('dQsin', None),
-                    'dQint': metrics.pop('dQint', None)
-                }
-                record.update(metrics)
-                avgs, summary = self.record_metrics(
-                    run=run,
-                    arun=arun,
-                    step=self._gstep,
-                    writer=writer,
-                    metrics=record,
-                    job_type='train',
-                    model=self.dynamics,
-                    optimizer=self._optimizer,
-                )
-                rows[self._gstep] = avgs
-                summaries.append(summary)
-
-                if (
-                        epoch > 0 and
-                        self.should_log(epoch)
-                        # self.should_print(epoch)
-                        # and not isinstance(ctx, Live)
-                ):
-                    if printer is not None:
-                        printer.log(avgs)
-                    else:
-                        log.info(summary)
-
-                # table = self.update_table(
-                #     table=table,
-                #     avgs=avgs,
-                #     step=epoch,
-                # )
-
-                if avgs.get('acc', 1.0) < 1e-5:
-                    self.reset_optimizer()
-                    self.warning('Chains are stuck! Re-drawing x !')
-                    x = self.draw_x()
-
-            self._gstep += 1
-            # if isinstance(ctx, Live):
-            #     ctx.console.clear()
-            #     ctx.console.clear_live()
-
-        if printer is not None:
-            printer.finalize()
-
-        data = {
-            'rows': rows,
-            'table': table,
-            'losses': losses,
-            'summaries': summaries,
-        }
-
-        return x, data
 
     def train_epoch(
             self,
@@ -1223,7 +1124,6 @@ class Trainer(BaseTrainer):
                 extend=extend,
                 nepoch=nepoch,
             )
-            st0 = time.time()
 
             self.rows['train'][str(era)] = edata['rows']
             self.tables['train'][str(era)] = edata['table']
@@ -1236,11 +1136,12 @@ class Trainer(BaseTrainer):
                 else:
                     b += (b / 10.)  # self.config.annealing_schedule._dbeta
 
-            if (era + 1) == nera or (era + 1) % 5 == 0:
-                self.save_ckpt(era, epoch, run=run)
 
             if self._is_chief:
+                st0 = time.time()
+                self.save_ckpt(era, epoch, run=run)
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
+                log.info(f'Checkpoint saved to: {self.ckpt_dir}')
                 log.info(f'Era {era} took: {time.time() - epoch_start:<5g}s')
 
         return {
