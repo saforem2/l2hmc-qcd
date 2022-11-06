@@ -20,16 +20,19 @@ from typing import Optional
 import numpy as np
 from omegaconf.dictconfig import DictConfig
 
+from l2hmc.configs import ExperimentConfig
+from l2hmc.utils.rich import print_config
 from l2hmc.utils.plot_helpers import set_plot_style
+
 set_plot_style()
+
+log = logging.getLogger(__name__)
 
 logging.getLogger('filelock').setLevel(logging.CRITICAL)
 logging.getLogger('matplotlib').setLevel(logging.CRITICAL)
 logging.getLogger('PIL.PngImagePlugin').setLevel(logging.CRITICAL)
 logging.getLogger('graphviz._tools').setLevel(logging.CRITICAL)
 logging.getLogger('graphviz').setLevel(logging.CRITICAL)
-
-log = logging.getLogger(__name__)
 
 
 def seed_everything(seed: int):
@@ -60,18 +63,15 @@ def cleanup() -> None:
     dist.destroy_process_group()
 
 
-def setup_tensorflow(precision: Optional[str] = None) -> int:
+def setup_tensorflow(
+        precision: Optional[str] = None,
+        ngpus: Optional[int] = None,
+) -> int:
     import tensorflow as tf
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     import horovod.tensorflow as hvd
-    # hvd.init()
-    # hvd.init() if not hvd.is_initialized() else None
-    try:
-        _ = hvd.rank()
-    except:
-        hvd.init()
-
+    hvd.init() if not hvd.is_initialized() else None
     tf.keras.backend.set_floatx(precision)
     TF_FLOAT = tf.keras.backend.floatx()
     eager_mode = os.environ.get('TF_EAGER', None)
@@ -84,6 +84,9 @@ def setup_tensorflow(precision: Optional[str] = None) -> int:
     if gpus:
         try:
             # Currently memory growth needs to be the same across GPUs
+            if ngpus is not None:
+                gpus = gpus[-ngpus:]
+
             for gpu in gpus:
                 tf.config.experimental.set_memory_growth(gpu, True)
             tf.config.experimental.set_visible_devices(
@@ -99,6 +102,7 @@ def setup_tensorflow(precision: Optional[str] = None) -> int:
             print(e)
     elif cpus:
         try:
+            # Currently, memory growth needs to be the same across GPUs
             logical_cpus = tf.config.experimental.list_logical_devices('CPU')
             log.info(
                 f'{len(cpus)}, Physical CPUs and '
@@ -135,6 +139,7 @@ def setup_torch(
     rank = dsetup['rank']
     size = dsetup['size']
     local_rank = dsetup['local_rank']
+
     nthreads = os.environ.get(
         'OMP_NUM_THREADS',
         None
@@ -148,6 +153,12 @@ def setup_torch(
     if torch.cuda.is_available():
         torch.cuda.set_device(local_rank)
         # torch.cuda.manual_seed(cfg.seed + hvd.local_rank())
+    # else:
+    #     torch.set_default_dtype(torch.float32)
+    # RANK = hvd.rank()
+    # LOCAL_RANK = hvd.local_rank()
+    # SIZE = hvd.size()
+    # LOCAL_SIZE = hvd.local_size()
 
     log.info(f'Global Rank: {rank} / {size-1}')
     log.info(f'[{rank}]: Local rank: {local_rank}')
@@ -163,9 +174,6 @@ def get_experiment(
     framework = cfg.get('framework', None)
     os.environ['RUNDIR'] = str(os.getcwd())
     if framework in ['tf', 'tensorflow']:
-        import tensorflow as tf
-        import horovod.tensorflow as hvd
-        hvd.init()
         _ = setup_tensorflow(cfg.precision)
         from l2hmc.experiment.tensorflow.experiment import Experiment
         experiment = Experiment(
@@ -195,13 +203,10 @@ def run(cfg: DictConfig) -> str:
     # --- [0.] Setup ------------------------------------------------------
     setup(cfg)
     ex = get_experiment(cfg)
-    from l2hmc.configs import ExperimentConfig
-
     assert isinstance(ex.config, ExperimentConfig)
 
     # if ex.trainer.rank == 0:
     if ex.trainer._is_chief:
-        from l2hmc.utils.rich import print_config
         print_config(ex.cfg, resolve=True)
 
     should_train: bool = (
@@ -209,7 +214,8 @@ def run(cfg: DictConfig) -> str:
         and ex.config.steps.nepoch > 0
     )
 
-    nchains_eval = int(ex.config.dynamics.xshape[0] // 4)
+    nchains_eval = max(2, int(ex.config.dynamics.xshape[0] // 4))
+
 
     # --- [1.] Train model -------------------------------------------------
     if should_train:
