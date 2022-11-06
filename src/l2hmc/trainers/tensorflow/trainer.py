@@ -42,6 +42,10 @@ from l2hmc.utils.step_timer import StepTimer
 # tf.autograph.set_verbosity(0)
 # os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 # JIT_COMPILE = (len(os.environ.get('JIT_COMPILE', '')) > 0)
+if is_interactive():
+    from tqdm.notebook import trange
+else:
+    from tqdm.rich import trange
 
 log = logging.getLogger(__name__)
 
@@ -233,7 +237,6 @@ class Trainer(BaseTrainer):
         return K.get_value(self.optimizer.lr)
 
     def setup_CheckpointManager(self):
-        # ckptdir = Path(outdir).joinpath('checkpoints')
         log.info(f'Looking for checkpoints in: {self.ckpt_dir}')
         ckpt = tf.train.Checkpoint(dynamics=self.dynamics,
                                    optimizer=self.optimizer)
@@ -461,6 +464,7 @@ class Trainer(BaseTrainer):
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
+            nprint: Optional[int] = None,
     ) -> dict:
         assert job_type in ['eval', 'hmc']
 
@@ -505,7 +509,9 @@ class Trainer(BaseTrainer):
         table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
         eval_steps = self.steps.test if eval_steps is None else eval_steps
         assert isinstance(eval_steps, int)
-        nprint = max(1, min(50, eval_steps // 50))
+        nprint = (
+            max(1, min(50, eval_steps // 50)) if nprint is None else nprint
+        )
         nlog = max((1, min((10, eval_steps))))
         if nlog <= eval_steps:
             nlog = min(10, max(1, eval_steps // 100))
@@ -549,6 +555,7 @@ class Trainer(BaseTrainer):
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
             dynamic_step_size:  Optional[bool] = None,
+            nprint: Optional[int] = None,
     ) -> dict:
         """Evaluate model."""
         assert job_type in ['hmc', 'eval']
@@ -567,6 +574,7 @@ class Trainer(BaseTrainer):
             nchains=nchains,
             job_type=job_type,
             eval_steps=eval_steps,
+            nprint=nprint,
         )
         x = setup['x']
         assert isinstance(x, Tensor)
@@ -785,7 +793,11 @@ class Trainer(BaseTrainer):
                 ctx.console.rule(tstr)
                 ctx.update(table)
 
-            for epoch in range(nepoch):
+            for epoch in trange(
+                    nepoch,
+                    dynamic_ncols=True,
+                    disable=(not self._is_chief)
+            ):
                 self.timers['train'].start()
                 x, metrics = self.train_step((x, beta))  # type:ignore
                 dt = self.timers['train'].stop()
@@ -928,6 +940,7 @@ class Trainer(BaseTrainer):
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
+            nprint: Optional[int] = None,
     ) -> dict:
         """Perform training and return dictionary of results."""
         setup = self._setup_training(

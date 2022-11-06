@@ -25,7 +25,6 @@ from rich_logger import RichTablePrinter
 import torch
 from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
-from tqdm import trange
 import wandb
 
 
@@ -52,6 +51,11 @@ from l2hmc.utils.rich import get_console
 from l2hmc.utils.rich_logger import LOGGER_FIELDS
 from l2hmc.utils.step_timer import StepTimer
 # WIDTH = int(os.environ.get('COLUMNS', 150))
+
+if is_interactive():
+    from tqdm.notebook import trange
+else:
+    from tqdm.rich import trange
 
 console = get_console()
 logging.basicConfig(
@@ -606,6 +610,7 @@ class Trainer(BaseTrainer):
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
+            nprint: Optional[int] = None,
     ) -> dict:
         assert job_type in ['eval', 'hmc']
 
@@ -640,7 +645,10 @@ class Trainer(BaseTrainer):
         table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
         eval_steps = self.steps.test if eval_steps is None else eval_steps
         assert isinstance(eval_steps, int)
-        nprint = max(1, min(50, eval_steps // 50))
+        nprint = (
+            max(1, min(50, eval_steps // 50))
+            if nprint is None else nprint
+        )
         nlog = max((1, min((10, eval_steps))))
         if nlog <= eval_steps:
             nlog = min(10, max(1, eval_steps // 100))
@@ -666,6 +674,7 @@ class Trainer(BaseTrainer):
             'nprint': nprint,
             'eval_steps': eval_steps,
             'nleapfrog': nleapfrog,
+            'nprint': nprint,
         }
         log.info(
             '\n'.join([
@@ -689,6 +698,7 @@ class Trainer(BaseTrainer):
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
             dynamic_step_size: Optional[bool] = None,
+            nprint: Optional[int] = None,
     ) -> dict:
         """Evaluate dynamics."""
 
@@ -707,6 +717,7 @@ class Trainer(BaseTrainer):
             nchains=nchains,
             job_type=job_type,
             eval_steps=eval_steps,
+            nprint=nprint,
         )
         x = setup['x']
         eps = setup['eps']
