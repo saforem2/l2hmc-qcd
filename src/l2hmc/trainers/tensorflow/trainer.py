@@ -126,7 +126,7 @@ class Trainer(BaseTrainer):
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
     ) -> None:
-        super(Trainer, self).__init__(cfg=cfg, keep=keep, skip=skip)
+        super().__init__(cfg=cfg, keep=keep, skip=skip)
         # assert isinstance(self.config, ExperimentConfig)
         if self.config.compression in [True, 'fp16']:
             self.compression = hvd.Compression.fp16
@@ -682,13 +682,12 @@ class Trainer(BaseTrainer):
             'tables': tables,
         }
 
-    @tf.function
+    @tf.function(experimental_follow_type_hints=True)
     def train_step(
             self,
             inputs: tuple[Tensor, Tensor]
     ) -> tuple[Tensor, dict]:
         """Implement a single training step (forward + backward) pass.
-
         - NOTE: Wrapper possibilities:
             ```python
             @tf.function(
@@ -806,7 +805,7 @@ class Trainer(BaseTrainer):
                     record = {
                         'era': era,
                         'epoch': epoch,
-                        'train_step': self._gstep,
+                        'tstep': self._gstep,
                         'dt': dt,
                         'beta': beta,
                         'loss': metrics.pop('loss', None),
@@ -940,7 +939,6 @@ class Trainer(BaseTrainer):
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
-            nprint: Optional[int] = None,
     ) -> dict:
         """Perform training and return dictionary of results."""
         setup = self._setup_training(
@@ -988,7 +986,6 @@ class Trainer(BaseTrainer):
                 extend=extend,
                 nepoch=nepoch,
             )
-            st0 = time.time()
 
             self.rows['train'][str(era)] = edata['rows']
             self.tables['train'][str(era)] = edata['table']
@@ -1004,11 +1001,11 @@ class Trainer(BaseTrainer):
                 else:
                     b += (b / 10.)
 
-            if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
-                self.save_ckpt(manager)
-
             if self._is_chief:
+                st0 = time.time()
+                self.save_ckpt(manager)
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
+                log.info(f'Checkpoint saved to: {self.ckpt_dir}')
                 log.info(f'Era {era} took: {time.time() - epoch_start:<5g}s')
 
         return {
