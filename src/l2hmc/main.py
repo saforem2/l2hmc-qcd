@@ -20,24 +20,19 @@ from typing import Optional
 import numpy as np
 from omegaconf.dictconfig import DictConfig
 
-# from rich.logging import RichHandler
 from l2hmc.configs import ExperimentConfig
 from l2hmc.utils.rich import print_config
 from l2hmc.utils.plot_helpers import set_plot_style
 
-# log = logging.getLogger('root')
-# handler = RichHandler(show_path=False, rich_tracebacks=True)
-# log.handlers = [handler]
-
 set_plot_style()
-
-log = logging.getLogger(__name__)
 
 logging.getLogger('filelock').setLevel(logging.CRITICAL)
 logging.getLogger('matplotlib').setLevel(logging.CRITICAL)
 logging.getLogger('PIL.PngImagePlugin').setLevel(logging.CRITICAL)
 logging.getLogger('graphviz._tools').setLevel(logging.CRITICAL)
 logging.getLogger('graphviz').setLevel(logging.CRITICAL)
+
+log = logging.getLogger(__name__)
 
 
 def seed_everything(seed: int):
@@ -68,10 +63,7 @@ def cleanup() -> None:
     dist.destroy_process_group()
 
 
-def setup_tensorflow(
-        precision: Optional[str] = None,
-        ngpus: Optional[int] = None,
-) -> int:
+def setup_tensorflow(precision: Optional[str] = None) -> int:
     import tensorflow as tf
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
@@ -89,9 +81,6 @@ def setup_tensorflow(
     if gpus:
         try:
             # Currently memory growth needs to be the same across GPUs
-            if ngpus is not None:
-                gpus = gpus[-ngpus:]
-
             for gpu in gpus:
                 tf.config.experimental.set_memory_growth(gpu, True)
             tf.config.experimental.set_visible_devices(
@@ -107,7 +96,6 @@ def setup_tensorflow(
             print(e)
     elif cpus:
         try:
-            # Currently, memory growth needs to be the same across GPUs
             logical_cpus = tf.config.experimental.list_logical_devices('CPU')
             log.info(
                 f'{len(cpus)}, Physical CPUs and '
@@ -144,13 +132,6 @@ def setup_torch(
     rank = dsetup['rank']
     size = dsetup['size']
     local_rank = dsetup['local_rank']
-    # if backend in ['ddp', 'DDP']:
-    #     init_process_group(
-    #         rank=rank,
-    #         world_size=size,
-    #         backend='nccl' if torch.cuda.is_available() else 'gloo'
-    #     )
-
     nthreads = os.environ.get(
         'OMP_NUM_THREADS',
         None
@@ -164,12 +145,6 @@ def setup_torch(
     if torch.cuda.is_available():
         torch.cuda.set_device(local_rank)
         # torch.cuda.manual_seed(cfg.seed + hvd.local_rank())
-    # else:
-    #     torch.set_default_dtype(torch.float32)
-    # RANK = hvd.rank()
-    # LOCAL_RANK = hvd.local_rank()
-    # SIZE = hvd.size()
-    # LOCAL_SIZE = hvd.local_size()
 
     log.info(f'Global Rank: {rank} / {size-1}')
     log.info(f'[{rank}]: Local rank: {local_rank}')
@@ -225,6 +200,8 @@ def run(cfg: DictConfig) -> str:
         and ex.config.steps.nepoch > 0
     )
 
+    nchains_eval = int(ex.config.dynamics.xshape[0] // 4)
+
     # --- [1.] Train model -------------------------------------------------
     if should_train:
         tstart = time.time()
@@ -235,7 +212,7 @@ def run(cfg: DictConfig) -> str:
         if ex.trainer._is_chief and ex.config.steps.test > 0:
             log.info('Evaluating trained model')
             estart = time.time()
-            _ = ex.evaluate(job_type='eval')
+            _ = ex.evaluate(job_type='eval', nchains=nchains_eval)
             log.info(f'Evaluation took: {time.time() - estart:.5f}s')
 
             try:
@@ -247,7 +224,7 @@ def run(cfg: DictConfig) -> str:
     if ex.trainer._is_chief and ex.config.steps.test > 0:
         log.info('Running generic HMC for comparison')
         hstart = time.time()
-        _ = ex.evaluate(job_type='hmc')
+        _ = ex.evaluate(job_type='hmc', nchains=nchains_eval)
         log.info(f'HMC took: {time.time() - hstart:.5f}s')
         from l2hmc.utils.plot_helpers import measure_improvement
         improvement = measure_improvement(
@@ -261,12 +238,6 @@ def run(cfg: DictConfig) -> str:
 
 @hydra.main(version_base=None, config_path='./conf', config_name='config')
 def main(cfg: DictConfig):
-    # framework = cfg.get('framework', None)
-    # if framework in ['pt', 'torch', 'pytorch']:
-    #     ngpus = torch.cuda.device_count()
-    #     if ngpus >= 2 and cfg.get('backend', None) in ['DDP', 'ddp']:
-    #         return run_ddp(run, ngpus)
-    #     return run(cfg)
     return run(cfg)
 
 
