@@ -5,6 +5,7 @@ Implements methods for training L2HMC sampler.
 """
 from __future__ import absolute_import, annotations, division, print_function
 from collections import defaultdict
+from contextlib import nullcontext
 import logging
 import os
 from pathlib import Path
@@ -20,9 +21,11 @@ from rich import box
 from rich.live import Live
 from rich.logging import RichHandler
 from rich.table import Table
+from rich_logger import RichTablePrinter
 import torch
 from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
+from tqdm import trange
 import wandb
 
 
@@ -44,16 +47,11 @@ from l2hmc.network.pytorch.network import NetworkFactory
 from l2hmc.trackers.pytorch.trackers import update_summaries
 from l2hmc.trainers.trainer import BaseTrainer
 from l2hmc.utils.history import summarize_dict
-from l2hmc.utils.rich import is_interactive
+from l2hmc.utils.rich import get_width, is_interactive
 from l2hmc.utils.rich import get_console
+from l2hmc.utils.rich_logger import LOGGER_FIELDS
 from l2hmc.utils.step_timer import StepTimer
 # WIDTH = int(os.environ.get('COLUMNS', 150))
-
-INTERACTIVE = is_interactive()
-if INTERACTIVE:
-    from tqdm.notebook import trange, tqdm
-else:
-    from tqdm.rich import trange, tqdm
 
 console = get_console()
 logging.basicConfig(
@@ -564,6 +562,39 @@ class Trainer(BaseTrainer):
 
         return xout.detach(), metrics
 
+    def get_context_manager(self, table: Table):
+        width = get_width()
+        make_live = (
+            int(width) > 150            # make sure wide enough to fit table
+            and self._is_chief
+            and self.size == 1          # not worth the trouble when dist.
+            and not is_interactive()    # AND not in a jupyter / ipython kernel
+        )
+        if make_live:
+            return Live(
+                table,
+                # screen=True,
+                transient=True,
+                # auto_refresh=False,
+                console=self.console,
+                vertical_overflow='visible'
+            )
+
+        return nullcontext()
+
+    def get_printer(self, job_type: str) -> RichTablePrinter | None:
+        if self._is_chief and int(get_width()) > 100:
+            printer = RichTablePrinter(
+                key=f'{job_type[0]}step',
+                fields=LOGGER_FIELDS  # type:ignore
+            )
+
+            printer.hijack_tqdm()
+            # printer.expand = True
+
+            return printer
+        return None
+
     def _setup_eval(
             self,
             beta: Optional[float] = None,
@@ -575,8 +606,6 @@ class Trainer(BaseTrainer):
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
-            nprint: Optional[int] = None,
-            nlog: Optional[int] = None,
     ) -> dict:
         assert job_type in ['eval', 'hmc']
 
@@ -611,13 +640,10 @@ class Trainer(BaseTrainer):
         table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
         eval_steps = self.steps.test if eval_steps is None else eval_steps
         assert isinstance(eval_steps, int)
-        if nprint is None:
-            nprint = max(1, min(50, eval_steps // 50))
-
-        if nlog is None:
-            nlog = max((1, min((10, eval_steps))))
-            if nlog <= eval_steps:
-                nlog = min(10, max(1, eval_steps // 100))
+        nprint = max(1, min(50, eval_steps // 50))
+        nlog = max((1, min((10, eval_steps))))
+        if nlog <= eval_steps:
+            nlog = min(10, max(1, eval_steps // 100))
 
         if run is not None:
             run.config.update({
@@ -663,10 +689,9 @@ class Trainer(BaseTrainer):
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
             dynamic_step_size: Optional[bool] = None,
-            nprint: Optional[int] = None,
-            nlog: Optional[int] = None,
     ) -> dict:
         """Evaluate dynamics."""
+
         assert job_type in ['eval', 'hmc']
         tables = {}
         summaries = []
@@ -682,13 +707,11 @@ class Trainer(BaseTrainer):
             nchains=nchains,
             job_type=job_type,
             eval_steps=eval_steps,
-            nprint=nprint,
-            nlog=nlog,
         )
         x = setup['x']
         eps = setup['eps']
         beta = setup['beta']
-        table = setup['table']
+        # table = setup['table']
         nleapfrog = setup['nleapfrog']
         eval_steps = setup['eval_steps']
         timer = self.timers[job_type]
@@ -706,77 +729,77 @@ class Trainer(BaseTrainer):
             return self.eval_step(z)
 
         self.dynamics.eval()
-        # printer = self.get_printer(job_type=job_type)
-        with self.get_context_manager(table) as ctx:
-            for step in trange(
-                    eval_steps,
-                    dynamic_ncols=True,
-                    disable=(not self._is_chief),
+        # with self.get_context_manager(table) as ctx:
+        printer = self.get_printer(job_type=job_type)
+        for step in trange(
+                eval_steps,
+                dynamic_ncols=True,
+                disable=(not self._is_chief),
+        ):
+            timer.start()
+            x, metrics = eval_fn((x, beta))
+            dt = timer.stop()
+            if (
+                    # step == 0
+                    step % setup['nlog'] == 0
+                    or step % setup['nprint'] == 0
             ):
-                timer.start()
-                x, metrics = eval_fn((x, beta))
-                dt = timer.stop()
-                if (
-                        # step == 0
-                        step % setup['nlog'] == 0
-                        or step % setup['nprint'] == 0
-                ):
-                    record = {
-                        f'{job_type[0]}step': step,
-                        'dt': dt,
-                        'beta': beta,
-                        'loss': metrics.pop('loss', None),
-                        'dQsin': metrics.pop('dQsin', None),
-                        'dQint': metrics.pop('dQint', None),
-                    }
-                    record.update(metrics)
-                    if job_type == 'hmc' and dynamic_step_size:
-                        acc = record.get('acc_mask', None)
-                        record['eps'] = eps
-                        if acc is not None and eps is not None:
-                            acc_avg = acc.mean()
-                            if acc_avg < 0.66:
-                                eps -= (eps / 10.)
-                            else:
-                                eps += (eps / 10.)
+                record = {
+                    f'{job_type[0]}step': step,
+                    'dt': dt,
+                    'beta': beta,
+                    'loss': metrics.pop('loss', None),
+                    'dQsin': metrics.pop('dQsin', None),
+                    'dQint': metrics.pop('dQint', None),
+                }
+                record.update(metrics)
+                if job_type == 'hmc' and dynamic_step_size:
+                    acc = record.get('acc_mask', None)
+                    record['eps'] = eps
+                    if acc is not None and eps is not None:
+                        acc_avg = acc.mean()
+                        if acc_avg < 0.66:
+                            eps -= (eps / 10.)
+                        else:
+                            eps += (eps / 10.)
 
-                    avgs, summary = self.record_metrics(run=run,
-                                                        arun=arun,
-                                                        step=step,
-                                                        writer=writer,
-                                                        metrics=record,
-                                                        job_type=job_type)
-                    summaries.append(summary)
-                    table = self.update_table(
-                        table=setup['table'],
-                        step=step,
-                        avgs=avgs,
-                    )
-                    if (
-                            # not isinstance(setup['ctx'], Live)
-                            step > 0 and
-                            step % setup['nprint'] == 0
-                    ):
-                        # if printer is not None:
-                        #     printer.log(avgs)
-                        # else:
+                avgs, summary = self.record_metrics(run=run,
+                                                    arun=arun,
+                                                    step=step,
+                                                    writer=writer,
+                                                    metrics=record,
+                                                    job_type=job_type)
+                summaries.append(summary)
+                # table = self.update_table(
+                #     table=setup['table'],
+                #     step=step,
+                #     avgs=avgs,
+                # )
+                if (
+                        # not isinstance(setup['ctx'], Live)
+                        step > 0 and
+                        step % setup['nprint'] == 0
+                ):
+                    if printer is not None:
+                        printer.log(avgs)
+                    else:
                         log.info(summary)
 
-                    if avgs.get('acc', 1.0) < 1e-5:
-                        if stuck_counter < patience:
-                            stuck_counter += 1
-                        else:
-                            self.console.log('Chains are stuck! Redrawing x')
-                            x = self.lattice.random()
-                            stuck_counter = 0
+                if avgs.get('acc', 1.0) < 1e-5:
+                    if stuck_counter < patience:
+                        stuck_counter += 1
+                    else:
+                        self.console.log('Chains are stuck! Redrawing x')
+                        x = self.lattice.random()
+                        stuck_counter = 0
 
-                # if isinstance(ctx, Live):
-                #     ctx.console.clear_live()
+            # if isinstance(ctx, Live):
+            #     ctx.console.clear_live()
 
-        tables[str(0)] = setup['table']
+        # tables[str(0)] = setup['table']
 
-        # if printer is not None:
-        #     printer.finalize()
+        if printer is not None:
+            printer.finalize()
 
         return {
             'timer': timer,
@@ -792,6 +815,7 @@ class Trainer(BaseTrainer):
         """Logic for performing a single training step"""
         xinit, beta = inputs
         xinit = self.g.compat_proj(xinit.reshape(self.xshape))
+        # xinit = self.to_u1(xinit)
         beta = torch.tensor(beta) if isinstance(beta, float) else beta
         if WITH_CUDA:
             xinit, beta = xinit.cuda(), beta.cuda()
@@ -983,7 +1007,6 @@ class Trainer(BaseTrainer):
             nepoch: Optional[int] = None,
             writer: Optional[Any] = None,
             extend: int = 1,
-            rich: Optional[bool] = None,
     ) -> tuple[Tensor, dict]:
         rows = {}
         summaries = []
@@ -999,18 +1022,19 @@ class Trainer(BaseTrainer):
         nepoch *= extend
         losses = []
         ctx = self.get_context_manager(table)
-        printer = self.get_printer(job_type='train') if rich else None
         with ctx:
             if isinstance(ctx, Live):
                 ctx.console.clear_live()
                 ctx.update(table)
 
-            for epoch in trange(nepoch, disable=(not self._is_chief)):
+            for epoch in range(nepoch):
                 self.timers['train'].start()
                 x, metrics = self.train_step((x, beta))  # type:ignore
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
                 if (
+                        # epoch == 0
+                        # or self.should_print(epoch)
                         self.should_log(epoch)
                         or self.should_print(epoch)
                 ):
@@ -1042,10 +1066,7 @@ class Trainer(BaseTrainer):
                             self.should_print(epoch)
                             and not isinstance(ctx, Live)
                     ):
-                        if printer is not None:
-                            printer.log(avgs)
-                        else:
-                            log.info(summary)
+                        log.info(summary)
 
                     table = self.update_table(
                         table=table,
@@ -1062,9 +1083,6 @@ class Trainer(BaseTrainer):
                 if isinstance(ctx, Live):
                     ctx.console.clear()
                     ctx.console.clear_live()
-
-        if printer is not None:
-            printer.finalize()
 
         data = {
             'rows': rows,
@@ -1146,7 +1164,6 @@ class Trainer(BaseTrainer):
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
-            rich: Optional[bool] = None,
     ) -> dict:
         """Perform training and return dictionary of results."""
         self.dynamics.train()
@@ -1172,7 +1189,6 @@ class Trainer(BaseTrainer):
         assert nera is not None
         assert train_dir is not None
         # for era in trange(nera, disable=(not self._is_chief)):
-        # for era in trange(nera, disable=(not self._is_chief)):
         for era in range(nera):
             b = torch.tensor(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
@@ -1195,7 +1211,6 @@ class Trainer(BaseTrainer):
                 writer=writer,
                 extend=extend,
                 nepoch=nepoch,
-                rich=rich,
             )
             st0 = time.time()
 
