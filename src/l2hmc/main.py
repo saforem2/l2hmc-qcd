@@ -20,10 +20,7 @@ from typing import Optional
 import numpy as np
 from omegaconf.dictconfig import DictConfig
 
-from l2hmc.configs import ExperimentConfig
-from l2hmc.utils.rich import print_config
 from l2hmc.utils.plot_helpers import set_plot_style
-
 set_plot_style()
 
 logging.getLogger('filelock').setLevel(logging.CRITICAL)
@@ -68,8 +65,13 @@ def setup_tensorflow(precision: Optional[str] = None) -> int:
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     import horovod.tensorflow as hvd
-    hvd.init()
+    # hvd.init()
     # hvd.init() if not hvd.is_initialized() else None
+    try:
+        _ = hvd.rank()
+    except:
+        hvd.init()
+
     tf.keras.backend.set_floatx(precision)
     TF_FLOAT = tf.keras.backend.floatx()
     eager_mode = os.environ.get('TF_EAGER', None)
@@ -174,11 +176,6 @@ def get_experiment(
         return experiment
 
     if framework in ['pt', 'pytorch', 'torch']:
-        if cfg.get('backend', 'DDP') in ['hvd', 'horovod']:
-            import torch
-            import horovod.torch as hvd
-            hvd.init()
-
         _ = setup_torch(
             seed=cfg.seed,
             precision=cfg.precision,
@@ -198,10 +195,13 @@ def run(cfg: DictConfig) -> str:
     # --- [0.] Setup ------------------------------------------------------
     setup(cfg)
     ex = get_experiment(cfg)
+    from l2hmc.configs import ExperimentConfig
+
     assert isinstance(ex.config, ExperimentConfig)
 
     # if ex.trainer.rank == 0:
     if ex.trainer._is_chief:
+        from l2hmc.utils.rich import print_config
         print_config(ex.cfg, resolve=True)
 
     should_train: bool = (
