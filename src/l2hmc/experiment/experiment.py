@@ -56,7 +56,7 @@ class BaseExperiment(ABC):
         self._is_built = False
         self.run = None
         self.arun = None
-        self.trainer = None
+        self.trainer: BaseTrainer
         self._outdir, self._jobdirs = self.get_outdirs()
         # self.lattice = self.build_lattice()
         # self._build_networks = build_networks
@@ -272,16 +272,18 @@ class BaseExperiment(ABC):
             outdir: Optional[os.PathLike] = None,
             therm_frac: Optional[float] = None,
     ) -> xr.Dataset:
-        assert isinstance(self.trainer, BaseTrainer)
+        # assert isinstance(self.trainer, BaseTrainer)
         # if output is None:
         #     summaries = self.trainer.summaries.get(job_type, None)
         #     history = self.trainer.histories.get(job_type, None)
         # else:
         #     summaries = output.get('summaries', None)
         #     history = output.get('history', None)
-        summaries = self.trainer.summaries.get(job_type, None)
+        summary = self.trainer.summaries.get(job_type, None)
         history = self.trainer.histories.get(job_type, None)
-        if summaries is not None:
+        summaries = []
+        if summary is not None:
+            summaries = [f'{k} {v}' for k, v in summary.items()]
             self.save_summaries(summaries, job_type=job_type)
         if history is None:
             raise ValueError(f'Unable to recover history for {job_type}')

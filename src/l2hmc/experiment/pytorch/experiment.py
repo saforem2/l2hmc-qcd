@@ -308,6 +308,7 @@ class Experiment(BaseExperiment):
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
+            rich: Optional[bool] = None,
     ):
         # nchains = 16 if nchains is None else nchains
         jobdir = self.get_jobdir(job_type='train')
@@ -344,6 +345,7 @@ class Experiment(BaseExperiment):
                 train_dir=jobdir,
                 skip=skip,
                 beta=beta,
+                rich=rich,
             )
         # if self.trainer._is_chief:
         #     summaryfile = jobdir.joinpath('summaries.txt')
@@ -379,6 +381,9 @@ class Experiment(BaseExperiment):
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
             eval_steps: Optional[int] = None,
+            nprint: Optional[int] = None,
+            nlog: Optional[int] = None,
+            rich: Optional[bool] = None,
     ) -> dict | None:
         """Evaluate model."""
         # if RANK != 0:
@@ -400,6 +405,8 @@ class Experiment(BaseExperiment):
             eps=eps,
             nleapfrog=nleapfrog,
             eval_steps=eval_steps,
+            nprint=nprint,
+            nlog=nlog
         )
 
         output['dataset'] = self.save_dataset(
