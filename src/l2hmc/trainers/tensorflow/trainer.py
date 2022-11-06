@@ -38,16 +38,10 @@ from l2hmc.trackers.tensorflow.trackers import update_summaries
 from l2hmc.trainers.trainer import BaseTrainer
 from l2hmc.utils.history import summarize_dict
 from l2hmc.utils.rich import get_width, is_interactive
-from l2hmc.utils.rich_logger import LOGGER_FIELDS
 from l2hmc.utils.step_timer import StepTimer
 # tf.autograph.set_verbosity(0)
 # os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 # JIT_COMPILE = (len(os.environ.get('JIT_COMPILE', '')) > 0)
-
-if is_interactive():
-    from tqdm.notebook import trange
-else:
-    from tqdm.rich import trange
 
 log = logging.getLogger(__name__)
 
@@ -436,6 +430,25 @@ class Trainer(BaseTrainer):
 
         return xout, metrics
 
+    def get_context_manager(self, table: Table) -> Live | nullcontext:
+        make_live = (
+            int(get_width()) > 150    # make sure wide enough to fit table
+            and self._is_chief
+            and hvd.size() == 1       # not worth the trouble when distributed
+            and not is_interactive()  # AND not in a jupyter / ipython kernel
+        )
+        if make_live:
+            return Live(
+                table,
+                # screen=True,
+                transient=True,
+                # auto_refresh=False,
+                console=self.console,
+                vertical_overflow='visible'
+            )
+
+        return nullcontext()
+
     def _setup_eval(
             self,
             beta: Optional[Tensor | float] = None,
@@ -448,8 +461,6 @@ class Trainer(BaseTrainer):
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
-            nprint: Optional[int] = None,
-            nlog: Optional[int] = None,
     ) -> dict:
         assert job_type in ['eval', 'hmc']
 
@@ -494,12 +505,10 @@ class Trainer(BaseTrainer):
         table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
         eval_steps = self.steps.test if eval_steps is None else eval_steps
         assert isinstance(eval_steps, int)
-        if nprint is None:
-            nprint = max(1, min(50, eval_steps // 50))
-        if nlog is None:
-            nlog = max((1, min((10, eval_steps))))
-            if nlog <= eval_steps:
-                nlog = min(10, max(1, eval_steps // 100))
+        nprint = max(1, min(50, eval_steps // 50))
+        nlog = max((1, min((10, eval_steps))))
+        if nlog <= eval_steps:
+            nlog = min(10, max(1, eval_steps // 100))
 
         if run is not None:
             run.config.update({
@@ -540,8 +549,6 @@ class Trainer(BaseTrainer):
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
             dynamic_step_size:  Optional[bool] = None,
-            nprint: Optional[int] = None,
-            nlog: Optional[int] = None,
     ) -> dict:
         """Evaluate model."""
         assert job_type in ['hmc', 'eval']
@@ -560,8 +567,6 @@ class Trainer(BaseTrainer):
             nchains=nchains,
             job_type=job_type,
             eval_steps=eval_steps,
-            nprint=nprint,
-            nlog=nlog,
         )
         x = setup['x']
         assert isinstance(x, Tensor)
@@ -596,7 +601,7 @@ class Trainer(BaseTrainer):
             return self.eval_step(inputs)  # type:ignore
 
         with self.get_context_manager(table) as ctx:
-            for step in trange(eval_steps, disable=(not self._is_chief)):
+            for step in range(eval_steps):
                 timer.start()
                 x, metrics = eval_fn((x, beta))  # type:ignore
                 dt = timer.stop()
@@ -780,7 +785,7 @@ class Trainer(BaseTrainer):
                 ctx.console.rule(tstr)
                 ctx.update(table)
 
-            for epoch in trange(nepoch, disable=(not self._is_chief)):
+            for epoch in range(nepoch):
                 self.timers['train'].start()
                 x, metrics = self.train_step((x, beta))  # type:ignore
                 dt = self.timers['train'].stop()
@@ -947,7 +952,6 @@ class Trainer(BaseTrainer):
         assert x is not None
         assert nera is not None
         assert train_dir is not None
-        # for era in trange(nera, disable=(not self._is_chief)):
         for era in range(nera):
             b = tf.constant(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
