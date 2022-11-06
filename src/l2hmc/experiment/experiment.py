@@ -3,25 +3,23 @@ experiment.py
 
 Contains implementation of Experiment object, defined by a static config.
 """
-from __future__ import absolute_import, print_function, division, annotations
+from __future__ import absolute_import, annotations, division, print_function
 from abc import ABC, abstractmethod
 import logging
 import os
 from pathlib import Path
 from typing import Optional
-import numpy as np
 
 import aim
 from hydra.utils import instantiate
+import numpy as np
 from omegaconf import DictConfig, OmegaConf
 import wandb
 import xarray as xr
 
-from l2hmc.trainers.trainer import BaseTrainer
 from l2hmc.common import get_timestamp, is_interactive, save_and_analyze_data
-from l2hmc.configs import (
-    AIM_DIR, ExperimentConfig, HERE, OUTDIRS_FILE
-)
+from l2hmc.configs import AIM_DIR, ExperimentConfig, HERE, OUTDIRS_FILE
+from l2hmc.trainers.trainer import BaseTrainer
 from l2hmc.utils.step_timer import StepTimer
 # import l2hmc.utils.plot_helpers as hplt
 
@@ -38,57 +36,32 @@ def get_logger(rank: int) -> logging.Logger:
 
 class BaseExperiment(ABC):
     """Convenience class for running framework independent experiments."""
-    def __init__(self, cfg: DictConfig) -> None:
+
+    def __init__(
+            self,
+            cfg: DictConfig,
+    ) -> None:
         super().__init__()
         self._created = get_timestamp('%Y-%m-%d-%H%M%S')
         self.cfg = cfg
         self.config = instantiate(cfg)
-        assert isinstance(self.config, ExperimentConfig)
-        assert self.config.framework in [
-            'pytorch',
-            'tensorflow',
-            'torch',
+        import l2hmc.configs as configs
+        assert isinstance(self.config, (
+            ExperimentConfig,
+            configs.ExperimentConfig,
+        ))
+        assert self.config.framework.lower() in [
+            'pt', 'tf', 'pytorch', 'torch', 'tensorflow'
         ]
-        # self.lattice = self.build_lattice()
         self._is_built = False
         self.run = None
         self.arun = None
-        # self.lattice = None
-        # self.loss_fn = None
-        self.trainer = None
-        # self.dynamics = None
-        # self.optimizer = None
+        self.trainer: BaseTrainer
         self._outdir, self._jobdirs = self.get_outdirs()
-
-    # @property
-    # @abstractmethod
-    # def run(self):
-    #     pass
-
-    # @run.setter
-    # @abstractmethod
-    # def run(self, run):
-    #     pass
-
-    # @property
-    # @abstractmethod
-    # def arun(self):
-    #     pass
-
-    # @arun.setter
-    # @abstractmethod
-    # def arun(self, arun):
-    #     pass
-
-    # @property
-    # @abstractmethod
-    # def trainer(self):
-    #     pass
-
-    # @trainer.setter
-    # @abstractmethod
-    # def trainer(self, trainer):
-    #     pass
+        # self.lattice = self.build_lattice()
+        # self._build_networks = build_networks
+        # self.keep = keep
+        # self.skip = skip
 
     @abstractmethod
     def train(self) -> dict:
@@ -279,26 +252,44 @@ class BaseExperiment(ABC):
                 )
                 timer.save_and_write(outdir=timerdir, fname=fname)
 
+    def save_summaries(
+            self,
+            summaries: list[str],
+            job_type: str,
+    ) -> None:
+        # TODO: Deal with `self.trainer.summaries` being dict
+        outdir = self.get_jobdir(job_type)
+        outfile = outdir.joinpath('summaries.txt')
+        with open(outfile.as_posix(), 'a') as f:
+            f.write('\n'.join(summaries))
+
     def save_dataset(
             self,
             job_type: str,
             dset: Optional[xr.Dataset] = None,
-            output: Optional[dict] = None,
+            tables: Optional[dict] = None,
             nchains: Optional[int] = None,
             outdir: Optional[os.PathLike] = None,
-            # fname: Optional[str] = None,
             therm_frac: Optional[float] = None,
     ) -> xr.Dataset:
-        assert isinstance(self.trainer, BaseTrainer)
-        if output is None:
-            history = self.trainer.histories.get(job_type, None)
-        else:
-            history = output.get('history', None)
+        # assert isinstance(self.trainer, BaseTrainer)
+        # if output is None:
+        #     summaries = self.trainer.summaries.get(job_type, None)
+        #     history = self.trainer.histories.get(job_type, None)
+        # else:
+        #     summaries = output.get('summaries', None)
+        #     history = output.get('history', None)
+        summary = self.trainer.summaries.get(job_type, None)
+        history = self.trainer.histories.get(job_type, None)
+        summaries = []
+        if summary is not None:
+            summaries = [f'{k} {v}' for k, v in summary.items()]
+            self.save_summaries(summaries, job_type=job_type)
         if history is None:
             raise ValueError(f'Unable to recover history for {job_type}')
 
         assert history is not None  # and isinstance(history, BaseHistory)
-        therm_frac = 0.1 if therm_frac is None else therm_frac
+        # therm_frac = 0.1 if therm_frac is None else therm_frac
         dset = history.get_dataset(therm_frac=therm_frac)
         assert isinstance(dset, xr.Dataset)
 
@@ -310,11 +301,18 @@ class BaseExperiment(ABC):
         outdir = self._outdir if outdir is None else outdir
         assert outdir is not None
         self.save_timers(job_type=job_type, outdir=outdir)
+        import l2hmc.configs as configs
+        assert isinstance(
+            self.config, (configs.ExperimentConfig, ExperimentConfig)
+        )
+        logfreq = self.config.steps.log
         _ = save_and_analyze_data(dset,
                                   run=self.run,
                                   arun=self.arun,
+                                  logfreq=logfreq,
                                   outdir=outdir,
-                                  output=output,
+                                  tables=tables,
+                                  summaries=summaries,
                                   nchains=nchains,
                                   job_type=job_type,
                                   framework=self.config.framework)

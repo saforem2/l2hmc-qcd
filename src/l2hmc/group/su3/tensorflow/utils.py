@@ -179,41 +179,33 @@ def rsqrtPHM3(x: Tensor) -> Tensor:
     x2 = tf.linalg.matmul(x, x)
     p2 = tf.math.real(tf.linalg.trace(x2))
     det = tf.math.real(tf.linalg.det(x))
-    c0, c1, c2 = rsqrtPHM3f(tr, p2, det)
-    c0_ = tf.reshape(c0, c0.shape + [1, 1])
-    c1_ = tf.reshape(c1, c1.shape + [1, 1])
-    c2_ = tf.reshape(c2, c2.shape + [1, 1])
-    e3 = tf.eye(3, batch_shape=[1] * len(c0.shape), dtype=c0_.dtype)
-    term0 = tf.cast(c0_ * e3, x.dtype)
-    # term0 = tf.cast(
-    #     c0_ * tf.eye(3, batch_shape=[1] * len(c0.shape)),
-    #     x.dtype
-    # )
-    term1 = tf.multiply(x, tf.cast(c1_, x.dtype))
-    term2 = tf.multiply(x, tf.cast(c2_, x.dtype))
-    return term0 + term1 + term2
+    c0_, c1_, c2_ = rsqrtPHM3f(tr, p2, det)
+    c0 = tf.cast(tf.reshape(c0_, c0_.shape + [1, 1]), x.dtype)
+    c1 = tf.cast(tf.reshape(c1_, c1_.shape + [1, 1]), x.dtype)
+    c2 = tf.cast(tf.reshape(c2_, c2_.shape + [1, 1]), x.dtype)
+    # e3 = tf.eye(3, batch_shape=[1] * len(c0.shape), dtype=c0_.dtype)
+    # term0 = tf.cast(c0_ * e3, x.dtype)
+    # # term0 = tf.cast(
+    # #     c0_ * tf.eye(3, batch_shape=[1] * len(c0.shape)),
+    # #     x.dtype
+    # # )
+    # term1 = tf.multiply(x, tf.cast(c1_, x.dtype))
+    # term2 = tf.multiply(x, tf.cast(c2_, x.dtype))
+    # return term0 + term1 + term2
+    return c0 * eyeOf(x) + c1 * x + c2 * x2
 
 
 def projectU(x: Tensor) -> Tensor:
     """x (x'x)^{-1/2}"""
-    # nc = x.shape[-1]
-    t = tf.linalg.matmul(x, x, adjoint_a=True)
+    t = tf.linalg.adjoint(x) @ x
     t2 = rsqrtPHM3(t)
     return tf.linalg.matmul(x, t2)
 
 
 def projectSU(x: Tensor) -> Tensor:
-    # p = tmp * tf.constant(-1.0) / nc
-    # p = -(1.0 / nc) * tf.math.atan2(tf.math.imag(d), tf.math.real(d))
-    # p = tf.math.multiply(tf.math.negative(tf.constant(1.0) / nc),
-    #                      tf.math.atan2(tf.math.imag(d), tf.math.real(d)))
-    # pr = tf.math.real(p)
-    # pi = tf.math.imag(p)
-    # p_ = tf.reshape(tf.dtypes.complex(pr, pi), p.shape + [1, 1])
     nc = tf.constant(x.shape[-1], TF_FLOAT)
     m = projectU(x)
     d = tf.linalg.det(m)
-    # tmp = tf.math.atan2(tf.math.imag(d), tf.math.real(d))
     const = (1.0 / (-nc))
     at2 = tf.cast(
         tf.math.atan2(

@@ -14,17 +14,21 @@ import matplotx
 import numpy as np
 import seaborn as sns
 import tensorflow as tf
-from tensorflow.python.framework.ops import EagerTensor
+# from tensorflow.python.framework.ops import EagerTensor
 import torch
 import xarray as xr
+from l2hmc.common import grab_tensor
 
 from l2hmc.configs import MonteCarloStates, Steps
 import l2hmc.utils.plot_helpers as hplt
 
-TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray]
+# TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray]
+TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray, list]
+ScalarLike = Union[float, int, bool, np.floating, np.integer]
 
 PT_FLOAT = torch.get_default_dtype()
-TF_FLOAT = tf.keras.backend.floatx()
+TF_FLOAT = tf.dtypes.as_dtype(tf.keras.backend.floatx())
+Scalar = Union[float, int, np.floating, bool]
 # Scalar = TF_FLOAT | PT_FLOAT | np.floating | int | bool
 
 log = logging.getLogger(__name__)
@@ -33,8 +37,14 @@ xplt = xr.plot  # type:ignore
 LW = plt.rcParams.get('axes.linewidth', 1.75)
 
 
+def format_pair(k: str, v: ScalarLike) -> str:
+    if isinstance(v, (int, bool, np.integer)):
+        return f'{k}={v:<3}'
+    return f'{k}={v:<3.4f}'
+
+
 def summarize_dict(d: dict) -> str:
-    return ', '.join([f'{k}={v:<3.2f}' for k, v in d.items()])
+    return ' '.join([format_pair(k, v) for k, v in d.items()])
 
 
 @dataclass
@@ -67,61 +77,85 @@ class BaseHistory:
 
     def era_summary(self, era) -> str:
         emetrics = self.era_metrics.get(str(era), None)
-        if emetrics is not None:
-            return ', '.join([
-                f'{k}={np.mean(v):<5.4f}' for k, v in emetrics.items()
-                if k not in ['era', 'epoch']
-            ])
-        raise ValueError
+        if emetrics is None:
+            return ''
+        return ', '.join([
+            f'{k}={np.mean(v):<5.4f}' for k, v in emetrics.items()
+            if k not in ['era', 'epoch']
+            and v is not None
+        ])
 
-    def _update(self, key: str, val: TensorLike) -> float:
-        if val is None:
-            raise ValueError(f'None encountered: {key}: {val}')
+    def metric_to_numpy(
+            self,
+            metric: Any,
+    ) -> np.ndarray | Scalar:
+        if isinstance(metric, (Scalar, np.ndarray)):
+            return metric
 
-        if isinstance(val, list):
-            if isinstance(val[0], np.ndarray):
-                val = np.stack(val)
-            elif isinstance(val[0], torch.Tensor):
-                val = torch.stack(val).detach().cpu().numpy()
-            elif isinstance(val[0], tf.Tensor):
-                val = tf.stack(val).numpy()
-            else:
-                val = np.array(val)
+        if (
+            isinstance(metric, tf.Tensor)
+            or isinstance(metric, torch.Tensor)
+        ):
+            return grab_tensor(metric)
 
-        if isinstance(val, (EagerTensor, tf.Tensor)):
-            val = val.numpy()  # type:ignore
+        if isinstance(metric, list):
+            if isinstance(metric[0], np.ndarray):
+                return np.stack(metric)
+            if isinstance(metric[0], tf.Tensor):
+                return grab_tensor(tf.stack(metric))
+            if isinstance(metric[0], torch.Tensor):
+                return grab_tensor(torch.stack(metric))
 
+        return np.array(metric)
+
+    def _update(
+            self,
+            key: str,
+            val: Any
+    ) -> float | int | bool | np.floating | np.integer:
         try:
             self.history[key].append(val)
         except KeyError:
             self.history[key] = [val]
 
-        # if isinstance(val, Scalar):
-        #     return np.array(val).mean()
+        # ScalarLike = Union[float, int, bool, np.floating]
+        if isinstance(val, (float, int, bool, np.floating, np.integer)):
+            return val
+        # if (
+        #         isinstance(
+        #             val,
+        #             (float, int, bool, np.floating, np.integer)
+        #         )
+        #         # or key in ['era', 'epoch']
+        #         # or 'step' in key
+        # ):
+        #     # assert val is not None and isinstance(val, ScalarLike)
+        #     return val
 
-        return np.array(val).mean()
+        avg = np.mean(val).real
+        assert isinstance(avg, np.floating)
+        return avg
 
-    def update(self, metrics: dict) -> dict:
+    def update(
+            self,
+            metrics: dict
+    ) -> dict[str, Any]:
         avgs = {}
-        era = metrics.get('era', 0)
+        era = metrics.get('era', None)
+        avg = 0.0
         for key, val in metrics.items():
-            avg = None
-            if isinstance(val, (float, int)):
-                avg = val
+            if val is None:
+                continue
+            if isinstance(val, dict):
+                for k, v in val.items():
+                    kk = f'{key}/{k}'
+                    avg = self._update(kk, v)
+                    avgs[kk] = avg
             else:
-                if isinstance(val, dict):
-                    for k, v in val.items():
-                        key = f'{key}/{k}'
-                        try:
-                            avg = self._update(key=key, val=v)
-                        # TODO: Figure out how to deal with exception
-                        except tf.errors.InvalidArgumentError as e:
-                            raise e
-                else:
-                    avg = self._update(key=key, val=val)
-
-            if avg is not None:
+                avg = self._update(key, val)
                 avgs[key] = avg
+
+            if era is not None:
                 if str(era) not in self.era_metrics.keys():
                     self.era_metrics[str(era)] = {}
 
@@ -194,10 +228,12 @@ class BaseHistory:
         else:
             if len(arr.shape) == 1:
                 fig, ax = plt.subplots(**subplots_kwargs)
+                assert isinstance(ax, plt.Axes)
                 ax.plot(steps, arr, **plot_kwargs)
                 axes = ax
             elif len(arr.shape) == 3:
                 fig, ax = plt.subplots(**subplots_kwargs)
+                assert isinstance(ax, plt.Axes)
                 cmap = plt.get_cmap('viridis')
                 nlf = arr.shape[1]
                 for idx in range(nlf):
@@ -293,10 +329,12 @@ class BaseHistory:
         else:
             if len(arr.shape) == 1:
                 fig, ax = plt.subplots(**subplots_kwargs)
+                assert isinstance(ax, plt.Axes)
                 ax.plot(steps, arr, **plot_kwargs)
                 axes = ax
             elif len(arr.shape) == 3:
                 fig, ax = plt.subplots(**subplots_kwargs)
+                assert isinstance(ax, plt.Axes)
                 cmap = plt.get_cmap('viridis')
                 nlf = arr.shape[1]
                 for idx in range(nlf):
@@ -358,7 +396,7 @@ class BaseHistory:
             plot_kwargs['color'] = color
 
             _, subfigs, ax = self.plot(
-                val=val.values.T,
+                val=val.values.T.real,
                 key=str(key),
                 title=title,
                 outdir=outdir,
@@ -391,7 +429,7 @@ class BaseHistory:
             x: Union[list, np.ndarray],
             therm_frac: Optional[float] = 0.0,
     ) -> xr.DataArray:
-        arr = np.array(x)
+        arr = np.array(x).real
         if therm_frac is not None and therm_frac > 0:
             drop = int(therm_frac * arr.shape[0])
             arr = arr[drop:]

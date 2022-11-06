@@ -3,5 +3,5 @@
 # default running mode
 
 default_mode: true
-print_config: true
+print_config: false
 ignore_warnings: true

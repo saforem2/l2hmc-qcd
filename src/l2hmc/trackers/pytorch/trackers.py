@@ -9,38 +9,16 @@ from typing import Optional, Union
 import numpy as np
 import torch
 from torch.utils.tensorboard.writer import SummaryWriter
+# from l2hmc.common import grab_tensor
+
+# from l2hmc.common import grab_tensor
 
 Tensor = torch.Tensor
 Array = np.ndarray
-Scalar = Union[float, int, bool]
+Scalar = Union[float, int, bool, np.floating]
 ArrayLike = Union[Tensor, Array, Scalar]
 
 log = logging.getLogger(__name__)
-
-
-def log_item(
-        tag: str,
-        val: ArrayLike,
-        writer: SummaryWriter,
-        step: Optional[int] = None,
-):
-    if step is not None:
-        iter_tag = '/'.join([tag.split('/')[0]] + ['iter'])
-        writer.add_scalar(tag=iter_tag, scalar_value=step, global_step=step)
-
-    if isinstance(val, (Tensor, Array)):
-        if isinstance(val, Tensor):
-            val = val.detach()
-
-        if len(val.shape) > 0:
-            writer.add_histogram(tag=tag, values=val, global_step=step)
-            writer.add_scalar(f'{tag}/avg', val.mean())
-
-        elif isinstance(val, (int, float, bool)) or len(val.shape) == 0:
-            writer.add_scalar(tag=tag, scalar_value=val, global_step=step)
-        else:
-            log.warning(f'Unexpected type encountered for: {tag}')
-            log.warning(f'{tag}.type: {type(val)}')
 
 
 def log_dict(
@@ -48,9 +26,10 @@ def log_dict(
         d: dict,
         step: Optional[int] = None,
         prefix: Optional[str] = None
-):
+) -> None:
     """Create TensorBoard summaries for all items in `d`."""
     for key, val in d.items():
+
         pre = key if prefix is None else f'{prefix}/{key}'
         if isinstance(val, dict):
             log_dict(writer=writer, d=val, step=step, prefix=pre)
@@ -63,16 +42,78 @@ def log_list(
         x: list,
         prefix: str,
         step: Optional[int] = None,
-):
+) -> None:
     """Create TensorBoard summaries for all entries in `x`."""
     for t in x:
-        if isinstance(t, Tensor):
-            t = t.detach().numpy()
+        # if isinstance(t, Tensor):
+        #     # t = grab_tensor(t)
+        #     t = t.detach().numpy()
 
         name = getattr(t, 'name', getattr(t, '__name__', None))
         tag = name if prefix is None else f'{prefix}/{name}'
         assert tag is not None
         log_item(writer=writer, val=t, step=step, tag=tag)
+
+
+def log_step(
+        tag: str,
+        step: int,
+        writer: SummaryWriter
+) -> None:
+    iter_tag = '/'.join([tag.split('/')[0]] + ['iter'])
+    writer.add_scalar(tag=iter_tag, scalar_value=step, global_step=step)
+
+
+def check_tag(tag: str) -> str:
+    tags = tag.split('/')
+    if len(tags) > 2 and (tags[0] == tags[1]):
+        return '/'.join(tags[1:])
+    return tag
+
+
+def log_item(
+        tag: str,
+        val: float | int | bool | list | np.ndarray | torch.Tensor,
+        writer: SummaryWriter,
+        step: Optional[int] = None,
+) -> None:
+    if step is not None:
+        log_step(tag, step, writer)
+
+    tag = check_tag(tag)
+    if isinstance(val, (Tensor, Array)):
+        if (
+                (isinstance(val, Tensor) and torch.is_complex(val))
+                or (isinstance(val, Array) and np.iscomplexobj(val))
+        ):
+            log_item(tag=f'{tag}.real', val=val.real, writer=writer, step=step)
+            log_item(tag=f'{tag}.imag', val=val.imag, writer=writer, step=step)
+        elif len(val.shape) > 0:
+            writer.add_scalar(f'{tag}/avg', val.mean(), global_step=step)
+            if len(val.shape) > 0:
+                try:
+                    writer.add_histogram(
+                        tag=tag,
+                        values=val,
+                        global_step=step
+                    )
+                except ValueError:
+                    log.error(f'Error adding histogram for: {tag}')
+        else:
+            writer.add_scalar(tag, val, global_step=step)
+
+    elif isinstance(val, list):
+        log_list(writer=writer, x=val, step=step, prefix=tag)
+
+    elif (
+            isinstance(val, (float, int, bool, np.floating))
+            or len(val.shape) == 0
+    ):
+        writer.add_scalar(tag=tag, scalar_value=val, global_step=step)
+
+    else:
+        log.warning(f'Unexpected type encountered for: {tag}')
+        log.warning(f'{tag}.type: {type(val)}')
 
 
 def update_summaries(

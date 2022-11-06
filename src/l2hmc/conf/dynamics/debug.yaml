@@ -1,14 +1,14 @@
 _target_: l2hmc.configs.DynamicsConfig
 
-eps: 0.125
+eps: 0.05
 group: 'U1'
 verbose: true
-nchains: 128
-nleapfrog: 5
+nchains: 512
+nleapfrog: 6
 eps_hmc: null
 use_ncp: true
 eps_fixed: false
-latvolume: [8, 8]
+latvolume: [16, 16]
 use_split_xnets: true
 merge_directions: true
 use_separate_networks: true

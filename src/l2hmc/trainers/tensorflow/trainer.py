@@ -3,53 +3,49 @@ trainer.py
 Implements methods for training L2HMC sampler
 """
 from __future__ import absolute_import, annotations, division, print_function
+from contextlib import nullcontext
 import logging
 import os
 from pathlib import Path
 import time
 from typing import Any, Callable, Optional
-from omegaconf import DictConfig
-
-import tensorflow as tf
-import tensorflow.python.framework.ops as ops
-import horovod.tensorflow as hvd  # type: ignore
 
 import aim
 from aim import Distribution
-
+import horovod.tensorflow as hvd
 import numpy as np
+from omegaconf import DictConfig
+from rich import box
 from rich.live import Live
 from rich.table import Table
-from rich import box
+import tensorflow as tf
 from tensorflow._api.v2.train import CheckpointManager
-
+import tensorflow.python.framework.ops as ops
 from tensorflow.python.keras import backend as K
 
-from l2hmc.utils.rich import get_width, is_interactive
+from l2hmc.common import ScalarLike
 from l2hmc.configs import ExperimentConfig
-from contextlib import nullcontext
-
-from l2hmc.learning_rate.tensorflow.learning_rate import ReduceLROnPlateau
-
+from l2hmc.configs import CHECKPOINTS_DIR
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
-from l2hmc.group.u1.tensorflow.group import U1Phase
 from l2hmc.group.su3.tensorflow.group import SU3
-from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
+from l2hmc.group.u1.tensorflow.group import U1Phase
 from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
+from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
+from l2hmc.learning_rate.tensorflow.learning_rate import ReduceLROnPlateau
 from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.network.tensorflow.network import NetworkFactory
 from l2hmc.trackers.tensorflow.trackers import update_summaries
 from l2hmc.trainers.trainer import BaseTrainer
 from l2hmc.utils.history import summarize_dict
-from l2hmc.utils.rich import add_columns
+from l2hmc.utils.rich import get_width, is_interactive
 from l2hmc.utils.step_timer import StepTimer
-
-
-WIDTH = int(os.environ.get('COLUMNS', 150))
-
 # tf.autograph.set_verbosity(0)
 # os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 # JIT_COMPILE = (len(os.environ.get('JIT_COMPILE', '')) > 0)
+if is_interactive():
+    from tqdm.notebook import trange
+else:
+    from tqdm.rich import trange
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +56,11 @@ NP_INT = (np.int8, np.int16, np.int32, np.int64)
 Model = tf.keras.Model
 Optimizer = tf.keras.optimizers.Optimizer
 TensorLike = tf.types.experimental.TensorLike
+
+HVD_FP_MAP = {
+    'fp16': hvd.Compression.fp16,
+    'none': hvd.Compression.none
+}
 
 
 def plot_models(dynamics: Dynamics, logdir: os.PathLike):
@@ -80,21 +81,20 @@ def plot_models(dynamics: Dynamics, logdir: os.PathLike):
     for key, val in networks.items():
         try:
             fpath = logdir.joinpath(f'{key}.png')
-            tf.keras.utils.plot_model(val, show_shapes=True, to_file=fpath)
+            tf.keras.utils.plot_model(
+                val,
+                show_shapes=True,
+                to_file=fpath.as_posix()
+            )
         except Exception:
             log.warning('Unable to plot dynamics networks, continuing!')
             pass
 
 
-HVD_FP_MAP = {
-    'fp16': hvd.Compression.fp16,
-    'none': hvd.Compression.none
-}
-
-
 def reset_optimizer(optimizer: Optimizer):
     """Reset optimizer states when changing beta during training."""
-    # NOTE: We don't want to reset iteration counter. From tf docs:
+    # > [!NOTE] Preserve Iterations
+    # > We don't want to reset iteration counter. From tf docs:
     # > The first value is always the iterations count of the optimizer,
     # > followed by the optimizer's state variables in the order they are
     # > created.
@@ -112,7 +112,7 @@ def flatten(x: Tensor):
 def is_dist(z: Tensor | ops.EagerTensor | np.ndarray) -> bool:
     return len(z.shape) > 1 or (
         len(z.shape) == 1
-        and z.shape[0] > 1
+        and z.shape[0] > 1  # type:ignore
     )
 
 
@@ -121,10 +121,12 @@ class Trainer(BaseTrainer):
     def __init__(
             self,
             cfg: DictConfig | ExperimentConfig,
+            build_networks: bool = True,
+            ckpt_dir: Optional[os.PathLike] = None,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
     ) -> None:
-        super(Trainer, self).__init__(cfg=cfg, keep=keep, skip=skip)
+        super().__init__(cfg=cfg, keep=keep, skip=skip)
         # assert isinstance(self.config, ExperimentConfig)
         if self.config.compression in [True, 'fp16']:
             self.compression = hvd.Compression.fp16
@@ -134,16 +136,28 @@ class Trainer(BaseTrainer):
         self._gstep = 0
         self.lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
-        self.dynamics = self.build_dynamics()
+        self.dynamics = self.build_dynamics(
+            build_networks=build_networks
+        )
+        self.ckpt_dir = (
+            Path(CHECKPOINTS_DIR).joinpath('checkpoints')
+            if ckpt_dir is None
+            else Path(ckpt_dir).resolve()
+        )
+        self.ckpt_dir.mkdir(exist_ok=True, parents=True)
+        # self.load_ckpt()
+        assert (
+            self.dynamics is not None
+            and isinstance(self.dynamics, Dynamics)
+        )
         self.optimizer = self.build_optimizer()
-        # self.lr_schedule = self.build_lr_schedule()
-        assert isinstance(self.dynamics, Dynamics)
         self.verbose = self.config.dynamics.verbose
-        # skip_tracking = os.environ.get('SKIP_TRACKING', False)
-        # self.verbose = not skip_tracking
-        self.clip_norm = self.config.learning_rate.clip_norm
         # compression = 'fp16'
+        # self.verbose = not skip_tracking
         # self.compression = HVD_FP_MAP['fp16']
+        # self.lr_schedule = self.build_lr_schedule()
+        # skip_tracking = os.environ.get('SKIP_TRACKING', False)
+        self.clip_norm = self.config.learning_rate.clip_norm
         self.reduce_lr = ReduceLROnPlateau(self.config.learning_rate)
         self.reduce_lr.set_model(self.dynamics)
         self.reduce_lr.set_optimizer(self.optimizer)
@@ -194,14 +208,19 @@ class Trainer(BaseTrainer):
             loss_config=self.config.loss,
         )
 
-    def build_dynamics(self) -> Dynamics:
+    def build_dynamics(
+            self,
+            build_networks: bool = True,
+    ) -> Dynamics:
         input_spec = self.get_input_spec()
-        net_factory = NetworkFactory(
-            input_spec=input_spec,
-            conv_config=self.config.conv,
-            network_config=self.config.network,
-            net_weights=self.config.net_weights,
-        )
+        net_factory = None
+        if build_networks:
+            net_factory = NetworkFactory(
+                input_spec=input_spec,
+                conv_config=self.config.conv,
+                network_config=self.config.network,
+                net_weights=self.config.net_weights,
+            )
         return Dynamics(config=self.config.dynamics,
                         potential_fn=self.lattice.action,
                         network_factory=net_factory)
@@ -217,39 +236,32 @@ class Trainer(BaseTrainer):
     def get_lr(self) -> float:
         return K.get_value(self.optimizer.lr)
 
-    def setup_CheckpointManager(self, outdir: os.PathLike):
-        ckptdir = Path(outdir).joinpath('checkpoints')
+    def setup_CheckpointManager(self):
+        log.info(f'Looking for checkpoints in: {self.ckpt_dir}')
         ckpt = tf.train.Checkpoint(dynamics=self.dynamics,
                                    optimizer=self.optimizer)
-        manager = tf.train.CheckpointManager(ckpt,
-                                             ckptdir.as_posix(),
-                                             max_to_keep=5)
+        manager = tf.train.CheckpointManager(
+            ckpt,
+            self.ckpt_dir.as_posix(),
+            max_to_keep=5
+        )
         if manager.latest_checkpoint:
             ckpt.restore(manager.latest_checkpoint)
-            log.info(f'Restored checkpoint from: {manager.latest_checkpoint}')
-
-            netdir = Path(outdir).joinpath('networks')
-            if netdir.is_dir():
-                log.info(f'Loading dynamics networks from: {netdir}')
-                nets = self.dynamics.load_networks(netdir)
-                self.dynamics.xnet = nets['xnet']
-                self.dynamics.vnet = nets['vnet']
-                self.dynamics.xeps = nets['xeps']
-                self.dynamics.veps = nets['veps']
-                log.info(f'Networks successfully loaded from {netdir}')
+            log.warning(f'Restored checkpoint from: {manager.latest_checkpoint}')
+        else:
+            log.info('No checkpoints found to load from. Continuing')
 
         return manager
 
     def save_ckpt(
             self,
             manager: CheckpointManager,
-            train_dir: os.PathLike,
-    ) -> None:
+    ) -> os.PathLike | None:
         if not self._is_chief:
             return
 
-        manager.save()
-        self.dynamics.save_networks(train_dir)
+        ckpt = manager.save()
+        return ckpt
 
     def should_log(self, epoch):
         return (
@@ -268,14 +280,13 @@ class Trainer(BaseTrainer):
             metrics: dict,
             job_type: str,
             step: Optional[int] = None,
-            record: Optional[dict] = None,
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             model: Optional[Model] = None,
             optimizer: Optional[Optimizer] = None,
     ):
-        record = {} if record is None else record
+        # record = {} if record is None else record
         assert job_type in ['train', 'eval', 'hmc']
         if step is None:
             timer = self.timers.get(job_type, None)
@@ -283,39 +294,35 @@ class Trainer(BaseTrainer):
                 step = timer.iterations
 
         if step is not None:
-            record.update({f'{job_type}_step': step})
+            metrics.update({f'{job_type[0]}step': step})
 
-        record.update({
-            'loss': metrics.get('loss', None),
-            'dQint': metrics.get('dQint', None),
-            'dQsin': metrics.get('dQsin', None),
-        })
         if job_type == 'train' and step is not None:
-            record['lr'] = K.get_value(self.optimizer.lr)
+            metrics['lr'] = K.get_value(self.optimizer.lr)
 
-        if job_type in ['eval', 'hmc']:
-            _ = record.pop('xeps', None)
-            _ = record.pop('veps', None)
+        if job_type == 'eval':
+            _ = metrics.pop('eps', None)
 
-        record.update(self.metrics_to_numpy(metrics))
-        avgs = self.histories[job_type].update(record)
+        if job_type in ['hmc']:
+            _ = metrics.pop('xeps', None)
+            _ = metrics.pop('veps', None)
+
+        metrics.update(self.metrics_to_numpy(metrics))
+        avgs = self.histories[job_type].update(metrics)
         summary = summarize_dict(avgs)
 
         # if writer is not None and self.verbose and step is not None:
-        if (
-                step is not None
-                and writer is not None
-        ):
+        if step is not None:
             update_summaries(step=step,
                              model=model,
-                             metrics=record,
+                             metrics=metrics,
                              prefix=job_type,
                              optimizer=optimizer)
-            writer.flush()
+            if writer is not None:
+                writer.flush()
 
         if self.config.init_wandb or self.config.init_aim:
             self.track_metrics(
-                record=record,
+                record=metrics,
                 avgs=avgs,
                 job_type=job_type,
                 step=step,
@@ -327,8 +334,8 @@ class Trainer(BaseTrainer):
 
     def track_metrics(
             self,
-            record: dict[str, Tensor],
-            avgs: dict[str, Tensor],
+            record: dict[str, TensorLike | ScalarLike],
+            avgs: dict[str, TensorLike | ScalarLike],
             job_type: str,
             step: Optional[int],
             run: Optional[Any] = None,
@@ -373,7 +380,7 @@ class Trainer(BaseTrainer):
                 log.exception(e)
                 log.warning('Unable to aim_track `record` !')
 
-    @tf.function
+    # @tf.function
     def hmc_step(
             self,
             inputs: tuple[Tensor, Tensor],
@@ -394,14 +401,23 @@ class Trainer(BaseTrainer):
 
         return xo, metrics
 
-    # @tf.function(experimental_follow_type_hints=True,
-    #         jit_compile=JIT_COMPILE)
     @tf.function
     def eval_step(
             self,
             inputs: tuple[Tensor, Tensor],
     ) -> tuple[Tensor, dict]:
-        xout, metrics = self.dynamics(inputs, training=False)
+        """
+        # @tf.function(experimental_follow_type_hints=True,
+                       jit_compile=JIT_COMPILE)
+        """
+        assert self.dynamics is not None
+        if inputs[0].shape != self.dynamics.xshape:
+            x = tf.reshape(
+                inputs[0],
+                (inputs[0].shape[0],
+                 *self.dynamics.xshape[1:]))
+            inputs = (x, *inputs[1:])
+        xout, metrics = self.dynamics(inputs, training=False)  # type:ignore
         xout = self.g.compat_proj(xout)
         xp = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=inputs[0], x_prop=xp, acc=metrics['acc'])
@@ -409,28 +425,121 @@ class Trainer(BaseTrainer):
             lmetrics = self.loss_fn.lattice_metrics(xinit=inputs[0], xout=xout)
             metrics.update(lmetrics)
 
-        metrics.update({'loss': loss})
+        metrics.update({
+            'beta': inputs[1],
+            'loss': loss,
+        })
         assert isinstance(metrics, dict)
 
         return xout, metrics
 
-    def get_context_manager(self, table: Table):
-        width = get_width()
+    def get_context_manager(self, table: Table) -> Live | nullcontext:
         make_live = (
-            int(width) > 150          # make sure wide enough to fit table
-            and hvd.size() > 1        # not worth the trouble when distributed
-            and self.rank == 0        # only display from (one) main rank
+            int(get_width()) > 150    # make sure wide enough to fit table
+            and self._is_chief
+            and hvd.size() == 1       # not worth the trouble when distributed
             and not is_interactive()  # AND not in a jupyter / ipython kernel
         )
         if make_live:
             return Live(
                 table,
                 # screen=True,
+                transient=True,
+                # auto_refresh=False,
                 console=self.console,
                 vertical_overflow='visible'
             )
 
         return nullcontext()
+
+    def _setup_eval(
+            self,
+            beta: Optional[Tensor | float] = None,
+            eval_steps: Optional[int] = None,
+            x: Optional[Tensor] = None,
+            skip: Optional[str | list[str]] = None,
+            run: Optional[Any] = None,
+            writer: Optional[Any] = None,
+            job_type: Optional[str] = 'eval',
+            nchains: Optional[int] = None,
+            eps: Optional[float] = None,
+            nleapfrog: Optional[int] = None,
+            nprint: Optional[int] = None,
+    ) -> dict:
+        assert job_type in ['eval', 'hmc']
+
+        if isinstance(skip, str):
+            skip = [skip]
+
+        if beta is None:
+            beta = tf.constant(
+                self.config.annealing_schedule.beta_final,
+                dtype=TF_FLOAT
+            )
+        elif isinstance(beta, float):
+            beta = tf.constant(beta, dtype=TF_FLOAT)
+
+        if nleapfrog is None and str(job_type).lower() == 'hmc':
+            nleapfrog = self.config.dynamics.nleapfrog
+            assert isinstance(nleapfrog, int)
+            if self.config.dynamics.merge_directions:
+                nleapfrog *= 2
+
+        if eps is None and str(job_type).lower() == 'hmc':
+            eps = self.dynamics.config.eps_hmc
+            log.warn(
+                'Step size `eps` not specified for HMC! '
+                f'Using default: {eps:.4f} for generic HMC'
+            )
+
+        if x is None:
+            x = self.lattice.random()
+
+        log.warning(f'x.shape (original): {x.shape}')
+        if nchains is not None:
+            if isinstance(nchains, int) and nchains > 0:
+                x = x[:nchains]  # type: ignore
+
+        assert isinstance(x, Tensor)
+        log.warning(f'x[:nchains].shape: {x.shape}')
+
+        if writer is not None:
+            writer.set_as_default()
+
+        table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
+        eval_steps = self.steps.test if eval_steps is None else eval_steps
+        assert isinstance(eval_steps, int)
+        nprint = (
+            max(1, min(50, eval_steps // 50)) if nprint is None else nprint
+        )
+        nlog = max((1, min((10, eval_steps))))
+        if nlog <= eval_steps:
+            nlog = min(10, max(1, eval_steps // 100))
+
+        if run is not None:
+            run.config.update({
+                job_type: {'beta': beta, 'xshape': x.shape.as_list()}
+            })
+
+        assert x is not None and isinstance(x, Tensor)
+        assert beta is not None and isinstance(beta, Tensor)
+        output = {
+            'x': x,
+            'eps': eps,
+            'beta': beta,
+            'nlog': nlog,
+            'table': table,
+            'nprint': nprint,
+            'eval_steps': eval_steps,
+            'nleapfrog': nleapfrog,
+        }
+        log.info(
+            '\n'.join([
+                f'{k} = {v}' for k, v in output.items()
+                if k != 'x'
+            ])
+        )
+        return output
 
     def eval(
             self,
@@ -445,108 +554,124 @@ class Trainer(BaseTrainer):
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
+            dynamic_step_size:  Optional[bool] = None,
+            nprint: Optional[int] = None,
     ) -> dict:
         """Evaluate model."""
-        if isinstance(skip, str):
-            skip = [skip]
-
-        if beta is None:
-            beta = tf.constant(
-                self.config.annealing_schedule.beta_final,
-                dtype=TF_FLOAT
-            )
-
-        if eps is None and str(job_type).lower() == 'hmc':
-            # eps = tf.constant(0.1, dtype=TF_FLOAT)
-            eps = tf.constant(self.dynamics.config.eps_hmc, dtype=TF_FLOAT)
-            log.warn(
-                'Step size `eps` not specified for HMC! '
-                f'Using default: {self.dynamics.config.eps_hmc:.3f}'
-            )
-
-        assert job_type in ['eval', 'hmc']
-
-        if x is None:
-            r = self.g.random(list(self.xshape))
-            # r = self.dynamics.g.random(list(self.xshape))
-            x = tf.reshape(r, (r.shape[0], -1))
-
-        if writer is not None:
-            writer.set_as_default()
-
-        def eval_fn(inputs: tuple[Tensor, Tensor]) -> tuple[Tensor, dict]:
-            if job_type == 'eval':
-                return self.eval_step(inputs)  # type:ignore
-
-            if job_type == 'hmc':
-                return self.hmc_step(
-                    inputs, eps=eps, nleapfrog=nleapfrog
-                )  # type: ignore
-
-            raise ValueError
-
-        assert isinstance(x, Tensor)  # and x.dtype == TF_FLOAT
+        assert job_type in ['hmc', 'eval']
 
         tables = {}
         summaries = []
-        table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
-        eval_steps = self.steps.test if eval_steps is None else eval_steps
-        assert isinstance(eval_steps, int)
-        nprint = max(1, eval_steps // 20)
-        nlog = max((1, min((10, eval_steps))))
-        if nlog <= eval_steps:
-            nlog = min(10, max(1, eval_steps // 100))
-
-        assert job_type in ['eval', 'hmc']
-        timer = self.timers[job_type]
-        history = self.histories[job_type]
-
-        log.warning(f'x.shape (original): {x.shape}')
-        if nchains is not None:
-            if isinstance(nchains, int) and nchains > 0:
-                x = x[:nchains]  # type: ignore
-
+        patience = 5
+        stuck_counter = 0
+        setup = self._setup_eval(
+            x=x,
+            run=run,
+            skip=skip,
+            beta=beta,
+            eps=eps,
+            writer=writer,
+            nchains=nchains,
+            job_type=job_type,
+            eval_steps=eval_steps,
+            nprint=nprint,
+        )
+        x = setup['x']
         assert isinstance(x, Tensor)
-        log.warning(f'x[:nchains].shape: {x.shape}')
+        xshape = x.shape
+        if nchains is not None:
+            if x.shape[0] != nchains:
+                log.warning(f'x.shape: {xshape}')
+                x = x[:nchains, ...]  # type:ignore
+                log.warning(f'x[:nchains].shape: {xshape}')
 
-        if run is not None:
-            run.config.update({
-                job_type: {'beta': beta, 'xshape': x.shape.as_list()}
-            })
+        eps = setup['eps']
+        beta = setup['beta']
+        table = setup['table']
+        nleapfrog = setup['nleapfrog']
+        eval_steps = setup['eval_steps']
+        # assert eps is not None and isinstance(eps, (float, tf.Tensor))
+        timer = self.timers.get(job_type, None)
+        history = self.histories.get(job_type, None)
+        assert (
+            eval_steps is not None
+            and timer is not None
+            and history is not None
+            and x is not None
+            and beta is not None
+        )
+        if job_type == 'hmc':
+            assert eps is not None
 
-        assert x is not None and isinstance(x, Tensor)
-        assert beta is not None and isinstance(beta, Tensor)
-        ctx = self.get_context_manager(table)
-        with ctx:
+        def eval_fn(inputs: tuple[Tensor, Tensor]) -> tuple[Tensor, dict]:
+            if job_type == 'hmc':
+                return self.hmc_step(inputs, eps=eps, nleapfrog=nleapfrog)
+            return self.eval_step(inputs)  # type:ignore
+
+        with self.get_context_manager(table) as ctx:
             for step in range(eval_steps):
                 timer.start()
                 x, metrics = eval_fn((x, beta))  # type:ignore
                 dt = timer.stop()
-                if step % nprint == 0 or step % nlog == 0:
+                # if step % setup['nprint'] == 0 or step % setup['nlog'] == 0:
+                if (
+                        step == 0
+                        or step % setup['nlog'] == 0
+                        or step % setup['nprint'] == 0
+                ):
                     record = {
-                        'step': step, 'beta': beta, 'dt': dt,
+                        f'{job_type[0]}step': step,
+                        'dt': dt,
+                        'beta': beta,
+                        'loss': metrics.pop('loss', None),
+                        'dQsin': metrics.pop('dQsin', None),
+                        'dQint': metrics.pop('dQint', None),
                     }
+                    record.update(metrics)
+                    if job_type == 'hmc' and dynamic_step_size:
+                        acc = metrics.get('acc_mask', None)
+                        record['eps'] = eps
+                        if acc is not None and eps is not None:
+                            acc_avg = tf.reduce_mean(acc)
+                            if acc_avg < 0.66:
+                                eps -= (eps / 10.)
+                            else:
+                                eps += (eps / 10.)
+
                     avgs, summary = self.record_metrics(run=run,
                                                         arun=arun,
                                                         step=step,
-                                                        record=record,
                                                         writer=writer,
-                                                        metrics=metrics,
+                                                        metrics=record,
                                                         job_type=job_type)
+                    summaries.append(summary)
 
-                    if not isinstance(ctx, Live) and step % nprint == 0:
+                    if (
+                            # not isinstance(setup['ctx'], Live)
+                            step % setup['nprint'] == 0
+                    ):
                         log.info(summary)
 
-                    summaries.append(summary)
-                    if step == 0:
-                        table = add_columns(avgs, table)
-                    else:
-                        table.add_row(*[f'{v}' for _, v in avgs.items()])
+                    table = self.update_table(
+                        table=setup['table'],
+                        step=step,
+                        avgs=avgs,
+                    )
+                    # if step == 0:
+                    #     table = add_columns(avgs, table)
+                    # else:
+                    #     table.add_row(*[f'{v}' for _, v in avgs.items()])
 
                     if avgs.get('acc', 1.0) <= 1e-5:
-                        self.console.log('Chains are stuck! Re-drawing x !')
-                        assert isinstance(x, Tensor)
-                        x = self.draw_x()
+                        if stuck_counter < patience:
+                            stuck_counter += 1
+                        else:
+                            self.console.log('Chains are stuck! Re-drawing x!')
+                            x = self.lattice.random()
+                            stuck_counter = 0
+
+                if isinstance(ctx, Live):
+                    ctx.console.clear_live()
 
         tables[str(0)] = table
 
@@ -557,13 +682,12 @@ class Trainer(BaseTrainer):
             'tables': tables,
         }
 
-    @tf.function
+    @tf.function(experimental_follow_type_hints=True)
     def train_step(
             self,
             inputs: tuple[Tensor, Tensor]
     ) -> tuple[Tensor, dict]:
         """Implement a single training step (forward + backward) pass.
-
         - NOTE: Wrapper possibilities:
             ```python
             @tf.function(
@@ -580,31 +704,26 @@ class Trainer(BaseTrainer):
             ```
         """
         xinit, beta = inputs
-        # xinit = self.dynamics.g.compat_proj(xinit)
-        # should_clip = (
-        #     (self.lr_config.clip_norm > 0)
-        #     if clip_grads is None else clip_grads
-        # )
         aw = self.config.loss.aux_weight
+        assert (
+            self.dynamics is not None
+            # and isinstance(self.dynamics, Dynamics)
+        )
         with tf.GradientTape() as tape:
             tape.watch(xinit)
-            xout, metrics = self.dynamics((xinit, beta), training=True)
-            # xprop = self.dynamics.g.compat_proj(
-            #     metrics.pop('mc_states').proposed.x
-            # )
+            xout, metrics = self.dynamics(  # type:ignore
+                (xinit, beta),
+                training=True
+            )
             xprop = metrics.pop('mc_states').proposed.x
             loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
-            # xout = self.dynamics.g.compat_proj(xout)
-            # xout = to_u1(xout)
 
             if aw > 0:
-                # yinit = to_u1(self.draw_x())
                 yinit = self.draw_x()
-                _, metrics_ = self.dynamics((yinit, beta), training=True)
-                # yprop = to_u1(metrics_.pop('mc_states').proposed.x)
-                # yprop = self.dynamics.g.compat_proj(
-                #     metrics_.pop('mc_states').proposed.x
-                # )
+                _, metrics_ = self.dynamics(  # type:ignore
+                    (yinit, beta),
+                    training=True
+                )
                 yprop = metrics_.pop('mc_states').proposed.x
                 aux_loss = aw * self.loss_fn(x_init=yinit,
                                              x_prop=yprop,
@@ -632,12 +751,6 @@ class Trainer(BaseTrainer):
 
         metrics['loss'] = loss
         if self.verbose:
-            # lmetrics = self.lattice.calc_metrics(
-            #     x=xout,
-            #     xinit=xinit,
-            # )
-            # lmetrics = self.lattice.calc_loss(xinit)
-            # lmetrics = self.loss_fn.lattice_metrics(xinit=inputs[0], xout=xo)
             lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
             metrics.update(lmetrics)
 
@@ -668,59 +781,71 @@ class Trainer(BaseTrainer):
         assert isinstance(nepoch, int)
         nepoch *= extend
         losses = []
-        ctx = self.get_context_manager(table)
-        with ctx:
+        with self.get_context_manager(table) as ctx:
             if isinstance(ctx, Live):
                 tstr = ' '.join([
-                    f'ERA: {era}/{self.steps.nera}',
+                    f'ERA: {era}/{self.steps.nera - 1}',
                     f'BETA: {beta:.3f}',
                 ])
+                ctx.console.clear()
                 ctx.console.clear_live()
                 ctx.console.rule(tstr)
                 ctx.update(table)
 
-            for epoch in range(nepoch):
+            for epoch in trange(
+                    nepoch,
+                    dynamic_ncols=True,
+                    disable=(not self._is_chief)
+            ):
                 self.timers['train'].start()
                 x, metrics = self.train_step((x, beta))  # type:ignore
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
-                self._gstep += 1
-                # if (
-                #         self._is_chief and (
-                #             self.should_print(epoch)
-                #             or self.should_log(epoch)
-                #         )
-                # ):
-                if self.should_print(epoch) or self.should_log(epoch):
+                if self.should_log(epoch) or self.should_print(epoch):
                     record = {
-                        'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
+                        'era': era,
+                        'epoch': epoch,
+                        'tstep': self._gstep,
+                        'dt': dt,
+                        'beta': beta,
+                        'loss': metrics.pop('loss', None),
+                        'dQsin': metrics.pop('dQsin', None),
+                        'dQint': metrics.pop('dQint', None)
                     }
+                    record.update(metrics)
                     avgs, summary = self.record_metrics(
                         run=run,
                         arun=arun,
                         step=self._gstep,
                         writer=writer,
-                        record=record,    # template w/ step info
-                        metrics=metrics,  # metrics from Dynamics
+                        metrics=record,  # metrics from Dynamics
                         job_type='train',
                         model=self.dynamics,
                         optimizer=self.optimizer,
                     )
                     rows[self._gstep] = avgs
                     summaries.append(summary)
-
-                    if not isinstance(ctx, Live) and self.should_print(epoch):
+                    if (
+                            self.should_print(epoch)
+                            and not isinstance(ctx, Live)
+                    ):
                         log.info(summary)
 
-                    if epoch == 0:
-                        table = add_columns(avgs, table)
-                    else:
-                        table.add_row(*[f'{v}' for _, v in avgs.items()])
+                    table = self.update_table(
+                        table=table,
+                        step=epoch,
+                        avgs=avgs
+                    )
 
                     if avgs.get('acc', 1.0) < 1e-5:
                         self.reset_optimizer()
                         log.warning('Chains are stuck! Re-drawing x !')
                         x = self.draw_x()
+
+                self._gstep += 1
+                if isinstance(ctx, Live):
+                    ctx.console.clear()
+                    ctx.console.clear_live()
 
         data = {
             'rows': rows,
@@ -731,19 +856,16 @@ class Trainer(BaseTrainer):
 
         return x, data
 
-    def train(
+    def _setup_training(
             self,
             x: Optional[Tensor] = None,
             skip: Optional[str | list[str]] = None,
             train_dir: Optional[os.PathLike] = None,
-            run: Optional[Any] = None,
-            arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
     ) -> dict:
-        """Perform training and return dictionary of results."""
         skip = [skip] if isinstance(skip, str) else skip
 
         # -- Tensorflow specific
@@ -759,40 +881,88 @@ class Trainer(BaseTrainer):
         if x is None:
             x = flatten(self.g.random(list(self.xshape)))
 
-        # -- Setup checkpoint manager for TensorFlow --------
-        manager = self.setup_CheckpointManager(train_dir)
+        # -- Setup checkpoint manager for TensorFlow --------------------------
+        # manager = None
+        # if self._is_chief:
+        manager = self.setup_CheckpointManager()
+
         self._gstep = K.get_value(self.optimizer.iterations)
-        # ----------------------------------------------------
-        # -- Setup Step information (nera, nepoch, etc). -----
+        # -- Setup Step information (nera, nepoch, etc). ----------------------
         nera = self.config.steps.nera if nera is None else nera
         nepoch = self.config.steps.nepoch if nepoch is None else nepoch
-        extend = self.config.steps.extend_last_era
-        assert isinstance(nera, int)
-        assert isinstance(nepoch, int)
+        # extend = self.config.steps.extend_last_era
+        assert nera is not None and isinstance(nera, int)
+        assert nepoch is not None and isinstance(nepoch, int)
 
-        if beta is not None:
-            assert isinstance(beta, (float, list))
-            if isinstance(beta, list):
-                assert len(beta) == nera, 'Expected len(beta) == nera'
-            else:
-                beta = nera * [beta]
-
-            betas = {f'{i}': b for i, b in zip(range(nera), beta)}
-        else:
+        # -- Setup beta information -------------------------------------------
+        if beta is None:
             betas = self.config.annealing_schedule.setup(
                 nera=nera,
-                nepoch=nepoch,
+                nepoch=nepoch
+            )
+        elif isinstance(beta, (list, np.ndarray)):
+            nera = len(beta)
+            betas = {f'{i}': b for i, b in zip(range(nera), beta)}
+        elif isinstance(beta, (int, float)):
+            # nera = self.config.steps.nera if nera is None else nera
+            betas = {f'{i}': b for i, b in zip(range(nera), nera * [beta])}
+        elif isinstance(beta, dict):
+            nera = len(list(beta.keys()))
+            betas = {f'{i}': b for i, b in beta.items()}
+        else:
+            raise TypeError(
+                'Expected `beta` to be one of: `float, int, list, dict`',
+                f' received: {type(beta)}'
             )
 
         beta_final = list(betas.values())[-1]
         assert beta_final is not None and isinstance(beta_final, float)
+        return {
+            'x': x,
+            'nera': nera,
+            'nepoch': nepoch,
+            'betas': betas,
+            'manager': manager,
+            'writer': writer,
+            'train_dir': train_dir,
+            'beta_final': beta_final,
+        }
 
-        # ┏━------------------------------------━┓
-        # ┃         MAIN TRAINING LOOP           ┃
-        # ┗-------------------------------------━┛
+    def train(
+            self,
+            x: Optional[Tensor] = None,
+            skip: Optional[str | list[str]] = None,
+            train_dir: Optional[os.PathLike] = None,
+            run: Optional[Any] = None,
+            arun: Optional[Any] = None,
+            writer: Optional[Any] = None,
+            nera: Optional[int] = None,
+            nepoch: Optional[int] = None,
+            beta: Optional[float | list[float] | dict[str, float]] = None,
+    ) -> dict:
+        """Perform training and return dictionary of results."""
+        setup = self._setup_training(
+            x=x,
+            skip=skip,
+            train_dir=train_dir,
+            nera=nera,
+            nepoch=nepoch,
+            beta=beta,
+        )
         era = 0
+        # epoch = 0
         extend = 1
+        x = setup['x']
+        nera = setup['nera']
+        betas = setup['betas']
+        nepoch = setup['nepoch']
+        manager = setup['manager']
+        train_dir = setup['train_dir']
+        beta_final = setup['beta_final']
+        writer = setup['writer']
         assert x is not None
+        assert nera is not None
+        assert train_dir is not None
         for era in range(nera):
             b = tf.constant(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
@@ -816,24 +986,118 @@ class Trainer(BaseTrainer):
                 extend=extend,
                 nepoch=nepoch,
             )
+
+            self.rows['train'][str(era)] = edata['rows']
+            self.tables['train'][str(era)] = edata['table']
+            self.summaries['train'][str(era)] = edata['summaries']
+            losses = tf.stack(edata['losses'][1:])
+
+            if self.config.annealing_schedule.dynamic:
+                dy_avg = tf.reduce_mean(
+                    losses[1:] - losses[:-1]  # type:ignore
+                )
+                if dy_avg > 0:
+                    b -= (b / 10.)
+                else:
+                    b += (b / 10.)
+
+            if self._is_chief:
+                st0 = time.time()
+                self.save_ckpt(manager)
+                log.info(f'Saving took: {time.time() - st0:<5g}s')
+                log.info(f'Checkpoint saved to: {self.ckpt_dir}')
+                log.info(f'Era {era} took: {time.time() - epoch_start:<5g}s')
+
+        return {
+            'timer': self.timers['train'],
+            'rows': self.rows['train'],
+            'summaries': self.summaries['train'],
+            'history': self.histories['train'],
+            'tables': self.tables['train'],
+        }
+
+    def train_dynamic(
+            self,
+            x: Optional[Tensor] = None,
+            skip: Optional[str | list[str]] = None,
+            train_dir: Optional[os.PathLike] = None,
+            run: Optional[Any] = None,
+            arun: Optional[Any] = None,
+            writer: Optional[Any] = None,
+            nera: Optional[int] = None,
+            nepoch: Optional[int] = None,
+            beta: Optional[float | list[float] | dict[str, float]] = None,
+    ) -> dict:
+        """Perform training and return dictionary of results."""
+        setup = self._setup_training(
+            x=x,
+            skip=skip,
+            train_dir=train_dir,
+            nera=nera,
+            nepoch=nepoch,
+            beta=beta,
+        )
+        era = 0
+        # epoch = 0
+        extend = 1
+        x = setup['x']
+        nera = setup['nera']
+        betas = setup['betas']
+        nepoch = setup['nepoch']
+        extend = setup['extend']
+        manager = setup['manager']
+        train_dir = setup['train_dir']
+        beta_final = setup['beta_final']
+        b = tf.constant(betas.get(str(era), beta_final))
+        assert x is not None
+        assert nera is not None
+        assert train_dir is not None
+        while b < beta_final:
+            b = tf.constant(betas.get(str(era), beta_final))
+            if era == (nera - 1) and self.steps.extend_last_era is not None:
+                extend = int(self.steps.extend_last_era)
+
+            if self._is_chief:
+                if era > 1 and str(era - 1) in self.summaries['train']:
+                    esummary = self.histories['train'].era_summary(f'{era-1}')
+                    log.info(f'Avgs over last era:\n {esummary}\n')
+
+                self.console.rule(f'ERA: {era} / {nera - 1}, BETA: {b:.3f}')
+
+            epoch_start = time.time()
+            x, edata = self.train_epoch(
+                x=x,
+                beta=b,
+                era=era,
+                run=run,
+                arun=arun,
+                writer=writer,
+                extend=extend,
+                nepoch=nepoch,
+            )
             st0 = time.time()
 
             self.rows['train'][str(era)] = edata['rows']
             self.tables['train'][str(era)] = edata['table']
             self.summaries['train'][str(era)] = edata['summaries']
-
-            # losses = edata['losses']
-            # if losses[-1] < losses[0]:
-            #     b += self.config.annealing_schedule._dbeta
-            # else:
-            #     b -= self.config.annealing_schedule._dbeta
+            losses = tf.stack(edata['losses'][1:])
+            if self.config.annealing_schedule.dynamic:
+                dy_avg = tf.reduce_mean(
+                    losses[1:] - losses[:-1]  # type:ignore
+                )
+                if dy_avg > 0:
+                    b -= (b / 10.)
+                else:
+                    b += (b / 10.)
 
             if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
-                self.save_ckpt(manager, train_dir)
+                _ = self.save_ckpt(manager)
 
             if self._is_chief:
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
                 log.info(f'Era {era} took: {time.time() - epoch_start:<5g}s')
+
+            era += 1
 
         return {
             'timer': self.timers['train'],
@@ -845,50 +1109,28 @@ class Trainer(BaseTrainer):
 
     def metric_to_numpy(
             self,
-            metric: TensorLike | list | np.ndarray,
+            metric: Any,
             # key: str = '',
-    ) -> np.ndarray:
+    ):
         """Consistently convert `metric` to np.ndarray."""
-        if isinstance(metric, np.ndarray):
-            return metric  # [~np.isnan(metric)]
+        if isinstance(metric, (float, np.ScalarType)):
+            return np.array(metric)
 
+        if isinstance(metric, list):
+            if isinstance(metric[0], Tensor):
+                return tf.stack(metric)
+            if isinstance(metric[0], np.ndarray):
+                return np.stack(metric)
         if (
                 isinstance(metric, Tensor)
                 and hasattr(metric, 'numpy')
                 and isinstance(metric.numpy, Callable)
         ):
-            # tmp = metric.numpy()
-            # return tmp[~np.isnan(tmp)]
             return metric.numpy()
 
-        elif isinstance(metric, list):
-            if isinstance(metric[0], np.ndarray):
-                # metric = np.stack(metric)
-                # return metric[~np.isnan(metric)]
-                metric = np.stack(metric)
-
-            if isinstance(metric[0], Tensor):
-                stack = tf.stack(metric)
-                # stack = tf.stack(metric)
-                # stack = stack[~tf.math.is_nan(stack)]
-                if (
-                        hasattr(stack, 'numpy')
-                        and isinstance(stack.numpy, Callable)
-                ):
-                    return stack.numpy()
-            else:
-                return np.array(metric)
-                # tmp = np.array(metric)
-                # return tmp[~np.isnan(tmp)]
-
-            # tmp = np.array(metric)
-            # return tmp[~np.isnan(tmp)]
-            return np.array(metric)
-
-        else:
-            raise ValueError(
-                f'Unexpected type for metric: {type(metric)}'
-            )
+        raise ValueError(
+            f'Unexpected type for metric: {type(metric)}'
+        )
 
     def aim_track(
             self,
@@ -901,10 +1143,14 @@ class Trainer(BaseTrainer):
         context = {'subset': job_type}
         dtype = getattr(step, 'dtype', None)
         if dtype is not None and dtype in NP_INT:
-            try:
+            if isinstance(step, int):
+                step = step
+            if callable(getattr(step, 'item', None)):
                 step = step.item()  # type:ignore
-            except AttributeError:
-                pass
+            # try:
+            #     step = step.item()
+            # except AttributeError:
+            #     pass
 
         for key, val in metrics.items():
             if prefix is not None:

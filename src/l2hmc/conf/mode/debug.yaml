@@ -11,13 +11,13 @@ defaults:
   - override /steps: debug.yaml
   - override /network: debug.yaml
   - override /dynamics: debug.yaml
-  - override /annealing_schedule: constant.yaml
+  - override /annealing_schedule: debug.yaml
   - override /logdir: debug.yaml
 
 debug_mode: True
 
 hydra:
-  verbose: true
+  verbose: false
   job:
     chdir: true
   # sets level of all command line loggers to 'DEBUG'

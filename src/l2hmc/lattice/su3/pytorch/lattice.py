@@ -352,6 +352,8 @@ class LatticeSU3(Lattice):
     def grad_action(self, x: Tensor, beta: Tensor) -> Tensor:
         """Returns the derivative of the action"""
         x.requires_grad_(True)
+        if x.shape != self._shape:
+            x = x.reshape(x.shape[0], *self._shape[1:])
         s = self.action(x, beta)
         identity = torch.ones(x.shape[0], device=x.device)
         dsdx, = torch.autograd.grad(s, x, grad_outputs=identity)

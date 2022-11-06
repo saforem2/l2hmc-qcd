@@ -6,20 +6,23 @@ Experiment base class.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
-from typing import Optional, Any
+from os import PathLike
+from pathlib import Path
+from typing import Any, Optional
 
 import horovod.torch as hvd
 from omegaconf import DictConfig
 import torch
-from pathlib import Path
 from torch.utils.tensorboard.writer import SummaryWriter
-from l2hmc.configs import NetWeights
 
+from l2hmc.common import setup_torch_distributed
+from l2hmc.configs import NetWeights
+import l2hmc.configs as configs
+from l2hmc.configs import ExperimentConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.experiment.experiment import BaseExperiment
 from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
 from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
-# from l2hmc.trainers.pytorch.trainer import Trainer
 from l2hmc.trainers.pytorch.trainer import Trainer
 from l2hmc.utils.rich import get_console
 
@@ -28,23 +31,39 @@ log = logging.getLogger(__name__)
 # LOCAL_RANK = os.environ.get('OMPI_COMM_WORLD_LOCAL_RANK', '0')
 
 Tensor = torch.Tensor
-SIZE = hvd.size()
-RANK = hvd.rank()
-LOCAL_RANK = hvd.local_rank()
+# SIZE = hvd.size()
+# RANK = hvd.rank()
+# LOCAL_RANK = hvd.local_rank()
 
 
 class Experiment(BaseExperiment):
     def __init__(
             self,
             cfg: DictConfig,
+            build_networks: bool = True,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
     ) -> None:
         super().__init__(cfg=cfg)
-        self.trainer = self.build_trainer(keep=keep, skip=skip)
+        assert isinstance(
+            self.config,
+            (ExperimentConfig,
+             configs.ExperimentConfig)
+        )
+        self.ckpt_dir = self.config.get_checkpoint_dir()
+        self.trainer: Trainer = self.build_trainer(
+            keep=keep,
+            skip=skip,
+            build_networks=build_networks,
+            ckpt_dir=self.ckpt_dir,
+        )
+        dsetup = setup_torch_distributed(self.config.backend)
+        self._size = dsetup['size']
+        self._rank = dsetup['rank']
+        self._local_rank = dsetup['local_rank']
 
-        self._rank = hvd.rank()
-        self._local_rank = hvd.local_rank()
+        # self._rank = hvd.rank()
+        # self._local_rank = hvd.local_rank()
         run = None
         arun = None
         if self._rank == 0 and self.config.init_wandb:
@@ -61,19 +80,19 @@ class Experiment(BaseExperiment):
                 criterion=self.trainer.loss_fn,
             )
             assert run is wandb.run
-            run.config['SIZE'] = SIZE
+            run.config['SIZE'] = self._size
 
         if self._rank == 0 and self.config.init_aim:
             log.warning(
                 f'Initializing Aim from {self._rank}:{self._local_rank}'
             )
             arun = self.init_aim()
-            arun['SIZE'] = SIZE
+            arun['SIZE'] = self._size
             if arun is not None:
                 if torch.cuda.is_available():
-                    arun['ngpus'] = SIZE
+                    arun['ngpus'] = self._size
                 else:
-                    arun['ncpus'] = SIZE
+                    arun['ncpus'] = self._size
 
         self.run = run
         self.arun = arun
@@ -87,14 +106,14 @@ class Experiment(BaseExperiment):
         #     assert isinstance(self.config, ExperimentConfig)
 
     def set_net_weights(self, net_weights: NetWeights):
-        from l2hmc.network.pytorch.network import Network
+        from l2hmc.network.pytorch.network import LeapfrogLayer
         for step in range(self.config.dynamics.nleapfrog):
             xnet0 = self.trainer.dynamics._get_xnet(step, first=True)
             xnet1 = self.trainer.dynamics._get_xnet(step, first=False)
             vnet = self.trainer.dynamics._get_vnet(step)
-            assert isinstance(xnet0, Network)
-            assert isinstance(xnet1, Network)
-            assert isinstance(vnet, Network)
+            assert isinstance(xnet0, LeapfrogLayer)
+            assert isinstance(xnet1, LeapfrogLayer)
+            assert isinstance(vnet, LeapfrogLayer)
             xnet0.set_net_weight(net_weights.x)
             xnet1.set_net_weight(net_weights.x)
             vnet.set_net_weight(net_weights.v)
@@ -163,10 +182,19 @@ class Experiment(BaseExperiment):
 
     def build_trainer(
             self,
+            build_networks: bool = True,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
+            ckpt_dir: Optional[PathLike] = None,
     ) -> Trainer:
-        return Trainer(self.cfg, skip=skip, keep=keep)
+        ckpt_dir = self.ckpt_dir if ckpt_dir is None else ckpt_dir
+        return Trainer(
+            self.cfg,
+            build_networks=build_networks,
+            skip=skip,
+            keep=keep,
+            ckpt_dir=ckpt_dir,
+        )
 
     def init_wandb(
             self,
@@ -174,9 +202,12 @@ class Experiment(BaseExperiment):
         return super()._init_wandb()
 
     def get_summary_writer(self):
-        # sdir = super()._get_summary_dir(job_type=job_type)
-        # sdir = os.getcwd()
         return SummaryWriter(self._outdir)
+        # if job_type is None:
+        #     return SummaryWriter(self._outdir)
+        # # sdir = super()._get_summary_dir(job_type=job_type)
+        # # sdir = os.getcwd()
+        # return SummaryWriter(job_type)
 
     def build(
             self,
@@ -220,7 +251,7 @@ class Experiment(BaseExperiment):
         )
         run = None
         arun = None
-        if RANK == 0:
+        if self._rank == 0:
             if init_wandb:
                 import wandb
                 log.warning(f'Initialize WandB from {rank}:{local_rank}')
@@ -230,15 +261,15 @@ class Experiment(BaseExperiment):
                 #     self.trainer.dynamics,
                 #     log="all"
                 # )
-                run.config['SIZE'] = SIZE
+                run.config['SIZE'] = self._size
             if init_aim:
                 log.warning(f'Initializing Aim from {rank}:{local_rank}')
                 arun = self.init_aim()
                 if arun is not None:
                     if torch.cuda.is_available():
-                        arun['ngpus'] = SIZE
+                        arun['ngpus'] = self._size
                     else:
-                        arun['ncpus'] = SIZE
+                        arun['ncpus'] = self._size
 
         self.run = run
         self.arun = arun
@@ -277,11 +308,12 @@ class Experiment(BaseExperiment):
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
+            rich: Optional[bool] = None,
     ):
         # nchains = 16 if nchains is None else nchains
         jobdir = self.get_jobdir(job_type='train')
         writer = None
-        if RANK == 0:
+        if self._rank == 0:
             writer = self.get_summary_writer()
 
         # logfile = jobdir.joinpath(f'train-{RANK}.log')
@@ -290,17 +322,34 @@ class Experiment(BaseExperiment):
         console = get_console(record=True)
         # console = Console(log_path=False, record=True, width=210)
         self.trainer.set_console(console)
-        output = self.trainer.train(
-            x=x,
-            nera=nera,
-            nepoch=nepoch,
-            run=self.run,
-            arun=self.arun,
-            writer=writer,
-            train_dir=jobdir,
-            skip=skip,
-            beta=beta,
-        )
+        if self.config.annealing_schedule.dynamic:
+            output = self.trainer.train_dynamic(
+                x=x,
+                nera=nera,
+                nepoch=nepoch,
+                run=self.run,
+                arun=self.arun,
+                writer=writer,
+                train_dir=jobdir,
+                skip=skip,
+                beta=beta,
+            )
+        else:
+            output = self.trainer.train(
+                x=x,
+                nera=nera,
+                nepoch=nepoch,
+                run=self.run,
+                arun=self.arun,
+                writer=writer,
+                train_dir=jobdir,
+                skip=skip,
+                beta=beta,
+            )
+        # if self.trainer._is_chief:
+        #     summaryfile = jobdir.joinpath('summaries.txt')
+        #     with open(summaryfile.as_posix(), 'w') as f:
+        #         f.writelines(output['summaries'])
         # fname = f'train-{RANK}'
         # txtfile = jobdir.joinpath(f'{fname}.txt')
         # htmlfile = jobdir.joinpath(f'{fname}.html')
@@ -309,10 +358,11 @@ class Experiment(BaseExperiment):
 
         if self.trainer._is_chief:
             dset = self.save_dataset(
-                output=output,
+                # output=output,
                 nchains=nchains,
                 job_type='train',
-                outdir=jobdir
+                outdir=jobdir,
+                tables=output.get('tables', None),
             )
             output['dataset'] = dset
 
@@ -325,15 +375,17 @@ class Experiment(BaseExperiment):
             self,
             job_type: str,
             therm_frac: float = 0.1,
+            beta: Optional[float] = None,
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
             eval_steps: Optional[int] = None,
-    ):
+            nprint: Optional[int] = None,
+    ) -> dict | None:
         """Evaluate model."""
         # if RANK != 0:
         if not self.trainer._is_chief:
-            return
+            return None
 
         assert job_type in ['eval', 'hmc']
         jobdir = self.get_jobdir(job_type)
@@ -341,6 +393,7 @@ class Experiment(BaseExperiment):
         console = get_console(record=True)
         self.trainer.set_console(console)
         output = self.trainer.eval(
+            beta=beta,
             run=self.run,
             arun=self.arun,
             writer=writer,
@@ -349,12 +402,14 @@ class Experiment(BaseExperiment):
             eps=eps,
             nleapfrog=nleapfrog,
             eval_steps=eval_steps,
+            nprint=nprint,
         )
 
         output['dataset'] = self.save_dataset(
-            output=output,
+            # output=output,
             job_type=job_type,
             outdir=jobdir,
+            tables=output.get('tables', None),
             therm_frac=therm_frac,
         )
         if writer is not None:

@@ -27,6 +27,7 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
+from rich.style import Style
 import rich.syntax
 from rich.table import Table
 import rich.tree
@@ -49,12 +50,32 @@ log = logging.getLogger(__name__)
 size = shutil.get_terminal_size()
 WIDTH = size.columns
 HEIGHT = size.lines
+os.environ['COLUMNS'] = f'{WIDTH}'
 # os.environ['COLUMNS'] = f'{size.columns}'
 
+STYLES = {
+    'info': Style(color='#29B6F6'),
+    'warning': Style(color='#FD971F'),
+    'error': Style(color='#FF5252', bold=True),
+    'logging.level.info': Style(color='#29B6F6'),
+    'logging.level.WARNING': Style(color='#FD971F'),
+    'logging.level.ERROR': Style(color='#FF5252'),
+    'yellow': Style(color='#FFFF00'),
+    "time": Style(color="#505050"),
+    'log.time': Style(color='#505050'),
+    'repr.attrib_name': Style(color="#666666"),
+    "hidden": Style(color="#383b3d", dim=True),
+    "num": Style(color="#AE81FF"),
+    'repr.number': Style(color='#AE81FF', bold=False),
+    "highlight": Style(color="#111111", bgcolor="#FFFF00", bold=True),
+}
 
-def is_interactive():
+
+def is_interactive() -> bool:
     from IPython import get_ipython
-    return get_ipython() is not None
+    eval = os.environ.get('INTERACTIVE', None) is not None
+    bval = get_ipython() is not None
+    return (eval or bval)
 
 
 def get_width():
@@ -69,15 +90,23 @@ def get_width():
 
 def get_console(width: Optional[int] = None, *args, **kwargs) -> Console:
     interactive = is_interactive()
+    try:
+        from rich_theme_manager import Theme
+        theme = Theme('dark', styles=STYLES)
+    except ImportError:
+        from rich.theme import Theme
+        theme = Theme(STYLES)
+
     console = Console(
         force_jupyter=interactive,
         log_path=False,
-        # color_system='truecolor',
+        theme=theme,
         *args,
-        **kwargs)
+        **kwargs
+    )
     if width is None:
         if is_interactive():
-            columns = 100
+            columns = 120
         else:
             columns = os.environ.get('COLUMNS', os.environ.get('WIDTH', None))
             if columns is None:
@@ -327,8 +356,19 @@ def print_config(
     else:
         dbfpath = Path(OUTPUTS_DIR).joinpath('logdirs-debug.csv')
 
+    if dbfpath.is_file():
+        mode = 'a'
+        header = False
+    else:
+        mode = 'w'
+        header = True
     df = pd.DataFrame({logdir: cfgdict})
-    df.T.to_csv(dbfpath.resolve().as_posix(), mode='a')
+    df.T.to_csv(
+        dbfpath.resolve().as_posix(),
+        mode=mode,
+        header=header
+    )
+    os.environ['LOGDIR'] = logdir
 
 
 @dataclass

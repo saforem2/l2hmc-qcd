@@ -15,18 +15,18 @@ import logging
 import numpy as np
 import tensorflow as tf
 
-# from l2hmc.configs import DynamicsConfig
 from l2hmc import configs as cfgs
 from l2hmc.network.tensorflow.network import NetworkFactory
 from l2hmc.group.u1.tensorflow.group import U1Phase
 from l2hmc.group.su3.tensorflow.group import SU3
-# import l2hmc.group.tensorflow.group as g
+from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
+from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
 
 
 Tensor = tf.Tensor
 Model = tf.keras.Model
 TensorLike = tf.types.experimental.TensorLike
-TF_FLOAT = tf.keras.backend.floatx()
+TF_FLOAT = tf.dtypes.as_dtype(tf.keras.backend.floatx())
 
 PI = tf.constant(pi, dtype=TF_FLOAT)
 TWO = tf.constant(2., dtype=TF_FLOAT)
@@ -51,7 +51,7 @@ class State:
     def flatten(self):
         x = tf.reshape(self.x, (self.x.shape[0], -1))
         v = tf.reshape(self.v, (self.v.shape[0], -1))
-        beta = tf.cast(self.beta, x.dtype)
+        beta = tf.constant(tf.cast(self.beta, x.dtype))
         return State(x, v, beta)
 
     def __post_init__(self):
@@ -60,6 +60,7 @@ class State:
         assert isinstance(self.beta, Tensor)
 
     def to_numpy(self):
+        # type: ignore
         return {
             'x': self.x.numpy(),  # type:ignore
             'v': self.v.numpy(),  # type:ignore
@@ -84,8 +85,15 @@ def xy_repr(x: Tensor) -> Tensor:
     return tf.stack([tf.math.cos(x), tf.math.sin(x)], axis=-1)
 
 
-CallableNetwork = Callable[[Tuple[Tensor, Tensor], bool],
-                           Tuple[Tensor, Tensor, Tensor]]
+def dummy_network(
+        x: Tensor,
+        *_,
+) -> tuple[Tensor, Tensor, Tensor]:
+    return (
+        tf.zeros_like(x),
+        tf.zeros_like(x),
+        tf.zeros_like(x)
+    )
 
 
 class Dynamics(Model):
@@ -93,24 +101,39 @@ class Dynamics(Model):
             self,
             potential_fn: Callable,
             config: cfgs.DynamicsConfig,
-            network_factory: NetworkFactory,
+            network_factory: Optional[NetworkFactory] = None,
     ):
         """Initialization."""
         super(Dynamics, self).__init__()
-        # TODO: Implement reversibility check
         self.config = config
         self.group = config.group
         self.xdim = self.config.xdim
-        self.xshape = tuple(network_factory.input_spec.xshape)
+        self.xshape = self.config.xshape
         self.potential_fn = potential_fn
         self.nlf = self.config.nleapfrog
         # self.midpt = self.config.nleapfrog // 2
-        self.xnet, self.vnet = self._build_networks(network_factory)
+        self.network_factory = network_factory
+        if network_factory is not None:
+            self._networks_built = True
+            self.xnet, self.vnet = self._build_networks(network_factory)
+            self.networks = {'xnet': self.xnet, 'vnet': self.vnet}
+        else:
+            self._networks_built = False
+            self.xnet = dummy_network
+            self.vnet = dummy_network
+            self.networks = {
+                'xnet': self.xnet,
+                'vnet': self.vnet
+            }
         self.masks = self._build_masks()
         if self.config.group == 'U1':
             self.g = U1Phase()
+            self.lattice = LatticeU1(self.config.nchains,
+                                     self.config.latvolume)
         elif self.config.group == 'SU3':
             self.g = SU3()
+            self.lattice = LatticeSU3(self.config.nchains,
+                                      self.config.latvolume)
         else:
             raise ValueError('Unexpected value for `self.config.group`')
 
@@ -139,10 +162,15 @@ class Dynamics(Model):
 
     def call(
             self,
-            inputs: tuple[Tensor, Tensor],  # x, beta
+            inputs: tuple[Tensor, Tensor],
             training: bool = True
     ) -> tuple[Tensor, dict]:
-        """Call Dynamics object."""
+        """Call Dynamics object.
+
+        Args:
+            inputs: Pair of inputs: (x, β) to use for generating new state x'.
+            training (bool): Indicates training or evaluation of model
+        """
         if self.config.merge_directions:
             return self.apply_transition_fb(inputs, training=training)
         return self.apply_transition(inputs, training=training)
@@ -175,10 +203,9 @@ class Dynamics(Model):
     ) -> tuple[Tensor, dict]:
         data = self.generate_proposal_hmc(inputs, eps, nleapfrog=nleapfrog)
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
-        ma_ = tf.cast(ma_, dtype=TF_FLOAT)
-        mr_ = tf.cast(mr_, dtype=TF_FLOAT)
+        ma_ = tf.constant(ma_, dtype=TF_FLOAT)
+        mr_ = tf.constant(mr_, dtype=TF_FLOAT)
         ma = ma_[:, None]
-        # mr = mr_[:, None]
 
         xinit = self.flatten(data['init'].x)
         vinit = self.flatten(data['init'].v)
@@ -187,19 +214,13 @@ class Dynamics(Model):
 
         vout = tf.where(tf.cast(ma, bool), vprop, vinit)
         xout = tf.where(tf.cast(ma, bool), xprop, xinit)
-        # vout = ma * vprop + mr * vinit
-        # xout = ma * xprop + mr * xinit
 
-        # vout = ma * data['proposed'].v + mr * data['init'].v
-        # xout = ma * data['proposed'].x + mr * data['init'].x
-        # sumlogdet = tf.math.real(ma_) * data['metrics']['sumlogdet']
         state_out = State(x=xout, v=vout, beta=data['init'].beta)
         mc_states = MonteCarloStates(init=data['init'],
                                      proposed=data['proposed'],
                                      out=state_out)
         data['metrics'].update({
             'acc_mask': ma_,
-            # 'sumlogdet': sumlogdet,
             'mc_states': mc_states,
         })
 
@@ -214,22 +235,19 @@ class Dynamics(Model):
         data = self.generate_proposal_fb(inputs, training=training)
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
         ma = ma_[:, None]
-        # mr = mr_[:, None]
         ma_ = tf.cast(ma_, dtype=TF_FLOAT)  # data['proposed'].x.dtype)
         mr_ = tf.cast(mr_, dtype=TF_FLOAT)  # data['proposed'].x.dtype)
         v_out = tf.where(
             tf.cast(ma, bool),
-            data['proposed'].v,
-            data['init'].v
+            self.flatten(data['proposed'].v),
+            self.flatten(data['init'].v)
         )
         x_out = tf.where(
             tf.cast(ma, bool),
-            data['proposed'].x,
-            data['init'].x,
+            self.flatten(data['proposed'].x),
+            self.flatten(data['init'].x),
         )
-        # v_out = ma * data['proposed'].v + mr * data['init'].v
-        # x_out = ma * data['proposed'].x + mr * data['init'].x
-        sumlogdet = ma_ * data['metrics']['sumlogdet']
+        sumlogdet = tf.cast(ma_, x_out.dtype) * data['metrics']['sumlogdet']
 
         state_out = State(x=x_out, v=v_out, beta=data['init'].beta)
         mc_states = MonteCarloStates(init=data['init'],
@@ -258,30 +276,19 @@ class Dynamics(Model):
         mf = mf_[:, None]
         mb = mb_[:, None]
 
-        x_init = tf.where(
-            tf.cast(mf, bool),
-            fwd['init'].x,
-            bwd['init'].x
-        )
-        v_init = tf.where(
-            tf.cast(mf, bool),
-            fwd['init'].v,
-            bwd['init'].v
-        )
-        # v_init = mf * fwd['init'].v + mb * bwd['init'].v
+        x_init = tf.where(tf.cast(mf, bool), fwd['init'].x, bwd['init'].x)
+        v_init = tf.where(tf.cast(mf, bool), fwd['init'].v, bwd['init'].v)
 
         x_prop = tf.where(
             tf.cast(mf, bool),
-            fwd['proposed'].x,
-            bwd['proposed'].x
+            self.flatten(fwd['proposed'].x),
+            self.flatten(bwd['proposed'].x)
         )
         v_prop = tf.where(
             tf.cast(mf, bool),
-            fwd['proposed'].v,
-            bwd['proposed'].v
+            self.flatten(fwd['proposed'].v),
+            self.flatten(bwd['proposed'].v)
         )
-        # x_prop = mf * fwd['proposed'].x + mb * bwd['proposed'].x
-        # v_prop = mf * fwd['proposed'].v + mb * bwd['proposed'].v
 
         mfwd = fwd['metrics']
         mbwd = bwd['metrics']
@@ -291,31 +298,26 @@ class Dynamics(Model):
             mfwd['sumlogdet'],
             mbwd['sumlogdet']
         )
-        # logdet_prop = mf_ * mfwd['sumlogdet'] + mb_ * mbwd['sumlogdet']
 
         acc = mf_ * mfwd['acc'] + mb_ * mbwd['acc']
         ma_, _ = self._get_accept_masks(acc)
         ma = ma_[:, None]
-        # mr = mr_[:, None]
 
         v_out = tf.where(
             tf.cast(ma, bool),
-            v_prop,
-            v_init
+            self.flatten(v_prop),
+            self.flatten(v_init)
         )
-        # v_out = ma * v_prop + mr * v_init
         x_out = tf.where(
             tf.cast(ma, bool),
-            x_prop,
-            x_init,
+            self.flatten(x_prop),
+            self.flatten(x_init),
         )
-        # x_out = ma * x_prop + mr * x
         sumlogdet = tf.where(
             tf.cast(ma_, bool),
             logdet_prop,
             tf.zeros_like(logdet_prop)
         )
-        # sumlogdet = ma_ * logdet_prop  # + mr_ * logdet_init (= 0.)
 
         init = State(x=x, v=v_init, beta=beta)
         prop = State(x=x_prop, v=v_prop, beta=beta)
@@ -325,6 +327,8 @@ class Dynamics(Model):
 
         metrics = {}
         for (key, vf), (_, vb) in zip(mfwd.items(), mbwd.items()):
+            vf = tf.math.real(vf)
+            vb = tf.math.real(vb)
             try:
                 vfb = ma_ * (mf_ * vf + mb_ * vb)  # + mr_ * v0
             except ValueError:
@@ -338,8 +342,6 @@ class Dynamics(Model):
             'sumlogdet': sumlogdet,
             'mc_states': mc_states,
         })
-        # metrics.update({f'fwd/{k}': v for k, v in mfwd.items()})
-        # metrics.update({f'bwd/{k}': v for k, v in mbwd.items()})
 
         return x_out, metrics
 
@@ -375,13 +377,8 @@ class Dynamics(Model):
         """
         x, beta = inputs
         assert isinstance(x, Tensor)
-        # xr = tf.math.real(x)
-        # xi = tf.math.imag(x)
-        # vr = tf.random.normal(xr.shape, dtype=xr.dtype)
-        # v = tf.random.normal(x.shape, dtype=tf.math.real(x).dtype)
         xshape = [x.shape[0], *self.xshape[1:]]
         v = self.flatten(self.g.random_momentum(xshape))
-        # v = tf.complex(vr, vi)
         init = State(x, v, beta)
         proposed, metrics = self.transition_kernel_fb(init, training=training)
 
@@ -400,7 +397,6 @@ class Dynamics(Model):
         x, beta = inputs
         assert isinstance(x, Tensor)
         xshape = [x.shape[0], *self.xshape[1:]]
-        # v = tf.random.normal(x.shape, dtype=TF_FLOAT)
         v = self.flatten(self.g.random_momentum(xshape))
         state_init = State(x=x, v=v, beta=beta)
         state_prop, metrics = self.transition_kernel(state_init,
@@ -418,7 +414,7 @@ class Dynamics(Model):
     ) -> dict:
         """Returns dict of various metrics about input State."""
         energy = self.hamiltonian(state)
-        logprob = tf.subtract(energy, logdet)
+        logprob = tf.subtract(energy, tf.cast(logdet, energy.dtype))
         metrics = {
             'energy': energy,
             'logprob': logprob,
@@ -455,28 +451,15 @@ class Dynamics(Model):
             eps: float,
     ) -> State:
         """Perform standard HMC leapfrog update."""
-        # x = tf.reshape(state.x, self.xshape)
-        xflat = tf.reshape(state.x, state.v.shape)
-        force1 = self.grad_potential(xflat, state.beta)        # f = dU / dx
-        # halfeps = tf.constant(0.5 * eps, dtype=force1.dtype)
-        halfeps = tf.cast(eps / 2.0, dtype=force1.dtype)
-        eps = tf.cast(eps, dtype=force1.dtype)
-        # dt = 0.5 * eps
-        v1 = state.v - halfeps * force1
-        # xp = x + dt * v1                                 # x += xeps * v
-        xp = tf.reshape(
-            self.g.update_gauge(
-                tf.reshape(state.x, self.xshape),
-                tf.reshape(eps * v1, self.xshape)
-            ),
-            state.v.shape
-        )
-        # xp = tf.reshape(xp, state.v.shape)
-        force2 = self.grad_potential(xp, state.beta)       # calc force, again
-        v1 = tf.reshape(v1, [v1.shape[0], -1])
-        force2 = tf.reshape(force2, v1.shape)
-        v2 = v1 - halfeps * force2                         # v -= ½ veps * f
-        return State(x=xp, v=v2, beta=state.beta)          # output: (x', v')
+        x = tf.reshape(state.x, state.v.shape)
+        force = self.grad_potential(x, state.beta)        # f = dU / dx
+        eps = tf.constant(eps, dtype=force.dtype)
+        halfeps = tf.constant(eps / 2.0, dtype=force.dtype)
+        v = state.v - halfeps * force
+        x = self.g.update_gauge(x, eps * v)
+        force = self.grad_potential(x, state.beta)       # calc force, again
+        v -= halfeps * force
+        return State(x=x, v=v, beta=state.beta)          # output: (x', v')
 
     def transition_kernel_hmc(
             self,
@@ -487,27 +470,20 @@ class Dynamics(Model):
         """Run the generic HMC transition kernel."""
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         assert isinstance(state.x, Tensor)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
         history = {}
         if self.config.verbose:
             history = self.update_history(
                 self.get_metrics(state_, sumlogdet),
                 history={}
             )
-
-        if self.config.merge_directions:
-            nleapfrog = (
-                2 * self.config.nleapfrog
-                if nleapfrog is None else nleapfrog
-            )
-        else:
-            nleapfrog = (
-                self.config.nleapfrog
-                if nleapfrog is None else nleapfrog
-            )
-
-        # eps = (1. / nleapfrog) if eps is None else eps
         eps = self.config.eps_hmc if eps is None else eps
+        nlf = (
+            self.config.nleapfrog if not self.config.merge_directions
+            else 2 * self.config.nleapfrog
+        )
+        assert nlf <= 2 * self.config.nleapfrog
+        nleapfrog = nlf if nleapfrog is None else nleapfrog
         for _ in range(nleapfrog):
             state_ = self.leapfrog_hmc(state_, eps=eps)
             if self.config.verbose:
@@ -538,7 +514,7 @@ class Dynamics(Model):
         """
         state_ = State(state.x, state.v, state.beta)
         assert isinstance(state.x, Tensor)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
         sldf = tf.zeros_like(sumlogdet)
         sldb = tf.zeros_like(sumlogdet)
 
@@ -567,7 +543,9 @@ class Dynamics(Model):
 
         # Flip momentum
         # m1 = -1.0 * tf.ones_like(state_.v)
-        state_ = State(state_.x, tf.negative(state_.v), state_.beta)
+        vneg = tf.negative(state_.v)
+        assert isinstance(vneg, tf.Tensor)
+        state_ = State(state_.x, vneg, state_.beta)
 
         # Backward
         for step in range(self.config.nleapfrog):
@@ -611,7 +589,7 @@ class Dynamics(Model):
         # Copy initial state into proposed state
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         assert isinstance(state.x, Tensor)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
 
         history = {}
         if self.config.verbose:
@@ -643,7 +621,10 @@ class Dynamics(Model):
         """Compute the acceptance probability."""
         h_init = self.hamiltonian(state_init)
         h_prop = self.hamiltonian(state_prop)
-        dh = tf.add(tf.subtract(h_init, h_prop), sumlogdet)
+        dh = tf.add(
+            tf.subtract(h_init, h_prop),
+            tf.cast(sumlogdet, h_init.dtype)
+        )
         # dh = h_init - h_prop + sumlogdet
         prob = tf.exp(tf.minimum(dh, tf.zeros_like(dh)))
 
@@ -691,17 +672,28 @@ class Dynamics(Model):
 
         return masks
 
-    def _get_vnet(self, step: int) -> CallableNetwork:
+    def _get_vnet(self, step: int) -> Callable:
         """Returns momentum network to be used for updating v."""
+        if not self._networks_built:
+            return self.vnet
         vnet = self.vnet
-        if self.config.use_separate_networks:
+        assert isinstance(vnet, (dict, tf.keras.Model))
+        if self.config.use_separate_networks and isinstance(vnet, dict):
             return vnet[str(step)]
-        return vnet
+        # assert isinstance(vnet, (CallableNetwork))
+        return self.vnet
 
-    def _get_xnet(self, step: int, first: bool) -> CallableNetwork:
+    def _get_xnet(
+            self,
+            step: int,
+            first: bool
+    ) -> Callable:
         """Returns position network to be used for updating x."""
+        if not self._networks_built:
+            return self.xnet
         xnet = self.xnet
-        if self.config.use_separate_networks:
+        assert isinstance(xnet, (tf.keras.Model, dict))
+        if self.config.use_separate_networks and isinstance(xnet, dict):
             xnet = xnet[str(step)]
             if self.config.use_split_xnets:
                 if first:
@@ -730,7 +722,11 @@ class Dynamics(Model):
         x, force = inputs
         vnet = self._get_vnet(step)
         assert callable(vnet)
-        # x = self.g.group_to_vec(x)
+        # if isinstance(self.g, SU3):
+        #     x = tf.reshape(x, self.xshape)
+        #     x = tf.stack([tf.math.real(x), tf.math.imag(x)], 1)
+        #     # force = tf.reshape(force, self.xshape)
+        # # x = self.g.group_to_vec(x)
         return vnet((x, force), training)
 
     def _call_xnet(
@@ -748,10 +744,20 @@ class Dynamics(Model):
             s, t, q: Scaling, Translation, and Transformation functions
         """
         x, v = inputs
+        assert isinstance(x, Tensor) and isinstance(v, Tensor)
         xnet = self._get_xnet(step, first)
+        if isinstance(self.g, U1Phase):
+            x = self.g.group_to_vec(x)
+
+        elif isinstance(self.g, SU3):
+            x = tf.reshape(x, self.xshape)
+            x = tf.stack([tf.math.real(x), tf.math.imag(x)], 1)
+        # x = self.g.group_to_vec(x)
+        # assert xnet is not None and isinstance(xnet, LeapfrogLayer)
         assert callable(xnet)
-        x = self.g.group_to_vec(x)
-        return xnet((x, v), training)
+        s, t, q = xnet((x, v), training)
+        # return xnet((x, v), training)
+        return (s, t, q)
 
     def _forward_lf(
             self,
@@ -761,22 +767,25 @@ class Dynamics(Model):
     ) -> tuple[State, Tensor]:
         """Complete update (leapfrog step) in the forward direction."""
         m, mb = self._get_mask(step)
+        m = tf.cast(m, state.x.dtype)
+        mb = tf.cast(mb, state.x.dtype)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
         assert isinstance(state.x, Tensor)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        assert isinstance(m, Tensor) and isinstance(mb, Tensor)
 
         state, logdet = self._update_v_fwd(step, state, training=training)
-        sumlogdet = sumlogdet + logdet
+        sumlogdet = sumlogdet + tf.cast(logdet, sumlogdet.dtype)
 
         state, logdet = self._update_x_fwd(step, state, m,
                                            first=True, training=training)
-        sumlogdet = sumlogdet + logdet
+        sumlogdet = sumlogdet + tf.cast(logdet, sumlogdet.dtype)
 
         state, logdet = self._update_x_fwd(step, state, mb,
                                            first=False, training=training)
-        sumlogdet = sumlogdet + logdet
+        sumlogdet = sumlogdet + tf.cast(logdet, sumlogdet.dtype)
 
         state, logdet = self._update_v_fwd(step, state, training=training)
-        sumlogdet = sumlogdet + logdet
+        sumlogdet = sumlogdet + tf.cast(logdet, sumlogdet.dtype)
 
         return state, sumlogdet
 
@@ -792,21 +801,24 @@ class Dynamics(Model):
         step_r = self.config.nleapfrog - step - 1
 
         m, mb = self._get_mask(step_r)
-        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        m = tf.cast(m, state.x.dtype)
+        mb = tf.cast(mb, state.x.dtype)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=state.x.dtype)
+        assert isinstance(m, Tensor) and isinstance(mb, Tensor)
 
         state, logdet = self._update_v_bwd(step_r, state, training=training)
-        sumlogdet = sumlogdet + logdet
+        sumlogdet = sumlogdet + tf.cast(logdet, sumlogdet.dtype)
 
         state, logdet = self._update_x_bwd(step_r, state, mb,
                                            first=False, training=training)
-        sumlogdet = sumlogdet + logdet
+        sumlogdet = sumlogdet + tf.cast(logdet, sumlogdet.dtype)
 
         state, logdet = self._update_x_bwd(step_r, state, m,
                                            first=True, training=training)
-        sumlogdet = sumlogdet + logdet
+        sumlogdet = sumlogdet + tf.cast(logdet, sumlogdet.dtype)
 
         state, logdet = self._update_v_bwd(step_r, state, training=training)
-        sumlogdet = sumlogdet + logdet
+        sumlogdet = sumlogdet + tf.cast(logdet, sumlogdet.dtype)
 
         return state, sumlogdet
 
@@ -817,16 +829,25 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         """Update the momentum in the forward direction."""
-        eps = self.veps[step]
-        force = self.grad_potential(state.x, state.beta)
+        eps = tf.cast(self.veps[step], state.x.dtype)
+        x = tf.reshape(state.x, (-1, *self.xshape[1:]))
+        force = tf.reshape(
+            self.grad_potential(x, state.beta),
+            state.v.shape
+        )
         s, t, q = self._call_vnet(step, (state.x, force), training=training)
 
-        jac = eps * s / 2.  # jacobian factor, also used in exp_s below
+        # jacobian factor, used in exp_s below
+        halfeps = tf.scalar_mul(0.5, eps)
+        jac = tf.scalar_mul(halfeps, s)
+        # jac = eps * s / 2.  # jacobian factor, also used in exp_s below
         logdet = tf.reduce_sum(jac, axis=1)
 
-        exp_s = tf.exp(jac)
-        exp_q = tf.exp(eps * q)
-        vf = exp_s * state.v - 0.5 * eps * (force * exp_q + t)
+        exp_s = tf.reshape(tf.exp(jac), state.v.shape)
+        exp_q = tf.reshape(tf.exp(tf.scalar_mul(eps, q)), force.shape)
+        t = tf.reshape(t, force.shape)
+        # exp_q = tf.exp(eps * q)
+        vf = exp_s * state.v - tf.scalar_mul(halfeps, (force * exp_q + t))
 
         return State(state.x, vf, state.beta), logdet
 
@@ -837,14 +858,19 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         """Update the momentum in the backward direction."""
-        eps = self.veps[step]
+        eps = tf.cast(self.veps[step], state.x.dtype)
         force = self.grad_potential(state.x, state.beta)
         s, t, q = self._call_vnet(step, (state.x, force), training=training)
-        logjac = (-eps * s / 2.)
+        halfeps = tf.scalar_mul(0.5, eps)
+        logjac = tf.scalar_mul(tf.scalar_mul(-1., halfeps), s)
+        # logjac = (-eps * s / 2.)
+        v = tf.reshape(state.v, (-1, *self.xshape[1:]))
         logdet = tf.reduce_sum(logjac, axis=1)
-        exp_s = tf.exp(logjac)
-        exp_q = tf.exp(eps * q)
-        vb = exp_s * (state.v + 0.5 * eps * (force * exp_q + t))
+        exp_s = tf.reshape(tf.exp(logjac), v.shape)
+        exp_q = tf.reshape(tf.exp(tf.scalar_mul(eps, q)), v.shape)
+        t = tf.reshape(t, v.shape)
+        force = tf.reshape(force, v.shape)
+        vb = exp_s * (v + tf.scalar_mul(halfeps, (force * exp_q + t)))
 
         return State(state.x, vb, state.beta), logdet
 
@@ -859,39 +885,47 @@ class Dynamics(Model):
         """Single x update in the forward direction"""
         eps = self.xeps[step]
         mb = tf.ones_like(m) - m
-        xm_init = tf.multiply(m, state.x)
+        x = tf.reshape(state.x, (state.x.shape[0], -1))
+        v = tf.reshape(state.v, x.shape)
+        xm_init = tf.multiply(m, x)
         inputs = (xm_init, state.v)
         s, t, q = self._call_xnet(step, inputs, first=first, training=training)
-        s = eps * s
-        q = eps * q
+        s = tf.scalar_mul(eps, s)
+        q = tf.scalar_mul(eps, q)
         exp_s = tf.exp(s)
         exp_q = tf.exp(q)
         if isinstance(self.g, U1Phase):
             if self.config.use_ncp:
-                halfx = state.x / TWO
+                halfx = self.flatten(x / TWO)
                 _x = TWO * tf.math.atan(tf.math.tan(halfx) * exp_s)
-                xp = _x + eps * (state.v * exp_q + t)
+                xp = _x + eps * (v * exp_q + t)
                 xf = xm_init + (mb * xp)
                 cterm = tf.math.square(tf.math.cos(halfx))
                 sterm = (exp_s * tf.math.sin(halfx)) ** 2
                 logdet_ = tf.math.log(exp_s / (cterm + sterm))
                 logdet = tf.reduce_sum(mb * logdet_, axis=1)
             else:
-                xp = state.x * exp_s + eps * (state.v * exp_q + t)
+                xp = x * exp_s + eps * (v * exp_q + t)
                 xf = xm_init + (mb * xp)
                 logdet = tf.reduce_sum((mb * s), axis=1)
 
         elif isinstance(self.g, SU3):
-            x = self.g.group_to_vec(state.x)
-            v = self.g.group_to_vec(state.v)
-            xm_init = self.g.group_to_vec(xm_init)
+            x = tf.reshape(state.x, self.xshape)
+            xm_init = tf.reshape(xm_init, self.xshape)
+            exp_s = tf.cast(tf.reshape(exp_s, self.xshape), x.dtype)
+            exp_q = tf.cast(tf.reshape(exp_q, self.xshape), x.dtype)
+            t = tf.cast(tf.reshape(t, self.xshape), x.dtype)
+            eps = tf.cast(eps, x.dtype)
+            v = tf.reshape(state.v, self.xshape)
             xp = x * exp_s + eps * (v * exp_q + t)
-            xf = xm_init + (mb * xp)
-            logdet = tf.reduce_sum(mb * s, axis=1)
+            xf = xm_init + tf.reshape((mb * self.flatten(xp)), xm_init.shape)
+            logdet = tf.reduce_sum(mb * tf.cast(s, x.dtype), axis=1)
         else:
             raise ValueError('Unexpected value for `self.g`')
 
         xf = self.g.compat_proj(xf)
+        logdet = tf.cast(logdet, TF_FLOAT)
+        assert isinstance(logdet, Tensor)
         return State(x=xf, v=state.v, beta=state.beta), logdet
 
     def _update_x_bwd(
@@ -904,36 +938,57 @@ class Dynamics(Model):
     ) -> tuple[State, Tensor]:
         """Update the position in the backward direction."""
         eps = self.xeps[step]
+
         mb = tf.ones_like(m) - m
-        xm_init = tf.multiply(m, state.x)
+        x = tf.reshape(state.x, (state.x.shape[0], -1))
+        v = tf.reshape(state.v, x.shape)
+        xm_init = tf.multiply(m, x)
         inputs = (xm_init, state.v)
         s, t, q = self._call_xnet(step, inputs, first=first, training=training)
-        s = tf.scalar_mul(-eps, s)
+        s = tf.scalar_mul(tf.scalar_mul(-1., eps), s)
         q = tf.scalar_mul(eps, q)
         exp_q = tf.exp(q)
         exp_s = tf.exp(s)
 
         if isinstance(self.g, U1Phase):
             if self.config.use_ncp:
-                halfx = state.x / TWO
+                halfx = x / TWO
                 halfx_scale = exp_s * tf.tan(halfx)
                 x1 = TWO * tf.atan(halfx_scale)
-                x2 = exp_s * eps * (state.v * exp_q + t)
+                x2 = exp_s * eps * (v * exp_q + t)
                 xnew = x1 - x2
-                xb = xm_init + (mb * xnew)
+                xb = (
+                    xm_init
+                    + tf.reshape(mb * self.flatten(xnew), xm_init.shape)
+                )
 
                 cterm = tf.math.square(tf.cos(halfx))
                 sterm = (exp_s * tf.sin(halfx)) ** 2
-                logdet_ = tf.math.log(exp_s / (cterm + sterm))
+                logdet_ = tf.reshape(
+                    tf.math.log(exp_s / (cterm + sterm)),
+                    (xm_init.shape[0], -1)
+                )
                 logdet = tf.reduce_sum(mb * logdet_, axis=1)
             else:
                 xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
                 xb = xm_init + mb * xnew
                 logdet = tf.reduce_sum(mb * s, axis=1)
         elif isinstance(self.g, SU3):
-            xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
-            xb = xm_init + mb * xnew
-            logdet = tf.reduce_sum(mb * s, axis=1)
+            exp_s = tf.cast(tf.reshape(exp_s, state.x.shape), state.x.dtype)
+            exp_q = tf.cast(tf.reshape(exp_q, state.x.shape), state.x.dtype)
+            t = tf.cast(tf.reshape(t, state.x.shape), state.x.dtype)
+            eps = tf.cast(eps, state.x.dtype)
+            xnew = exp_s * self.g.update_gauge(
+                state.x,
+                -(eps * (state.v * exp_q + t))  # type:ignore
+            )
+            xb = tf.reshape(
+                xm_init + (mb * self.flatten(xnew)),
+                self.xshape
+            )
+            logdet = tf.math.real(
+                tf.reduce_sum(mb * tf.cast(s, mb.dtype), axis=1)
+            )
         else:
             raise ValueError('Unexpected value for `self.g`')
 
@@ -949,9 +1004,8 @@ class Dynamics(Model):
     def kinetic_energy(self, v: Tensor) -> Tensor:
         """Returns the kinetic energy, KE = 0.5 * v ** 2."""
         return self.g.kinetic_energy(
-            tf.reshape(v, self.xshape)
+            tf.reshape(v, (-1, *self.xshape[1:]))
         )
-        # return tf.reduce_sum(tf.math.square(v), axis=range(1, len(v.shape)))
 
     def potential_energy(self, x: Tensor, beta: Tensor) -> Tensor:
         """Returns the potential energy, PE = beta * action(x)."""
@@ -959,15 +1013,7 @@ class Dynamics(Model):
 
     def grad_potential(self, x: Tensor, beta: Tensor) -> Tensor:
         """Compute the gradient of the potential function."""
-        if tf.executing_eagerly():
-            with tf.GradientTape() as tape:
-                tape.watch(x)
-                pe = self.potential_energy(x, beta)
-            grad = tape.gradient(pe, x)
-        else:
-            grad = tf.gradients(self.potential_energy(x, beta), [x])[0]
-
-        return grad
+        return self.lattice.grad_action(x, beta)
 
     def load_networks(self, d: os.PathLike):
         d = Path(d)
@@ -1011,13 +1057,14 @@ class Dynamics(Model):
         outdir = Path(outdir).joinpath('networks')
         outdir.mkdir(exist_ok=True, parents=True)
 
-        veps = np.array([e.numpy() for e in self.veps])
-        xeps = np.array([e.numpy() for e in self.xeps])
-
-        np.savetxt(outdir.joinpath('veps.txt').as_posix(), veps)
-        np.savetxt(outdir.joinpath('xeps.txt').as_posix(), xeps)
-        np.save(outdir.joinpath('veps.npy').as_posix(), veps)
-        np.save(outdir.joinpath('xeps.npy').as_posix(), xeps)
+        try:
+            self.save(
+                outdir.joinpath('dynamics').as_posix(),
+                save_format='tf',
+            )
+        except Exception as e:
+            log.exception(e)
+            pass
 
         if self.config.use_separate_networks:
             for lf in range(self.config.nleapfrog):
@@ -1027,8 +1074,8 @@ class Dynamics(Model):
                 vnet = self._get_vnet(lf)
                 xnet1 = self._get_xnet(lf, first=True)
 
-                vnet.save(fvnet)
-                xnet1.save(fxnet1)
+                vnet.save(fvnet, save_format='tf')
+                xnet1.save(fxnet1, save_format='tf')
 
                 if self.config.use_split_xnets:
                     xnet2 = self._get_xnet(lf, first=False)
@@ -1041,10 +1088,10 @@ class Dynamics(Model):
             fvnet = outdir.joinpath('vnet').as_posix()
             fxnet1 = outdir.joinpath('xnet_first').as_posix()
 
-            vnet.save(fvnet)
-            xnet1.save(fxnet1)
+            vnet.save(fvnet, save_format='tf')
+            xnet1.save(fxnet1, save_format='tf')
 
             if self.config.use_split_xnets:
                 xnet2 = self._get_xnet(0, first=False)
                 fxnet2 = outdir.joinpath('xnet_second').as_posix()
-                xnet2.save(fxnet2)
+                xnet2.save(fxnet2, save_format='tf')

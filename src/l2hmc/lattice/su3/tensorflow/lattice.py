@@ -50,6 +50,10 @@ Buffer: Tuple[int, int, int, int, int, int]    # b, t, x, y, z, dim
 # class LatticeSU3(BaseLatticeSU3):
 # ---------------------------------------------------------------
 
+C1Symanzik = -1.0/12.0  # tree-level
+C1Iwasaki = -0.331
+C1DBW2 = -1.4088
+
 
 class LatticeSU3(Lattice):
     """4D Lattice with SU(3) links."""
@@ -115,6 +119,33 @@ class LatticeSU3(Lattice):
         )
         return self.g.trace(self.g.mul(xuv, xvu, adjoint_b=True))
 
+    def deriv_action_plaq(self, x):
+        stf = [[None] * 4 for _ in range(4)]
+        stu = [[None] * 4 for _ in range(4)]
+        for u in tf.range(1, 4):
+            for v in tf.range(0, u):
+                xu = tf.roll(x[:, u], shift=-1, axis=v+1)
+                xv = tf.roll(x[:, v], shift=-1, axis=u+1)
+                xuv = self.g.mul(xu, xv, adjoint_b=True)
+                stf[u][v] = self.g.mul(x[:, v], xuv)
+                stf[v][u] = self.g.mul(x[:, u], xuv, adjoint_b=True)
+                xvu = self.g.mul(x[:, v], x[:, u], adjoint_a=True)
+                stu[u][v] = self.g.mul(xvu, xv)
+                stu[v][u] = self.g.mul(xvu, xu, adjoint_a=True)
+
+    def _calc_plaq(
+            self,
+            x: Tensor,
+            u: int,
+            v: int
+    ) -> Tensor:
+        xu = x[:, u]  # type:ignore
+        xv = x[:, v]  # type:ignore
+        xuv = self.g.mul(xu, tf.roll(xv, shift=-1, axis=u+1))
+        xvu = self.g.mul(xv, tf.roll(xu, shift=-1, axis=v+1))
+        plaq = self.g.trace(self.g.mul(xuv, xvu, adjoint_b=True))
+        return plaq
+
     def _wilson_loops(
             self,
             x: Tensor,
@@ -164,7 +195,7 @@ class LatticeSU3(Lattice):
         return plaqs.stack(), rects.stack()
 
     def _plaquettes(self, x: Tensor) -> Tensor:
-        ps, _ = self._wilson_loops(x)
+        ps, rs = self._wilson_loops(x)
         plaqs = tf.reduce_sum(tf.math.real(ps), axis=range(2, len(ps.shape)))
         psum = tf.reduce_sum(plaqs, axis=0)
 

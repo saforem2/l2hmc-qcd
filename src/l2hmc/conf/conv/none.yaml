@@ -1,2 +1,6 @@
 _target_: l2hmc.configs.ConvolutionConfig
 
+filters: []
+sizes: []
+pool: []
+

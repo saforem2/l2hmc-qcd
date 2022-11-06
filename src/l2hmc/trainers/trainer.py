@@ -3,23 +3,23 @@ trainer.py
 
 Contains BaseTrainer (ABC) object for training L2HMC dynamics
 """
-from __future__ import absolute_import, division, print_function, annotations
-
-import logging
-
+from __future__ import absolute_import, annotations, division, print_function
 from abc import ABC, abstractmethod
+import logging
 from typing import Any, Optional
-import aim
 
+import aim
+from hydra.utils import instantiate
 import numpy as np
 from omegaconf.dictconfig import DictConfig
 from rich.console import Console
+from rich.table import Table
+
 from l2hmc.common import get_timestamp
 from l2hmc.configs import ExperimentConfig, InputSpec
-from hydra.utils import instantiate
-
+import l2hmc.configs as configs
 from l2hmc.utils.history import BaseHistory
-from l2hmc.utils.rich import get_console
+from l2hmc.utils.rich import add_columns, get_console
 from l2hmc.utils.step_timer import StepTimer
 
 
@@ -39,7 +39,9 @@ class BaseTrainer(ABC):
         else:
             self.config = cfg
 
-        assert isinstance(self.config, ExperimentConfig)
+        assert isinstance(self.config,
+                          (configs.ExperimentConfig,
+                           ExperimentConfig))
         assert self.config.framework in [
             'pt',
             'tf',
@@ -54,11 +56,6 @@ class BaseTrainer(ABC):
         self.schedule = None
         self.optimizer = None
         self.lr_schedule = None
-        # self.lattice = self.build_lattice()
-        # self.loss_fn = self.build_loss_fn()
-        # self.dynamics = self.build_dynamics()
-        # self.optimizer = self.build_optimizer()
-        # self.lr_schedule = self.build_lr_schedule()
         self.steps = self.config.steps
         self.console = get_console(record=False)
         self.xshape = self.config.dynamics.xshape
@@ -232,15 +229,35 @@ class BaseTrainer(ABC):
     def metric_to_numpy(self, metric: Any):
         pass
 
+    def update_table(
+            self,
+            table: Table,
+            step: int,
+            avgs: dict,
+    ) -> Table:
+        if step == 0:
+            table = add_columns(avgs, table)
+        else:
+            table.add_row(
+                *[f'{v:5}' for _, v in avgs.items()]
+            )
+        return table
+
     def metrics_to_numpy(
             self,
             metrics: dict[str, Any]
     ) -> dict[str, list[np.ndarray]]:
         m = {}
         for key, val in metrics.items():
+            if val is None:
+                m[key] = np.nan
+
             if isinstance(val, dict):
                 for k, v in val.items():
                     m[f'{key}/{k}'] = self.metric_to_numpy(v)
+
+            elif isinstance(val, (float, int, bool, np.floating)):
+                m[key] = val
 
             else:
                 try:

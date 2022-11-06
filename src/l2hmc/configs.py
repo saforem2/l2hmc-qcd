@@ -8,6 +8,7 @@ from collections import namedtuple
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 import json
+from abc import ABC, abstractmethod
 import logging
 import os
 from pathlib import Path
@@ -16,10 +17,8 @@ from typing import Any, Counter, Dict, List, Optional, Tuple
 from hydra.core.config_store import ConfigStore
 import numpy as np
 from omegaconf import DictConfig
-from omegaconf import MISSING
+# from omegaconf import MISSING
 
-# from accelerate.accelerator import Accelerator
-# from hydra.utils import instantiate
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +29,13 @@ CONF_DIR = HERE.joinpath('conf')
 LOGS_DIR = PROJECT_DIR.joinpath('logs')
 AIM_DIR = HERE.joinpath('.aim')
 OUTPUTS_DIR = HERE.joinpath('outputs')
+CHECKPOINTS_DIR = HERE.joinpath('checkpoints')
 
 CONF_DIR.mkdir(exist_ok=True, parents=True)
 LOGS_DIR.mkdir(exist_ok=True, parents=True)
 OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
+CHECKPOINTS_DIR.mkdir(exist_ok=True, parents=True)
 OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
-
 
 State = namedtuple('State', ['x', 'v', 'beta'])
 
@@ -59,8 +59,10 @@ SYNONYMS = {
 
 def add_to_outdirs_file(outdir: os.PathLike):
     with open(OUTDIRS_FILE, 'a') as f:
-        f.write('\n')
-        f.write(Path(outdir).resolve().as_posix())
+        f.write(Path(outdir).resolve.as_posix() + '\n')
+        # f.writelines([
+        #     Path(outdir).resolve.as_posix()
+        # ])
 
 
 def get_jobdir(cfg: DictConfig, job_type: str) -> Path:
@@ -81,7 +83,12 @@ def list_to_str(x: list) -> str:
 
 
 @dataclass
-class BaseConfig:
+class BaseConfig(ABC):
+
+    @abstractmethod
+    def to_str(self) -> str:
+        pass
+
     def to_json(self) -> str:
         return json.dumps(self.__dict__)
 
@@ -130,20 +137,20 @@ class LatticeMetrics:
         }
 
 
-@dataclass
-class AcceleratorConfig(BaseConfig):
-    device_placement: Optional[bool] = True
-    split_batches: Optional[bool] = False
-    mixed_precision: Optional[str] = 'no'
-    cpu: Optional[bool] = False
-    deepspeed_plugin: Optional[Any] = None
-    # fsdp_plugin: Optional[Any] = None
-    rng_types: Optional[list[str]] = None
-    log_with: Optional[list[str]] = None
-    logging_dir: Optional[str | os.PathLike] = None
-    dispatch_batches: Optional[bool] = False
-    step_scheduler_with_optimizer: Optional[bool] = True
-    kwargs_handlers: Optional[list[Any]] = None
+# @dataclass
+# class AcceleratorConfig(BaseConfig):
+#     device_placement: Optional[bool] = True
+#     split_batches: Optional[bool] = False
+#     mixed_precision: Optional[str] = 'no'
+#     cpu: Optional[bool] = False
+#     deepspeed_plugin: Optional[Any] = None
+#     # fsdp_plugin: Optional[Any] = None
+#     rng_types: Optional[list[str]] = None
+#     log_with: Optional[list[str]] = None
+#     logging_dir: Optional[str | os.PathLike] = None
+#     dispatch_batches: Optional[bool] = False
+#     step_scheduler_with_optimizer: Optional[bool] = True
+#     kwargs_handlers: Optional[list[Any]] = None
 
 
 @dataclass
@@ -168,26 +175,29 @@ class wandbSetup(BaseConfig):
 class wandbConfig(BaseConfig):
     setup: wandbSetup
 
+    def to_str(self) -> str:
+        return self.to_json()
 
-@dataclass
-class U1Config(BaseConfig):
-    steps: Steps
-    network: NetworkConfig
-    dynamics: DynamicsConfig
-    loss: LossConfig
-    net_weights: NetWeights
-    # conv: Optional[ConvolutionConfig] = None
-    backend: str = MISSING
 
-    def __post_init__(self):
-        self.xshape = self.dynamics.xshape
-        xdim = self.dynamics.xdim
-        self.input_spec = InputSpec(
-            xshape=self.dynamics.xshape,  # type:ignore
-            xnet={'x': [xdim, int(2)], 'v': [xdim, ]},
-            vnet={'x': [xdim, ], 'v': [xdim, ]}
-        )
-
+# @dataclass
+# class U1Config(BaseConfig):
+#     steps: Steps
+#     network: NetworkConfig
+#     dynamics: DynamicsConfig
+#     loss: LossConfig
+#     net_weights: NetWeights
+#     # conv: Optional[ConvolutionConfig] = None
+#     backend: str = MISSING
+#
+#     def __post_init__(self):
+#         self.xshape = self.dynamics.xshape
+#         xdim = self.dynamics.xdim
+#         self.input_spec = InputSpec(
+#             xshape=self.dynamics.xshape,  # type:ignore
+#             xnet={'x': [xdim, int(2)], 'v': [xdim, ]},
+#             vnet={'x': [xdim, ], 'v': [xdim, ]}
+#         )
+#
 
 @dataclass
 class NetWeight(BaseConfig):
@@ -214,6 +224,9 @@ class NetWeights(BaseConfig):
     """Object for selectively scaling different components of x, v networks."""
     x: NetWeight = NetWeight(1., 1., 1.)
     v: NetWeight = NetWeight(1., 1., 1.)
+
+    def to_str(self):
+        return f'nwx-{self.x.to_str()}-nwv-{self.v.to_str()}'
 
     def to_dict(self):
         return {
@@ -253,13 +266,16 @@ class LearningRateConfig(BaseConfig):
 
 
 @dataclass
-class Steps:
+class Steps(BaseConfig):
     nera: int
     nepoch: int
     test: int
     log: Optional[int] = None
     print: Optional[int] = None
     extend_last_era: Optional[int] = None
+
+    def to_str(self) -> str:
+        return f'nera-{self.nera}_nepoch-{self.nepoch}'
 
     def __post_init__(self):
         if self.extend_last_era is None:
@@ -300,11 +316,255 @@ class Steps:
 
 
 @dataclass
+class ConvolutionConfig(BaseConfig):
+    filters: List[int]
+    sizes: List[int]
+    pool: Optional[List[int]] = None
+    # activation: str
+    # paddings: list[int]
+
+    def __post_init__(self):
+        assert len(self.filters) == len(self.sizes)
+        if self.pool is None:
+            logger.warning('Using default pooling size of 2')
+            self.pool = [2] * len(self.filters)
+        # if isinstance(self.sizes, int):
+        #     self.sizes = len(self.filters) * self.sizes
+        # if isinstance(self.pool, int):
+        #     self.pool = len(self.filters) * self.pool
+
+        # if self.pool is None:
+        #     logger.warning('Using default pooling size of 2')
+        #     self.pool = len(self.filters) * [2]
+        # if isinstance(self.pool, int):
+        #     self.pool = len(self.filters) * [self.pool]
+        # if isinstance(self.pool, int):
+        #     p = self.pool
+        # elif isinstance(self.pool, list):
+        #     p = self.pool[0]
+        # else:
+        #     logger.warning('Using default pooling size of 2')
+        #     p = 2
+        # if len(self.pool) != len(self.filters):
+        #     self.pool = len(self.filters) * [p]
+
+        assert self.pool is not None
+
+    def to_str(self):
+        if len(self.filters) > 0:
+            outstr = [
+                list_to_str(self.filters),
+                list_to_str(self.sizes),
+            ]
+            if self.pool is not None:
+                outstr.append(
+                    list_to_str(self.pool)
+                )
+
+            return '_'.join(outstr)
+        return ''
+
+
+@dataclass
+class NetworkConfig(BaseConfig):
+    units: List[int]
+    activation_fn: str
+    dropout_prob: float
+    use_batch_norm: bool = True
+    # conv_config: Optional[ConvolutionConfig] = None
+
+    def to_str(self):
+        ustr = '-'.join([str(int(i)) for i in self.units])
+        dstr = f'dp-{self.dropout_prob:2.1f}'
+        bstr = f'bn-{self.use_batch_norm}'
+        return '_'.join([ustr, dstr, bstr])
+        # outstr = [f'nh-{ustr}_act-{self.activation_fn}']
+        # if self.dropout_prob > 0:
+        #     outstr.append(f'dp-{self.dropout_prob:2.1f}')
+        # if self.use_batch_norm:
+        #     outstr.append('bNorm')
+
+        # return '_'.join(outstr)
+
+
+@dataclass
+class DynamicsConfig(BaseConfig):
+    nchains: int
+    group: str
+    latvolume: List[int]
+    nleapfrog: int
+    eps: float = 0.01
+    eps_hmc: float = 0.01
+    use_ncp: bool = True
+    verbose: bool = True
+    eps_fixed: bool = False
+    use_split_xnets: bool = True
+    use_separate_networks: bool = True
+    merge_directions: bool = True
+
+    def to_str(self) -> str:
+        latstr = '-'.join([str(i) for i in self.xshape[1:]])
+        lfstr = f'nlf-{self.nleapfrog}'
+        splitstr = f'xsplit-{self.use_split_xnets}'
+        sepstr = f'sepnets-{self.use_separate_networks}'
+        mrgstr = f'merge-{self.merge_directions}'
+        return '/'.join([self.group, latstr, lfstr, splitstr, sepstr, mrgstr])
+
+    def __post_init__(self):
+        assert self.group.upper() in ['U1', 'SU3']
+        if self.eps_hmc is None:
+            # if not specified, use a trajectory length of 1
+            self.eps_hmc = 1.0 / self.nleapfrog
+        if self.group.upper() == 'U1':
+            self.dim = 2
+            self.nt, self.nx = self.latvolume
+            self.xshape = (self.nchains, self.dim, *self.latvolume)
+            assert len(self.xshape) == 4
+            assert len(self.latvolume) == 2
+            self.xdim = int(np.cumprod(self.xshape[1:])[-1])
+        elif self.group.upper() == 'SU3':
+            self.dim = 4
+            self.link_shape = (3, 3)
+            self.nt, self.nx, self.ny, self.nz = self.latvolume
+            self.xshape = (
+                self.nchains,
+                self.dim,
+                *self.latvolume,
+                *self.link_shape
+            )
+            assert len(self.xshape) == 8
+            assert len(self.latvolume) == 4
+            self.xdim = int(np.cumprod(self.xshape[1:])[-1])
+        else:
+            raise ValueError('Expected `group` to be one of `"U1", "SU3"`')
+
+
+@dataclass
+class LossConfig(BaseConfig):
+    use_mixed_loss: bool = False
+    charge_weight: float = 0.01
+    plaq_weight: float = 0.
+    aux_weight: float = 0.0
+
+    def to_str(self) -> str:
+        return '_'.join([
+            f'qw-{self.charge_weight:2.1f}',
+            f'pw-{self.plaq_weight:2.1f}',
+            f'aw-{self.aux_weight:2.1f}',
+            f'mixed-{self.use_mixed_loss}',
+        ])
+
+
+@dataclass
+class InputSpec(BaseConfig):
+    xshape: List[int] | Tuple[int]
+    xnet: Optional[Dict[str, List[int] | Tuple[int]]] = None
+    vnet: Optional[Dict[str, List[int] | Tuple[int]]] = None
+
+    def to_str(self):
+        return '-'.join([str(i) for i in self.xshape])
+
+    def __post_init__(self):
+        if len(self.xshape) == 2:
+            self.xdim = self.xshape[-1]
+        elif len(self.xshape) > 2:
+            self.xdim = np.cumprod(self.xshape[1:])[-1]
+        else:
+            raise ValueError(f'Invalid `xshape`: {self.xshape}')
+
+        if self.xnet is None:
+            self.xnet = {'x': self.xshape, 'v': self.xshape}
+        if self.vnet is None:
+            self.vnet = {'x': self.xshape, 'v': self.xshape}
+
+
+@dataclass
+class ExperimentConfig(BaseConfig):
+    seed: int
+    wandb: Any
+    steps: Steps
+    framework: str
+    loss: LossConfig
+    network: NetworkConfig
+    conv: ConvolutionConfig
+    net_weights: NetWeights
+    dynamics: DynamicsConfig
+    learning_rate: LearningRateConfig
+    annealing_schedule: AnnealingSchedule
+    # ----- Optional (w/ defaults) ------------
+    # conv: Optional[ConvolutionConfig] = None
+    c1: float = 0.0
+    port: str = '2345'
+    compile: bool = True
+    profile: bool = False
+    init_aim: bool = True
+    init_wandb: bool = True
+    debug_mode: bool = False
+    default_mode: bool = True
+    print_config: bool = True
+    precision: str = 'float32'
+    ignore_warnings: bool = True
+    backend: str = 'hvd'
+    # ----- Optional (w/o defaults) -----------
+    name: Optional[str] = None
+    name: Optional[str] = None
+    width: Optional[int] = None
+    nchains: Optional[int] = None
+    compression: Optional[str] = None
+
+    def __post_init__(self):
+        self.xdim = self.dynamics.xdim
+        self.xshape = self.dynamics.xshape
+        w = int(os.environ.get('COLUMNS', 235))
+        self.width = w if self.width is None else self.width
+        if self.framework == 'pytorch':
+            if self.backend is None:
+                self.backend = 'DDP'
+                logger.warning(
+                    f'Backend not specified, using DDP with {self.framework}'
+                )
+            assert self.backend.lower() in ['hvd', 'horovod', 'ddp']
+
+        if self.debug_mode:
+            self.compile = False
+
+        self.annealing_schedule.setup(
+            nera=self.steps.nera,
+            nepoch=self.steps.nepoch,
+        )
+
+    def to_str(self) -> str:
+        dynstr = self.dynamics.to_str()
+        constr = self.conv.to_str()
+        netstr = self.network.to_str()
+        return '/'.join([dynstr, constr, netstr, self.framework])
+
+    def get_checkpoint_dir(self) -> Path:
+        return Path(CHECKPOINTS_DIR).joinpath(self.to_str())
+
+    def rank(self):
+        if self.framework in SYNONYMS['pytorch']:
+            import horovod.torch as hvd
+            if not hvd.is_initialized():
+                hvd.init()
+            return hvd.rank()
+        elif self.framework in SYNONYMS['tensorflow']:
+            import horovod.tensorflow as hvd
+            if not hvd.is_initialized():
+                hvd.init()
+            return hvd.rank()
+
+
+@dataclass
 class AnnealingSchedule(BaseConfig):
     beta_init: float
     beta_final: Optional[float] = 1.0
+    dynamic: bool = False
     # steps: Steps
     # TODO: Add methods for specifying different annealing schedules
+
+    def to_str(self) -> str:
+        return f'bi-{self.beta_init}_bf-{self.beta_final}'
 
     def __post_init__(self):
         if self.beta_final is None or self.beta_final < self.beta_init:
@@ -486,201 +746,6 @@ class Annealear:
             return current_beta
 
 
-@dataclass
-class ConvolutionConfig(BaseConfig):
-    filters: List[int]
-    sizes: List[int]
-    pool: List[int]
-    # activation: str
-    # paddings: list[int]
-
-    def to_str(self):
-        outstr = [
-            list_to_str(self.filters),
-            list_to_str(self.sizes),
-            list_to_str(self.pool)
-        ]
-
-        return '_'.join(outstr)
-
-
-@dataclass
-class NetworkConfig(BaseConfig):
-    units: List[int]
-    activation_fn: str
-    dropout_prob: float
-    use_batch_norm: bool = True
-    # conv_config: Optional[ConvolutionConfig] = None
-
-    def to_str(self):
-        ustr = ''.join([str(int(i)) for i in self.units])
-        outstr = [f'nh-{ustr}_act-{self.activation_fn}']
-        if self.dropout_prob > 0:
-            outstr.append(f'dp-{self.dropout_prob:2.1f}')
-        if self.use_batch_norm:
-            outstr.append('bNorm')
-
-        return '_'.join(outstr)
-
-
-@dataclass
-class DynamicsConfig(BaseConfig):
-    nchains: int
-    group: str
-    latvolume: List[int]
-    # xshape: List[int]
-    nleapfrog: int
-    eps: float = 0.01
-    eps_hmc: float = 0.01
-    use_ncp: bool = True
-    verbose: bool = True
-    eps_fixed: bool = False
-    use_split_xnets: bool = True
-    use_separate_networks: bool = True
-    merge_directions: bool = True
-
-    def __post_init__(self):
-        assert self.group.upper() in ['U1', 'SU3']
-        if self.eps_hmc is None:
-            # if not specified, use a trajectory length of 1
-            self.eps_hmc = 1.0 / self.nleapfrog
-        if self.group.upper() == 'U1':
-            self.dim = 2
-            self.nt, self.nx = self.latvolume
-            self.xshape = (self.nchains, self.dim, *self.latvolume)
-            assert len(self.xshape) == 4
-            assert len(self.latvolume) == 2
-            self.xdim = int(np.cumprod(self.xshape[1:])[-1])
-        elif self.group.upper() == 'SU3':
-            self.dim = 4
-            self.link_shape = (3, 3)
-            self.nt, self.nx, self.ny, self.nz = self.latvolume
-            self.xshape = (
-                self.nchains,
-                self.dim,
-                *self.latvolume,
-                *self.link_shape
-            )
-            assert len(self.xshape) == 8
-            assert len(self.latvolume) == 4
-            self.xdim = self.nt * self.nx * self.ny * self.nz * self.dim * 8
-        else:
-            raise ValueError('Expected `group` to be one of `"U1", "SU3"`')
-
-    # def get_xshape(self):
-    #     if self.group.upper() == 'U1':
-    #         return (self.nchains, self.dim, *self.latvolume)
-    #     elif self.group.upper() == 'SU3':
-    #         return (
-    #             self.nchains,
-    #             self.dim,
-    #             *self.latvolume,
-    #             *self.link_shape
-    #         )
-
-
-@dataclass
-class LossConfig(BaseConfig):
-    use_mixed_loss: bool = False
-    charge_weight: float = 0.01
-    plaq_weight: float = 0.
-    aux_weight: float = 0.0
-
-
-@dataclass
-class InputSpec(BaseConfig):
-    xshape: List[int] | Tuple[int]
-    xnet: Optional[Dict[str, List[int] | Tuple[int]]] = None
-    vnet: Optional[Dict[str, List[int] | Tuple[int]]] = None
-
-    def __post_init__(self):
-        if len(self.xshape) == 2:
-            self.xdim = self.xshape[-1]
-        elif len(self.xshape) > 2:
-            self.xdim = np.cumprod(self.xshape[1:])[-1]
-        else:
-            raise ValueError(f'Invalid `xshape`: {self.xshape}')
-
-        if self.xnet is None:
-            self.xnet = {'x': self.xshape, 'v': self.xshape}
-        if self.vnet is None:
-            self.vnet = {'x': self.xshape, 'v': self.xshape}
-
-
-@dataclass
-class TrainerConfig1:
-    steps: Steps
-    lr: LearningRateConfig
-    dynamics: DynamicsConfig
-    schedule: AnnealingSchedule
-    compile: bool = True
-    aux_weight: float = 0.0
-    evals_per_step: int = 1
-    compression: Optional[str] = 'none'
-    keep: Optional[str | list[str]] = None
-    skip: Optional[str | list[str]] = None
-
-
-@dataclass
-class ExperimentConfig:
-    seed: int
-    wandb: Any
-    steps: Steps
-    framework: str
-    loss: LossConfig
-    network: NetworkConfig
-    net_weights: NetWeights
-    dynamics: DynamicsConfig
-    learning_rate: LearningRateConfig
-    annealing_schedule: AnnealingSchedule
-    # ----- optional below -------------------
-    # outdir: Optional[Any] = None
-    c1: Optional[float] = 0.0                # rectangle coefficient for SU3
-    name: Optional[str] = None
-    width: Optional[int] = None
-    nchains: Optional[int] = None
-    init_aim: Optional[bool] = None
-    init_wandb: Optional[bool] = None
-    compile: Optional[bool] = True
-    profile: Optional[bool] = False
-    compression: Optional[str] = None
-    debug_mode: Optional[bool] = False
-    default_mode: Optional[bool] = True
-    print_config: Optional[bool] = True
-    precision: Optional[str] = 'float32'
-    ignore_warnings: Optional[bool] = True
-    conv: Optional[ConvolutionConfig] = None
-
-    def rank(self):
-        if self.framework in SYNONYMS['pytorch']:
-            import horovod.torch as hvd
-            if not hvd.is_initialized():
-                hvd.init()
-            return hvd.rank()
-        elif self.framework in SYNONYMS['tensorflow']:
-            import horovod.tensorflow as hvd
-            if not hvd.is_initialized():
-                hvd.init()
-            return hvd.rank()
-
-    def __post_init__(self):
-        if self.debug_mode:
-            self.compile = False
-
-        self.annealing_schedule.setup(
-            nera=self.steps.nera,
-            nepoch=self.steps.nepoch,
-        )
-        w = int(os.environ.get('COLUMNS', 235))
-        self.width = w if self.width is None else self.width
-        self.xdim = self.dynamics.xdim
-        self.xshape = self.dynamics.xshape
-        # logger.warning(f'xdim: {self.dynamics.xdim}')
-        # logger.warning(f'group: {self.dynamics.group}')
-        # logger.warning(f'xshape: {self.dynamics.xshape}')
-        # logger.warning(f'latvolume: {self.dynamics.latvolume}')
-
-
 def get_config(overrides: Optional[list[str]] = None):
     from hydra import (
         initialize_config_dir,
@@ -698,14 +763,29 @@ def get_config(overrides: Optional[list[str]] = None):
     return cfg
 
 
-def get_experiment(overrides: Optional[list[str]] = None):
+def get_experiment(
+        overrides: Optional[list[str]] = None,
+        build_networks: bool = True,
+        keep: Optional[str | list[str]] = None,
+        skip: Optional[str | list[str]] = None,
+):
     cfg = get_config(overrides)
     if cfg.framework == 'pytorch':
         from l2hmc.experiment.pytorch.experiment import Experiment
-        return Experiment(cfg)
+        return Experiment(
+            cfg,
+            keep=keep,
+            skip=skip,
+            build_networks=build_networks,
+        )
     elif cfg.framework == 'tensorflow':
         from l2hmc.experiment.tensorflow.experiment import Experiment
-        return Experiment(cfg)
+        return Experiment(
+            cfg,
+            keep=keep,
+            skip=skip,
+            build_networks=build_networks,
+        )
     else:
         raise ValueError(
             f'Unexpected value for `cfg.framework: {cfg.framework}'
@@ -713,7 +793,7 @@ def get_experiment(overrides: Optional[list[str]] = None):
 
 
 defaults = [
-    {'backend': MISSING}
+    # {'backend': MISSING}
 ]
 
 cs = ConfigStore.instance()

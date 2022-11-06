@@ -6,20 +6,29 @@ Contains entry point for training Dynamics.
 from __future__ import absolute_import, annotations, division, print_function
 import logging
 import os
+import sys
 import random
 import warnings
 import time
+from pathlib import Path
+
+import torch
+import torch.distributed as dist
 
 import hydra
 from typing import Optional
 import numpy as np
-from omegaconf import DictConfig
+from omegaconf.dictconfig import DictConfig
 
 from l2hmc.configs import ExperimentConfig
 from l2hmc.utils.rich import print_config
+from l2hmc.utils.plot_helpers import set_plot_style
+
+set_plot_style()
 
 log = logging.getLogger(__name__)
 
+logging.getLogger('filelock').setLevel(logging.CRITICAL)
 logging.getLogger('matplotlib').setLevel(logging.CRITICAL)
 logging.getLogger('PIL.PngImagePlugin').setLevel(logging.CRITICAL)
 logging.getLogger('graphviz._tools').setLevel(logging.CRITICAL)
@@ -40,7 +49,24 @@ def setup(cfg: DictConfig):
         warnings.filterwarnings('ignore')
 
 
-def setup_tensorflow(precision: Optional[str] = None) -> int:
+def run_ddp(fn, world_size):
+    import torch.multiprocessing as mp
+    mp.spawn(  # type:ignore
+        fn,
+        args=(world_size,),
+        nprocs=world_size,
+        join=True
+    )
+
+
+def cleanup() -> None:
+    dist.destroy_process_group()
+
+
+def setup_tensorflow(
+        precision: Optional[str] = None,
+        ngpus: Optional[int] = None,
+) -> int:
     import tensorflow as tf
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
@@ -48,13 +74,19 @@ def setup_tensorflow(precision: Optional[str] = None) -> int:
     hvd.init() if not hvd.is_initialized() else None
     tf.keras.backend.set_floatx(precision)
     TF_FLOAT = tf.keras.backend.floatx()
-    # tf.config.run_functions_eagerly(True)
-    # assert tf.keras.backend.floatx() == tf.float32
+    eager_mode = os.environ.get('TF_EAGER', None)
+    if eager_mode is not None:
+        log.warning('Detected `TF_EAGER` from env. Running eagerly.')
+        tf.config.run_functions_eagerly(True)
+
     gpus = tf.config.experimental.list_physical_devices('GPU')
-    cpus = tf.config.experimental.list_physical_devices('GPU')
+    cpus = tf.config.experimental.list_physical_devices('CPU')
     if gpus:
         try:
             # Currently memory growth needs to be the same across GPUs
+            if ngpus is not None:
+                gpus = gpus[-ngpus:]
+
             for gpu in gpus:
                 tf.config.experimental.set_memory_growth(gpu, True)
             tf.config.experimental.set_visible_devices(
@@ -92,39 +124,46 @@ def setup_tensorflow(precision: Optional[str] = None) -> int:
 
 
 def setup_torch(
-        precision: Optional[str] = None,
-        seed: Optional[int] = None,
+        seed: int,
+        backend: str = 'horovod',
+        precision: str = 'float32',
+        port: str = '2345',
 ) -> int:
     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
-    import torch
     torch.backends.cudnn.deterministic = True   # type:ignore
     torch.backends.cudnn.benchmark = True       # type:ignore
     torch.use_deterministic_algorithms(True)
     # torch.manual_seed(cfg.seed)
-    import horovod.torch as hvd
+    from l2hmc.common import setup_torch_distributed
+    dsetup = setup_torch_distributed(backend=backend, port=port)
+    rank = dsetup['rank']
+    size = dsetup['size']
+    local_rank = dsetup['local_rank']
 
-    hvd.init() if not hvd.is_initialized() else None
-
-    nthreads = os.environ.get('OMP_NUM_THREADS', '1')
-    torch.set_num_threads(int(nthreads))
+    nthreads = os.environ.get(
+        'OMP_NUM_THREADS',
+        None
+    )
+    if nthreads is not None:
+        torch.set_num_threads(int(nthreads))
 
     if precision == 'float64':
         torch.set_default_dtype(torch.float64)
 
     if torch.cuda.is_available():
-        torch.cuda.set_device(hvd.local_rank())
+        torch.cuda.set_device(local_rank)
         # torch.cuda.manual_seed(cfg.seed + hvd.local_rank())
     # else:
     #     torch.set_default_dtype(torch.float32)
-    RANK = hvd.rank()
-    LOCAL_RANK = hvd.local_rank()
-    SIZE = hvd.size()
-    LOCAL_SIZE = hvd.local_size()
+    # RANK = hvd.rank()
+    # LOCAL_RANK = hvd.local_rank()
+    # SIZE = hvd.size()
+    # LOCAL_SIZE = hvd.local_size()
 
-    log.info(f'Global Rank: {RANK} / {SIZE-1}')
-    log.info(f'[{RANK}]: Local rank: {LOCAL_RANK} / {LOCAL_SIZE-1}')
-    seed_everything(seed * (RANK + 1) * (LOCAL_RANK + 1))
-    return RANK
+    log.info(f'Global Rank: {rank} / {size-1}')
+    log.info(f'[{rank}]: Local rank: {local_rank}')
+    seed_everything(seed * (rank + 1) * (local_rank + 1))
+    return rank
 
 
 def get_experiment(
@@ -146,34 +185,21 @@ def get_experiment(
 
     if framework in ['pt', 'pytorch', 'torch']:
         _ = setup_torch(
+            seed=cfg.seed,
             precision=cfg.precision,
-            seed=cfg.seed
+            backend=cfg.get('backend', 'horovod'),
+            port=cfg.get('port', '2345')
         )
         from l2hmc.experiment.pytorch.experiment import Experiment
-        # init = (RANK == 0) and not os.environ.get('WANDB_OFFLINE', False)
-        # init_wandb = (RANK == 0 and cfg.get('init_wandb', False))
-        # init_aim = (RANK == 0 and cfg.get('init_aim', False))
-        experiment = Experiment(
-            cfg,
-            keep=keep,
-            skip=skip,
-            # init_wandb=init_wandb,
-            # init_aim=init_aim,
-        )
-        # init = (RANK == 0)
-        # _ = experiment.build(init_wandb=init, init_aim=init)
+        experiment = Experiment(cfg, keep=keep, skip=skip)
         return experiment
-        # log.warning('Initializing network weights...')
-        # ex.dynamics.networks['xnet'].apply(init_weights)
-        # ex.dynamics.networks['vnet'].apply(init_weights)
 
     raise ValueError(
         'Framework must be specified, one of: [pytorch, tensorflow]'
     )
 
 
-@hydra.main(version_base=None, config_path='./conf', config_name='config')
-def main(cfg: DictConfig) -> None:
+def run(cfg: DictConfig) -> str:
     # --- [0.] Setup ------------------------------------------------------
     setup(cfg)
     ex = get_experiment(cfg)
@@ -188,6 +214,9 @@ def main(cfg: DictConfig) -> None:
         and ex.config.steps.nepoch > 0
     )
 
+    nchains_eval = max(2, int(ex.config.dynamics.xshape[0] // 4))
+
+
     # --- [1.] Train model -------------------------------------------------
     if should_train:
         tstart = time.time()
@@ -198,7 +227,7 @@ def main(cfg: DictConfig) -> None:
         if ex.trainer._is_chief and ex.config.steps.test > 0:
             log.info('Evaluating trained model')
             estart = time.time()
-            _ = ex.evaluate(job_type='eval')
+            _ = ex.evaluate(job_type='eval', nchains=nchains_eval)
             log.info(f'Evaluation took: {time.time() - estart:.5f}s')
 
             try:
@@ -210,16 +239,29 @@ def main(cfg: DictConfig) -> None:
     if ex.trainer._is_chief and ex.config.steps.test > 0:
         log.info('Running generic HMC for comparison')
         hstart = time.time()
-        _ = ex.evaluate(job_type='hmc')
+        _ = ex.evaluate(job_type='hmc', nchains=nchains_eval)
         log.info(f'HMC took: {time.time() - hstart:.5f}s')
         from l2hmc.utils.plot_helpers import measure_improvement
-        measure_improvement(
+        improvement = measure_improvement(
             experiment=ex,
             title=f'{ex.config.framework}',
         )
+        log.critical(f'Model improvement: {improvement:.8f}')
+
+    return Path(ex._outdir).as_posix()
+
+
+@hydra.main(version_base=None, config_path='./conf', config_name='config')
+def main(cfg: DictConfig):
+    return run(cfg)
 
 
 if __name__ == '__main__':
     import wandb
     wandb.require(experiment='service')
-    main()
+    start = time.time()
+    outdir = main()
+    end = time.time()
+    log.info(f'Run completed in: {end - start:4.4f} s')
+    log.info(f'Run located in: {outdir}')
+    sys.exit(0)

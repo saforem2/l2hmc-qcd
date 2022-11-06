@@ -5,6 +5,7 @@ Contains implementation of tensorflow-specific Experiment object,
 a subclass of the base `l2hmc/Experiment` object.
 """
 from __future__ import absolute_import, division, print_function, annotations
+import os
 
 import logging
 from omegaconf import DictConfig
@@ -18,7 +19,9 @@ from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
 import tensorflow as tf
 import horovod.tensorflow as hvd
 
+import l2hmc.configs as configs
 from l2hmc.trainers.tensorflow.trainer import Trainer
+from l2hmc.configs import ExperimentConfig
 
 
 from l2hmc.experiment.experiment import BaseExperiment
@@ -34,13 +37,26 @@ class Experiment(BaseExperiment):
     def __init__(
             self,
             cfg: DictConfig,
+            build_networks: bool = True,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
     ) -> None:
         super().__init__(cfg=cfg)
-        self.trainer = self.build_trainer(keep=keep, skip=skip)
+        assert isinstance(
+            self.config,
+            (ExperimentConfig,
+             configs.ExperimentConfig)
+        )
         self._rank = hvd.rank()
         self._local_rank = hvd.local_rank()
+        self.ckpt_dir = self.config.get_checkpoint_dir()
+        self.trainer: Trainer = self.build_trainer(
+            keep=keep,
+            skip=skip,
+            build_networks=build_networks,
+            ckpt_dir=self.ckpt_dir,
+        )
+
         run = None
         arun = None
         if self._rank == 0 and self.config.init_wandb:
@@ -70,6 +86,7 @@ class Experiment(BaseExperiment):
         #     assert isinstance(self.config, ExperimentConfig)
 
     def visualize_model(self) -> None:
+        assert self.trainer is not None and isinstance(self.trainer, Trainer)
         state = self.trainer.dynamics.random_state(1.)
         x = self.trainer.dynamics.flatten(state.x)
         v = self.trainer.dynamics.flatten(state.v)
@@ -110,10 +127,18 @@ class Experiment(BaseExperiment):
 
     def build_trainer(
             self,
+            build_networks: bool = True,
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
+            ckpt_dir: Optional[os.PathLike] = None,
     ) -> Trainer:
-        return Trainer(self.cfg, skip=skip, keep=keep)
+        return Trainer(
+            self.cfg,
+            skip=skip,
+            keep=keep,
+            ckpt_dir=ckpt_dir,
+            build_networks=build_networks,
+        )
 
     def init_wandb(self):
         return super()._init_wandb()
@@ -122,11 +147,10 @@ class Experiment(BaseExperiment):
         run = super()._init_aim()
         return run
 
-    def get_summary_writer(self):
-        # sdir = super()._get_summary_dir(job_type=job_type)
-        # sdir = os.getcwd()
+    def get_summary_writer(self, outdir: Optional[os.PathLike] = None):
+        outdir = self._outdir if outdir is None else outdir
         return tf.summary.create_file_writer(  # type:ignore
-            self._outdir.as_posix()
+            Path(outdir).as_posix()
         )
 
     def build(
@@ -209,24 +233,39 @@ class Experiment(BaseExperiment):
         writer = None
         if RANK == 0:
             writer = self.get_summary_writer()
+            writer.set_as_default()  # type:ignore
 
-        output = self.trainer.train(
-            x=x,
-            nera=nera,
-            nepoch=nepoch,
-            run=self.run,
-            arun=self.arun,
-            writer=writer,
-            train_dir=jobdir,
-            skip=skip,
-            beta=beta,
-        )
+        if self.config.annealing_schedule.dynamic:
+            output = self.trainer.train_dynamic(
+                x=x,
+                nera=nera,
+                nepoch=nepoch,
+                run=self.run,
+                arun=self.arun,
+                writer=writer,
+                train_dir=jobdir,
+                skip=skip,
+                beta=beta,
+            )
+        else:
+            output = self.trainer.train(
+                x=x,
+                nera=nera,
+                nepoch=nepoch,
+                run=self.run,
+                arun=self.arun,
+                writer=writer,
+                train_dir=jobdir,
+                skip=skip,
+                beta=beta,
+            )
         if self.trainer._is_chief:
             output['dataset'] = self.save_dataset(
-                output=output,
+                # output=output,
                 nchains=nchains,
                 job_type='train',
-                outdir=jobdir
+                outdir=jobdir,
+                tables=output.get('tables', None)
             )
 
         if writer is not None:
@@ -238,34 +277,40 @@ class Experiment(BaseExperiment):
             self,
             job_type: str,
             therm_frac: float = 0.1,
+            beta: Optional[float] = None,
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
             eval_steps: Optional[int] = None,
+            nprint: Optional[int] = None,
     ) -> dict:
         """Evaluate model."""
+        assert job_type in ['eval', 'hmc']
         if not self.trainer._is_chief:
             return {}
 
-        assert job_type in ['eval', 'hmc']
-        jobdir = self.get_jobdir(job_type)
+        jobdir = self.get_jobdir(job_type=job_type)
         writer = self.get_summary_writer()
+        writer.set_as_default()  # type:ignore
 
         output = self.trainer.eval(
             run=self.run,
             arun=self.arun,
             writer=writer,
             nchains=nchains,
+            beta=beta,
             job_type=job_type,
             eps=eps,
             nleapfrog=nleapfrog,
             eval_steps=eval_steps,
+            nprint=nprint,
         )
         output['dataset'] = self.save_dataset(
-            output=output,
+            # output=output,
             job_type=job_type,
             outdir=jobdir,
             therm_frac=therm_frac,
+            tables=output.get('tables', None),
         )
 
         if writer is not None:

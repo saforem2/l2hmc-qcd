@@ -15,7 +15,7 @@ from l2hmc.lattice.lattice import Lattice
 import l2hmc.group.u1.tensorflow.group as g
 from l2hmc.configs import Charges, LatticeMetrics
 
-TF_FLOAT = tf.keras.backend.floatx()
+TF_FLOAT = tf.dtypes.as_dtype(tf.keras.backend.floatx())
 PI = tf.constant(np.pi, dtype=TF_FLOAT)
 TWO_PI = tf.constant(2. * PI, dtype=TF_FLOAT)
 

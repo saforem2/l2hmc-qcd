@@ -28,7 +28,9 @@ from l2hmc.configs import AnnealingSchedule, Steps
 from l2hmc.configs import OUTPUTS_DIR
 from l2hmc.configs import State
 from l2hmc.utils.plot_helpers import (
-    make_ridgeplots, plot_dataArray, set_plot_style
+    make_ridgeplots,
+    plot_dataArray,
+    set_plot_style
 )
 from l2hmc.utils.rich import get_console, is_interactive
 
@@ -36,11 +38,16 @@ os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 
 log = logging.getLogger(__name__)
 
-# TensorLike = tf.Tensor | ops.EagerTensor | torch.Tensor | np.ndarray
+TensorLike = Union[tf.Tensor, ops.EagerTensor, torch.Tensor, np.ndarray, list]
 ScalarLike = Union[int, float, bool, np.floating]
 
 
-def grab_tensor(x: Any) -> np.ndarray | ScalarLike:
+def grab_tensor(x: TensorLike) -> np.ndarray | ScalarLike:
+    if isinstance(x, list):
+        if isinstance(x[0], torch.Tensor):
+            return grab_tensor(torch.stack(x))
+        if isinstance(x[0], tf.Tensor):
+            return grab_tensor(tf.stack(x))
     if isinstance(x, np.ndarray):
         return x
     if isinstance(x, (tf.Tensor, ops.EagerTensor)):
@@ -53,8 +60,7 @@ def grab_tensor(x: Any) -> np.ndarray | ScalarLike:
     if isinstance(x, torch.Tensor):
         return x.detach().cpu().numpy()
 
-    else:
-        return x
+    raise ValueError
 
 
 def clear_cuda_cache():
@@ -71,6 +77,100 @@ def get_timestamp(fstr=None):
     if fstr is None:
         return now.strftime('%Y-%m-%d-%H%M%S')
     return now.strftime(fstr)
+
+
+def init_process_group(
+        rank: int | str,
+        world_size: int | str,
+        backend: Optional[str] = None,
+) -> None:
+    import torch.distributed as dist
+    if torch.cuda.is_available():
+        backend = 'nccl' if backend is None else str(backend)
+    else:
+        backend = 'gloo' if backend is None else str(backend)
+
+    dist.init_process_group(
+        backend=backend,
+        rank=int(rank),
+        world_size=int(world_size),
+        init_method='env://',
+    )
+
+
+def setup_torch_distributed(
+        backend: str,
+        port: str = '2345',
+) -> dict:
+    rank = os.environ.get('RANK', None)
+    size = os.environ.get('WORLD_SIZE', None)
+    local_rank = os.environ.get('LOCAL_RANK', None)
+    INITIALIZED = False
+    if rank is not None and size is not None and local_rank is not None:
+        INITIALIZED = True
+    assert backend in ['ddp', 'DDP', 'horovod', 'hvd']
+    log.info(f'Using {backend} for distributed training')
+    if backend in ['ddp', 'DDP']:
+        import socket
+        from mpi4py import MPI
+        local_rank = int(os.environ.get(
+            'PMI_LOCAL_RANK',
+            os.environ.get(
+                'OMPI_COMM_WORLD_LOCAL_RANK',
+                '0',
+            )
+        ))
+        size = int(MPI.COMM_WORLD.Get_size())
+        rank = int(MPI.COMM_WORLD.Get_rank())
+        os.environ['LOCAL_RANK'] = str(local_rank)
+        os.environ['RANK'] = str(rank)
+        os.environ['WORLD_SIZE'] = str(size)
+        master_addr = (
+            socket.gethostname() if rank == 0 else None
+        )
+        master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
+        os.environ['MASTER_ADDR'] = master_addr
+        if (eport := os.environ.get('MASTER_PORT', None)) is None:
+            os.environ['MASTER_PORT'] = port
+        else:
+            log.info(f'Caught MASTER_PORT:{eport} from environment!')
+            os.environ['MASTER_PORT'] = eport
+        if not INITIALIZED:
+            init_process_group(
+                rank=rank,
+                world_size=size,
+                backend='nccl' if torch.cuda.is_available() else 'gloo'
+            )
+        # if local_rank == 0 and rank == 0:
+        #     log.info('DDP INFO:')
+        #     log.info('---------')
+        #     log.info(f'SIZE: {size}')
+        #     log.info(f'RANK: {rank}')
+        #     log.info(f'LOCAL_RANK: {local_rank}')
+
+    elif backend in ['horovod', 'hvd']:
+        import horovod.torch as hvd
+        hvd.init() if not hvd.is_initialized() else None
+        rank = hvd.rank()
+        size = hvd.size()
+        local_rank = hvd.local_rank()
+        # if local_rank == 0 and rank == 0:
+        #     log.info('\n'.join([
+        #         'Horovod info:',
+        #         '-------------',
+        #         f'SIZE: {size}',
+        #         f'RANK: {rank}',
+        #         f'LOCAL_RANK: {local_rank}',
+        #         '-------------',
+        #     ]))
+    else:
+        log.warning(f'Unexpected backend specified: {backend}')
+        log.error('Setting size = 1, rank = 0, local_rank = 0')
+        size = 1
+        rank = 0
+        local_rank = 0
+
+    return {'size': size, 'rank': rank, 'local_rank': local_rank}
 
 
 def check_diff(x, y, name: Optional[str] = None):
@@ -102,17 +202,55 @@ def check_diff(x, y, name: Optional[str] = None):
     else:
         x = grab_tensor(x)
         y = grab_tensor(y)
+        diff = np.array(x - y)
         dstr = []
         if name is not None:
             dstr.append(f"'{name}''")
 
-        dstr.append(f'  sum(diff): {np.sum(x - y)}')
-        dstr.append(f'  min(diff): {np.min(x - y)}')
-        dstr.append(f'  max(diff): {np.max(x - y)}')
-        dstr.append(f'  mean(diff): {np.mean(x - y)}')
-        dstr.append(f'  std(diff): {np.std(x - y)}')
-        dstr.append(f'  np.allclose: {np.allclose(x, y)}')
+        dstr.append(f'  min(diff): {np.min(diff)}')
+        dstr.append(f'  max(diff): {np.max(diff)}')
+        dstr.append(f'  sum(diff): {np.sum(diff)}')
+        dstr.append(f'  sum(diff ** 2): {np.sum(diff ** 2)}')
+        if len(diff.shape) > 1:
+            dstr.append(f'  mean(diff): {np.mean(diff)}')
+            dstr.append(f'  std(diff): {np.std(diff)}')
+            dstr.append(f'  np.allclose: {np.allclose(x, y)}')
         log.info('\n'.join(dstr))
+
+
+def update_dict(
+        dnew: dict,
+        dold: Optional[dict] = None,
+) -> tuple[list[str], dict]:
+    dold = {} if dold is None else dold
+    mstr = []
+    for key, val in dnew.items():
+        if isinstance(val, (torch.Tensor, tf.Tensor)):
+            val = grab_tensor(val)
+
+        if isinstance(val, list):
+            if isinstance(val[0], torch.Tensor):
+                val = grab_tensor(torch.stack(val))
+            elif isinstance(val[0], tf.Tensor):
+                val = grab_tensor(tf.stack(val))
+            else:
+                try:
+                    val = np.stack(val)
+                except Exception as exc:
+                    log.exception(exc)
+        else:
+            val = np.array(val)
+
+        try:
+            mstr.append(f'{key}={val.mean():^5.4f}')  # type:ignore
+        except AttributeError:
+            mstr.append(f'{key}={val:^5.4f}')
+        try:
+            dold[key].append(val)
+        except NameError:
+            dold[key] = [val]
+
+    return mstr, dold
 
 
 def setup_annealing_schedule(cfg: DictConfig) -> AnnealingSchedule:
@@ -152,7 +290,19 @@ def save_dataset(
     if use_hdf5:
         fname = 'dataset.h5' if job_type is None else f'{job_type}_data.h5'
         outfile = Path(outdir).joinpath(fname)
-        dataset_to_h5pyfile(outfile, dataset=dataset, **kwargs)
+        try:
+            dataset_to_h5pyfile(outfile, dataset=dataset, **kwargs)
+        except TypeError:
+            log.warning(
+                'Unable to save as `.h5` file, falling back to `netCDF4`'
+            )
+            save_dataset(
+                dataset,
+                outdir=outdir,
+                use_hdf5=False,
+                job_type=job_type,
+                **kwargs
+            )
     else:
         fname = 'dataset.nc' if job_type is None else f'{job_type}_dataset.nc'
         outfile = Path(outdir).joinpath(fname)
@@ -165,6 +315,7 @@ def save_dataset(
 
 
 def dataset_to_h5pyfile(hfile: os.PathLike, dataset: xr.Dataset, **kwargs):
+    log.info(f'Saving dataset to: {hfile}')
     f = h5py.File(hfile, 'a')
     for key, val in dataset.data_vars.items():
         arr = val.values
@@ -473,7 +624,7 @@ def table_to_dict(table: Table, data: Optional[dict] = None) -> dict:
 
 
 def save_logs(
-        tables: dict[str, Table],
+        tables: Optional[dict[str, Table]] = None,
         summaries: Optional[list[str]] = None,
         job_type: Optional[str] = None,
         logdir: Optional[os.PathLike] = None,
@@ -497,32 +648,33 @@ def save_logs(
 
     data = {}
     console = get_console(record=True, width=235)
-    for idx, table in tables.items():
-        if idx == 0:
-            data = table_to_dict(table)
-        else:
-            data = table_to_dict(table, data)
+    if tables is not None:
+        for idx, table in tables.items():
+            if idx == 0:
+                data = table_to_dict(table)
+            else:
+                data = table_to_dict(table, data)
 
-        console.print(table)
-        html = console.export_html(clear=False)
-        text = console.export_text()
-        with open(hfile.as_posix(), 'a') as f:
-            f.write(html)
-        with open(tfile, 'a') as f:
-            f.write(text)
+            console.print(table)
+            html = console.export_html(clear=False)
+            text = console.export_text()
+            with open(hfile.as_posix(), 'a') as f:
+                f.write(html)
+            with open(tfile, 'a') as f:
+                f.write(text)
 
-    df = pd.DataFrame.from_dict(data)
-    dfile = Path(logdir).joinpath(f'{job_type}_table.csv')
-    df.to_csv(dfile.as_posix(), mode='a')
+        df = pd.DataFrame.from_dict(data)
+        dfile = Path(logdir).joinpath(f'{job_type}_table.csv')
+        df.to_csv(dfile.as_posix(), mode='a')
 
-    if run is not None:
-        # with open(hfile.as_posix(), 'r') as f:
-        #     html = f.read()
+        if run is not None:
+            # with open(hfile.as_posix(), 'r') as f:
+            #     html = f.read()
 
-        # run.log({f'Media/{job_type}': wandb.Html(html)})
-        run.log({
-            f'DataFrames/{job_type}': wandb.Table(data=df)
-        })
+            # run.log({f'Media/{job_type}': wandb.Html(html)})
+            run.log({
+                f'DataFrames/{job_type}': wandb.Table(data=df)
+            })
 
     if summaries is not None:
         sfile = logdir.joinpath('summaries.txt').as_posix()
@@ -570,10 +722,10 @@ def make_dataset(metrics: dict) -> xr.Dataset:
             import torch
             import tensorflow as tf
             if isinstance(val[0], torch.Tensor):
-                val = torch.stack(val).detach().numpy()
+                val = grab_tensor(torch.stack(val))
             elif isinstance(val[0], tf.Tensor):
                 import tensorflow as tf
-                val = tf.stack(val).numpy()
+                val = grab_tensor(tf.stack(val))
 
         assert isinstance(val, np.ndarray)
         assert len(val.shape) in [1, 2, 3]
@@ -606,6 +758,7 @@ def make_dataset(metrics: dict) -> xr.Dataset:
 def plot_dataset(
         dataset: xr.Dataset,
         nchains: Optional[int] = 10,
+        logfreq: Optional[int] = None,
         outdir: Optional[os.PathLike] = None,
         title: Optional[str] = None,
         job_type: Optional[str] = None,
@@ -614,7 +767,7 @@ def plot_dataset(
     outdir.mkdir(exist_ok=True, parents=True)
     # outdir = outdir.joinpath('plots')
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
-    names = ['rainbow', 'viridis_r', 'magma', 'mako', 'turbo', 'spectral']
+    names = ['rainbow', 'viridis_r', 'magma', 'mako', 'turbo']
     cmap = np.random.choice(names, replace=True)
 
     set_plot_style()
@@ -633,6 +786,7 @@ def plot_dataset(
         fig, _, _ = plot_dataArray(
             val,
             key=key,
+            logfreq=logfreq,
             outdir=outdir,
             title=title,
             line_labels=False,
@@ -646,6 +800,7 @@ def analyze_dataset(
         outdir: os.PathLike,
         nchains: Optional[int] = None,
         title: Optional[str] = None,
+        logfreq: Optional[int] = None,
         job_type: Optional[str] = None,
         save: Optional[bool] = True,
         run: Optional[Any] = None,
@@ -663,6 +818,7 @@ def analyze_dataset(
 
     plot_dataset(dataset,
                  nchains=nchains,
+                 logfreq=logfreq,
                  title=title,
                  job_type=job_type,
                  outdir=dirs['plots'])
@@ -725,14 +881,15 @@ def save_and_analyze_data(
         dataset: xr.Dataset,
         outdir: os.PathLike,
         nchains: Optional[int] = None,
+        logfreq: Optional[int] = None,
         run: Optional[Any] = None,
         arun: Optional[Any] = None,
-        output: Optional[dict] = None,
         job_type: Optional[str] = None,
         framework: Optional[str] = None,
+        summaries: Optional[list[str]] = None,
+        tables: Optional[dict[str, Table]] = None,
 ) -> xr.Dataset:
     jstr = f'{job_type}'
-    output = {} if output is None else output
     title = (
         jstr if framework is None
         else ': '.join([jstr, f'{framework}'])
@@ -745,6 +902,7 @@ def save_and_analyze_data(
                               save=True,
                               outdir=outdir,
                               nchains=nchains,
+                              logfreq=logfreq,
                               job_type=job_type,
                               title=title)
 
@@ -755,8 +913,8 @@ def save_and_analyze_data(
         save_logs(run=run,
                   logdir=edir,
                   job_type=job_type,
-                  tables=output.get('tables', None),
-                  summaries=output.get('summaries'))
+                  tables=tables,
+                  summaries=summaries)
 
     return dataset
 
