@@ -253,7 +253,11 @@ def run(cfg: DictConfig) -> str:
 
 @hydra.main(version_base=None, config_path='./conf', config_name='config')
 def main(cfg: DictConfig):
-    return run(cfg)
+    output = run(cfg)
+    if str(cfg.get('backend', '')).lower() == 'ddp':
+        cleanup()
+
+    return output
 
 
 if __name__ == '__main__':
@@ -262,6 +266,7 @@ if __name__ == '__main__':
     start = time.time()
     outdir = main()
     end = time.time()
-    log.info(f'Run completed in: {end - start:4.4f} s')
-    log.info(f'Run located in: {outdir}')
+    if outdir is not None:
+        log.info(f'Run completed in: {end - start:4.4f} s')
+        log.info(f'Run located in: {outdir}')
     sys.exit(0)
