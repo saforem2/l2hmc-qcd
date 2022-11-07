@@ -767,7 +767,7 @@ def plot_dataset(
     outdir.mkdir(exist_ok=True, parents=True)
     # outdir = outdir.joinpath('plots')
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
-    names = ['rainbow', 'viridis_r', 'magma', 'mako', 'turbo']
+    names = ['viridis_r', 'magma', 'mako']
     cmap = np.random.choice(names, replace=True)
 
     set_plot_style()
