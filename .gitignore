@@ -2,6 +2,7 @@
 ## USER-DEFINED .gitignore below
 ## --------------------------------
 **.venv**
+/**venv**/**
 poetry.lock
 **events.out.tfevents**
 **wandb**
