@@ -47,6 +47,9 @@ NCPUS=$(getconf _NPROCESSORS_ONLN)
 
 # ---- Check if running on ThetaGPU ----------------------------
 if [[ $(hostname) == theta* ]]; then
+  echo "-----------------------"
+  echo "| Running on ThetaGPU |"
+  echo "-----------------------"
   module load conda/2022-07-01
   conda activate base
   NRANKS=$(wc -l < ${COBALT_NODEFILE})
@@ -67,6 +70,9 @@ if [[ $(hostname) == theta* ]]; then
 
 # ---- Check if running on Polaris -----------------------------
 elif [[ $(hostname) == x* ]]; then
+  echo "----------------------"
+  echo "| Running on Polaris |"
+  echo "----------------------"
   export IBV_FORK_SAFE=1
   export NCCL_COLLNET_ENABLE=1
   NRANKS=$(wc -l < ${PBS_NODEFILE})
@@ -139,10 +145,11 @@ echo "WIDTH: ${COLUMNS}"
 export NCCL_DEBUG=INFO
 export KMP_SETTINGS=TRUE
 # export OMPI_MCA_opal_cuda_support=TRUE
-# export TF_ENABLE_AUTO_MIXED_PRECISION=1
 # export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/cuda/lib64"
 # export KMP_AFFINITY='granularity=fine,verbose,compact,1,0'
-# export TF_XLA_FLAGS="--tf_xla_auto_jit=2 --tf_xla_enable_xla_devices"
+
+export TF_ENABLE_AUTO_MIXED_PRECISION=1
+export TF_XLA_FLAGS="--tf_xla_auto_jit=2 --tf_xla_enable_xla_devices"
 
 LOGDIR="${DIR}/logs"
 LOGFILE="${LOGDIR}/${TSTAMP}-${HOST}_ngpu${NGPUS}_ncpu${NCPUS}.log"
@@ -164,6 +171,9 @@ echo "LOGFILE=${LOGFILE}"
 echo "IBV_FORK_SAFE=${IBV_FORK_SAFE}"
 printf '%.s─' $(seq 1 $(tput cols))
 
+# -------------------------------
+# CONSTRUCT EXECUTABLE TO BE RAN
+# -------------------------------
 EXEC="${MPI_COMMAND} ${MPI_FLAGS} $(which python3) ${MAIN}"
 
 
@@ -189,8 +199,7 @@ echo -e '\n'
 
 
 # Run executable command
-# WIDTH=$COLUMNS COLUMNS=$COLUMNS ${EXEC} $@ 2>&1 | tee ${LOGFILE}  # > ${LOGFILE}; ret_code=$?
-WIDTH=$COLUMNS COLUMNS=$COLUMNS ${EXEC} $@ 2>&1 > ${LOGFILE}; ret_code=$?
+${EXEC} $@ 2>&1 > ${LOGFILE} ; ret_code=$?
 
 if [[ $ret_code != 0 ]]; then exit $ret_code; fi
 

@@ -21,7 +21,7 @@ from l2hmc.group.u1.pytorch.group import U1Phase
 from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
 from l2hmc.group.su3.pytorch.group import SU3
 from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
-from l2hmc.network.pytorch.network import NetworkFactory
+from l2hmc.network.pytorch.network import NetworkFactory, dummy_network
 
 log = logging.getLogger(__name__)
 
@@ -108,16 +108,6 @@ def grab(x: Tensor) -> Array:
     return x.detach().cpu().numpy()
 
 
-def dummy_network(inputs: tuple[Tensor, Tensor]):
-    x, v = inputs
-    # assert x.shape == v.shape
-    return (
-        torch.zeros_like(v),
-        torch.zeros_like(v),
-        torch.zeros_like(v),
-    )
-
-
 class Dynamics(nn.Module):
     def __init__(
             self,
@@ -130,7 +120,6 @@ class Dynamics(nn.Module):
         super().__init__()
         self.config = config
         self.xdim = self.config.xdim
-        # self.xshape = tuple(network_factory.input_spec.xshape)
         self.xshape = self.config.xshape
         self.potential_fn = potential_fn
         self.nlf = self.config.nleapfrog
@@ -1152,6 +1141,45 @@ class Dynamics(nn.Module):
         # xf = self.g.compat_proj(xf)
         return State(x=xf, v=state.v, beta=state.beta), logdet
 
+    @staticmethod
+    def complexify(
+            x: Tensor,
+            dim: int = 1,
+    ) -> Tensor:
+        """Complexify real-valued tensor.
+
+        Example:
+            >>> x = torch.rand((N, 2, C, H, W))
+            >>> xc = complexify(x, dim=1)
+            >>> assert xc == torch.complex(x[:, 0, ...], x[:, 1, ...])
+            >>> y = torch.rand((N, C, H, W, 2))
+            >>> yT = y.transpose(0, 4)
+            >>> yT.shape
+            (2, C, H, W, N)
+            >>> yr, yi = yT
+            >>> yr.shape
+            (C, H, W, N)
+            >>> yrT = yr.transpose(0, dim-1)
+            >>> yrT.shape
+            (N, C, H, W)
+            >>> yc = complexify(y, dim=4)
+            >>> assert yc == torch.complex(y[])
+        """
+        assert len(x.shape) >= 2
+        assert x.shape[dim] == 2
+        if dim != 1:
+            assert x.shape[dim] == 2
+            xT = x.transpose(0, dim)
+            xr, xi = xT
+            xr = xr.transpose(0, dim-1)
+            xi = xi.transpose(0, dim-1)
+            return torch.complex(xr, xi)
+
+        if len(x.shape) == 2:
+            return torch.complex(x[:, 0], x[:, 1])
+
+        return torch.complex(x[:, 0, ...], x[:, 1, ...])
+
     def _update_x_bwd(
             self,
             step: int,
@@ -1191,10 +1219,19 @@ class Dynamics(nn.Module):
                 xb = xm_init + (mb * xnew)
                 logdet = (mb * s).sum(dim=1)
         elif isinstance(self.g, SU3):
-            t = t.reshape_as(state.x).to(state.x.dtype)
-            exp_s = exp_s.reshape_as(state.x).to(state.x.dtype)
-            exp_q = exp_q.reshape_as(state.x).to(state.x.dtype)
-            eps = eps.to(state.x.dtype)
+            # eps = eps.to(state.x.dtype)
+            exp_s = torch.complex(
+                exp_s[:, 0, ...],
+                exp_s[:, 1, ...]
+            ).reshape_as(state.x).to(state.x.dtype)
+            exp_q = torch.complex(
+                exp_s[:, 0, ...],
+                exp_s[:, 1, ...]
+            ).reshape_as(state.x).to(state.x.dtype)
+            t = torch.complex(
+                t[:, 0, ...],
+                t[:, 1, ...]
+            ).reshape_as(state.x).to(state.x.dtype)
             xnew = exp_s * self.g.update_gauge(
                 state.x,
                 -(eps * (state.v * exp_q + t))

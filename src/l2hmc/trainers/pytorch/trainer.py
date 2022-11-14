@@ -52,10 +52,7 @@ from l2hmc.utils.rich_logger import LOGGER_FIELDS
 from l2hmc.utils.step_timer import StepTimer
 # WIDTH = int(os.environ.get('COLUMNS', 150))
 
-if is_interactive():
-    from tqdm.notebook import trange
-else:
-    from tqdm.rich import trange
+from tqdm.rich import trange
 
 console = get_console()
 logging.basicConfig(
@@ -106,7 +103,7 @@ class Trainer(BaseTrainer):
             keep: Optional[str | list[str]] = None,
             skip: Optional[str | list[str]] = None,
     ) -> None:
-        super(Trainer, self).__init__(cfg=cfg, keep=keep, skip=skip)
+        super().__init__(cfg=cfg, keep=keep, skip=skip)
         # skip_tracking = os.environ.get('SKIP_TRACKING', False)
         # self.verbose = not skip_tracking
         assert isinstance(
@@ -123,7 +120,7 @@ class Trainer(BaseTrainer):
         self._with_cuda = torch.cuda.is_available()
         self.lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
-        self.dynamics = self.build_dynamics(
+        self.dynamics: Dynamics = self.build_dynamics(
             build_networks=build_networks,
         )
         self.ckpt_dir = (
@@ -567,12 +564,11 @@ class Trainer(BaseTrainer):
         return xout.detach(), metrics
 
     def get_context_manager(self, table: Table):
-        width = get_width()
         make_live = (
-            int(width) > 150            # make sure wide enough to fit table
-            and self._is_chief
+            self._is_chief
             and self.size == 1          # not worth the trouble when dist.
             and not is_interactive()    # AND not in a jupyter / ipython kernel
+            and int(get_width()) > 120  # make sure wide enough to fit table
         )
         if make_live:
             return Live(
@@ -701,7 +697,6 @@ class Trainer(BaseTrainer):
             nprint: Optional[int] = None,
     ) -> dict:
         """Evaluate dynamics."""
-
         assert job_type in ['eval', 'hmc']
         tables = {}
         summaries = []
@@ -751,9 +746,9 @@ class Trainer(BaseTrainer):
                 x, metrics = eval_fn((x, beta))
                 dt = timer.stop()
                 if (
-                        # step == 0
-                        step % setup['nlog'] == 0
-                        or step % setup['nprint'] == 0
+                        step >= 0 and
+                        (step % setup['nlog'] == 0
+                         or step % setup['nprint'] == 0)
                 ):
                     record = {
                         f'{job_type[0]}step': step,
@@ -764,15 +759,6 @@ class Trainer(BaseTrainer):
                         'dQint': metrics.pop('dQint', None),
                     }
                     record.update(metrics)
-                    if job_type == 'hmc' and dynamic_step_size:
-                        acc = record.get('acc_mask', None)
-                        record['eps'] = eps
-                        if acc is not None and eps is not None:
-                            acc_avg = acc.mean()
-                            if acc_avg < 0.66:
-                                eps -= (eps / 10.)
-                            else:
-                                eps += (eps / 10.)
 
                     avgs, summary = self.record_metrics(run=run,
                                                         arun=arun,
@@ -786,31 +772,35 @@ class Trainer(BaseTrainer):
                         step=step,
                         avgs=avgs,
                     )
+
                     if (
-                            step > 0
-                            and step % setup['nprint'] == 0
+                            step % setup['nprint'] == 0
                             and (not isinstance(ctx, Live))
                     ):
-                        # if printer is not None:
-                        #     printer.log(avgs)
-                        # else:
                         log.info(summary)
 
                     if avgs.get('acc', 1.0) < 1e-5:
                         if stuck_counter < patience:
                             stuck_counter += 1
                         else:
-                            self.console.log('Chains are stuck! Redrawing x')
+                            log.warning('Chains are stuck! Redrawing x')
                             x = self.lattice.random()
                             stuck_counter = 0
 
-                if isinstance(ctx, Live):
-                    ctx.console.clear_live()
+                    if job_type == 'hmc' and dynamic_step_size:
+                        acc = record.get('acc_mask', None)
+                        record['eps'] = eps
+                        if acc is not None and eps is not None:
+                            acc_avg = acc.mean()
+                            if acc_avg < 0.66:
+                                eps -= (eps / 10.)
+                            else:
+                                eps += (eps / 10.)
+
+        if isinstance(ctx, Live):
+            ctx.console.clear_live()
 
         tables[str(0)] = setup['table']
-
-        # if printer is not None:
-        #     printer.finalize()
 
         return {
             'timer': timer,
@@ -826,7 +816,6 @@ class Trainer(BaseTrainer):
         """Logic for performing a single training step"""
         xinit, beta = inputs
         xinit = self.g.compat_proj(xinit.reshape(self.xshape))
-        # xinit = self.to_u1(xinit)
         beta = torch.tensor(beta) if isinstance(beta, float) else beta
         if WITH_CUDA:
             xinit, beta = xinit.cuda(), beta.cuda()
@@ -856,8 +845,7 @@ class Trainer(BaseTrainer):
         # [2.] Calc loss
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
 
-        aw = self.config.loss.aux_weight
-        if aw > 0:
+        if (aw := self.config.loss.aux_weight) > 0:
             yinit = self.g.random(xout.shape)
             yinit.requires_grad_(True)
             if WITH_CUDA:
@@ -883,20 +871,6 @@ class Trainer(BaseTrainer):
                 max_norm=self.clip_norm
             )
         self.optimizer.step()
-        # self.lr_schedule.step()
-        # self.optimizer.synchronize()
-
-        # ---------------------------------------
-        # DEPRECATED: Removed Accelerator
-        # self.optimizer.zero_grad()
-        # self.accelerator.backward(loss)
-        # # extract_model_from_parallel(self.dynamics).parameters(),
-        # self.accelerator.clip_grad_norm_(
-        #     self.dynamics.parameters(),
-        #     max_norm=self.clip_norm,
-        # )
-        # self.optimizer.step()
-        # ---------------------------------------
 
         if isinstance(loss, Tensor):
             loss = loss.item()
@@ -939,16 +913,19 @@ class Trainer(BaseTrainer):
                 ctx.console.clear_live()
                 ctx.update(table)
 
-            for epoch in range(nepoch):
+            for epoch in trange(
+                    nepoch,
+                    disable=(not self._is_chief),
+                    dynamic_ncols=True,
+            ):
                 self.timers['train'].start()
                 x, metrics = self.train_step((x, beta))  # type:ignore
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
                 if (
-                        # epoch == 0
-                        # or self.should_print(epoch)
-                        self.should_log(epoch)
-                        or self.should_print(epoch)
+                        epoch > 0 and
+                        (self.should_log(epoch)
+                         or self.should_print(epoch))
                 ):
                     record = {
                         'era': era,
@@ -1136,12 +1113,10 @@ class Trainer(BaseTrainer):
                 else:
                     b += (b / 10.)  # self.config.annealing_schedule._dbeta
 
-
             if self._is_chief:
                 st0 = time.time()
                 self.save_ckpt(era, epoch, run=run)
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
-                log.info(f'Checkpoint saved to: {self.ckpt_dir}')
                 log.info(f'Era {era} took: {time.time() - epoch_start:<5g}s')
 
         return {

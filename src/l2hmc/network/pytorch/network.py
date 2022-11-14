@@ -46,6 +46,17 @@ def xy_repr(x: torch.Tensor) -> torch.Tensor:
     return torch.stack((torch.cos(x), torch.sin(x)), dim=1)
 
 
+def dummy_network(
+        inputs: tuple[Tensor, Tensor]
+) -> tuple[Tensor, Tensor, Tensor]:
+    x, _ = inputs
+    return (
+        torch.zeros_like(x),
+        torch.zeros_like(x),
+        torch.zeros_like(x)
+    )
+
+
 def init_all(model, init_func, *params, **kwargs):
     """Recursively initialize all parameters in model using init_func.
 

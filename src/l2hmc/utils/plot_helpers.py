@@ -32,6 +32,8 @@ LW = plt.rcParams.get('axes.linewidth', 1.75)
 
 plt.rcParams['svg.fonttype'] = 'none'
 
+FigAxes = Tuple[plt.Figure, plt.Axes]
+
 COLORS = {
     'blue':     '#2196F3',
     'red':      '#EF5350',
@@ -43,42 +45,6 @@ COLORS = {
     'teal':     '#009688',
     'white':    '#CFCFCF',
 }
-
-plt.style.use('default')
-plt.rcParams.update({
-    'image.cmap': 'viridis',
-    'savefig.transparent': True,
-    'text.color': '#666666',
-    'xtick.color': '#66666604',
-    'ytick.color': '#66666604',
-    'ytick.labelcolor': '#666666',
-    'xtick.labelcolor': '#666666',
-    'axes.edgecolor': '#66666600',
-    'axes.labelcolor': '#666666',
-    'grid.linestyle': ':',
-    'grid.alpha': 0.4,
-    'grid.color': '#353535',
-    'path.simplify': True,
-    'savefig.bbox': 'tight',
-    # 'axes.labelcolor': (189, 189, 189, 1.0),
-    # 'grid.color': (0.434, 0.434, 0.434, 0.2),  # #66666602
-    'legend.labelcolor': '#666666',
-    'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
-    'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
-})
-
-plt.rcParams['axes.labelcolor'] = '#bdbdbd'
-# sns.set_palette(list(colors.values()))
-# sns.set_context('notebook', font_scale=0.8)
-# plt.rcParams.update({
-#     'image.cmap': 'viridis',
-#     'figure.facecolor': (1.0, 1.0, 1.0, 0.),
-#     'axes.facecolor': (1.0, 1.0, 1.0, 0.),
-#     'axes.grid': False,
-#     # 'grid.color': '#cfcfcf',
-#     'figure.dpi': plt.rcParamsDefault['figure.dpi'],
-#     'figure.figsize': plt.rcParamsDefault['figure.figsize'],
-# })
 
 
 def set_plot_style(**kwargs):
@@ -93,8 +59,14 @@ def set_plot_style(**kwargs):
         'xtick.labelcolor': '#666666',
         'axes.edgecolor': '#66666600',
         'axes.labelcolor': '#666666',
+        'grid.linestyle': ':',
+        'grid.alpha': 0.4,
+        'grid.color': '#353535',
+        'path.simplify': True,
+        'savefig.bbox': 'tight',
+        'legend.labelcolor': '#666666',
         # 'axes.labelcolor': (189, 189, 189, 1.0),
-        'grid.color': (0.434, 0.434, 0.434, 0.2),  # #66666602
+        # 'grid.color': (0.434, 0.434, 0.434, 0.2),  # #66666602
         'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
         'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
     })
@@ -102,7 +74,7 @@ def set_plot_style(**kwargs):
         'color',
         list(COLORS.values())
     )
-    plt.rcParams['axes.labelcolor'] = '#666666'
+    plt.rcParams['axes.labelcolor'] = '#bdbdbd'
     plt.rcParams.update(**kwargs)
     if not is_interactive():
         figsize = plt.rcParamsDefault.get('figure.figsize', (4.5, 3))
@@ -118,9 +90,6 @@ def get_timestamp(fstr=None):
     if fstr is None:
         return now.strftime('%Y-%m-%d-%H%M%S')
     return now.strftime(fstr)
-
-
-FigAxes = Tuple[plt.Figure, plt.Axes]
 
 
 def save_figure(fig: plt.Figure, fname: str, outdir: os.PathLike):
@@ -191,7 +160,6 @@ def measure_improvement(
         _ = ax.grid(True, alpha=0.2)
         assert isinstance(ax, plt.Axes)
         xticks = ax.get_xticks()  # type:ignore
-        # xticklabels = ax.get_xticklabels()
         _ = ax.set_xticklabels([  # type:ignore
             f'{experiment.config.steps.log * int(i)}' for i in xticks
         ])
@@ -206,12 +174,6 @@ def measure_improvement(
         )
         if title is not None:
             _ = ax.set_title(title)
-
-        # try:
-        #     _ = matplotx.line_labels()
-        # except Exception as ex:
-        #     log.exception(ex)
-        #     pass
 
         outdir = experiment._outdir
         improvement = np.mean(dQint_eval.values / dQint_hmc.values)
@@ -844,7 +806,7 @@ def make_ridgeplots(
         outdir: Optional[os.PathLike] = None,
         drop_zeros: Optional[bool] = False,
         drop_nans: Optional[bool] = True,
-        cmap: Optional[str] = 'rainbow',
+        cmap: Optional[str] = 'viridis_r',
 ):
     """Make ridgeplots."""
     data = {}
@@ -900,7 +862,7 @@ def make_ridgeplots(
                 )
 
                 # Draw the densities in a few steps
-                _ = g.map(sns.kdeplot, key, cut=1,
+                _ = g.map(sns.kdeplot, key,   # cut=1,
                           shade=True, alpha=0.7, linewidth=1.25)
                 _ = g.map(plt.axhline, y=0, lw=1., alpha=0.9, clip_on=False)
 
@@ -922,24 +884,22 @@ def make_ridgeplots(
                 _ = g.set_titles('')
                 _ = g.set(yticks=[])
                 _ = g.set(yticklabels=[])
+                plt.rcParams['axes.labelcolor'] = '#bdbdbd'
                 _ = g.set(xlabel=f'{key}')
                 _ = g.despine(bottom=True, left=True)
                 if outdir is not None:
                     outdir = Path(outdir)
                     pngdir = outdir.joinpath('pngs')
-                    fsvg = Path(outdir).joinpath(f'{key}_ridgeplot.svg')
+                    svgdir = outdir.joinpath('svgs')
+                    fsvg = Path(svgdir).joinpath(f'{key}_ridgeplot.svg')
                     fpng = Path(pngdir).joinpath(f'{key}_ridgeplot.png')
 
-                    outdir.mkdir(exist_ok=True, parents=True)
+                    svgdir.mkdir(exist_ok=True, parents=True)
                     pngdir.mkdir(exist_ok=True, parents=True)
 
                     log.warning(f'Saving figure to: {fsvg.as_posix()}')
-                    # , dpi=500)
                     plt.savefig(fsvg.as_posix(), bbox_inches='tight')
-                    # , dpi=500)
                     plt.savefig(fpng.as_posix(), bbox_inches='tight')
-
-        # plt.close('all')
 
     #  sns.set(style='whitegrid', palette='bright', context='paper')
     fig = plt.gcf()
