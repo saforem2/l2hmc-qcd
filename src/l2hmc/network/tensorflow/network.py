@@ -62,6 +62,18 @@ def get_activation(act_fn: str | Callable) -> Callable:
     return act_fn
 
 
+def dummy_network(
+        inputs: tuple[Tensor, Tensor],
+        training: Optional[bool] = None,
+) -> tuple[Tensor, Tensor, Tensor]:
+    _, v = inputs
+    return (
+        tf.zeros_like(v),
+        tf.zeros_like(v),
+        tf.zeros_like(v)
+    )
+
+
 def zero_weights(model: Model) -> Model:
     for layer in model.layers:
         if isinstance(layer, Model):
