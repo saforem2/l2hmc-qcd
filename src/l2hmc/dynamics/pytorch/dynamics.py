@@ -630,56 +630,6 @@ class Dynamics(nn.Module):
         v2 = v1 - 0.5 * eps * force2                       # v -= ½ veps * f
         return State(x=xp, v=v2, beta=state.beta)          # output: (x', v')
 
-    def transition_kernel_hmc1(
-            self,
-            state: State,
-            eps: Optional[float] = None,
-            nleapfrog: Optional[int] = None,
-    ) -> tuple[State, dict]:
-        state_ = State(x=state.x, v=state.v, beta=state.beta)
-        sumlogdet = torch.zeros(state.x.shape[0],
-                                # dtype=state.x.real.dtype,
-                                device=state.x.device)
-        history = {}
-        if self.config.verbose:
-            history = self.update_history(
-                self.get_metrics(state_, sumlogdet),
-                history=history,
-            )
-        eps = self.config.eps_hmc if eps is None else eps
-        nlf = (
-            self.config.nleapfrog if not self.config.merge_directions
-            else 2 * self.config.nleapfrog
-        )
-        assert nlf <= 2 * self.config.nleapfrog
-        nleapfrog = nlf if nleapfrog is None else nleapfrog
-
-        x = self.g.update_gauge(state.x, 0.5 * eps * state.v)
-        force = self.grad_potential(x, state.beta)
-        v = state.v - eps * force
-        for _ in range(1, nleapfrog):
-            x = self.g.update_gauge(x, eps * v)
-            force = self.grad_potential(x, state.beta)
-            v = v - eps * force
-            state_ = State(x=x, v=v, beta=state.beta)
-            if self.config.verbose:
-                history = self.update_history(
-                    self.get_metrics(state_, sumlogdet),
-                    history=history
-                )
-
-        x = self.g.update_gauge(x, 0.5 * eps * v)
-        state_ = State(x=x, v=v, beta=state.beta)
-        acc = self.compute_accept_prob(state, state_, sumlogdet)
-        history.update({'acc': acc, 'sumlogdet': sumlogdet})
-
-        if self.config.verbose:
-            for key, val in history.items():
-                if isinstance(val, list) and isinstance(val[0], Tensor):
-                    history[key] = torch.stack(val)
-
-        return state_, history
-
     def transition_kernel_hmc(
             self,
             state: State,
@@ -799,7 +749,7 @@ class Dynamics(nn.Module):
         # Copy initial state into proposed state
         sinit = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = torch.zeros(state.x.shape[0],
-                                dtype=state.x.dtype,
+                                # dtype=state.x.dtype,
                                 device=state.x.device)
         history = {}
         if self.config.verbose:
@@ -931,57 +881,6 @@ class Dynamics(nn.Module):
 
         return vnet((x, force))
 
-    def _call_vnet_dummy(
-            self,
-            step: int,
-            inputs: tuple[Tensor, Tensor],
-    ) -> tuple[Tensor, Tensor, Tensor]:
-        """Call the momentum update network used to update v.
-
-        Args:
-            inputs: (x, force) tuple
-        Returns:
-            s, t, q: Scaling, Translation, and Transformation functions
-        """
-        vnet = self._get_vnet(step)
-        assert callable(vnet)
-        x, force = inputs
-        if torch.cuda.is_available():
-            x, force = x.cuda(), force.cuda()
-
-        return (
-            torch.zeros_like(x),
-            torch.zeros_like(x),
-            torch.zeros_like(x),
-        )
-
-    def _call_xnet_dummy(
-            self,
-            step: int,
-            inputs: tuple[Tensor, Tensor],
-            first: bool = False,
-    ) -> tuple[Tensor, Tensor, Tensor]:
-        """Call the position network used to update x.
-
-        Args:
-            inputs: (m * x, v) tuple, where (m * x) is a masking operation.
-        Returns:
-            s, t, q: Scaling, Translation, and Transformation functions
-        """
-        xnet = self._get_xnet(step, first)
-        assert callable(xnet)
-        x, v = inputs
-        x = self.g.group_to_vec(x)
-
-        if torch.cuda.is_available():
-            x, v = x.cuda(), v.cuda()
-
-        return (
-            torch.zeros_like(v),
-            torch.zeros_like(v),
-            torch.zeros_like(v),
-        )
-
     def _call_xnet(
             self,
             step: int,
@@ -1002,20 +901,26 @@ class Dynamics(nn.Module):
         if torch.cuda.is_available():
             x, v = x.cuda(), v.cuda()
 
-        if isinstance(self.g, SU3):
-            x = x.reshape(self.xshape)
-            x = torch.stack([x.real, x.imag], 1)
-        elif isinstance(self.g, U1Phase):
-            x = self.g.group_to_vec(x.reshape(-1, *self.xshape[1:]))
+        # if isinstance(self.g, SU3):
+        #     x = x.reshape(self.xshape)
+        #     # x = torch.stack([x.real, x.imag], 1)
+        # elif isinstance(self.g, U1Phase):
+        x = self.g.group_to_vec(x.reshape(-1, *self.xshape[1:]))
 
         return xnet((x, v))
 
     def _forward_lf(self, step: int, state: State) -> tuple[State, Tensor]:
-        """Complete update (leapfrog step) in the forward direction. """
+        """Complete update (leapfrog step) in the forward direction.
+
+        Explicitly:
+            1. Update momentum (v' <-- v)
+            2. Update half of position (x' <-- m * x)
+            3. Update other half of position (x'' <-- (1 - m) * x)
+            4. Update momentum (v'' <-- v')
+        """
         m, mb = self._get_mask(step)
         m, mb = m.to(self.device), mb.to(self.device)
-        sumlogdet = torch.zeros(state.x.shape[0],
-                                device=self.device)
+        sumlogdet = torch.zeros(state.x.shape[0], device=self.device)
 
         state, logdet = self._update_v_fwd(step, state)
         sumlogdet = sumlogdet + logdet
@@ -1032,14 +937,20 @@ class Dynamics(nn.Module):
         return state, sumlogdet
 
     def _backward_lf(self, step: int, state: State) -> tuple[State, Tensor]:
-        """Complete update (leapfrog step) in the backward direction"""
+        """Complete update (leapfrog step) in the backward direction
+
+        Explicitly:
+            1. Update momentum (v' <-- v)
+            2. Update half of position       (x'  <-- (1 - m) * x)
+            3. Update other half of position (x'' <-- m * x)
+            4. Update momentum (v'' <-- v)
+        """
         # NOTE: Reverse the step count, i.e. count from end of trajectory
         step_r = self.config.nleapfrog - step - 1
 
         m, mb = self._get_mask(step_r)
         m, mb = m.to(self.device), mb.to(self.device)
-        sumlogdet = torch.zeros((state.x.shape[0],),
-                                device=self.device)
+        sumlogdet = torch.zeros((state.x.shape[0],), device=self.device)
 
         state, logdet = self._update_v_bwd(step_r, state)
         sumlogdet = sumlogdet + logdet
@@ -1124,11 +1035,18 @@ class Dynamics(nn.Module):
                 logdet = (mb * s).sum(dim=1)
 
         elif isinstance(self.g, SU3):
-            x = state.x.reshape(self.xshape)
-            xm_init = xm_init.reshape(self.xshape)
-            exp_s = exp_s.reshape(self.xshape)
-            exp_q = exp_q.reshape(self.xshape)
-            t = t.reshape(self.xshape)
+            x = self.flatten(x)
+            v = self.flatten(v)
+            xm_init = self.flatten(xm_init)
+            exp_s = self.flatten(exp_s)
+            exp_q = self.flatten(exp_q)
+            t = self.flatten(t)
+
+            # x = state.x.reshape(self.xshape)
+            # xm_init = xm_init.reshape(self.xshape)
+            # exp_s = exp_s.reshape(self.xshape)
+            # exp_q = exp_q.reshape(self.xshape)
+            # t = t.reshape(self.xshape)
             # x = self.g.group_to_vec(state.x)
             # v = self.g.group_to_vec(state.v)
             # xm_init = self.g.group_to_vec(xm_init)
