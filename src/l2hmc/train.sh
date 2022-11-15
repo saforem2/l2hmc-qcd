@@ -66,7 +66,8 @@ if [[ $(hostname) == theta* ]]; then
     -x https_proxy \
     -x PATH \
     -x LD_LIBRARY_PATH"
-  VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-01"
+  VENV_DIR="../../venvs/thetaGPU/2022-07-01/"
+  # VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-01"
 
 # ---- Check if running on Polaris -----------------------------
 elif [[ $(hostname) == x* ]]; then
@@ -120,18 +121,18 @@ fi
 if [[ -f "${VENV_DIR}/bin/activate" ]]; then
   echo "Found venv at: ${VENV_DIR}"
   source "${VENV_DIR}/bin/activate"
-  python3 -m pip install --upgrade pip
-  python3 -m pip install -e "${ROOT}" --no-deps
+  python3 -m pip install --upgrade pip setuptools wheel
+  python3 -m pip install -e "${ROOT}"
 else
   if [[ -f "${ROOT}/venv/bin/activate" ]]; then
     echo "Found venv at: ${ROOT}/venv/, using that"
     source "${VENV_DIR}/bin/activate"
-    python3 -m pip install --upgrade pip
-    python3 -m pip install -e "${ROOT}" --no-deps
+    python3 -m pip install --upgrade pip setuptools wheel
+    python3 -m pip install -e "${ROOT}"
   else
     echo "Creating new venv at: ${VENV_DIR}"
     python3 -m venv "${ROOT}/venv/" --system-site-packages
-    python3 -m pip install --upgrade pip
+    python3 -m pip install --upgrade pip setuptools wheel
     source "${VENV_DIR}/bin/activate"
     python3 -m pip install -e "${ROOT}" --no-deps
   fi
