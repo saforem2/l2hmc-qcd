@@ -1,5 +1,5 @@
 _target_: l2hmc.configs.AnnealingSchedule
 
-beta_init: 1.0
-beta_final: 4.0
+beta_init: 4.0
+beta_final: 6.0
 dynamic: false
