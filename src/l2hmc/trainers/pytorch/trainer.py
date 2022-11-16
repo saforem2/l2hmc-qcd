@@ -21,7 +21,7 @@ from rich import box
 from rich.live import Live
 from rich.logging import RichHandler
 from rich.table import Table
-from rich_logger import RichTablePrinter
+# from rich_logger import RichTablePrinter
 import torch
 from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
@@ -33,8 +33,8 @@ from l2hmc.common import (
     ScalarLike,
     TensorLike,
     get_timestamp,
-    setup_torch_distributed
 )
+from l2hmc.utils.dist import setup_torch_distributed
 from l2hmc.configs import CHECKPOINTS_DIR, ExperimentConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.group.su3.pytorch.group import SU3
@@ -48,11 +48,13 @@ from l2hmc.trainers.trainer import BaseTrainer
 from l2hmc.utils.history import summarize_dict
 from l2hmc.utils.rich import get_width, is_interactive
 from l2hmc.utils.rich import get_console
-from l2hmc.utils.rich_logger import LOGGER_FIELDS
+# from l2hmc.utils.rich_logger import LOGGER_FIELDS
 from l2hmc.utils.step_timer import StepTimer
 # WIDTH = int(os.environ.get('COLUMNS', 150))
 
 from tqdm.rich import trange
+# from tqdm.auto import trange
+
 
 console = get_console()
 logging.basicConfig(
@@ -583,16 +585,16 @@ class Trainer(BaseTrainer):
         return nullcontext()
 
     def get_printer(self, job_type: str) -> RichTablePrinter | None:
-        if self._is_chief and int(get_width()) > 100:
-            printer = RichTablePrinter(
-                key=f'{job_type[0]}step',
-                fields=LOGGER_FIELDS  # type:ignore
-            )
+        # if self._is_chief and int(get_width()) > 100:
+        #     printer = RichTablePrinter(
+        #         key=f'{job_type[0]}step',
+        #         fields=LOGGER_FIELDS  # type:ignore
+        #     )
 
-            printer.hijack_tqdm()
-            # printer.expand = True
+        #     printer.hijack_tqdm()
+        #     # printer.expand = True
 
-            return printer
+        #     return printer
         return None
 
     def _setup_eval(
@@ -893,6 +895,8 @@ class Trainer(BaseTrainer):
             nepoch: Optional[int] = None,
             writer: Optional[Any] = None,
             extend: int = 1,
+            nprint: Optional[int] = None,
+            nlog: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
         rows = {}
         summaries = []
@@ -908,6 +912,18 @@ class Trainer(BaseTrainer):
         nepoch *= extend
         losses = []
         ctx = self.get_context_manager(table)
+
+        log_freq = self.steps.log if nlog is None else nlog
+        print_freq = self.steps.print if nprint is None else nprint
+        log.info(f'log_freq: {log_freq}')
+        log.info(f'print_freq: {print_freq}')
+
+        def should_print(epoch):
+            return (self._is_chief and (epoch % print_freq == 0))
+
+        def should_log(epoch):
+            return (self._is_chief and (epoch % log_freq == 0))
+
         with ctx:
             if isinstance(ctx, Live):
                 ctx.console.clear_live()
@@ -923,9 +939,9 @@ class Trainer(BaseTrainer):
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
                 if (
-                        epoch > 0 and
-                        (self.should_log(epoch)
-                         or self.should_print(epoch))
+                        # epoch > 0 and
+                        (should_log(epoch)
+                         or should_print(epoch))
                 ):
                     record = {
                         'era': era,
@@ -952,8 +968,8 @@ class Trainer(BaseTrainer):
                     summaries.append(summary)
 
                     if (
-                            self.should_print(epoch)
-                            and not isinstance(ctx, Live)
+                            should_print(epoch)
+                            # and not isinstance(ctx, Live)
                     ):
                         log.info(summary)
 
@@ -1052,6 +1068,8 @@ class Trainer(BaseTrainer):
             writer: Optional[Any] = None,
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
+            nprint: Optional[int] = None,
+            nlog: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
     ) -> dict:
         """Perform training and return dictionary of results."""
@@ -1100,6 +1118,8 @@ class Trainer(BaseTrainer):
                 writer=writer,
                 extend=extend,
                 nepoch=nepoch,
+                nprint=nprint,
+                nlog=nlog,
             )
 
             self.rows['train'][str(era)] = edata['rows']

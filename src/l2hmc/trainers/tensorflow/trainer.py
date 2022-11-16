@@ -42,10 +42,11 @@ from l2hmc.utils.step_timer import StepTimer
 # tf.autograph.set_verbosity(0)
 # os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 # JIT_COMPILE = (len(os.environ.get('JIT_COMPILE', '')) > 0)
-if is_interactive():
-    from tqdm.notebook import trange
-else:
-    from tqdm.rich import trange
+# from tqdm.auto import trange
+# if is_interactive():
+#     from tqdm.notebook import trange
+# else:
+from tqdm.rich import trange
 
 log = logging.getLogger(__name__)
 
@@ -247,7 +248,9 @@ class Trainer(BaseTrainer):
         )
         if manager.latest_checkpoint:
             ckpt.restore(manager.latest_checkpoint)
-            log.warning(f'Restored checkpoint from: {manager.latest_checkpoint}')
+            log.warning(
+                f'Restored checkpoint from: {manager.latest_checkpoint}'
+            )
         else:
             log.info('No checkpoints found to load from. Continuing')
 
@@ -766,6 +769,8 @@ class Trainer(BaseTrainer):
             nepoch: Optional[int] = None,
             writer: Optional[Any] = None,
             extend: Optional[int] = None,
+            nprint: Optional[int] = None,
+            nlog: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
         rows = {}
         summaries = []
@@ -781,7 +786,20 @@ class Trainer(BaseTrainer):
         assert isinstance(nepoch, int)
         nepoch *= extend
         losses = []
-        with self.get_context_manager(table) as ctx:
+        ctx = self.get_context_manager(table)
+
+        log_freq = self.steps.log if nlog is None else nlog
+        print_freq = self.steps.print if nprint is None else nprint
+        assert log_freq is not None and print_freq is not None
+
+        def should_print(epoch):
+            return (self._is_chief and (epoch % print_freq == 0))
+
+        def should_log(epoch):
+            return (self._is_chief and (epoch % log_freq == 0))
+
+        # with self.get_context_manager(table) as ctx:
+        with ctx:
             if isinstance(ctx, Live):
                 tstr = ' '.join([
                     f'ERA: {era}/{self.steps.nera - 1}',
@@ -801,7 +819,10 @@ class Trainer(BaseTrainer):
                 x, metrics = self.train_step((x, beta))  # type:ignore
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
-                if self.should_log(epoch) or self.should_print(epoch):
+                if (
+                        should_print(epoch)
+                        or should_log(epoch)
+                ):
                     record = {
                         'era': era,
                         'epoch': epoch,
@@ -826,8 +847,8 @@ class Trainer(BaseTrainer):
                     rows[self._gstep] = avgs
                     summaries.append(summary)
                     if (
-                            self.should_print(epoch)
-                            and not isinstance(ctx, Live)
+                            should_print(epoch)
+                            # and not isinstance(ctx, Live)
                     ):
                         log.info(summary)
 
@@ -938,6 +959,8 @@ class Trainer(BaseTrainer):
             writer: Optional[Any] = None,
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
+            nprint: Optional[int] = None,
+            nlog: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
     ) -> dict:
         """Perform training and return dictionary of results."""
@@ -985,6 +1008,8 @@ class Trainer(BaseTrainer):
                 writer=writer,
                 extend=extend,
                 nepoch=nepoch,
+                nlog=nlog,
+                nprint=nprint
             )
 
             self.rows['train'][str(era)] = edata['rows']
