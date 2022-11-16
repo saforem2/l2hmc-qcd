@@ -7,12 +7,17 @@ from __future__ import absolute_import, annotations, division, print_function
 import datetime
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any, Optional, Tuple
 import warnings
 
 import matplotlib.pyplot as plt
-import matplotx
+try:
+    import matplotx
+    MATPLOTX = True
+except (ImportError, ModuleNotFoundError):
+    MATPLOTX = False
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -212,7 +217,7 @@ def plot_scalar(
         _ = ax.set_xlabel(xlabel)
     if ylabel is not None:
         _ = ax.set_ylabel(ylabel)
-    if label is not None:
+    if label is not None and MATPLOTX:
         _ = matplotx.line_labels()
 
     if outfile is not None:
@@ -825,6 +830,7 @@ def make_ridgeplots(
         plt.rcParams['axes.facecolor'] = (0, 0, 0, 0.0)
         plt.rcParams['figure.facecolor'] = (0, 0, 0, 0.0)
         for key, val in dataset.data_vars.items():
+            tstart = time.time()
             if 'leapfrog' in val.coords.dims:
                 lf_data = {
                     key: [],
@@ -862,7 +868,7 @@ def make_ridgeplots(
                 )
 
                 # Draw the densities in a few steps
-                _ = g.map(sns.kdeplot, key,   # cut=1,
+                _ = g.map(sns.kdeplot, key, cut=1,
                           shade=True, alpha=0.7, linewidth=1.25)
                 _ = g.map(plt.axhline, y=0, lw=1., alpha=0.9, clip_on=False)
 
@@ -900,6 +906,8 @@ def make_ridgeplots(
                     log.warning(f'Saving figure to: {fsvg.as_posix()}')
                     plt.savefig(fsvg.as_posix(), bbox_inches='tight')
                     plt.savefig(fpng.as_posix(), bbox_inches='tight')
+
+                log.info(f'Ridgeplot for {key} took {time.time() - tstart:.3f}s')
 
     #  sns.set(style='whitegrid', palette='bright', context='paper')
     fig = plt.gcf()
