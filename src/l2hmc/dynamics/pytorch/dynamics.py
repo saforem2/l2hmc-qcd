@@ -966,6 +966,21 @@ class Dynamics(nn.Module):
 
         return state, sumlogdet
 
+    def unflatten(self, x: Tensor) -> Tensor:
+        return x.reshape(x.shape[0], *self.xshape[1:])
+
+    def group_to_vec(self, x: Tensor) -> Tensor:
+        """For x in SU(3), returns 8-component real-valued vector from SU(3) mtx"""
+        return self.g.group_to_vec(self.unflatten(x))
+
+    def vec_to_group(self, x: Tensor) -> Tensor:
+        """Inverts `group_to_vec` operation."""
+        x_ = self.unflatten(x)
+        if isinstance(self.g, SU3):
+            return self.g.vec_to_group(x_)
+
+        return torch.complex(x_[..., 0], x_[..., 1])
+
     def _update_v_fwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the forward direction"""
         assert isinstance(self.veps, nn.ParameterList)
@@ -1035,12 +1050,15 @@ class Dynamics(nn.Module):
                 logdet = (mb * s).sum(dim=1)
 
         elif isinstance(self.g, SU3):
-            x = self.flatten(x)
-            v = self.flatten(v)
-            xm_init = self.flatten(xm_init)
-            exp_s = self.flatten(exp_s)
-            exp_q = self.flatten(exp_q)
-            t = self.flatten(t)
+            x = self.flatten(self.group_to_vec(x))
+            v = self.flatten(self.group_to_vec(state.v))
+            xm_init = self.flatten(self.group_to_vec(xm_init))
+            # x = self.flatten(x)
+            # v = self.flatten(v)
+            # xm_init = self.flatten(xm_init)
+            # exp_s = self.flatten(exp_s)
+            # exp_q = self.flatten(exp_q)
+            # t = self.flatten(t)
 
             # x = state.x.reshape(self.xshape)
             # xm_init = xm_init.reshape(self.xshape)
