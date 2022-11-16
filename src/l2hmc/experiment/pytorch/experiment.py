@@ -15,7 +15,8 @@ from omegaconf import DictConfig
 import torch
 from torch.utils.tensorboard.writer import SummaryWriter
 
-from l2hmc.common import setup_torch_distributed
+# from l2hmc.common import setup_torch_distributed
+from l2hmc.utils.dist import setup_torch_distributed
 from l2hmc.configs import NetWeights
 import l2hmc.configs as configs
 from l2hmc.configs import ExperimentConfig
@@ -307,8 +308,10 @@ class Experiment(BaseExperiment):
             writer: Optional[Any] = None,
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
+            nprint: Optional[int] = None,
+            nlog: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
-            rich: Optional[bool] = None,
+            # rich: Optional[bool] = None,
     ):
         # nchains = 16 if nchains is None else nchains
         jobdir = self.get_jobdir(job_type='train')
@@ -333,6 +336,8 @@ class Experiment(BaseExperiment):
                 train_dir=jobdir,
                 skip=skip,
                 beta=beta,
+                # nprint=nprint,
+                # nlog=nlog
             )
         else:
             output = self.trainer.train(
@@ -345,6 +350,8 @@ class Experiment(BaseExperiment):
                 train_dir=jobdir,
                 skip=skip,
                 beta=beta,
+                nprint=nprint,
+                nlog=nlog
             )
         # if self.trainer._is_chief:
         #     summaryfile = jobdir.joinpath('summaries.txt')

@@ -316,7 +316,8 @@ class BaseExperiment(ABC):
                                   nchains=nchains,
                                   job_type=job_type,
                                   framework=self.config.framework)
-
+        log.info('Done saving and analyzing data.')
+        log.info('Creating summaries for WandB, Aim')
         dQint = dset.data_vars.get('dQint', None)
         if dQint is not None:
             dQint = dQint.values
