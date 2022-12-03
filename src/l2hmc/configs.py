@@ -1,5 +1,5 @@
 """
-config.py
+configs.py
 
 Implements various configuration objects
 """
@@ -17,12 +17,12 @@ from typing import Any, Counter, Dict, List, Optional, Tuple
 from hydra.core.config_store import ConfigStore
 import numpy as np
 from omegaconf import DictConfig
-# from omegaconf import MISSING
 
 
 logger = logging.getLogger(__name__)
 
 
+# -- Configure useful Paths -----------------------
 HERE = Path(os.path.abspath(__file__)).parent
 PROJECT_DIR = HERE.parent.parent
 CONF_DIR = HERE.joinpath('conf')
@@ -37,8 +37,9 @@ OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
 CHECKPOINTS_DIR.mkdir(exist_ok=True, parents=True)
 OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 
-State = namedtuple('State', ['x', 'v', 'beta'])
 
+# -- namedtuple objects -------------------------------------------------------
+State = namedtuple('State', ['x', 'v', 'beta'])
 MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
 
 SYNONYMS = {
@@ -54,6 +55,15 @@ SYNONYMS = {
         'tflow',
         'tensorflow',
     ],
+    'horovod': [
+        'h',
+        'hv',
+        'hvd',
+        'horovod',
+    ],
+    'DDP': [
+        'ddp',
+    ]
 }
 
 
@@ -133,24 +143,8 @@ class LatticeMetrics:
             'plaqs': self.plaqs,
             'sinQ': self.charges.sinQ,
             'intQ': self.charges.intQ,
-            'p4x4': self.p4x4,
+            'p4x4': self.p4x4
         }
-
-
-# @dataclass
-# class AcceleratorConfig(BaseConfig):
-#     device_placement: Optional[bool] = True
-#     split_batches: Optional[bool] = False
-#     mixed_precision: Optional[str] = 'no'
-#     cpu: Optional[bool] = False
-#     deepspeed_plugin: Optional[Any] = None
-#     # fsdp_plugin: Optional[Any] = None
-#     rng_types: Optional[list[str]] = None
-#     log_with: Optional[list[str]] = None
-#     logging_dir: Optional[str | os.PathLike] = None
-#     dispatch_batches: Optional[bool] = False
-#     step_scheduler_with_optimizer: Optional[bool] = True
-#     kwargs_handlers: Optional[list[Any]] = None
 
 
 @dataclass
@@ -178,26 +172,6 @@ class wandbConfig(BaseConfig):
     def to_str(self) -> str:
         return self.to_json()
 
-
-# @dataclass
-# class U1Config(BaseConfig):
-#     steps: Steps
-#     network: NetworkConfig
-#     dynamics: DynamicsConfig
-#     loss: LossConfig
-#     net_weights: NetWeights
-#     # conv: Optional[ConvolutionConfig] = None
-#     backend: str = MISSING
-#
-#     def __post_init__(self):
-#         self.xshape = self.dynamics.xshape
-#         xdim = self.dynamics.xdim
-#         self.input_spec = InputSpec(
-#             xshape=self.dynamics.xshape,  # type:ignore
-#             xnet={'x': [xdim, int(2)], 'v': [xdim, ]},
-#             vnet={'x': [xdim, ], 'v': [xdim, ]}
-#         )
-#
 
 @dataclass
 class NetWeight(BaseConfig):
@@ -318,44 +292,32 @@ class Steps(BaseConfig):
 @dataclass
 class ConvolutionConfig(BaseConfig):
     filters: List[int]
-    sizes: List[int]
+    sizes: Optional[List[int]] = None
     pool: Optional[List[int]] = None
     # activation: str
     # paddings: list[int]
 
     def __post_init__(self):
-        assert len(self.filters) == len(self.sizes)
+        if self.sizes is None:
+            logger.warning('Using default filter size of 2')
+            self.sizes = len(self.filters) * [2]
         if self.pool is None:
             logger.warning('Using default pooling size of 2')
-            self.pool = [2] * len(self.filters)
-        # if isinstance(self.sizes, int):
-        #     self.sizes = len(self.filters) * self.sizes
-        # if isinstance(self.pool, int):
-        #     self.pool = len(self.filters) * self.pool
+            self.pool = len(self.filters) * [2]
 
-        # if self.pool is None:
-        #     logger.warning('Using default pooling size of 2')
-        #     self.pool = len(self.filters) * [2]
-        # if isinstance(self.pool, int):
-        #     self.pool = len(self.filters) * [self.pool]
-        # if isinstance(self.pool, int):
-        #     p = self.pool
-        # elif isinstance(self.pool, list):
-        #     p = self.pool[0]
-        # else:
-        #     logger.warning('Using default pooling size of 2')
-        #     p = 2
-        # if len(self.pool) != len(self.filters):
-        #     self.pool = len(self.filters) * [p]
-
+        assert len(self.filters) == len(self.sizes)
+        assert len(self.filters) == len(self.pool)
         assert self.pool is not None
 
     def to_str(self):
         if len(self.filters) > 0:
             outstr = [
                 list_to_str(self.filters),
-                list_to_str(self.sizes),
             ]
+            if self.sizes is not None:
+                outstr.append(
+                    list_to_str(self.sizes)
+                )
             if self.pool is not None:
                 outstr.append(
                     list_to_str(self.pool)
@@ -425,6 +387,7 @@ class DynamicsConfig(BaseConfig):
         elif self.group.upper() == 'SU3':
             self.dim = 4
             self.link_shape = (3, 3)
+            self.vec_shape = 8
             self.nt, self.nx, self.ny, self.nz = self.latvolume
             self.xshape = (
                 self.nchains,
@@ -517,13 +480,24 @@ class ExperimentConfig(BaseConfig):
         self.xshape = self.dynamics.xshape
         w = int(os.environ.get('COLUMNS', 235))
         self.width = w if self.width is None else self.width
-        if self.framework == 'pytorch':
+        if self.framework in SYNONYMS['tensorflow']:
+            self.backend = 'hvd'
+        elif self.framework in SYNONYMS['pytorch']:
             if self.backend is None:
+                logger.warning('Backend not specified, using DDP')
                 self.backend = 'DDP'
-                logger.warning(
-                    f'Backend not specified, using DDP with {self.framework}'
-                )
+
             assert self.backend.lower() in ['hvd', 'horovod', 'ddp']
+        else:
+            raise ValueError(
+                f'Unexpected value for framework: {self.framework}'
+            )
+        # if self.framework == 'pytorch':
+        #     if self.backend is None:
+        #         self.backend = 'DDP'
+        #         logger.warning(
+        #             f'Backend not specified, using DDP with {self.framework}'
+        #         )
 
         if self.debug_mode:
             self.compile = False
@@ -544,10 +518,13 @@ class ExperimentConfig(BaseConfig):
 
     def rank(self):
         if self.framework in SYNONYMS['pytorch']:
-            import horovod.torch as hvd
-            if not hvd.is_initialized():
-                hvd.init()
-            return hvd.rank()
+            if self.backend in SYNONYMS['horovod']:
+                import horovod.torch as hvd
+                if not hvd.is_initialized():
+                    hvd.init()
+                return hvd.rank()
+            elif self.backend in SYNONYMS['DDP']:
+                return int(os.environ.get('RANK', 0))
         elif self.framework in SYNONYMS['tensorflow']:
             import horovod.tensorflow as hvd
             if not hvd.is_initialized():
