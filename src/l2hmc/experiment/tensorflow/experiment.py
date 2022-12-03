@@ -12,6 +12,7 @@ from omegaconf import DictConfig
 
 from typing import Any, Optional
 from pathlib import Path
+import l2hmc
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
 from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
@@ -79,7 +80,11 @@ class Experiment(BaseExperiment):
         self._is_built = True
         assert callable(self.trainer.loss_fn)
         assert isinstance(self.trainer, Trainer)
-        assert isinstance(self.trainer.dynamics, Dynamics)
+        assert isinstance(
+            self.trainer.dynamics,
+            (Dynamics,
+             l2hmc.dynamics.tensorflow.dynamics.Dynamics)
+        )
         assert isinstance(self.trainer.lattice, (LatticeU1, LatticeSU3))
         # if not isinstance(self.cfg, ExperimentConfig):
         #     self.cfg = hydra.utils.instantiate(cfg)
