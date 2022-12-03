@@ -61,6 +61,11 @@ class BaseNetworkFactory(ABC):
         }
 
     @abstractmethod
-    def build_networks(self, n: int = 0, split_xnets: bool = True):
+    def build_networks(
+            self,
+            n: int = 0,
+            split_xnets: bool = True,
+            group: str = 'U1',
+    ):
         """Build Networks."""
         pass

@@ -13,6 +13,9 @@ import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
+from l2hmc.group.su3.pytorch.group import SU3
+from l2hmc.group.u1.pytorch.group import U1Phase
+
 
 from l2hmc.configs import (
     NetWeight,
@@ -217,47 +220,92 @@ def calc_output_size(
 class ConvStack(nn.Module):
     def __init__(
             self,
-            xshape: list[int],
+            xshape: list[int] | tuple[int],
             conv_config: ConvolutionConfig,
             activation_fn: Any,
             use_batch_norm: bool = False,
     ) -> None:
         super(ConvStack, self).__init__()
+        # if len(xshape) == 3:
+        #     d, nt, nx = xshape[0], xshape[1], xshape[2]
+        # elif len(xshape) == 4:
+        #     _, d, nt, nx = xshape[0], xshape[1], xshape[2], xshape[3]
+        # elif len(xshape) == 8:
+        #     # b, d, nt, nx, ny, nz, 3, 3
+        #     assert isinstance(xshape, (list, tuple))
+        #     # b = xshape[0]
+        #     d = xshape[1]
+        #     nt, nx, _, _ = xshape[2], xshape[3], xshape[4], xshape[5]
+        #     # b, d, nt, nx, ny, nz, _, _ = *xshape
+        # else:
+        #     raise ValueError(f'Invalid value for `xshape`: {xshape}')
+        # ---------------------------------------------------------------
+        # xshape will be of the form
+        # [batch, dim, *lattice_shape, *link_shape]
+        # -- Cases ------------------------------------------------------
+        # 1. xshape: [dim, nt, nx]
         if len(xshape) == 3:
+            # lattice_shape: [nt, nx]
+            ny, nz = 0, 0
             d, nt, nx = xshape[0], xshape[1], xshape[2]
+
+        # 2. xshape: [batch, dim, nt, nx]
         elif len(xshape) == 4:
+            # lattice_shape: [nt, nx]
+            ny, nz = 0, 0
             _, d, nt, nx = xshape[0], xshape[1], xshape[2], xshape[3]
+
+        # 3. xshape: [batch, dim, nt, nx, ny, nz, 3, 3]
+        elif len(xshape) == 8:
+            # link_shape: [3, 3]
+            # lattice_shape = [nt, nx, ny, nz]
+            d = xshape[1]
+            nt, nx, ny, nz = xshape[2], xshape[3], xshape[4], xshape[5]
         else:
-            raise ValueError(f'Invalid value for `xshape`: {xshape}')
+            raise ValueError(f'Invalid value for xshape: {xshape}')
+        # ---------------------------------------------------------------
 
         self.d = d
         self.nt = nt
         self.nx = nx
+        self.ny = ny
+        self.nz = nz
         self._with_cuda = torch.cuda.is_available()
         self.xshape = xshape
         self.xdim = np.cumprod(xshape[1:])[-1]
         self.activation_fn = activation_fn
-        self.layers = nn.ModuleList([
-            PeriodicPadding(conv_config.sizes[0] - 1),
-            # in_channels, out_channels, kernel_size
-            nn.LazyConv2d(
-                conv_config.filters[0],
-                conv_config.sizes[0],
-                # padding='same',
-                # padding_mode='circular',
-            )
-        ])
-        for idx, (f, n) in enumerate(zip(
-                conv_config.filters[1:],
-                conv_config.sizes[1:],
-        )):
-            self.layers.append(PeriodicPadding(n - 1))
-            self.layers.append(nn.LazyConv2d(f, n))
-            if (idx + 1) % 2 == 0:
-                p = 2 if conv_config.pool is None else conv_config.pool[idx]
-                self.layers.append(nn.MaxPool2d(p))
+        self.layers = nn.ModuleList()
+        if (nfilters := len(conv_config.filters)) > 0:
+            if (
+                    conv_config.sizes is not None
+                    and nfilters == len(conv_config.sizes)
+            ):
+                self.layers.append(
+                    PeriodicPadding(
+                        conv_config.sizes[0] - 1
+                    )
+                )
+                # in_channels, out_channels, kernel_size
+                self.layers.append(
+                    nn.LazyConv2d(
+                        conv_config.filters[0],
+                        conv_config.sizes[0],
+                    )
+                )
+                for idx, (f, n) in enumerate(zip(
+                        conv_config.filters[1:],
+                        conv_config.sizes[1:],
+                )):
+                    self.layers.append(PeriodicPadding(n - 1))
+                    self.layers.append(nn.LazyConv2d(f, n))
+                    if (idx + 1) % 2 == 0:
+                        p = (
+                            2 if conv_config.pool is None
+                            else conv_config.pool[idx]
+                        )
+                        self.layers.append(nn.MaxPool2d(p))
 
-            self.layers.append(self.activation_fn)
+                    self.layers.append(self.activation_fn)
 
         self.layers.append(nn.Flatten())
         if use_batch_norm:
@@ -313,19 +361,20 @@ class InputLayer(nn.Module):
                 )
 
         self.conv_config = conv_config
-        # if conv_config is not None:
         self.activation_fn = activation_fn
-        if conv_config is not None and len(conv_config.filters) > 0:
-            conv_stack = ConvStack(
-                xshape=xshape,
-                conv_config=conv_config,
-                activation_fn=self.activation_fn,
-            )
-        else:
-            conv_stack = None
-
+        conv_stack = nn.Identity()
+        if conv_config is not None:
+            if (
+                    conv_config.filters is not None
+                    and len(conv_config.filters) > 0
+            ):
+                conv_stack = ConvStack(
+                    xshape=xshape,
+                    conv_config=conv_config,
+                    activation_fn=self.activation_fn,
+                )
+        # self.register_module('conv_stack', conv_stack)
         self.conv_stack = conv_stack
-        # self.register_module('conv_stack', self.conv_stack)
         self.xlayer = nn.LazyLinear(
             self.net_config.units[0],
             device=DEVICE
@@ -334,6 +383,8 @@ class InputLayer(nn.Module):
             self.net_config.units[0],
             device=DEVICE
         )
+        if torch.cuda.is_available():
+            self.cuda()
 
     def forward(
             self,
@@ -345,9 +396,9 @@ class InputLayer(nn.Module):
         if self._with_cuda:
             x = x.cuda()
             v = v.cuda()
-        self.vlayer.to(v.dtype)
-        self.xlayer.to(x.dtype)
-        if self.conv_stack is not None:
+        # self.vlayer.to(v.dtype)
+        # self.xlayer.to(x.dtype)
+        # if self.conv_stack is not None:
             x = self.conv_stack(x)
 
         v = self.vlayer(flatten(v))
@@ -396,9 +447,11 @@ class LeapfrogLayer(nn.Module):
             h = nn.Linear(self.units[idx], units)
             self.hidden_layers.append(h)
 
-        self.scale = ScaledTanh(self.units[-1], self.xdim)
-        self.transf = ScaledTanh(self.units[-1], self.xdim)
-        self.transl = nn.Linear(self.units[-1], self.xdim)
+        # xdim = self.input_layer.xlayer.weight.shape[-1]
+        xdim = np.cumprod(xshape[1:])[-1]
+        self.scale = ScaledTanh(self.units[-1], xdim)
+        self.transf = ScaledTanh(self.units[-1], xdim)
+        self.transl = nn.Linear(self.units[-1], xdim)
 
         if self.net_config.dropout_prob > 0:
             self.dropout = nn.Dropout(self.net_config.dropout_prob)
@@ -427,10 +480,10 @@ class LeapfrogLayer(nn.Module):
         if self._with_cuda:
             x = x.cuda()
             v = v.cuda()
-        self.input_layer.to(x.dtype)
+        # self.input_layer.to(x.dtype)
         z = self.input_layer((x, v))
         for layer in self.hidden_layers:
-            layer.to(z.dtype)
+            # layer.to(z.dtype)
             z = self.activation_fn(layer(z))
 
         if self.net_config.dropout_prob > 0:
@@ -439,9 +492,9 @@ class LeapfrogLayer(nn.Module):
         if self.net_config.use_batch_norm:
             z = self.batch_norm(z)
 
-        self.scale.to(z.dtype)
-        self.transf.to(z.dtype)
-        self.transl.to(z.dtype)
+        # self.scale.to(z.dtype)
+        # self.transf.to(z.dtype)
+        # self.transl.to(z.dtype)
         scale = self.scale(z)
         transf = self.transf(z)
         transl = self.transl(z)
@@ -476,6 +529,7 @@ def get_and_call_network(
         *,
         network_config: NetworkConfig,
         is_xnet: bool,
+        group: U1Phase | SU3,
         input_shapes: Optional[dict[str, int]] = None,
         net_weight: Optional[NetWeight] = None,
         conv_config: Optional[ConvolutionConfig] = None,
@@ -490,18 +544,41 @@ def get_and_call_network(
         conv_config=conv_config,
         name=name,
     )
-    x = torch.rand(xshape)
-    v = torch.rand_like(x)
-    if is_xnet:
+    # if isinstance(group, U1Phase):
+    #     x = torch.rand(xshape)
+    # elif isinstance(group, SU3):
+    x = group.random(xshape)
+    v = group.random_momentum(xshape)
+    if torch.cuda.is_available():
+        net.cuda()
+        x = x.cuda()
+        v = v.cuda()
+
+    if isinstance(group, U1Phase):
         # TODO: Generalize for 4D SU(3)
-        x = torch.cat([x.cos(), x.sin()], dim=1)
+        # x = torch.cat([x.cos(), x.sin()], dim=1)
+        if is_xnet:
+            x = group.group_to_vec(x)
+    if (
+            isinstance(group, SU3)
+            or getattr(group, '_name', None) == 'SU3'
+    ):
+        # x = group.group_to_vec(x)
+        # x = torch.cat([x.real, x.imag], dim=1)
+        x = group.group_to_vec(x)
+        v = group.group_to_vec(v)
 
     _ = net((x, v))
     return net
 
 
 class NetworkFactory(BaseNetworkFactory):
-    def build_networks(self, n: int, split_xnets: bool) -> nn.ModuleDict:
+    def build_networks(
+            self,
+            n: int,
+            split_xnets: bool,
+            group: SU3 | U1Phase,
+    ) -> nn.ModuleDict:
         """Build LeapfrogNetwork."""
         # TODO: if n == 0: build hmcNetwork (return zeros)
         assert n >= 1, 'Must build at least one network'
@@ -509,10 +586,16 @@ class NetworkFactory(BaseNetworkFactory):
         cfg = self.get_build_configs()
         if n == 1:
             return nn.ModuleDict({
-                'xnet': get_and_call_network(**cfg['xnet'], is_xnet=True),
-                'vnet': get_and_call_network(**cfg['vnet'], is_xnet=False),
-                # 'xnet': Network(**cfg['xnet']),
-                # 'vnet': Network(**cfg['vnet']),
+                'xnet': get_and_call_network(
+                    **cfg['xnet'],
+                    is_xnet=True,
+                    group=group,
+                ),
+                'vnet': get_and_call_network(
+                    **cfg['vnet'],
+                    is_xnet=False,
+                    group=group
+                ),
             })
 
         vnet = nn.ModuleDict()
@@ -522,25 +605,29 @@ class NetworkFactory(BaseNetworkFactory):
                 **cfg['vnet'],
                 is_xnet=False,
                 name=f'vnet/{lf}',
+                group=group,
             )
             if split_xnets:
                 xnet[f'{lf}'] = nn.ModuleDict({
                     'first': get_and_call_network(
                         **cfg['xnet'],
                         is_xnet=True,
-                        name=f'xnet/{lf}/first'
+                        name=f'xnet/{lf}/first',
+                        group=group,
                     ),
                     'second': get_and_call_network(
                         **cfg['xnet'],
                         is_xnet=True,
-                        name=f'xnet/{lf}/second'
+                        name=f'xnet/{lf}/second',
+                        group=group,
                     ),
                 })
             else:
                 xnet[f'{lf}'] = get_and_call_network(
                     **cfg['xnet'],
                     is_xnet=True,
-                    name=f'xnet/{lf}'
+                    name=f'xnet/{lf}',
+                    group=group,
                 )
 
         return nn.ModuleDict({'xnet': xnet, 'vnet': vnet})

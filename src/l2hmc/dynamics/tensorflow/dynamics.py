@@ -60,11 +60,16 @@ class State:
         assert isinstance(self.beta, Tensor)
 
     def to_numpy(self):
-        # type: ignore
+        if tf.executing_eagerly():
+            return {
+                'x': self.x.numpy(),  # type:ignore
+                'v': self.v.numpy(),  # type:ignore
+                'beta': self.beta.numpy(),  # type:ignore
+            }
         return {
-            'x': self.x.numpy(),
-            'v': self.v.numpy(),
-            'beta': self.beta.numpy(),
+            'x': self.x,
+            'v': self.v,
+            'beta': self.beta,
         }
 
 
@@ -100,21 +105,7 @@ class Dynamics(Model):
         self.xshape = self.config.xshape
         self.potential_fn = potential_fn
         self.nlf = self.config.nleapfrog
-        # self.midpt = self.config.nleapfrog // 2
-        self.network_factory = network_factory
-        if network_factory is not None:
-            self._networks_built = True
-            self.xnet, self.vnet = self._build_networks(network_factory)
-            self.networks = {'xnet': self.xnet, 'vnet': self.vnet}
-        else:
-            self._networks_built = False
-            self.xnet = dummy_network
-            self.vnet = dummy_network
-            self.networks = {
-                'xnet': self.xnet,
-                'vnet': self.vnet
-            }
-        self.masks = self._build_masks()
+
         if self.config.group == 'U1':
             self.g = U1Phase()
             self.lattice = LatticeU1(self.config.nchains,
@@ -127,6 +118,23 @@ class Dynamics(Model):
             raise ValueError('Unexpected value for `self.config.group`')
 
         assert isinstance(self.g, (U1Phase, SU3))
+        # self.midpt = self.config.nleapfrog // 2
+        self.network_factory = network_factory
+        if network_factory is not None:
+            self._networks_built = True
+            self.networks = self._build_networks(network_factory)
+            self.xnet = self.networks['xnet']
+            self.vnet = self.networks['vnet']
+            # self.networks = {'xnet': self.xnet, 'vnet': self.vnet}
+        else:
+            self._networks_built = False
+            self.xnet = dummy_network
+            self.vnet = dummy_network
+            self.networks = {
+                'xnet': self.xnet,
+                'vnet': self.vnet
+            }
+        self.masks = self._build_masks()
 
         self.xeps = []
         self.veps = []
@@ -142,12 +150,20 @@ class Dynamics(Model):
             self.xeps.append(xalpha)
             self.veps.append(valpha)
 
-    def _build_networks(self, network_factory):
+    def _build_networks(
+            self,
+            network_factory: NetworkFactory
+    ) -> dict:
         """Build networks."""
         split = self.config.use_split_xnets
         n = self.nlf if self.config.use_separate_networks else 1
-        networks = network_factory.build_networks(n, split)
-        return networks['xnet'], networks['vnet']
+        networks = network_factory.build_networks(
+            n,
+            split,
+            group=self.g,
+        )
+        # return networks['xnet'], networks['vnet']
+        return networks
 
     def call(
             self,

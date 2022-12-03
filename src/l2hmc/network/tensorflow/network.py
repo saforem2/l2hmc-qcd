@@ -17,6 +17,8 @@ from l2hmc.configs import (
     NetWeight,
     NetworkConfig,
 )
+from l2hmc.group.su3.tensorflow.group import SU3
+from l2hmc.group.u1.tensorflow.group import U1Phase
 from l2hmc.network.factory import BaseNetworkFactory
 from l2hmc.network.tensorflow.utils import PeriodicPadding
 
@@ -64,7 +66,7 @@ def get_activation(act_fn: str | Callable) -> Callable:
 
 def dummy_network(
         inputs: tuple[Tensor, Tensor],
-        training: Optional[bool] = None,
+        training: Optional[bool] = None,  # pyright:ignore
 ) -> tuple[Tensor, Tensor, Tensor]:
     _, v = inputs
     return (
@@ -112,43 +114,75 @@ class ScaledTanh(tf.keras.Model):
 class ConvStack(tf.keras.Model):
     def __init__(
             self,
-            xshape: list[int],
+            xshape: list[int] | tuple[int],
             conv_config: ConvolutionConfig,
             activation_fn: str | Callable,
             use_batch_norm: bool = False,
             name: Optional[str] = None,
     ) -> None:
         super(ConvStack, self).__init__(name=name)
+        # xshape will be of the form
+        # [batch, dim, *lattice_shape, *link_shape]
+        # -- Cases ------------------------------------------------------
+        # 1. xshape: [dim, nt, nx]
         if len(xshape) == 3:
+            # lattice_shape: [nt, nx]
+            ny, nz = 0, 0
             d, nt, nx = xshape[0], xshape[1], xshape[2]
+
+        # 2. xshape: [batch, dim, nt, nx]
         elif len(xshape) == 4:
+            # lattice_shape: [nt, nx]
+            ny, nz = 0, 0
             _, d, nt, nx = xshape[0], xshape[1], xshape[2], xshape[3]
+
+        # 3. xshape: [batch, dim, nt, nx, ny, nz, 3, 3]
+        elif len(xshape) == 8:
+            # link_shape: [3, 3]
+            # lattice_shape = [nt, nx, ny, nz]
+            d = xshape[1]
+            nt, nx, ny, nz = xshape[2], xshape[3], xshape[4], xshape[5]
         else:
             raise ValueError(f'Invalid value for xshape: {xshape}')
-
+        # ---------------------------------------------------------------
         self.d = d
         self.nt = nt
+        self.ny = ny
+        self.nz = nz
         self.nx = nx
         self.xshape = xshape
         self.xdim = d * nt * nx
         self.activation_fn = get_activation(activation_fn)
         self.flatten = Flatten()
         self.conv_layers = []
-        for idx, (f, n) in enumerate(
-                zip(conv_config.filters,
-                    conv_config.sizes)
-        ):
-            self.conv_layers.append(
-                PeriodicPadding(n - 1)
-            )
-            self.conv_layers.append(
-                Conv2D(filters=f, kernel_size=n, activation=self.activation_fn)
-            )
-            if (idx + 1) % 2 == 0:
-                p = 2 if conv_config.pool is None else conv_config.pool[idx]
-                self.conv_layers.append(
-                    MaxPooling2D((p, p), name=f'{name}/xPool{idx}')
-                )
+        if (nfilters := len(conv_config.filters)) > 0:
+            if (
+                    conv_config.sizes is not None
+                    and nfilters == len(conv_config.sizes)
+            ):
+                for idx, (f, n) in enumerate(
+                        zip(conv_config.filters,
+                            conv_config.sizes)
+                ):
+                    self.conv_layers.append(
+                        PeriodicPadding(n - 1)
+                    )
+                    self.conv_layers.append(
+                        Conv2D(
+                            filters=f,
+                            kernel_size=n,
+                            activation=self.activation_fn
+                        )
+                    )
+                    if (idx + 1) % 2 == 0:
+                        p = (
+                            2 if conv_config.pool is None
+                            else conv_config.pool[idx]
+                        )
+                        self.conv_layers.append(
+                            MaxPooling2D((p, p), name=f'{name}/xPool{idx}')
+                        )
+
         self.conv_layers.append(Flatten())
         if use_batch_norm:
             self.conv_layers.append(BatchNormalization(-1))
@@ -262,6 +296,7 @@ class LeapfrogLayer(tf.keras.Model):
             input_shapes: Optional[dict[str, int]] = None,
             net_weight: Optional[NetWeight] = None,
             conv_config: Optional[ConvolutionConfig] = None,
+            group: Optional[U1Phase | SU3] = None,
             name: Optional[str] = None,
     ):
         super(LeapfrogLayer, self).__init__(name=name)
@@ -269,6 +304,7 @@ class LeapfrogLayer(tf.keras.Model):
             net_weight = NetWeight(1., 1., 1.)
 
         self.xshape = xshape
+        self.g = group
         self.net_config = network_config
         self.nw = net_weight
         self.xdim = np.cumprod(xshape[1:])[-1]
@@ -338,7 +374,12 @@ class LeapfrogLayer(tf.keras.Model):
 
 
 class NetworkFactory(BaseNetworkFactory):
-    def build_networks(self, n: int, split_xnets: bool) -> dict:
+    def build_networks(
+            self,
+            n: int,
+            split_xnets: bool,
+            group: U1Phase | SU3
+    ) -> dict:
         """Build LeapfrogNetwork."""
         # TODO: if n == 0: build hmcNetwork (return zeros)
         assert n >= 1, 'Must build at least one network'
@@ -346,54 +387,44 @@ class NetworkFactory(BaseNetworkFactory):
         cfg = self.get_build_configs()
         if n == 1:
             return {
-                'xnet': LeapfrogLayer(**cfg['xnet']),
-                'vnet': LeapfrogLayer(**cfg['vnet']),
+                'xnet': LeapfrogLayer(
+                    **cfg['xnet'],
+                    group=group
+                ),
+                'vnet': LeapfrogLayer(
+                    **cfg['vnet'],
+                    group=group
+                ),
             }
         xnet = {}
         vnet = {}
         for lf in range(n):
-            vnet[f'{lf}'] = LeapfrogLayer(**cfg['vnet'], name=f'vnet/{lf}')
+            vnet[f'{lf}'] = LeapfrogLayer(
+                **cfg['vnet'],
+                name=f'vnet/{lf}',
+                group=group,
+            )
             if split_xnets:
                 xnet[f'{lf}'] = {
                     'first': LeapfrogLayer(
                         **cfg['xnet'],
-                        name=f'xnet/{lf}/first'
+                        name=f'xnet/{lf}/first',
+                        group=group,
                     ),
                     'second': LeapfrogLayer(
                         **cfg['xnet'],
-                        name=f'xnet/{lf}/second'
+                        name=f'xnet/{lf}/second',
+                        group=group,
                     ),
                 }
             else:
-                xnet[f'{lf}'] = LeapfrogLayer(**cfg['xnet'], name=f'xnet/{lf}')
+                xnet[f'{lf}'] = LeapfrogLayer(
+                    **cfg['xnet'],
+                    name=f'xnet/{lf}',
+                    group=group,
+                )
 
         return {'xnet': xnet, 'vnet': vnet}
-        # return {
-        #     'xnet': get_network(**cfg['xnet'], name='xnet'),
-        #     'vnet': get_network(**cfg['vnet'], name='vnet'),
-        # }
-
-        # vnet = {
-        #     str(i): get_network(**cfg['vnet'], name=f'vnet_{i}')
-        #     for i in range(n)
-        # }
-        # if split_xnets:
-        #     # xstr = 'xnet'
-        #     labels = ['first', 'second']
-        #     xnet = {}
-        #     for i in range(n):
-        #         nets = [
-        #             get_network(**cfg['xnet'], name=f'xnet_{i}_first'),
-        #             get_network(**cfg['xnet'], name=f'xnet_{i}_second')
-        #         ]
-        #         xnet[str(i)] = dict(zip(labels, nets))
-        # else:
-        #     xnet = {
-        #         str(i): get_network(**cfg['xnet'], name=f'xnet_{i}')
-        #         for i in range(n)
-        #     }
-
-        # return {'xnet': xnet, 'vnet': vnet}
 
 
 def get_network_configs(
@@ -519,133 +550,3 @@ def setup(
     }
 
     return {'layer': layer_kwargs, 'coeff': coeff_kwargs}
-
-
-# pylint:disable=too-many-locals, too-many-arguments
-def get_network(
-        xshape: tuple,
-        network_config: NetworkConfig,
-        input_shapes: Optional[dict[str, tuple[int, int]]] = None,
-        net_weight: Optional[NetWeight] = None,
-        conv_config: Optional[ConvolutionConfig] = None,
-        # factor: float = 1.,
-        name: Optional[str] = None,
-) -> Model:
-    """Returns a functional `tf.keras.Model`."""
-    xdim = np.cumprod(xshape[1:])[-1]
-    name = 'GaugeNetwork' if name is None else name
-
-    if isinstance(network_config.activation_fn, str):
-        act_fn = Activation(network_config.activation_fn)
-        assert callable(act_fn)
-    elif callable(network_config.activation_fn):
-        act_fn = network_config.activation_fn
-    else:
-        raise ValueError(
-            'Unexpected value encountered in '
-            f'`NetworkConfig.activation_fn`: {network_config.activation_fn}'
-        )
-
-    if net_weight is None:
-        net_weight = NetWeight(1., 1., 1.)
-
-    if input_shapes is None:
-        input_shapes = {
-            'x': (int(xdim), int(2)),
-            'v': (int(xdim), int(2)),
-        }
-
-    kwargs = setup(xdim=xdim, name=name, network_config=network_config)
-    # coeff_kwargs = kwargs['coeff']
-    layer_kwargs = kwargs['layer']
-
-    x_input = Input(input_shapes['x'], name=f'{name}_xinput')
-    v_input = Input(input_shapes['v'], name=f'{name}_vinput')
-    # log.info(f'xinput: {x_input}')
-    # log.info(f'vinput: {v_input}')
-
-    s_coeff = tf.Variable(
-        trainable=True,
-        dtype=TF_FLOAT,
-        initial_value=tf.zeros([1, xdim], dtype=TF_FLOAT),
-    )
-    q_coeff = tf.Variable(
-        trainable=True,
-        dtype=TF_FLOAT,
-        initial_value=tf.zeros([1, xdim], dtype=TF_FLOAT),
-    )
-
-    v = Flatten()(v_input)
-    # if conv_config is None or len(conv_config.filters) == 0:
-    if conv_config is not None and len(conv_config.filters) > 0:
-        if len(xshape) == 3:
-            nt, nx, d = xshape
-        elif len(xshape) == 4:
-            _, nt, nx, d = xshape
-        else:
-            raise ValueError(f'Invalid value for `xshape`: {xshape}')
-
-        try:
-            x = Reshape((-1, nt, nx, d + 2))(x_input)
-        except ValueError:
-            x = Reshape((-1, nt, nx, d))(x_input)
-
-        iterable = zip(conv_config.filters, conv_config.sizes)
-        for idx, (f, n) in enumerate(iterable):
-            x = PeriodicPadding(n - 1)(x)
-            # Pass network_config.activation_fn (str) to Conv2D
-            x = Conv2D(f, n, name=f'{name}/xConv{idx}',
-                       activation=network_config.activation_fn)(x)
-            if (idx + 1) % 2 == 0:
-                p = 2 if conv_config.pool is None else conv_config.pool[idx]
-                # p = conv_config.pool[idx]
-                x = MaxPooling2D((p, p), name=f'{name}/xPool{idx}')(x)
-
-        x = Flatten()(x)
-        if network_config.use_batch_norm:
-            x = BatchNormalization(-1)(x)
-    else:
-        x = Flatten()(x_input)
-
-    # if conv_config is not None and len(conv_config.filters) > 0:
-    # raise ValueError('Unable to build network.')
-
-    x = Dense(**layer_kwargs['x'])(x)
-    v = Dense(**layer_kwargs['v'])(v)
-    z = act_fn(Add()([x, v]))
-    for idx, units in enumerate(network_config.units[1:]):
-        z = Dense(units,
-                  # dtype=TF_FLOAT,
-                  activation=act_fn,
-                  name=f'{name}_hLayer{idx}')(z)
-
-    if network_config.dropout_prob > 0:
-        z = Dropout(network_config.dropout_prob)(z)
-
-    if network_config.use_batch_norm:
-        z = BatchNormalization(-1, name=f'{name}_batchnorm')(z)
-
-    # -------------------------------------------------------------
-    # NETWORK OUTPUTS
-    #  1. s: Scale function
-    #  2. t: Translation function
-    #  3. q: Transformation function
-    # -------------------------------------------------------------
-    # 1. Scaling
-    s = Multiply()([
-        net_weight.s * tf.math.exp(s_coeff),
-        tf.math.tanh(Dense(**layer_kwargs['scale'])(z))
-    ])
-
-    # 2. Translation
-    t = Dense(**layer_kwargs['transl'])(z)
-
-    # 3. Transformation
-    q = Multiply()([
-        net_weight.q * tf.math.exp(q_coeff),
-        tf.math.tanh(Dense(**layer_kwargs['transf'])(z))
-    ])
-
-    model = Model(name=name, inputs=[x_input, v_input], outputs=[s, t, q])
-
-    return model
