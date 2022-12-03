@@ -8,7 +8,7 @@ from __future__ import absolute_import, annotations, division, print_function
 import os
 import logging
 
-from typing import Optional
+from typing import Optional, Callable
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +66,9 @@ def setup_tensorflow(
     SIZE = hvd.size()
     LOCAL_RANK = hvd.local_rank()
     LOCAL_SIZE = hvd.local_size()
+    os.environ['RANK'] = RANK
+    os.environ['WORLD_SIZE'] = SIZE
+    os.environ['LOCAL_RANK'] = LOCAL_RANK
 
     log.warning(f'Using: {TF_FLOAT} precision')
     log.info(f'Global Rank: {RANK} / {SIZE-1}')
@@ -94,7 +97,7 @@ def init_process_group(
         )
 
 
-def run_ddp(fn, world_size):
+def run_ddp(fn: Callable, world_size: int) -> None:
     import torch.multiprocessing as mp
     mp.spawn(  # type:ignore
         fn,
@@ -104,61 +107,70 @@ def run_ddp(fn, world_size):
     )
 
 
-def setup_torch_distributed(
-        backend: str,
-        port: str = '2345',
-) -> dict:
+def query_environment() -> dict[str, int]:
+    """Query environment variables for info about distributed setup"""
+    return {
+        'size': int(os.environ.get('WORLD_SIZE', 1)),
+        'rank': int(os.environ.get('RANK', 0)),
+        'local_rank': int(os.environ.get('LOCAL_RANK', 0)),
+    }
+
+
+def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
     import torch
     rank = os.environ.get('RANK', None)
     size = os.environ.get('WORLD_SIZE', None)
     local_rank = os.environ.get('LOCAL_RANK', None)
-    # if (
-    #         rank is not None
-    #         and size is not None
-    #         and local_rank is not None
-    # ):
-    #     return {
-    #         'rank': rank,
-    #         'size': size,
-    #         'local_rank': local_rank
-    #     }
+
+    import socket
+    from mpi4py import MPI
+    local_rank = int(os.environ.get(
+        'PMI_LOCAL_RANK',
+        os.environ.get(
+            'OMPI_COMM_WORLD_LOCAL_RANK',
+            '0',
+        )
+    ))
+    size = int(MPI.COMM_WORLD.Get_size())
+    rank = int(MPI.COMM_WORLD.Get_rank())
+    os.environ['LOCAL_RANK'] = str(local_rank)
+    os.environ['RANK'] = str(rank)
+    os.environ['WORLD_SIZE'] = str(size)
+    master_addr = (
+        socket.gethostname() if rank == 0 else None
+    )
+    master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
+    os.environ['MASTER_ADDR'] = master_addr
+    if (eport := os.environ.get('MASTER_PORT', None)) is None:
+        os.environ['MASTER_PORT'] = port
+    else:
+        log.info(f'Caught MASTER_PORT:{eport} from environment!')
+        os.environ['MASTER_PORT'] = eport
+
+    init_process_group(
+        rank=rank,
+        world_size=size,
+        backend='nccl' if torch.cuda.is_available() else 'gloo'
+    )
+
+    return {'size': size, 'rank': rank, 'local_rank': local_rank}
+
+
+def setup_torch_distributed(
+        backend: str,
+        port: str = '2345',
+) -> dict:
+    rank = os.environ.get('RANK', None)
+    size = os.environ.get('WORLD_SIZE', None)
+    local_rank = os.environ.get('LOCAL_RANK', None)
 
     assert backend in ['ddp', 'DDP', 'horovod', 'hvd']
     log.info(f'Using {backend} for distributed training')
 
     if backend in ['ddp', 'DDP']:
-        import socket
-        from mpi4py import MPI
-        local_rank = int(os.environ.get(
-            'PMI_LOCAL_RANK',
-            os.environ.get(
-                'OMPI_COMM_WORLD_LOCAL_RANK',
-                '0',
-            )
-        ))
-        size = int(MPI.COMM_WORLD.Get_size())
-        rank = int(MPI.COMM_WORLD.Get_rank())
-        os.environ['LOCAL_RANK'] = str(local_rank)
-        os.environ['RANK'] = str(rank)
-        os.environ['WORLD_SIZE'] = str(size)
-        master_addr = (
-            socket.gethostname() if rank == 0 else None
-        )
-        master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
-        os.environ['MASTER_ADDR'] = master_addr
-        if (eport := os.environ.get('MASTER_PORT', None)) is None:
-            os.environ['MASTER_PORT'] = port
-        else:
-            log.info(f'Caught MASTER_PORT:{eport} from environment!')
-            os.environ['MASTER_PORT'] = eport
-        # if not INITIALIZED:
-        init_process_group(
-            rank=rank,
-            world_size=size,
-            backend='nccl' if torch.cuda.is_available() else 'gloo'
-        )
+        return setup_torch_DDP(port)
 
-    elif backend in ['horovod', 'hvd']:
+    if backend in ['horovod', 'hvd']:
         import horovod.torch as hvd
         hvd.init() if not hvd.is_initialized() else None
         rank = hvd.rank()
@@ -170,6 +182,10 @@ def setup_torch_distributed(
         size = 1
         rank = 0
         local_rank = 0
+
+    os.environ['SIZE'] = str(size)
+    os.environ['RANK'] = str(rank)
+    os.environ['LOCAL_RANK'] = str(local_rank)
 
     return {'size': size, 'rank': rank, 'local_rank': local_rank}
 
@@ -186,9 +202,6 @@ def setup_torch(
     torch.backends.cudnn.deterministic = True   # type:ignore
     torch.backends.cudnn.benchmark = True       # type:ignore
     torch.use_deterministic_algorithms(True)
-    # torch.manual_seed(cfg.seed)
-    # from l2hmc.common import setup_torch_distributed
-    # from l2hmc.utils.dist import setup_torch_distributed
     dsetup = setup_torch_distributed(backend=backend, port=port)
     rank = dsetup['rank']
     size = dsetup['size']
@@ -206,13 +219,6 @@ def setup_torch(
 
     if torch.cuda.is_available():
         torch.cuda.set_device(local_rank)
-        # torch.cuda.manual_seed(cfg.seed + hvd.local_rank())
-    # else:
-    #     torch.set_default_dtype(torch.float32)
-    # RANK = hvd.rank()
-    # LOCAL_RANK = hvd.local_rank()
-    # SIZE = hvd.size()
-    # LOCAL_SIZE = hvd.local_size()
 
     log.info(f'Global Rank: {rank} / {size-1}')
     log.info(f'[{rank}]: Local rank: {local_rank}')

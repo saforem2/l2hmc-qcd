@@ -7,17 +7,12 @@ from __future__ import absolute_import, annotations, division, print_function
 import logging
 import os
 import sys
-# import random
 import warnings
 import time
 from pathlib import Path
 
-# import torch
-# import torch.distributed as dist
-
 import hydra
 from typing import Optional
-# import numpy as np
 from omegaconf.dictconfig import DictConfig
 
 from l2hmc.configs import ExperimentConfig
@@ -29,16 +24,12 @@ set_plot_style()
 
 log = logging.getLogger(__name__)
 
+logging.getLogger('aim').setLevel(logging.CRITICAL)
 logging.getLogger('filelock').setLevel(logging.CRITICAL)
 logging.getLogger('matplotlib').setLevel(logging.CRITICAL)
 logging.getLogger('PIL.PngImagePlugin').setLevel(logging.CRITICAL)
 logging.getLogger('graphviz._tools').setLevel(logging.CRITICAL)
 logging.getLogger('graphviz').setLevel(logging.CRITICAL)
-
-
-def setup(cfg: DictConfig):
-    if cfg.get('ignore_warnings'):
-        warnings.filterwarnings('ignore')
 
 
 def get_experiment(
@@ -78,11 +69,10 @@ def get_experiment(
 
 def run(cfg: DictConfig) -> str:
     # --- [0.] Setup ------------------------------------------------------
-    setup(cfg)
+    # setup(cfg)
     ex = get_experiment(cfg)
     assert isinstance(ex.config, ExperimentConfig)
 
-    # if ex.trainer.rank == 0:
     if ex.trainer._is_chief:
         print_config(ex.cfg, resolve=True)
 
