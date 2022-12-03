@@ -66,9 +66,9 @@ def setup_tensorflow(
     SIZE = hvd.size()
     LOCAL_RANK = hvd.local_rank()
     LOCAL_SIZE = hvd.local_size()
-    os.environ['RANK'] = RANK
-    os.environ['WORLD_SIZE'] = SIZE
-    os.environ['LOCAL_RANK'] = LOCAL_RANK
+    os.environ['RANK'] = str(RANK)
+    os.environ['WORLD_SIZE'] = str(SIZE)
+    os.environ['LOCAL_RANK'] = str(LOCAL_RANK)
 
     log.warning(f'Using: {TF_FLOAT} precision')
     log.info(f'Global Rank: {RANK} / {SIZE-1}')
