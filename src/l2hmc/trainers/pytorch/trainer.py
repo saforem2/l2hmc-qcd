@@ -52,8 +52,8 @@ from l2hmc.utils.rich import get_console
 from l2hmc.utils.step_timer import StepTimer
 # WIDTH = int(os.environ.get('COLUMNS', 150))
 
-from tqdm.rich import trange
-# from tqdm.auto import trange
+# from tqdm.rich import trange
+from tqdm.auto import trange
 
 
 console = get_console()
@@ -113,8 +113,8 @@ class Trainer(BaseTrainer):
             (configs.ExperimentConfig, ExperimentConfig)
         )
         # assert isinstance(self.dynamics, Dynamics)
-        self._gstep = 0
         dsetup = setup_torch_distributed(self.config.backend)
+        self._gstep = 0
         self.size = dsetup['size']
         self.rank = dsetup['rank']
         self.local_rank = dsetup['local_rank']
@@ -565,7 +565,7 @@ class Trainer(BaseTrainer):
 
         return xout.detach(), metrics
 
-    def get_context_manager(self, table: Table):
+    def get_context_manager(self, table: Table) -> Live | nullcontext:
         make_live = (
             self._is_chief
             and self.size == 1          # not worth the trouble when dist.
@@ -915,8 +915,8 @@ class Trainer(BaseTrainer):
 
         log_freq = self.steps.log if nlog is None else nlog
         print_freq = self.steps.print if nprint is None else nprint
-        log.info(f'log_freq: {log_freq}')
-        log.info(f'print_freq: {print_freq}')
+        # log.info(f'log_freq: {log_freq}')
+        # log.info(f'print_freq: {print_freq}')
 
         def should_print(epoch):
             return (self._is_chief and (epoch % print_freq == 0))
@@ -926,23 +926,24 @@ class Trainer(BaseTrainer):
 
         with ctx:
             if isinstance(ctx, Live):
+                tstr = ' '.join([
+                    f'ERA: {era} / {self.steps.nera - 1}',
+                    f'BETA: {beta:.3f}',
+                ])
                 ctx.console.clear_live()
+                ctx.console.rule(tstr)
                 ctx.update(table)
 
             for epoch in trange(
                     nepoch,
-                    disable=(not self._is_chief),
                     dynamic_ncols=True,
+                    disable=(not self._is_chief),
             ):
                 self.timers['train'].start()
                 x, metrics = self.train_step((x, beta))  # type:ignore
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
-                if (
-                        # epoch > 0 and
-                        (should_log(epoch)
-                         or should_print(epoch))
-                ):
+                if (should_log(epoch) or should_print(epoch)):
                     record = {
                         'era': era,
                         'epoch': epoch,

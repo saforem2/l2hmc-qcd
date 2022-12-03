@@ -23,6 +23,7 @@ from tensorflow._api.v2.train import CheckpointManager
 import tensorflow.python.framework.ops as ops
 from tensorflow.python.keras import backend as K
 
+from l2hmc import configs
 from l2hmc.common import ScalarLike
 from l2hmc.configs import ExperimentConfig
 from l2hmc.configs import CHECKPOINTS_DIR
@@ -43,10 +44,11 @@ from l2hmc.utils.step_timer import StepTimer
 # os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 # JIT_COMPILE = (len(os.environ.get('JIT_COMPILE', '')) > 0)
 # from tqdm.auto import trange
-# if is_interactive():
-#     from tqdm.notebook import trange
-# else:
-from tqdm.rich import trange
+from tqdm.auto import tqdm
+if is_interactive():
+    from tqdm.rich import trange
+else:
+    from tqdm.auto import trange
 
 log = logging.getLogger(__name__)
 
@@ -134,7 +136,16 @@ class Trainer(BaseTrainer):
         else:
             self.compression = hvd.Compression.none
 
+        assert isinstance(
+            self.config,
+            (configs.ExperimentConfig, ExperimentConfig)
+        )
+
         self._gstep = 0
+        self.size = hvd.size()
+        self.rank = hvd.rank()
+        self.local_rank = hvd.local_rank()
+        self._is_chief = (self.local_rank == 0 and self.rank == 0)
         self.lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
         self.dynamics = self.build_dynamics(
@@ -162,9 +173,9 @@ class Trainer(BaseTrainer):
         self.reduce_lr = ReduceLROnPlateau(self.config.learning_rate)
         self.reduce_lr.set_model(self.dynamics)
         self.reduce_lr.set_optimizer(self.optimizer)
-        self.rank = hvd.local_rank()
-        self.global_rank = hvd.rank()
-        self._is_chief = self.rank == 0 and self.global_rank == 0
+        # self.rank = hvd.local_rank()
+        # self.global_rank = hvd.rank()
+        # self._is_chief = self.rank == 0 and self.global_rank == 0
         if self.config.dynamics.group == 'U1':
             self.g = U1Phase()
         elif self.config.dynamics.group == 'SU3':
@@ -344,7 +355,7 @@ class Trainer(BaseTrainer):
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
     ) -> None:
-        if self.rank != 0:
+        if not self._is_chief:
             return
         dQdict = None
         dQint = record.get('dQint', None)
@@ -438,10 +449,10 @@ class Trainer(BaseTrainer):
 
     def get_context_manager(self, table: Table) -> Live | nullcontext:
         make_live = (
-            int(get_width()) > 150    # make sure wide enough to fit table
-            and self._is_chief
-            and hvd.size() == 1       # not worth the trouble when distributed
+            self._is_chief
+            and self.size == 1       # not worth the trouble when distributed
             and not is_interactive()  # AND not in a jupyter / ipython kernel
+            and int(get_width()) > 120    # make sure wide enough to fit table
         )
         if make_live:
             return Live(
@@ -805,24 +816,31 @@ class Trainer(BaseTrainer):
                     f'ERA: {era}/{self.steps.nera - 1}',
                     f'BETA: {beta:.3f}',
                 ])
-                ctx.console.clear()
+                # ctx.console.clear()
                 ctx.console.clear_live()
                 ctx.console.rule(tstr)
                 ctx.update(table)
 
-            for epoch in trange(
-                    nepoch,
-                    dynamic_ncols=True,
-                    disable=(not self._is_chief)
-            ):
+            # for epoch in trange(
+            iterator = tqdm(
+                range(nepoch),
+                desc='Training',
+                position=0,
+                leave=True,
+                dynamic_ncols=True,
+                disable=(not self._is_chief)
+            )
+            #         nepoch,
+            #         dynamic_ncols=True,
+            #         disable=(not self._is_chief)
+            #     desc
+            # ):
+            for epoch in iterator:
                 self.timers['train'].start()
                 x, metrics = self.train_step((x, beta))  # type:ignore
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
-                if (
-                        should_print(epoch)
-                        or should_log(epoch)
-                ):
+                if (should_print(epoch) or should_log(epoch)):
                     record = {
                         'era': era,
                         'epoch': epoch,
@@ -846,6 +864,7 @@ class Trainer(BaseTrainer):
                     )
                     rows[self._gstep] = avgs
                     summaries.append(summary)
+
                     if (
                             should_print(epoch)
                             # and not isinstance(ctx, Live)
