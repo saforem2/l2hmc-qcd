@@ -35,6 +35,7 @@ warnings.filterwarnings('ignore')
 
 
 # log = get_pylogger(__name__)
+log = logging.getLogger(__name__)
 
 xplt = xr.plot  # type: ignore
 

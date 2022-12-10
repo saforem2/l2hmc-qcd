@@ -6,11 +6,23 @@ Contains methods for initializing distributed communication.
 from __future__ import absolute_import, annotations, division, print_function
 
 import os
-import logging
 
 from typing import Optional, Callable
+from mpi4py import MPI
+
+# from l2hmc.utils.logger import get_pylogger
+import logging
 
 log = logging.getLogger(__name__)
+
+
+BACKENDS = [
+    'deepspeed',
+    'ds',
+    'ddp',
+    'horovod',
+    'hvd',
+]
 
 
 def setup_tensorflow(
@@ -18,6 +30,11 @@ def setup_tensorflow(
         ngpus: Optional[int] = None,
 ) -> int:
     import tensorflow as tf
+    dtypes = {
+        'float16': tf.float16,
+        'float32': tf.float32,
+        'float64': tf.float64,
+    }
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     import horovod.tensorflow as hvd
@@ -76,6 +93,11 @@ def setup_tensorflow(
     return RANK
 
 
+def init_deepspeed():
+    import deepspeed
+    deepspeed.init_distributed()
+
+
 def init_process_group(
         rank: int | str,
         world_size: int | str,
@@ -116,6 +138,23 @@ def query_environment() -> dict[str, int]:
     }
 
 
+def get_rank():
+    return MPI.COMM_WORLD.Get_rank()
+
+
+def get_size():
+    return MPI.COMM_WORLD.Get_size()
+
+def get_local_rank():
+    return os.environ.get(
+        'PMI_LOCAL_RANK',
+        os.environ.get(
+            'OMPI_COMM_WORLD_LOCAL_RANK',
+            '0'
+        )
+    )
+
+
 def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
     import torch
     rank = os.environ.get('RANK', None)
@@ -123,16 +162,16 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
     local_rank = os.environ.get('LOCAL_RANK', None)
 
     import socket
-    from mpi4py import MPI
-    local_rank = int(os.environ.get(
-        'PMI_LOCAL_RANK',
-        os.environ.get(
-            'OMPI_COMM_WORLD_LOCAL_RANK',
-            '0',
-        )
-    ))
-    size = int(MPI.COMM_WORLD.Get_size())
-    rank = int(MPI.COMM_WORLD.Get_rank())
+    # local_rank = int(os.environ.get(
+    #     'PMI_LOCAL_RANK',
+    #     os.environ.get(
+    #         'OMPI_COMM_WORLD_LOCAL_RANK',
+    #         '0',
+    #     )
+    # ))
+    size = int(get_size())
+    rank = int(get_rank())
+    local_rank = int(get_local_rank())
     os.environ['LOCAL_RANK'] = str(local_rank)
     os.environ['RANK'] = str(rank)
     os.environ['WORLD_SIZE'] = str(size)
@@ -163,14 +202,19 @@ def setup_torch_distributed(
     rank = os.environ.get('RANK', None)
     size = os.environ.get('WORLD_SIZE', None)
     local_rank = os.environ.get('LOCAL_RANK', None)
+    be = backend.lower()
+    assert be in BACKENDS
 
-    assert backend in ['ddp', 'DDP', 'horovod', 'hvd']
     log.info(f'Using {backend} for distributed training')
-
     if backend in ['ddp', 'DDP']:
         return setup_torch_DDP(port)
 
-    if backend in ['horovod', 'hvd']:
+    if be in ['deepspeed', 'ds']:
+        init_deepspeed()
+        size = get_size()
+        rank = get_rank
+
+    elif backend in ['horovod', 'hvd']:
         import horovod.torch as hvd
         hvd.init() if not hvd.is_initialized() else None
         rank = hvd.rank()
@@ -198,6 +242,11 @@ def setup_torch(
 ) -> int:
     import torch
     from l2hmc.common import seed_everything
+    dtypes = {
+        'float16': torch.float16,
+        'float32': torch.float32,
+        'float64': torch.float64,
+    }
     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     torch.backends.cudnn.deterministic = True   # type:ignore
     torch.backends.cudnn.benchmark = True       # type:ignore
@@ -214,8 +263,8 @@ def setup_torch(
     if nthreads is not None:
         torch.set_num_threads(int(nthreads))
 
-    if precision == 'float64':
-        torch.set_default_dtype(torch.float64)
+    # if precision == 'float64':
+    torch.set_default_dtype(dtypes.get(precision, torch.float32))
 
     if torch.cuda.is_available():
         torch.cuda.set_device(local_rank)
