@@ -4,11 +4,11 @@ configs.py
 Implements various configuration objects
 """
 from __future__ import absolute_import, annotations, division, print_function
+from abc import ABC, abstractmethod
 from collections import namedtuple
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 import json
-from abc import ABC, abstractmethod
 import logging
 import os
 from pathlib import Path
@@ -18,8 +18,13 @@ from hydra.core.config_store import ConfigStore
 import numpy as np
 from omegaconf import DictConfig
 
+import rich.repr
+# from l2hmc.utils.logger import get_pylogger
 
-logger = logging.getLogger(__name__)
+
+# logger = get_pylogger(__name__)
+log = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)
 
 
 # -- Configure useful Paths -----------------------
@@ -67,6 +72,14 @@ SYNONYMS = {
 }
 
 
+def flatten_dict(d: dict, sep: str = '/', pre='') -> dict:
+    return {
+        pre + sep + k if pre else k: v
+        for kk, vv in d.items()
+        for k, v in flatten_dict(vv, sep, kk).items()
+    } if isinstance(d, dict) else {pre: d }
+
+
 def add_to_outdirs_file(outdir: os.PathLike):
     with open(OUTDIRS_FILE, 'a') as f:
         f.write(Path(outdir).resolve.as_posix() + '\n')
@@ -91,7 +104,7 @@ def list_to_str(x: list) -> str:
     else:
         return '-'.join([str(i) for i in x])
 
-
+@rich.repr.auto
 @dataclass
 class BaseConfig(ABC):
 
@@ -456,6 +469,7 @@ class ExperimentConfig(BaseConfig):
     annealing_schedule: AnnealingSchedule
     # ----- Optional (w/ defaults) ------------
     # conv: Optional[ConvolutionConfig] = None
+    restore: bool = True
     c1: float = 0.0
     port: str = '2345'
     compile: bool = True
@@ -469,6 +483,7 @@ class ExperimentConfig(BaseConfig):
     ignore_warnings: bool = True
     backend: str = 'hvd'
     # ----- Optional (w/o defaults) -----------
+    ds_config_path: Optional[Any] = None
     name: Optional[str] = None
     name: Optional[str] = None
     width: Optional[int] = None
@@ -478,6 +493,13 @@ class ExperimentConfig(BaseConfig):
     def __post_init__(self):
         self.xdim = self.dynamics.xdim
         self.xshape = self.dynamics.xshape
+        self.ds_config = {}
+        if self.ds_config_path is not None:
+            assert Path(self.ds_config_path).is_file()
+            self.ds_config.update({
+                json.load(self.ds_config_path)
+            })
+
         w = int(os.environ.get('COLUMNS', 235))
         self.width = w if self.width is None else self.width
         if self.framework in SYNONYMS['tensorflow']:
