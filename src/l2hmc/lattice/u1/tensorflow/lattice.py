@@ -29,7 +29,8 @@ def area_law(beta: float, num_plaqs: int) -> float:
 
 def plaq_exact(beta: float | Tensor) -> Tensor:
     """Computes the expected value of the avg. plaquette for 2D U(1)."""
-    beta = tf.constant(beta, dtype=TF_FLOAT)
+    if isinstance(beta, float):
+        beta = tf.constant(beta, dtype=TF_FLOAT)
     pexact = tf.constant(tf.math.bessel_i1(beta) / tf.math.bessel_i0(beta))
     return pexact
 

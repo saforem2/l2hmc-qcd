@@ -11,7 +11,8 @@ from __future__ import absolute_import, annotations, division, print_function
 from typing import Optional
 from math import pi as PI
 
-from scipy.special import i0, i1
+# from scipy.special import i0, i1
+from torch.special import i0, i1
 import torch
 
 from l2hmc.lattice.lattice import Lattice
