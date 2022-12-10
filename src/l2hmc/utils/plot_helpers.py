@@ -5,31 +5,36 @@ Contains helpers for plotting.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import datetime
-import logging
+# import logging
 import os
-import time
 from pathlib import Path
+import time
 from typing import Any, Optional, Tuple
 import warnings
 
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import xarray as xr
+
+from l2hmc.utils.rich import is_interactive
+# from l2hmc.utils.logger import get_pylogger
+import logging
 try:
     import matplotx
     MATPLOTX = True
 except (ImportError, ModuleNotFoundError):
     MATPLOTX = False
-import numpy as np
-import pandas as pd
-import seaborn as sns
-import xarray as xr
-from l2hmc.utils.rich import is_interactive
+
 
 # from l2hmc.experiment.pytorch.experiment import Experiment as ptExperiment
 # from l2hmc.experiment.tensorflow.experiment import Experiment as tfExperiment
 
 warnings.filterwarnings('ignore')
 
-log = logging.getLogger(__name__)
+
+# log = get_pylogger(__name__)
 
 xplt = xr.plot  # type: ignore
 

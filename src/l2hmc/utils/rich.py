@@ -16,6 +16,7 @@ from typing import Any
 from omegaconf import DictConfig, OmegaConf
 import pandas as pd
 import rich
+from rich.logging import RichHandler
 from rich.console import Console
 from rich.layout import Layout
 from rich.panel import Panel
@@ -32,11 +33,10 @@ import rich.syntax
 from rich.table import Table
 import rich.tree
 
-from l2hmc.configs import Steps
-from l2hmc.configs import OUTPUTS_DIR
+# from l2hmc.configs import Steps
 
 
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
 
 # from typing import Any, Callable, Optional
 # from rich import box
@@ -70,6 +70,79 @@ STYLES = {
     "highlight": Style(color="#111111", bgcolor="#FFFF00", bold=True),
 }
 
+def get_console(width: Optional[int] = None, *args, **kwargs) -> Console:
+    interactive = is_interactive()
+    # try:
+    #     # from rich_theme_manager import Theme
+    #     theme = Theme('dark', styles=STYLES)
+    # except ImportError:
+    from rich.theme import Theme
+    theme = Theme(STYLES)
+
+    if width is None:
+        if is_interactive():
+            columns = 120
+        else:
+            columns = os.environ.get('COLUMNS', os.environ.get('WIDTH', None))
+            if columns is None:
+                if not interactive:
+                    size = shutil.get_terminal_size()
+                    columns = size.columns
+                else:
+                    columns = 120
+            else:
+                columns = int(columns)
+
+        width = int(max(columns, 120))
+        # console.width = width
+        # console._width = width
+    console = Console(
+        force_jupyter=interactive,
+        width=width,
+        log_path=False,
+        theme=theme,
+        *args,
+        **kwargs
+    )
+
+    return console
+
+
+# from pytorch_lightning.utilities import rank_zero as rz
+
+
+# def get_pylogger(name=__name__) -> logging.Logger:
+#     """Initialized multi-GPU-friendly python command line logger."""
+#     logger = logging.getLogger(name)
+#     console = get_console()
+#     handler = RichHandler(
+#         rich_tracebacks=True,
+#         tracebacks_show_locals=True,
+#         console=console,
+#         show_path=False,
+#         log_time_format='[%x]',
+#         enable_link_path=False,
+#     )
+#     logging_levels = (
+#         'debug',
+#         'info',
+#         'warning',
+#         'error',
+#         'exception',
+#         'fatal',
+#         'critical',
+#     )
+#     for level in logging_levels:
+#         logger.handlers = [handler]
+#         # setattr(logger, handler, handler)
+#         setattr(
+#             logger,
+#             level,
+#             rz.rank_zero_only(getattr(logger, level))
+#         )
+
+#     return logger
+
 
 def is_interactive() -> bool:
     from IPython import get_ipython
@@ -86,43 +159,6 @@ def get_width():
     size = shutil.get_terminal_size()
     os.environ['COLUMNS'] = str(size.columns)
     return size.columns
-
-
-def get_console(width: Optional[int] = None, *args, **kwargs) -> Console:
-    interactive = is_interactive()
-    try:
-        from rich_theme_manager import Theme
-        theme = Theme('dark', styles=STYLES)
-    except ImportError:
-        from rich.theme import Theme
-        theme = Theme(STYLES)
-
-    console = Console(
-        force_jupyter=interactive,
-        log_path=False,
-        theme=theme,
-        *args,
-        **kwargs
-    )
-    if width is None:
-        if is_interactive():
-            columns = 120
-        else:
-            columns = os.environ.get('COLUMNS', os.environ.get('WIDTH', None))
-            if columns is None:
-                if not interactive:
-                    size = shutil.get_terminal_size()
-                    columns = size.columns
-                else:
-                    columns = 120
-            else:
-                columns = int(columns)
-
-        width = int(max(columns, 120))
-        console.width = width
-        console._width = width
-
-    return console
 
 
 def make_layout(ratio: int = 4, visible: bool = True) -> Layout:
@@ -146,7 +182,7 @@ def make_layout(ratio: int = 4, visible: bool = True) -> Layout:
 
 
 def build_layout(
-        steps: Steps,
+        steps: Any,
         visible: bool = True,
         job_type: Optional[str] = 'train',
         # columns: Optional[list[str]] = None
@@ -311,7 +347,7 @@ def print_config(
         resolve (bool, optional): Whether to resolve reference fields of
             DictConfig.
     """
-
+    from l2hmc.configs import OUTPUTS_DIR
     # style = "dim"
     tree = rich.tree.Tree("CONFIG")  # , style=style, guide_style=style)
 
