@@ -41,7 +41,7 @@ class SUN:
                     tr{ B - {tr{B} / N} * I) = tr{B} - tr{B} = 0
         """
         _, n, _ = x.shape
-        algebra_elem = torch.solve(u, x)[0]  # X^{-1} u
+        algebra_elem = torch.linalg.solve(u, x)[0]  # X^{-1} u
 
         # do projection in lie algebra
         B = (algebra_elem - algebra_elem.conj().transpose(-2, -1)) / 2

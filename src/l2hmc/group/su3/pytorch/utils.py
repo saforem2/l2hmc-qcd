@@ -332,15 +332,18 @@ def su3_to_vec(x: Tensor) -> Tensor:
     c = -2
     x00 = x[..., 0, 0]
     x01 = x[..., 0, 1]
-    x11 = x[..., 1, 1]
     x02 = x[..., 0, 2]
+    x11 = x[..., 1, 1]
     x12 = x[..., 1, 2]
     x22 = x[..., 2, 2]
     return torch.stack([
-        c * x01.imag, c * x01.real,
+        c * x01.imag,
+        c * x01.real,
         x11.imag - x00.imag,
-        c * x02.imag, c * x02.real,
-        c * x12.imag, c * x12.real,
+        c * x02.imag,
+        c * x02.real,
+        c * x12.imag,
+        c * x12.real,
         SQRT1by3 * (
             (2 * x22.imag) - x11.imag - x00.imag
         ),
