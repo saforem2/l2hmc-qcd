@@ -35,12 +35,37 @@ def random_angle(shape: list[int], requires_grad: bool = True) -> Tensor:
     return rand_unif(shape, -PI, PI, requires_grad=requires_grad)
 
 
+def eyeOf(x: torch.Tensor) -> torch.Tensor:
+    # NOTE:
+    #  batch_dims = [[1], [1], [1], ..., [1]]
+    #  len(batch_dims) = len(x.shape) - 1
+    batch_dims = [1] * (len(x.shape) - 1)
+    eye = torch.zeros(batch_dims + [*x.shape[-1:]]).to(x.device)
+    eye[-1:] = torch.eye(x.shape[-1])  # , device=DEVICE)
+    return eye
+
+
 class U1Phase(Group):
     def __init__(self):
         dim = 2
         shape = [1]
         dtype = PT_FLOAT
         super().__init__(dim=dim, shape=shape, dtype=dtype)
+
+    def phase_to_coords(self, phi: Tensor) -> Tensor:
+        """Convert complex to Cartesian.
+
+        exp(i φ) --> [cos φ, sin φ]
+        """
+        return torch.cat([phi.cos(), phi.sin()], -1)
+
+    def coords_to_phase(self, x: Tensor) -> Tensor:
+        """Convert Cartesian to phase.
+
+        [cos φ, sin φ] --> atan(sin φ / cos φ)
+        """
+        assert x.shape[-1] == 2
+        return torch.atan2(x[..., -1], x[..., -2])
 
     def exp(self, x: Tensor) -> Tensor:
         return torch.complex(x.cos(), x.sin())
@@ -85,11 +110,34 @@ class U1Phase(Group):
         return (x - torch.floor_divide(x, y) * y)
 
     @staticmethod
-    def group_to_vec(x):
+    def group_to_vec(x: Tensor) -> Tensor:
         return torch.cat([x.cos(), x.sin()], dim=1)
+
+    @staticmethod
+    def vec_to_group(x: Tensor):
+        # return torch.complex(x.cos(), x.sin())
+        if x.is_complex():
+            return torch.atan2(x.imag, x.real)
+
+        return torch.atan2(x[..., -1], x[..., -2])
 
     def compat_proj(self, x: Tensor) -> Tensor:
         return ((x + PI) % TWO_PI) - PI
+
+    def projectTAH(
+        self,
+        x: Tensor
+    ):
+        """Returns
+        r = (1/2) * (x - x.H) - j Im[ Tr(x) ] / Nc
+        """
+        # nc = torch.tensor(x.shape[-1]).to(x.dtype)
+        # r = 0.5 * (x - x.adjoint())
+        # d = tor
+        # d = torch.diagonal(r, dim1=-2, dim2=-1).sum(-1) / nc
+        # r = r - d.reshape(d.shape + (1, 1)) * eyeOf(x)
+        # TODO: Fix for U1
+        return x
 
     def random(self, shape: list[int]) -> Tensor:
         return self.compat_proj(TWO_PI * torch.rand(shape))
