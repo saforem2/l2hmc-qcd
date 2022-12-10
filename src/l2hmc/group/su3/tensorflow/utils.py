@@ -25,8 +25,8 @@ TWO_PI = tf.constant(2. * PI, dtype=TF_FLOAT)
 
 # SQRT1by2 = tf.constant(np.sqrt(1. / 2.), dtype=TF_FLOAT)
 # SQRT1by3 = tf.constant(np.sqrt(1. / 3.), dtype=TF_FLOAT)
-SQRT1by2 = tf.constant(tf.math.sqrt(1. / 2.), dtype=TF_FLOAT)
-SQRT1by3 = tf.constant(tf.math.sqrt(1. / 3.), dtype=TF_FLOAT)
+SQRT1by2 = tf.cast(tf.math.sqrt(1. / 2.), dtype=TF_FLOAT)
+SQRT1by3 = tf.cast(tf.math.sqrt(1. / 3.), dtype=TF_FLOAT)
 
 
 # Array = np.array
