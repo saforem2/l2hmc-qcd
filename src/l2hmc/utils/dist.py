@@ -129,15 +129,6 @@ def run_ddp(fn: Callable, world_size: int) -> None:
     )
 
 
-def query_environment() -> dict[str, int]:
-    """Query environment variables for info about distributed setup"""
-    return {
-        'size': int(os.environ.get('WORLD_SIZE', 1)),
-        'rank': int(os.environ.get('RANK', 0)),
-        'local_rank': int(os.environ.get('LOCAL_RANK', 0)),
-    }
-
-
 def get_rank():
     return MPI.COMM_WORLD.Get_rank()
 
@@ -145,14 +136,37 @@ def get_rank():
 def get_size():
     return MPI.COMM_WORLD.Get_size()
 
+
 def get_local_rank():
     return os.environ.get(
         'PMI_LOCAL_RANK',
         os.environ.get(
             'OMPI_COMM_WORLD_LOCAL_RANK',
-            '0'
+            os.environ.get(
+                'LOCAL_RANK',
+                '0'
+            )
         )
     )
+
+
+def query_environment() -> dict[str, int]:
+    """Query environment variables for info about distributed setup"""
+    ws = os.environ.get('WORLD_SIZE', None)
+    r = os.environ.get('RANK', None)
+    lr = os.environ.get('LOCAL_RANK', None)
+    if ws is not None and r is not None and lr is not None:
+        return {
+            'size': int(ws),
+            'rank': int(r),
+            'local_rank': int(lr)
+        }
+
+    return {
+        'size': int(get_size()),
+        'rank': int(get_rank()),
+        'local_rank': int(get_local_rank()),
+    }
 
 
 def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
@@ -201,31 +215,43 @@ def setup_torch_distributed(
 ) -> dict:
     rank = os.environ.get('RANK', None)
     size = os.environ.get('WORLD_SIZE', None)
-    local_rank = os.environ.get('LOCAL_RANK', None)
+    local_rank = os.environ.get(
+        'PMI_LOCAL_RANK',
+        os.environ.get(
+            'OMPI_COMM_WORLD_LOCAL_RANK',
+            None
+        )
+    )
     be = backend.lower()
     assert be in BACKENDS
 
-    log.info(f'Using {backend} for distributed training')
-    if backend in ['ddp', 'DDP']:
-        return setup_torch_DDP(port)
+    if rank == 0 and local_rank == 0:
+        log.info(f'Using {backend} for distributed training')
 
-    if be in ['deepspeed', 'ds']:
+    if be in ['ddp', 'DDP']:
+        dsetup = setup_torch_DDP(port)
+        size = dsetup['size']
+        rank = dsetup['rank']
+        local_rank = dsetup['local_rank']
+
+    elif be in ['deepspeed', 'ds']:
         init_deepspeed()
         size = get_size()
         rank = get_rank
 
-    elif backend in ['horovod', 'hvd']:
+    elif be in ['horovod', 'hvd']:
         import horovod.torch as hvd
         hvd.init() if not hvd.is_initialized() else None
         rank = hvd.rank()
         size = hvd.size()
         local_rank = hvd.local_rank()
     else:
-        log.warning(f'Unexpected backend specified: {backend}')
-        log.error('Setting size = 1, rank = 0, local_rank = 0')
-        size = 1
-        rank = 0
-        local_rank = 0
+        raise ValueError
+        # log.warning(f'Unexpected backend specified: {backend}')
+        # log.error('Setting size = 1, rank = 0, local_rank = 0')
+        # size = 1
+        # rank = 0
+        # local_rank = 0
 
     os.environ['SIZE'] = str(size)
     os.environ['RANK'] = str(rank)
@@ -255,6 +281,12 @@ def setup_torch(
     rank = dsetup['rank']
     size = dsetup['size']
     local_rank = dsetup['local_rank']
+    # size = int(get_size())
+    # rank = int(get_rank())
+    # local_rank = int(get_local_rank())
+    os.environ['LOCAL_RANK'] = str(local_rank)
+    os.environ['RANK'] = str(rank)
+    os.environ['WORLD_SIZE'] = str(size)
 
     nthreads = os.environ.get(
         'OMP_NUM_THREADS',
