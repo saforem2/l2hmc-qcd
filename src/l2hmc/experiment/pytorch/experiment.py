@@ -17,9 +17,11 @@ from torch.utils.tensorboard.writer import SummaryWriter
 
 # from l2hmc.common import setup_torch_distributed
 from l2hmc.utils.dist import setup_torch_distributed
+# from l2hmc.utils.logger import get_pylogger
 from l2hmc.configs import NetWeights
 import l2hmc.configs as configs
 from l2hmc.configs import ExperimentConfig
+from l2hmc.dynamics.pytorch.dynamics import Dynamics as ptDynamics
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.experiment.experiment import BaseExperiment
 from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
@@ -27,6 +29,8 @@ from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
 from l2hmc.trainers.pytorch.trainer import Trainer
 from l2hmc.utils.rich import get_console
 
+# log = logging.getLogger(__name__)
+# log = get_pylogger(__name__)
 log = logging.getLogger(__name__)
 
 # LOCAL_RANK = os.environ.get('OMPI_COMM_WORLD_LOCAL_RANK', '0')
@@ -37,6 +41,8 @@ Tensor = torch.Tensor
 # LOCAL_RANK = hvd.local_rank()
 
 
+from hydra.utils import instantiate
+
 class Experiment(BaseExperiment):
     def __init__(
             self,
@@ -46,11 +52,14 @@ class Experiment(BaseExperiment):
             skip: Optional[str | list[str]] = None,
     ) -> None:
         super().__init__(cfg=cfg)
-        assert isinstance(
-            self.config,
-            (ExperimentConfig,
-             configs.ExperimentConfig)
-        )
+        if not isinstance(self.config, ExperimentConfig):
+            self.config = instantiate(cfg)
+        assert isinstance(self.config, ExperimentConfig)
+        # assert isinstance(
+        #     self.config,
+        #     (ExperimentConfig,
+        #      configs.ExperimentConfig)
+        # )
         self.ckpt_dir = self.config.get_checkpoint_dir()
         self.trainer: Trainer = self.build_trainer(
             keep=keep,
@@ -73,6 +82,7 @@ class Experiment(BaseExperiment):
                 f'Initialize WandB from {self._rank}:{self._local_rank}'
             )
             run = super()._init_wandb()
+            assert run is wandb.run
             run.watch(
                 # self.trainer.dynamics,
                 self.trainer.dynamics.networks,
@@ -80,7 +90,6 @@ class Experiment(BaseExperiment):
                 log_graph=True,
                 criterion=self.trainer.loss_fn,
             )
-            assert run is wandb.run
             run.config['SIZE'] = self._size
 
         if self._rank == 0 and self.config.init_aim:
@@ -100,7 +109,7 @@ class Experiment(BaseExperiment):
         self._is_built = True
         assert callable(self.trainer.loss_fn)
         assert isinstance(self.trainer, Trainer)
-        assert isinstance(self.trainer.dynamics, Dynamics)
+        assert isinstance(self.trainer.dynamics, (ptDynamics, Dynamics))
         assert isinstance(self.trainer.lattice, (LatticeU1, LatticeSU3))
         # if not isinstance(self.cfg, ExperimentConfig):
         #     self.cfg = hydra.utils.instantiate(cfg)

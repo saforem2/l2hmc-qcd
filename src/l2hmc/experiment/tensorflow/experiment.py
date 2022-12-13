@@ -6,8 +6,8 @@ a subclass of the base `l2hmc/Experiment` object.
 """
 from __future__ import absolute_import, division, print_function, annotations
 import os
-
 import logging
+
 from omegaconf import DictConfig
 
 from typing import Any, Optional
@@ -23,10 +23,13 @@ import horovod.tensorflow as hvd
 import l2hmc.configs as configs
 from l2hmc.trainers.tensorflow.trainer import Trainer
 from l2hmc.configs import ExperimentConfig
+# from l2hmc.utils.logger import get_pylogger
 
 
 from l2hmc.experiment.experiment import BaseExperiment
 
+# log = logging.getLogger(__name__)
+# log = get_pylogger(__name__)
 log = logging.getLogger(__name__)
 
 # GLOBAL_RANK = hvd.rank()
@@ -105,19 +108,24 @@ class Experiment(BaseExperiment):
         vnet = self.trainer.dynamics._get_vnet(0)
         xnet = self.trainer.dynamics._get_xnet(0, first=True)
 
-        vdot = tf.keras.utils.model_to_dot(vnet,
-                                           show_shapes=True,
-                                           expand_nested=True,
-                                           show_layer_activations=True)
-        xdot = tf.keras.utils.model_to_dot(xnet,
-                                           show_shapes=True,
-                                           expand_nested=True,
-                                           show_layer_activations=True)
-        log.info('Saving model visualizations to: [xnet,vnet].png')
-        outdir = Path(self._outdir).joinpath('network_diagrams')
-        outdir.mkdir(exist_ok=True, parents=True)
-        xdot.write_png(outdir.joinpath('xnet.png').as_posix())
-        vdot.write_png(outdir.joinpath('vnet.png').as_posix())
+        # ddot = tf.keras.utils.model_to_dot(self.trainer.dynamics,
+        #                                    show_shapes=True,
+        #                                    expand_nested=True,
+        #                                    show_layer_activations=True)
+        # vdot = tf.keras.utils.model_to_dot(vnet,
+        #                                    show_shapes=True,
+        #                                    expand_nested=True,
+        #                                    show_layer_activations=True)
+        # xdot = tf.keras.utils.model_to_dot(xnet,
+        #                                    show_shapes=True,
+        #                                    expand_nested=True,
+        #                                    show_layer_activations=True)
+        # log.info('Saving model visualizations to: [xnet,vnet].png')
+        # outdir = Path(self._outdir).joinpath('network_diagrams')
+        # outdir.mkdir(exist_ok=True, parents=True)
+        # # ddot.write_png(outdir.joinpath('dynamics.png').as_posix())
+        # xdot.write_png(outdir.joinpath('xnet.png').as_posix())
+        # vdot.write_png(outdir.joinpath('vnet.png').as_posix())
 
     def update_wandb_config(
             self,
@@ -235,13 +243,14 @@ class Experiment(BaseExperiment):
             nprint: Optional[int] = None,
             nlog: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
-    ):
+    ) -> dict:
         jobdir = self.get_jobdir(job_type='train')
         writer = None
         if RANK == 0:
             writer = self.get_summary_writer()
             writer.set_as_default()  # type:ignore
 
+        # restore = self.config.get('restore', True)
         if self.config.annealing_schedule.dynamic:
             output = self.trainer.train_dynamic(
                 x=x,
@@ -269,6 +278,7 @@ class Experiment(BaseExperiment):
                 beta=beta,
                 nprint=nprint,
                 nlog=nlog,
+                # restore=self.config.restore,
             )
         if self.trainer._is_chief:
             output['dataset'] = self.save_dataset(
