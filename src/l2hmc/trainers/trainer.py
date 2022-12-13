@@ -35,13 +35,13 @@ class BaseTrainer(ABC):
     ):
         self._created = get_timestamp()
         if isinstance(cfg, DictConfig):
-            self.config = instantiate(cfg)
+            self.config: ExperimentConfig = instantiate(cfg)
         else:
-            self.config = cfg
+            self.config: ExperimentConfig = cfg
 
-        assert isinstance(self.config,
-                          (configs.ExperimentConfig,
-                           ExperimentConfig))
+        # assert isinstance(self.config,
+        #                   (configs.ExperimentConfig,
+        #                    ExperimentConfig))
         assert self.config.framework in [
             'pt',
             'tf',
@@ -137,7 +137,7 @@ class BaseTrainer(ABC):
         pass
 
     @abstractmethod
-    def build_dynamics(self):
+    def build_dynamics(self, build_networks: bool = True):
         pass
 
     @abstractmethod
