@@ -129,16 +129,16 @@ def run_ddp(fn: Callable, world_size: int) -> None:
     )
 
 
-def get_rank():
-    return MPI.COMM_WORLD.Get_rank()
+def get_rank() -> int:
+    return int(MPI.COMM_WORLD.Get_rank())
 
 
-def get_size():
-    return MPI.COMM_WORLD.Get_size()
+def get_size() -> int:
+    return int(MPI.COMM_WORLD.Get_size())
 
 
-def get_local_rank():
-    return os.environ.get(
+def get_local_rank() -> int:
+    return int(os.environ.get(
         'PMI_LOCAL_RANK',
         os.environ.get(
             'OMPI_COMM_WORLD_LOCAL_RANK',
@@ -147,7 +147,7 @@ def get_local_rank():
                 '0'
             )
         )
-    )
+    ))
 
 
 def query_environment() -> dict[str, int]:
@@ -237,7 +237,8 @@ def setup_torch_distributed(
     elif be in ['deepspeed', 'ds']:
         init_deepspeed()
         size = get_size()
-        rank = get_rank
+        rank = get_rank()
+        local_rank = get_local_rank()
 
     elif be in ['horovod', 'hvd']:
         import horovod.torch as hvd
