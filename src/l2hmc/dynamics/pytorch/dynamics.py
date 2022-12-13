@@ -22,7 +22,10 @@ from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
 from l2hmc.group.su3.pytorch.group import SU3
 from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
 from l2hmc.network.pytorch.network import NetworkFactory, dummy_network
+# from l2hmc.utils.logger import get_pylogger
 
+# log = logging.getLogger(__name__)
+# log = get_pylogger(__name__)
 log = logging.getLogger(__name__)
 
 TWO_PI = 2. * PI
@@ -118,6 +121,7 @@ class Dynamics(nn.Module):
         self.xshape = self.config.xshape
         self.potential_fn = potential_fn
         self.nlf = self.config.nleapfrog
+        self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
         # state = self.random_state(1.0)
         # self.xdim = self.flatten(state.x).shape[1]
         # self.vdim = self.flatten(state.v).shape[]
@@ -138,6 +142,7 @@ class Dynamics(nn.Module):
             self.networks = self._build_networks(network_factory)
             self.xnet = self.networks['xnet']
             self.vnet = self.networks['vnet']
+
             self.register_module('xnet', self.networks['xnet'])
             self.register_module('vnet', self.networks['vnet'])
             log.debug('Built networks.')
@@ -152,12 +157,13 @@ class Dynamics(nn.Module):
 
         log.debug(f'dynamics._networks_built: {self._networks_built}')
         self.masks = self._build_masks()
+        self._dtype = torch.get_default_dtype()
 
         self.xeps = nn.ParameterList([
             nn.parameter.Parameter(
                 torch.tensor(
                     self.config.eps,
-                ).clamp(min=0.0),
+                ).to(self._dtype).to(self._device),  # .clamp(min=0.0),
                 requires_grad=(not self.config.eps_fixed)
             )
             for _ in range(self.config.nleapfrog)
@@ -166,7 +172,7 @@ class Dynamics(nn.Module):
             nn.parameter.Parameter(
                 torch.tensor(
                     self.config.eps,
-                ).to(torch.float).clamp(min=0.0),
+                ).to(self._dtype).to(self._device),  # .clamp(min=0.0),
                 requires_grad=(not self.config.eps_fixed),
             )
             for _ in range(self.config.nleapfrog)
@@ -176,11 +182,40 @@ class Dynamics(nn.Module):
         if torch.cuda.is_available():
             self.xeps = self.xeps.cuda()
             self.veps = self.veps.cuda()
-            if network_factory is not None and self._networks_built:
+            self.cuda()
+            if self._networks_built:
                 self.xnet.cuda()
                 self.vnet.cuda()
+            # if network_factory is not None and self._networks_built:
+            #     self.xnet.cuda()
+            #     self.vnet.cuda()
             # self.networks.cuda()
-            self.cuda()
+            # self.cuda()
+
+    def get_models(self) -> dict:
+        if self.config.use_separate_networks:
+            xnet = {}
+            vnet = {}
+            for lf in range(self.config.nleapfrog):
+                vnet[str(lf)] = self._get_vnet(lf)
+                if self.config.use_split_xnets:
+                    xnet[str(lf)] = {
+                        '0': self._get_xnet(lf, first=True),
+                        '1': self._get_xnet(lf, first=False),
+                    }
+                else:
+                    xnet[str(lf)] = self._get_xnet(lf, first=True)
+        else:
+            vnet = self._get_vnet(0)
+            if self.config.use_split_xnets:
+                xnet = {
+                    '0': self._get_xnet(0, first=True),
+                    '1': self._get_xnet(0, first=False),
+                }
+            else:
+                xnet = self._get_xnet(0, first=True)
+
+        return {'xnet': xnet, 'vnet': vnet}
 
     def _build_networks(
             self,
@@ -313,31 +348,47 @@ class Dynamics(nn.Module):
 
     def assign_eps(
             self,
-            eps: dict[str, dict[str, Tensor]]
+            eps: float | tuple[float, float] | dict[str, dict[str, Tensor]]
     ) -> None:
-        xe = eps['xeps']
-        ve = eps['veps']
+        if isinstance(eps, dict):
+            xe = eps['xeps']
+            ve = eps['veps']
+        elif isinstance(eps, tuple):
+            xe_, ve_ = eps
+            xe = {str(n): xe_ for n in range(self.config.nleapfrog)}
+            ve = {str(n): ve_ for n in range(self.config.nleapfrog)}
+        elif isinstance(eps, float):
+            xe = {str(n): eps for n in range(self.config.nleapfrog)}
+            ve = {str(n): eps for n in range(self.config.nleapfrog)}
+        else:
+            raise TypeError
+
         rg = (not self.config.eps_fixed)
-        xeps = {}
-        veps = {}
+        # xeps = {}
+        # veps = {}
+        self.xeps = nn.ParameterList()
+        self.veps = nn.ParameterList()
         for lf in range(self.config.nleapfrog):
-            xe[str(lf)] = nn.parameter.Parameter(
+            self.xeps.append(nn.parameter.Parameter(
                 data=torch.tensor(xe[str(lf)]), requires_grad=rg
-            )
-            ve[str(lf)] = nn.parameter.Parameter(
+            ))
+            self.veps.append(nn.parameter.Parameter(
                 data=torch.tensor(ve[str(lf)]), requires_grad=rg
-            )
+            ))
 
-        xeps = nn.ParameterDict(xeps)
-        veps = nn.ParameterDict(veps)
+        # self.xeps = xeps
+        # self.veps = veps
+        # xeps = nn.ParameterDict(xeps)
+        # veps = nn.ParameterDict(veps)
 
-        self.xeps = xeps
-        self.veps = veps
 
     def forward(
             self,
             inputs: tuple[Tensor, Tensor]
     ) -> tuple[Tensor, dict]:
+        x, beta = inputs
+        x = x.to(self._device).to(self._dtype)
+        beta = beta.to(self._device).to(self._dtype)
         if self.config.merge_directions:
             outputs = self.apply_transition_fb(inputs)
         else:
@@ -654,10 +705,14 @@ class Dynamics(nn.Module):
                 history=history,
             )
         eps = self.config.eps_hmc if eps is None else eps
+
         nlf = (
             self.config.nleapfrog if not self.config.merge_directions
             else 2 * self.config.nleapfrog
         )
+        if eps is None:
+            eps = 1. / nlf
+            log.warning(f'Using eps = 1 / {nlf} = {eps:.3f}')
         assert nlf <= 2 * self.config.nleapfrog
         nleapfrog = nlf if nleapfrog is None else nleapfrog
 
@@ -987,38 +1042,39 @@ class Dynamics(nn.Module):
 
     def vec_to_group(self, x: Tensor) -> Tensor:
         """Inverts `group_to_vec` operation."""
-        x_ = self.unflatten(x)
+        x = self.unflatten(x)
         # if isinstance(self.g, SU3):
         if self.config.group == 'SU3':
-            return self.g.vec_to_group(x_)
+            return self.g.vec_to_group(x)
 
-        return torch.complex(x_[..., 0], x_[..., 1])
+        return torch.complex(x[..., 0], x[..., 1])
 
     def _update_v_fwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the forward direction"""
         assert isinstance(self.veps, nn.ParameterList)
-        eps = self.veps[step]
+        # eps = self.veps[step]  # .clamp_min_(0.)
+        eps = self.veps[step].to(state.x.dtype)
         force = self.grad_potential(state.x, state.beta)
         force = force.reshape_as(state.v)
         # x = self.g.compat_proj(state.x)
-        x = state.x
-        v = state.v
-        # if isinstance(self.g, SU3):
-        if self.config.group == 'SU3':
-            x = self.group_to_vec(state.x)
-            v = self.group_to_vec(state.v)
-            force = self.group_to_vec(force)
+        # x = state.x
+        # v = state.v
+        # # if isinstance(self.g, SU3):
+        # if self.config.group == 'SU3':
+        #     x = self.group_to_vec(state.x)
+        #     v = self.group_to_vec(state.v)
+        #     force = self.group_to_vec(force)
 
-        s, t, q = self._call_vnet(step, (x, force))
+        s, t, q = self._call_vnet(step, (state.x, force))
 
         logjac = eps * s / 2.  # jacobian factor, also used in exp_s below
         logdet = self.flatten(logjac).sum(1)
 
         # if isinstance(self.g, SU3):
         if self.config.group == 'SU3':
-            exps_ = self.g.exp(logjac.reshape_as(state.x))
-            expt_ = self.g.exp(t.reshape_as(state.x))
-            expq_ = self.g.exp(q.reshape_as(state.x))
+            exps_ = self.g.exp(self.unflatten(logjac))
+            expt_ = self.g.exp(self.unflatten(t))
+            expq_ = self.g.exp(self.unflatten(q))
             z = torch.zeros_like(exps_)
             exp_s = self.group_to_vec(torch.complex(exps_, z))
             t = self.group_to_vec(torch.complex(expt_, z))
@@ -1031,7 +1087,7 @@ class Dynamics(nn.Module):
             raise TypeError
             # t = t.reshape_as(force)
 
-        vf = exp_s * v - 0.5 * eps * (force * exp_q + t)
+        vf = exp_s * state.v - 0.5 * eps * (force * exp_q + t)
         # if isinstance(self.g, SU3):
         if self.config.group == 'SU3':
             vf = self.g.projectTAH(
@@ -1043,7 +1099,7 @@ class Dynamics(nn.Module):
     def _update_v_bwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the backward direction"""
         assert isinstance(self.veps, nn.ParameterList)
-        eps = self.veps[step]
+        eps = self.veps[step]  # .clamp_min_(0.)
         force = self.grad_potential(state.x, state.beta)
         # x = self.g.compat_proj(state.x)
         x = state.x
@@ -1060,9 +1116,9 @@ class Dynamics(nn.Module):
         # logdet = logjac.flatten(1).sum(dim=1)
         logdet = self.flatten(logjac).sum(dim=1)
         if self.config.group == 'SU3':
-            exps_ = self.g.exp(logjac.reshape_as(state.x))
-            expt_ = self.g.exp(t.reshape_as(state.x))
-            expq_ = self.g.exp(q.reshape_as(state.x))
+            exps_ = self.g.exp(self.unflatten(logjac))
+            expt_ = self.g.exp(self.unflatten(t))
+            expq_ = self.g.exp(self.unflatten(q))
             z = torch.zeros_like(exps_)
             exp_s = self.group_to_vec(torch.complex(exps_, z))
             t = self.group_to_vec(torch.complex(expt_, z))
@@ -1088,8 +1144,10 @@ class Dynamics(nn.Module):
             first: bool,
     ) -> tuple[State, Tensor]:
         """Single x update in the forward direction"""
-        assert isinstance(self.xeps, nn.ParameterList)
-        eps = self.xeps[step]
+        # assert isinstance(self.xeps, nn.ParameterList)
+        eps = self.xeps[step]  # .clamp_min_(0.)
+        # assert isinstance(eps, (Tensor, nn.parameter.Parameter))
+        # eps.clamp_min_(eps)
         mb = (torch.ones_like(m) - m).to(self.device)
         # if isinstance(self.g, SU3):
         if self.config.group == 'SU3':
@@ -1176,7 +1234,7 @@ class Dynamics(nn.Module):
     ) -> tuple[State, Tensor]:
         """Update the position in the backward direction."""
         assert isinstance(self.xeps, nn.ParameterList)
-        eps = self.xeps[step]
+        eps = self.xeps[step]  # .clamp_min_(0.)
         mb = (torch.ones_like(m) - m).to(self.device)
         # if isinstance(self.g, SU3):
         if self.config.group == 'SU3':
