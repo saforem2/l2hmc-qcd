@@ -14,22 +14,52 @@ from pathlib import Path
 import hydra
 from typing import Optional
 from omegaconf.dictconfig import DictConfig
+from rich.logging import RichHandler
 
 from l2hmc.configs import ExperimentConfig
 from l2hmc.utils.rich import print_config
+# from l2hmc.utils.logger import get_pylogger
 from l2hmc.utils.plot_helpers import set_plot_style
 
 warnings.filterwarnings('ignore')
 set_plot_style()
 
-log = logging.getLogger(__name__)
+# rlog = get_pylogger('root')
+# rlog.handlers = RichHandler()
+# log = get_pylogger(__name__)
 
-logging.getLogger('aim').setLevel(logging.CRITICAL)
+# log.handlers = []
+# log.parent.handlers = []
+# if log.hasHandlers():
+#     log.handlers = []
+
+# log.handlers = [handler]
+
+logging.getLogger('wandb').setLevel(logging.INFO)
+logging.getLogger('aim').setLevel(logging.ERROR)
 logging.getLogger('filelock').setLevel(logging.CRITICAL)
 logging.getLogger('matplotlib').setLevel(logging.CRITICAL)
 logging.getLogger('PIL.PngImagePlugin').setLevel(logging.CRITICAL)
 logging.getLogger('graphviz._tools').setLevel(logging.CRITICAL)
 logging.getLogger('graphviz').setLevel(logging.CRITICAL)
+
+from l2hmc.utils.rich import get_console
+console = get_console()
+handler = RichHandler(
+    rich_tracebacks=True,
+    tracebacks_show_locals=True,
+    console=console,
+    show_path=False,
+    log_time_format='[%Y-%m-%d %H:%M:%S]',
+    enable_link_path=False,
+)
+# log = get_pylogger(
+#     name='root',
+#     handler=handler
+# )
+log = logging.getLogger()
+log.handlers = [handler]
+log.setLevel('INFO')
 
 
 def get_experiment(
@@ -67,9 +97,13 @@ def get_experiment(
     )
 
 
-def run(cfg: DictConfig) -> str:
+def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
     # --- [0.] Setup ------------------------------------------------------
     # setup(cfg)
+    if overrides is not None:
+        from l2hmc.configs import get_config
+        cfg.update(get_config(overrides))
+
     ex = get_experiment(cfg)
     assert isinstance(ex.config, ExperimentConfig)
 
@@ -112,9 +146,23 @@ def run(cfg: DictConfig) -> str:
             experiment=ex,
             title=f'{ex.config.framework}',
         )
+        if ex.config.init_wandb:
+            if ex.run is not None and ex.run is wandb.run:
+                ex.run.log({'model_improvement': improvement})
         log.critical(f'Model improvement: {improvement:.8f}')
 
     return Path(ex._outdir).as_posix()
+
+
+def build_experiment(overrides: Optional[str | list[str]] = None):
+    import warnings; warnings.filterwarnings('ignore')
+    from l2hmc.configs import get_config
+    if isinstance(overrides, str):
+        overrides = [overrides]
+
+    cfg = get_config(overrides)
+    exp = get_experiment(cfg=cfg)
+    return exp
 
 
 @hydra.main(version_base=None, config_path='./conf', config_name='config')
