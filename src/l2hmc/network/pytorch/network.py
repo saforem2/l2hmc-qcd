@@ -24,8 +24,10 @@ from l2hmc.configs import (
 )
 
 from l2hmc.network.factory import BaseNetworkFactory
+# from l2hmc.utils.logger import get_pylogger
 
 
+# log = get_pylogger(__name__)
 log = logging.getLogger(__name__)
 
 Tensor = torch.Tensor
@@ -39,6 +41,20 @@ ACTIVATION_FNS = {
     'swish': nn.SiLU(),
     'leaky_relu': nn.LeakyReLU(),
 }
+
+
+def nested_children(m: nn.Module) -> dict[str, nn.Module]:
+    children = dict(m.named_children())
+    if len(list(children.keys())) == 0:
+        return {m._get_name(): m}
+
+    output = {}
+    for name, child in children.items():
+        if isinstance(child, nn.Module):
+            output[name] = nested_children(child)
+        else:
+            output[name] = child
+    return output
 
 
 def flatten(x: torch.Tensor) -> torch.Tensor:
@@ -135,8 +151,13 @@ class PeriodicPadding(nn.Module):
     def __init__(self, size: int):
         super().__init__()
         self.size = size
+        if torch.cuda.is_available():
+            self.cuda()
 
     def forward(self, x: Tensor) -> Tensor:
+        if torch.cuda.is_available():
+            x = x.cuda()
+
         assert len(x.shape) >= 3, 'Expected len(x.shape) >= 3'
         assert isinstance(x, Tensor)
         x0 = x[:, :, -self.size:, :]
@@ -163,7 +184,7 @@ class ScaledTanh(nn.Module):
                 out_features,
                 requires_grad=True,
                 device=DEVICE
-            ).exp()
+            )  # .exp()
         )
         # self.coeff = torch.zeros(1, out_features, requires_grad=True)
         self.layer = nn.Linear(
@@ -172,7 +193,7 @@ class ScaledTanh(nn.Module):
             bias=False,
             device=DEVICE,
         )
-        self.tanh = nn.Tanh()
+        # self.tanh = nn.Tanh()
         self._with_cuda = False
         if torch.cuda.is_available():
             self._with_cuda = True
@@ -183,7 +204,7 @@ class ScaledTanh(nn.Module):
     def forward(self, x):
         if self._with_cuda:
             x = x.cuda()
-        return self.coeff * F.tanh(self.layer(x))
+        return self.coeff.exp() * F.tanh(self.layer(x))
 
 
 def calc_output_size(
@@ -312,10 +333,13 @@ class ConvStack(nn.Module):
             self.layers.append(nn.BatchNorm1d(-1))
         self.layers.append(nn.LazyLinear(self.xdim))
         self.layers.append(self.activation_fn)
+        if torch.cuda.is_available():
+            self.cuda()
 
     def forward(self, x: Tensor) -> Tensor:
         x.requires_grad_(True)
         x = x.to(DEVICE)
+        self.to(x.dtype)
         if x.shape != self.xshape:
             try:
                 x = x.reshape(x.shape[0], self.d + 2, self.nt, self.nx)
@@ -341,6 +365,8 @@ class InputLayer(nn.Module):
         self.xshape = xshape
         self.net_config = network_config
         self.units = self.net_config.units
+        # self._dtype = torch.get_default_dtype()
+        self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.xdim = np.cumprod(xshape[1:])[-1]
         self._with_cuda = torch.cuda.is_available()
 
@@ -363,6 +389,7 @@ class InputLayer(nn.Module):
         self.conv_config = conv_config
         self.activation_fn = activation_fn
         conv_stack = nn.Identity()
+        # vconv_stack = nn.Identity()
         if conv_config is not None:
             if (
                     conv_config.filters is not None
@@ -373,6 +400,11 @@ class InputLayer(nn.Module):
                     conv_config=conv_config,
                     activation_fn=self.activation_fn,
                 )
+                # vconv_stack = ConvStackr
+                #     xshape=xshape,
+                #     conv_config=conv_config,
+                #     activation_fn=self.activation_fn
+                # )
         # self.register_module('conv_stack', conv_stack)
         self.conv_stack = conv_stack
         self.xlayer = nn.LazyLinear(
@@ -384,7 +416,11 @@ class InputLayer(nn.Module):
             device=DEVICE
         )
         if torch.cuda.is_available():
+            self.conv_stack.cuda()
+            self.xlayer.cuda()
+            self.vlayer.cuda()
             self.cuda()
+            # self.to(self._dtype)
 
     def forward(
             self,
@@ -396,9 +432,13 @@ class InputLayer(nn.Module):
         if self._with_cuda:
             x = x.cuda()
             v = v.cuda()
+            # x = x.to(self._device).to(self._dtype)
+            # v = v.to(self._device).to(self._dtype)
+            # x = x.cuda()
+            # v = v.cuda()
         # self.vlayer.to(v.dtype)
         # self.xlayer.to(x.dtype)
-        # if self.conv_stack is not None:
+        if self.conv_stack is not None:
             x = self.conv_stack(x)
 
         v = self.vlayer(flatten(v))
@@ -425,6 +465,8 @@ class LeapfrogLayer(nn.Module):
         self.net_config = network_config
         self.name = name if name is not None else 'network'
         self.xdim = np.cumprod(xshape[1:])[-1]
+        self._dtype = torch.get_default_dtype()
+        self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self._with_cuda = torch.cuda.is_available()
         act_fn = self.net_config.activation_fn
         if isinstance(act_fn, str):
@@ -461,6 +503,7 @@ class LeapfrogLayer(nn.Module):
 
         if torch.cuda.is_available():
             self.cuda()
+            # self.to(self._dtype)
             self.input_layer.cuda()
             self.hidden_layers.cuda()
             self.scale.cuda()
@@ -477,6 +520,8 @@ class LeapfrogLayer(nn.Module):
         x, v = inputs
         x.requires_grad_(True)
         v.requires_grad_(True)
+        # x = x.to(self._device).to(self._dtype)
+        # v = v.to(self._device).to(self._dtype)
         if self._with_cuda:
             x = x.cuda()
             v = v.cuda()

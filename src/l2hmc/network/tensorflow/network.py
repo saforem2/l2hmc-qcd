@@ -24,6 +24,8 @@ from l2hmc.network.tensorflow.utils import PeriodicPadding
 
 Tensor = tf.Tensor
 Model = tf.keras.Model
+# Layers = tf.keras.layers.Layers
+Layer = tf.keras.layers.Layer
 Add = tf.keras.layers.Add
 Input = tf.keras.layers.Input
 Dense = tf.keras.layers.Dense
@@ -92,26 +94,70 @@ def zero_weights(model: Model) -> Model:
     return model
 
 
-class ScaledTanh(tf.keras.Model):
-    def __init__(self, out_features: int, name: Optional[str]) -> None:
-        super(ScaledTanh, self).__init__(name=name)
-        self.coeff = tf.math.exp(
-            tf.Variable(
-                trainable=True,
-                dtype=TF_FLOAT,
-                initial_value=tf.zeros(
-                    [1, out_features],
-                    dtype=TF_FLOAT
-                ),
-            )
+class ScaledTanh(Layer):
+    def __init__(
+            self,
+            out_features: int,
+            name: Optional[str],
+            **kwargs,
+    ) -> None:
+        super(ScaledTanh, self).__init__(name=name, **kwargs)
+        self.out_features = out_features
+        # self.coeff = tf.math.exp(
+        # self.coeff = tf.Variable(
+        #     trainable=True,
+        #     dtype=TF_FLOAT,
+        #     initializer='random_normal',
+        #     trainable=True,
+        #     shape=(1, self.out_features),
+        #     # initial_value=tf.zeros(
+        #     #     [1, out_features],
+        #     #     dtype=TF_FLOAT
+        #     # ),
+        # )
+        self.dense = Dense(out_features, use_bias=False)
+
+    def get_layer_weights(self) -> dict:
+        return {
+            'coeff': self.coeff,
+            'dense/weight': self.dense.weights,
+        }
+
+    def get_weights_dict(
+            self,
+            sep: str = '/',
+            name: Optional[str] = None,
+    ) -> dict:
+        name = self.name if name is None else name
+        weights = self.get_layer_weights()
+        return {
+            sep.join([name, k]): v
+            for k, v in weights.items()
+        }
+
+    def get_config(self):
+        config = super(ScaledTanh, self).get_config()
+        config.update({
+            'out_features': self.out_features,
+        })
+
+    def build(self, input_shape):  # pyright:ignore
+        """Create the state of the layer (weights)."""
+        self.coeff = self.add_weight(
+            name='coeff',
+            shape=(1, self.out_features),
+            initializer='zeros',
+            trainable=True,
         )
-        self.layer = Dense(out_features, use_bias=False)
 
     def call(self, x):
-        return self.coeff * tf.math.tanh(self.layer(x))
+        return (
+            tf.math.exp(self.coeff)
+            * tf.math.tanh(self.dense(x))
+        )
 
 
-class ConvStack(tf.keras.Model):
+class ConvStack(Layer):
     def __init__(
             self,
             xshape: list[int] | tuple[int],
@@ -119,42 +165,58 @@ class ConvStack(tf.keras.Model):
             activation_fn: str | Callable,
             use_batch_norm: bool = False,
             name: Optional[str] = None,
+            **kwargs,
     ) -> None:
-        super(ConvStack, self).__init__(name=name)
+        super(ConvStack, self).__init__(name=name, **kwargs)
         # xshape will be of the form
         # [batch, dim, *lattice_shape, *link_shape]
         # -- Cases ------------------------------------------------------
         # 1. xshape: [dim, nt, nx]
+        self.conv_config = conv_config
+        self.use_batch_norm = use_batch_norm
         if len(xshape) == 3:
             # lattice_shape: [nt, nx]
-            ny, nz = 0, 0
-            d, nt, nx = xshape[0], xshape[1], xshape[2]
+            # ny, nz = 0, 0
+            # d, nt, nx = xshape[0], xshape[1], xshape[2]
+            d, *latvol = xshape[0], *xshape[1:]
 
         # 2. xshape: [batch, dim, nt, nx]
         elif len(xshape) == 4:
             # lattice_shape: [nt, nx]
-            ny, nz = 0, 0
-            _, d, nt, nx = xshape[0], xshape[1], xshape[2], xshape[3]
+            # ny, nz = 0, 0
+            # _, d, nt, nx = xshape[0], xshape[1], xshape[2], xshape[3]
+            _, d, *latvol = xshape[0], xshape[1], *xshape[2:]
 
         # 3. xshape: [batch, dim, nt, nx, ny, nz, 3, 3]
         elif len(xshape) == 8:
             # link_shape: [3, 3]
             # lattice_shape = [nt, nx, ny, nz]
+            # d, *latvol, *lshape = (
+            #     xshape[1],
+            #     *xshape[2:-2],
+            #     *(xshape[-2], xshape[-1]),
+            # )
             d = xshape[1]
-            nt, nx, ny, nz = xshape[2], xshape[3], xshape[4], xshape[5]
+            latvol = xshape[2:-2]
+            # nt, nx, ny, nz = xshape[2], xshape[3], xshape[4], xshape[5]
         else:
             raise ValueError(f'Invalid value for xshape: {xshape}')
         # ---------------------------------------------------------------
         self.d = d
-        self.nt = nt
-        self.ny = ny
-        self.nz = nz
-        self.nx = nx
+        self.latvol = latvol
+        self.xdim = d * np.cumprod(latvol)[-1]
+        # self.nt = nt
+        # self.ny = ny
+        # self.nz = nz
+        # self.nx = nx
         self.xshape = xshape
-        self.xdim = d * nt * nx
+        # self.xdim = d * nt * nx
         self.activation_fn = get_activation(activation_fn)
         self.flatten = Flatten()
         self.conv_layers = []
+        # self._layers_dict = {}
+        self._layers_names = []
+        idx = 0
         if (nfilters := len(conv_config.filters)) > 0:
             if (
                     conv_config.sizes is not None
@@ -164,14 +226,24 @@ class ConvStack(tf.keras.Model):
                         zip(conv_config.filters,
                             conv_config.sizes)
                 ):
+                    # self._layers_dict[idx] = PeriodicPadding(n - 1)
+                    # self._layers_names.append(f'PeriodicPadding{idx}')
                     self.conv_layers.append(
                         PeriodicPadding(n - 1)
                     )
+                    # self._layers_dict[idx] = Conv2D(
+                    #     filters=f,
+                    #     kernel_size=n,
+                    #     activation=self.activation_fn,
+                    # )
+                    cname = f'Conv2D-{idx}'
+                    self._layers_names.append(cname)
                     self.conv_layers.append(
                         Conv2D(
                             filters=f,
                             kernel_size=n,
-                            activation=self.activation_fn
+                            activation=self.activation_fn,
+                            name=cname,
                         )
                     )
                     if (idx + 1) % 2 == 0:
@@ -179,30 +251,99 @@ class ConvStack(tf.keras.Model):
                             2 if conv_config.pool is None
                             else conv_config.pool[idx]
                         )
+                        # self._layers_dict[idx] = MaxPooling2D(
+                        #     (p, p),
+                        #     name=f'{name}/xPool{idx}'
+                        # )
+                        # self._layers_names.append(f'MaxPooling2D{idx}')
                         self.conv_layers.append(
                             MaxPooling2D((p, p), name=f'{name}/xPool{idx}')
                         )
 
-        self.conv_layers.append(Flatten())
+        # self.conv_layers.append(Flatten())
+        # self._layers_dict[idx + 1] = Flatten()
+        # self._layers_names.append(f'Flatten')
+        self.batch_norm = None
         if use_batch_norm:
-            self.conv_layers.append(BatchNormalization(-1))
+            self.batch_norm = BatchNormalization(-1)
+            # self._layers_dict[idx + 2] = BatchNormalization(-1)
+            # self._layers_names.append('BatchNorm')
 
-        self.conv_layers.append(
-            Dense(self.xdim, activation=self.activation_fn)
+        self.output_layer = Dense(
+                self.xdim,
+                activation=self.activation_fn
         )
+        # self.conv_layers.append(
+        #     Dense(self.xdim, activation=self.activation_fn)
+        # )
+        # self._layers_dict[idx + 2] = Dense(
+        #     self.xdim,
+        #     activation=self.activation_fn
+        # )
+        # self._layers_names.append('Dense')
 
-    def call(self, x: Tensor) -> Tensor:
+    def get_layer_weights(self) -> dict:
+        weights = {}
+        # for idx, layer in self.conv_layers:
+        for name, layer in zip(self._layers_names, self.conv_layers):
+            lweights = getattr(layer, 'weights', [])
+            if len(lweights) > 0:
+                weights.update({
+                    f'{name}/weight': lweights
+                })
+        w, b = self.output_layer.weights
+        if self.batch_norm is not None:
+            assert isinstance(self.batch_norm, tf.keras.layers.BatchNorm)
+            g, b, m, s = self.batch_norm.weights
+            pre = 'batch_norm'
+            weights.update({
+                f'{pre}/gamma': g,
+                f'{pre}/beta': b,
+                f'{pre}/moving_avg': m,
+                f'{pre}/moving_std': s,
+            })
+        weights.update({
+            'DenseOutput.weight': w,
+            'DenseOutput.bias': b,
+        })
+
+        return weights
+
+    def get_weights_dict(
+            self,
+            sep: str = '/',
+            name: Optional[str] = None,
+    ) -> dict:
+        name = self.name if name is None else name
+        weights = self.get_layer_weights()
+        return {
+            sep.join([name, k]): v
+            for k, v in weights.items()
+        }
+
+    def get_config(self):
+        config = super(ConvStack, self).get_config()
+        config.update({
+            'xshape': self.xshape,
+            'conv_config': self.conv_config,
+            'activation_fn': self.activation_fn,
+            'use_batch_norm': self.use_batch_norm,
+        })
+
+    def call(self, x: Tensor, training: Optional[bool] = None) -> Tensor:
         if x.shape != self.xshape:
             if len(x.shape) == 2:
                 try:
                     x = tf.reshape(
                         x,
-                        [x.shape[0], self.d + 2, self.nt, self.nx]
+                        (x.shape[0], self.d + 2, *self.latvol),
+                        # [x.shape[0], self.d + 2, self.nt, self.nx]
                     )
                 except ValueError:
                     x = tf.reshape(
                         x,
-                        [x.shape[0], self.d, self.nt, self.nx]
+                        (x.shape[0], self.d, *self.latvol),
+                        # [x.shape[0], self.d, self.nt, self.nx]
                     )
 
         # if tf.argmin(x.shape) == 1:
@@ -224,10 +365,16 @@ class ConvStack(tf.keras.Model):
         for layer in self.conv_layers:
             x = layer(x)
 
+        x = self.flatten(x)
+        if self.batch_norm is not None:
+            x = self.batch_norm(x, training=training)
+
+        x = self.output_layer(x)
+
         return x
 
 
-class InputLayer(tf.keras.Model):
+class InputLayer(Layer):
     def __init__(
             self,
             xshape: list[int],
@@ -272,6 +419,34 @@ class InputLayer(tf.keras.Model):
         self.xlayer = Dense(self.net_config.units[0])
         self.vlayer = Dense(self.net_config.units[0])
 
+    def get_weights_dict(self) -> dict:
+        weights = {}
+        if (
+                self.conv_config is not None
+                and len(self.conv_config.filters) > 0
+                and self.conv_stack is not None
+        ):
+            if self.conv_stack is not None:
+                wd = self.conv_stack.get_weights_dict()
+                weights.update({
+                    f'{self.name}/ConvStack': wd,
+                })
+        # if self.conv_stack is not None:
+        #     weights.update({
+        #         f'{self.name}.ConvStack': self.conv_stack.get_weights_dict()
+        #     })
+
+        xw, xb = self.xlayer.weights
+        vw, vb = self.vlayer.weights
+        weights.update({
+            f'{self.name}/xlayer/w': xw,
+            f'{self.name}/xlayer/b': xb,
+            f'{self.name}/vlayer/w': vw,
+            f'{self.name}/vlayer/b': vb,
+        })
+
+        return weights
+
     def call(
             self,
             inputs: tuple[Tensor, Tensor]
@@ -288,7 +463,7 @@ class InputLayer(tf.keras.Model):
         return self.activation_fn(x + v)
 
 
-class LeapfrogLayer(tf.keras.Model):
+class LeapfrogLayer(Layer):
     def __init__(
             self,
             xshape: list[int],
@@ -322,12 +497,12 @@ class LeapfrogLayer(tf.keras.Model):
         self.units = self.net_config.units
         self.hidden_layers = []
         for idx, units in enumerate(self.units[1:]):
-            h = Dense(units, name=f'{name}_hLayer{idx}')
+            h = Dense(units, name=f'hidden.{idx}')
             self.hidden_layers.append(h)
 
-        self.scale = ScaledTanh(self.xdim, name=f'{name}_ScaledTanh')
-        self.transf = ScaledTanh(self.xdim, name=f'{name}_ScaledTanh')
-        self.transl = Dense(self.xdim)
+        self.scale = ScaledTanh(self.xdim, name=f'scale')
+        self.transf = ScaledTanh(self.xdim, name=f'transf')
+        self.transl = Dense(self.xdim, name='transl')
 
         self.dropout = None
         if self.net_config.dropout_prob > 0.:
@@ -336,6 +511,43 @@ class LeapfrogLayer(tf.keras.Model):
         self.batch_norm = None
         if self.net_config.use_batch_norm:
             self.batch_norm = BatchNormalization(-1, name=f'{name}_batchnorm')
+
+    def get_layer_weights(self) -> dict:
+        weights = {}
+        # iweights = self.input_layer.get_weights_dict()
+        weights.update({
+            'input_layer': self.input_layer.get_weights_dict()
+        })
+        for idx, layer in enumerate(self.hidden_layers):
+            w, b = layer.weights
+            weights.update({})
+            weights[f'hidden_layers.{idx}.weight'] = w
+            weights[f'hidden_layers.{idx}.bias'] = b
+
+        weights.update({
+            'scale': self.scale.get_weights_dict()
+        })
+        tw, tb = self.transl.weights
+        weights.update({
+            'transl.weight': tw,
+            'transl.bias': tb,
+        })
+        weights.update({
+            'transf': self.transf.get_weights_dict()
+        })
+
+        return weights
+
+    def get_weights_dict(
+            self,
+            sep: str = '/',
+            name: Optional[str] = None,
+    ) -> dict:
+        name = self.name if name is None else name
+        weights = self.get_layer_weights()
+        return {
+            sep.join([name, k]): v for k, v in weights.items()
+        }
 
     def set_net_weight(self, net_weight: NetWeight):
         self.nw = net_weight
@@ -389,10 +601,12 @@ class NetworkFactory(BaseNetworkFactory):
             return {
                 'xnet': LeapfrogLayer(
                     **cfg['xnet'],
+                    name='xnet',
                     group=group
                 ),
                 'vnet': LeapfrogLayer(
                     **cfg['vnet'],
+                    name='vnet',
                     group=group
                 ),
             }
