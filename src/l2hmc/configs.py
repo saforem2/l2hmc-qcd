@@ -23,8 +23,8 @@ import rich.repr
 
 
 # logger = get_pylogger(__name__)
-log = logging.getLogger(__name__)
-# logger = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 # -- Configure useful Paths -----------------------
@@ -68,6 +68,10 @@ SYNONYMS = {
     ],
     'DDP': [
         'ddp',
+    ],
+    'deepspeed': [
+        'ds',
+        'deepspeed',
     ]
 }
 
@@ -493,12 +497,20 @@ class ExperimentConfig(BaseConfig):
     def __post_init__(self):
         self.xdim = self.dynamics.xdim
         self.xshape = self.dynamics.xshape
-        self.ds_config = {}
-        if self.ds_config_path is not None:
-            assert Path(self.ds_config_path).is_file()
-            self.ds_config.update({
-                json.load(self.ds_config_path)
-            })
+        # self.ds_config = {}
+        # if self.ds_config_path is not None:
+        #     fpath = Path(self.ds_config_path)
+        #     assert fpath.is_file()
+        #     with fpath.open('r') as f:
+        #         self.ds_config.update(
+        #             json.load(f)
+        #         )
+
+        #     # assert Path(self.ds_config_path).is_file()
+        #     # with open(Path())
+        #     # self.ds_config.update({
+        #     #     json.load(self.ds_config_path)
+        #     # })
 
         w = int(os.environ.get('COLUMNS', 235))
         self.width = w if self.width is None else self.width
@@ -509,7 +521,9 @@ class ExperimentConfig(BaseConfig):
                 logger.warning('Backend not specified, using DDP')
                 self.backend = 'DDP'
 
-            assert self.backend.lower() in ['hvd', 'horovod', 'ddp']
+            assert self.backend.lower() in [
+                'hvd', 'horovod', 'ddp', 'ds', 'deepspeed',
+            ]
         else:
             raise ValueError(
                 f'Unexpected value for framework: {self.framework}'
@@ -540,13 +554,16 @@ class ExperimentConfig(BaseConfig):
 
     def rank(self):
         if self.framework in SYNONYMS['pytorch']:
-            if self.backend in SYNONYMS['horovod']:
+            if self.backend.lower() in SYNONYMS['horovod']:
                 import horovod.torch as hvd
                 if not hvd.is_initialized():
                     hvd.init()
                 return hvd.rank()
-            elif self.backend in SYNONYMS['DDP']:
+            elif self.backend.lower() in SYNONYMS['DDP']:
                 return int(os.environ.get('RANK', 0))
+            elif self.backend.lower() in SYNONYMS['deepspeed']:
+                import torch.distributed as dist
+                return dist.get_rank()
         elif self.framework in SYNONYMS['tensorflow']:
             import horovod.tensorflow as hvd
             if not hvd.is_initialized():
