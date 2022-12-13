@@ -139,7 +139,7 @@ def log_model_weights1(
 ):
     # assert isinstance(model, Model)
     # log_list(model.variables, step=step, prefix=prefix)
-    prefix = f'Dynamics/{prefix}' if prefix is not None else 'Dynamics'
+    prefix = f'model/{prefix}' if prefix is not None else 'model'
     name = getattr(model, 'name', None)
     if name is not None:
             prefix += f'/{name}'
@@ -214,7 +214,7 @@ def update_summaries(
         log_dict(
             flatten_dict(weights),
             step=step,
-            prefix='Dynamics'
+            prefix='model'
         )
 
     if optimizer is not None:

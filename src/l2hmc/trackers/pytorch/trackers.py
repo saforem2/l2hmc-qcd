@@ -134,8 +134,8 @@ def update_summaries(
     if model is not None:
         for name, param in model.named_parameters():
             if param.requires_grad:
-                tag = f'Dynamics/{name}'
-                log_item(writer=writer, val=param.detach(), step=step, tag=tag)
+                tag = f'model/{name}'
+                log_item(writer=writer, val=param, step=step, tag=tag)
         # children = nested_children(model)
         # for name, child in children.items():
         #     log_item(writer=writer, val=child.parameters(), step=step, tag=tag)
