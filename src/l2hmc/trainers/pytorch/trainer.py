@@ -1073,8 +1073,8 @@ class Trainer(BaseTrainer):
         # self.accelerator.backward(loss)
         if self.config.backend.lower() in ['ds', 'deepspeed']:
             if self.dynamics_engine is not None:
-                self.dynamics_engine.backward(loss)
-                self.dynamics_engine.step()
+                self.dynamics_engine.backward(loss)  # type:ignore
+                self.dynamics_engine.step()  # type:ignore
         else:
             loss.backward()
             if self.config.learning_rate.clip_norm > 0.0:

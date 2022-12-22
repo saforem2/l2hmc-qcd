@@ -146,14 +146,14 @@ class Trainer(BaseTrainer):
             (configs.ExperimentConfig, ExperimentConfig)
         )
 
-        self._gstep = 0
-        self.size = hvd.size()
-        self.rank = hvd.rank()
-        self.local_rank = hvd.local_rank()
-        self._is_chief = (self.local_rank == 0 and self.rank == 0)
+        self._gstep: int = 0
+        self.size: int = hvd.size()
+        self.rank: int = hvd.rank()
+        self.local_rank: int = hvd.local_rank()
+        self._is_chief: bool = (self.local_rank == 0 and self.rank == 0)
         self.lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
-        self.dynamics = self.build_dynamics(
+        self.dynamics: Dynamics = self.build_dynamics(
             build_networks=build_networks
         )
         # Call dynamics to make sure everything initialized
@@ -200,7 +200,7 @@ class Trainer(BaseTrainer):
             # state = self.dynamics.random_state(beta)
             # x = state.x
         inputs = (x, tf.constant(beta, dtype=TF_FLOAT))
-        return self.dynamics(inputs)
+        return self.dynamics(inputs)  # type:ignore
 
     def draw_x(self):
         return flatten(self.g.random(
@@ -893,8 +893,6 @@ class Trainer(BaseTrainer):
             lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
             metrics.update(lmetrics)
 
-        self._gstep += 1
-
         return xout, metrics
 
     def train_step_detailed(
@@ -1004,40 +1002,17 @@ class Trainer(BaseTrainer):
                 ctx.update(table)
                 ctx.refresh()
 
-
-        # with self.get_context_manager(table) as ctx:
         with ctx:
-            # if isinstance(ctx, Live):
-            #     tstr = ' '.join([
-            #         f'ERA: {era}/{self.steps.nera - 1}',
-            #         f'BETA: {beta:.3f}',
-            #     ])
-            #     # ctx.console.clear()
-            #     ctx.console.clear_live()
-            #     ctx.console.rule(tstr)
-            #     ctx.update(table)
-
-            # for epoch in trange(
-            # iterator = tqdm(
-            #     range(nepoch),
-            #     desc='Training',
-            #     position=0,
-            #     leave=True,
-            #     dynamic_ncols=True,
-            #     disable=(not self._is_chief)
-            # )
-            #         nepoch,
-            #         dynamic_ncols=True,
-            #         disable=(not self._is_chief)
-            #     desc
-            # ):
             for epoch in trange(
                     nepoch,
                     dynamic_ncols=True,
-                    disable=(not self._is_chief)
+                    disable=(not self._is_chief),
+                    leave=True,
+                    desc='Training'
             ):
                 self.timers['train'].start()
                 x, metrics = self.train_step((x, beta))  # type:ignore
+                self._gstep += 1
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
                 if (should_print(epoch) or should_log(epoch)):
@@ -1185,7 +1160,7 @@ class Trainer(BaseTrainer):
         # btensor = tf.cast(beta, dtype=TF_FLOAT)
         pexact = plaq_exact(beta)
         for i in range(nsteps):
-            x, metrics = self.dynamics((x, beta))
+            x, metrics = self.dynamics((x, beta))  # type:ignore
             plaqs = metrics.get('plaqs', None)
             if plaqs is not None:
                 pdiff = tf.math.reduce_sum(tf.math.abs(plaqs - pexact))
