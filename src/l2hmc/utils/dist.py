@@ -88,8 +88,9 @@ def setup_tensorflow(
     os.environ['LOCAL_RANK'] = str(LOCAL_RANK)
 
     log.warning(f'Using: {TF_FLOAT} precision')
-    log.info(f'Global Rank: {RANK} / {SIZE-1}')
-    log.info(f'[{RANK}]: Local rank: {LOCAL_RANK} / {LOCAL_SIZE-1}')
+    log.info(f'RANK: {hvd.rank()}, LOCAL_RANK: {hvd.local_rank()}')
+    # log.info(f'Global Rank: {RANK} / {SIZE-1}')
+    # log.info(f'[{RANK}]: Local rank: {LOCAL_RANK} / {LOCAL_SIZE-1}')
     return RANK
 
 
@@ -213,6 +214,7 @@ def setup_torch_distributed(
         backend: str,
         port: str = '2345',
 ) -> dict:
+    import torch
     rank = os.environ.get('RANK', None)
     size = os.environ.get('WORLD_SIZE', None)
     local_rank = os.environ.get(
@@ -246,6 +248,9 @@ def setup_torch_distributed(
         rank = hvd.rank()
         size = hvd.size()
         local_rank = hvd.local_rank()
+        if torch.cuda.is_available():
+            torch.cuda.set_device(hvd.local_rank())
+
     else:
         raise ValueError
         # log.warning(f'Unexpected backend specified: {backend}')
