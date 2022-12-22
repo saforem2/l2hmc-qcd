@@ -51,8 +51,8 @@ class Experiment(BaseExperiment):
             (ExperimentConfig,
              configs.ExperimentConfig)
         )
-        self._rank = hvd.rank()
-        self._local_rank = hvd.local_rank()
+        self._rank: int = hvd.rank()
+        self._local_rank: int = hvd.local_rank()
         self.ckpt_dir = self.config.get_checkpoint_dir()
         self.trainer: Trainer = self.build_trainer(
             keep=keep,
@@ -63,6 +63,8 @@ class Experiment(BaseExperiment):
 
         run = None
         arun = None
+        # if self._rank == 0 and self.config.init_wandb:
+        # if (self.trainer._is_chief and self.config.init_wandb):
         if self._rank == 0 and self.config.init_wandb:
             # import wandb
             log.warning(
@@ -71,6 +73,7 @@ class Experiment(BaseExperiment):
             run = super()._init_wandb()
             run.config['SIZE'] = hvd.size()
 
+        # if (self.trainer._is_chief and self.config.init_aim):
         if self._rank == 0 and self.config.init_aim:
             log.warning(
                 f'Initializing Aim from {self._rank}:{self._local_rank}'
@@ -83,11 +86,11 @@ class Experiment(BaseExperiment):
         self._is_built = True
         assert callable(self.trainer.loss_fn)
         assert isinstance(self.trainer, Trainer)
-        assert isinstance(
-            self.trainer.dynamics,
-            (Dynamics,
-             l2hmc.dynamics.tensorflow.dynamics.Dynamics)
-        )
+        # assert isinstance(
+        #     self.trainer.dynamics,
+        #     (Dynamics,
+        #      l2hmc.dynamics.tensorflow.dynamics.Dynamics)
+        # )
         assert isinstance(self.trainer.lattice, (LatticeU1, LatticeSU3))
         # if not isinstance(self.cfg, ExperimentConfig):
         #     self.cfg = hydra.utils.instantiate(cfg)
