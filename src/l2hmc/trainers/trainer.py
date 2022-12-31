@@ -39,6 +39,8 @@ class BaseTrainer(ABC):
         else:
             self.config: ExperimentConfig = cfg
 
+        # self._is_chief: bool = self.check_if_chief()
+
         # assert isinstance(self.config,
         #                   (configs.ExperimentConfig,
         #                    ExperimentConfig))
@@ -116,6 +118,14 @@ class BaseTrainer(ABC):
             'eval': StepTimer(evals_per_step=self._nlf),
             'hmc': StepTimer(evals_per_step=self._nlf),
         }
+
+    @abstractmethod
+    def warning(self, s: str) -> None:
+        pass
+
+    @abstractmethod
+    def info(self, s: str) -> None:
+        pass
 
     def set_console(self, console: Console) -> None:
         self.console = console

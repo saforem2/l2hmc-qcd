@@ -153,6 +153,7 @@ class Trainer(BaseTrainer):
         self.rank = dsetup['rank']
         self.local_rank = dsetup['local_rank']
         self._is_chief = (self.local_rank == 0 and self.rank == 0)
+        # self._is_chief: bool = self.check_if_chief()
         self._with_cuda = torch.cuda.is_available()
         self.lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
@@ -178,20 +179,23 @@ class Trainer(BaseTrainer):
             self.dynamics: Dynamics = output['dynamics']
             # self._optimizer: torch.optim.Optimizer = output['optimizer']
             ckpt: dict = output['ckpt']
-            self._gstep = ckpt['gstep']
-            # self._gstep = ckpt.get('gstep', ckpt.get('step', 0))
+            self._gstep = ckpt.get('gstep', ckpt.get('step', 0))
+            if self._is_chief:
+                self.warning(
+                    f'Restoring global step from ckpt! '
+                    f'self._gstep: {self._gstep}'
+                )
         else:
             self._gstep = 0
 
-        log.info(f'self._gstep: {self._gstep}')
         if self.config.dynamics.group == 'U1':
-            log.warning('Using `torch.optim.Adam` optimizer')
+            self.warning('Using `torch.optim.Adam` optimizer')
             self._optimizer = torch.optim.Adam(
                 self.dynamics.parameters(),
                 lr=self.config.learning_rate.lr_init
             )
         else:
-            log.warning('Using `torch.optim.SGD` optimizer')
+            self.warning('Using `torch.optim.SGD` optimizer')
             self._optimizer = torch.optim.SGD(
                 self.dynamics.parameters(),
                 lr=self.config.learning_rate.lr_init,
@@ -213,7 +217,7 @@ class Trainer(BaseTrainer):
             #     ds_config_path = Path(self.config.ds_config_path)
             # assert ds_config_path.is_file()
             self.ds_config = load_ds_config(ds_config_path)
-            log.info(f'Loaded DeepSpeed config from: {ds_config_path}')
+            self.info(f'Loaded DeepSpeed config from: {ds_config_path}')
             if self._is_chief:
                 print_json(json.dumps(self.ds_config, indent=4))
             if self._with_cuda:
@@ -263,6 +267,14 @@ class Trainer(BaseTrainer):
             and str(self.config.dynamics.group).upper() in ['U1', 'SU3']
         )
 
+
+    def warning(self, s: str) -> None:
+        if self._is_chief:
+            log.warning(s)
+
+    def info(self, s: str) -> None:
+        if self._is_chief:
+            log.info(s)
 
     def distribute_dynamics(
             self,
@@ -319,10 +331,6 @@ class Trainer(BaseTrainer):
         # assert optimizer is not None
         # return (dynamics, optimizer)
         pass
-
-    def warning(self, s: str):
-        if self._is_chief:
-            log.warning(s)
 
     def draw_x(self):
         return self.g.random(
@@ -535,8 +543,8 @@ class Trainer(BaseTrainer):
             # if (gstep := ckpt.get('gstep', None)) is not None:
             #     self._gstep = gstep
                     
-            if isinstance(optimizer, torch.optim.Optimizer):
-                optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+            # if isinstance(optimizer, torch.optim.Optimizer):
+            #     optimizer.load_state_dict(ckpt['optimizer_state_dict'])
 
         # return dynamics, optimizer
         return output

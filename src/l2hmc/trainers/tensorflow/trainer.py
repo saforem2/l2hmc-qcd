@@ -150,7 +150,8 @@ class Trainer(BaseTrainer):
         self.size: int = hvd.size()
         self.rank: int = hvd.rank()
         self.local_rank: int = hvd.local_rank()
-        self._is_chief: bool = (self.local_rank == 0 and self.rank == 0)
+        # self._is_chief: bool = (self.local_rank == 0 and self.rank == 0)
+        self._is_chief: bool = self.check_if_chief()
         self.lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
         self.dynamics: Dynamics = self.build_dynamics(
@@ -189,6 +190,19 @@ class Trainer(BaseTrainer):
         else:
             raise ValueError
 
+    def warning(self, s: str) -> None:
+        if self._is_chief:
+            log.warning(s)
+
+    def info(self, s: str) -> None:
+        if self._is_chief:
+            log.info(s)
+
+    def check_if_chief(self) -> bool:
+        return (
+            self.rank == 0 and self.local_rank == 0
+        )
+
     def call_dynamics(
             self,
             x: Optional[Tensor] = None,
@@ -209,7 +223,7 @@ class Trainer(BaseTrainer):
 
     def reset_optimizer(self) -> None:
         if len(self.optimizer.variables()) > 0:
-            log.warning('Resetting optimizer state!')
+            self.warning('Resetting optimizer state!')
             for var in self.optimizer.variables():
                 var.assign(tf.zeros_like(var))
 
@@ -268,7 +282,8 @@ class Trainer(BaseTrainer):
         return K.get_value(self.optimizer.lr)
 
     def setup_CheckpointManager(self):
-        log.info(f'Looking for checkpoints in: {self.ckpt_dir}')
+        # log.info(f'Looking for checkpoints in: {self.ckpt_dir}')
+        self.info(f'Looking for checkpoints in: {self.ckpt_dir}')
         ckpt = tf.train.Checkpoint(dynamics=self.dynamics,
                                    optimizer=self.optimizer)
         manager = tf.train.CheckpointManager(
@@ -276,13 +291,15 @@ class Trainer(BaseTrainer):
             self.ckpt_dir.as_posix(),
             max_to_keep=5
         )
-        if manager.latest_checkpoint and self.config.restore:
-            ckpt.restore(manager.latest_checkpoint)
-            log.warning(
-                f'Restored checkpoint from: {manager.latest_checkpoint}'
-            )
+        # if manager.latest_checkpoint and self.config.restore:
+        if self.config.restore:
+            if manager.latest_checkpoint:
+                ckpt.restore(manager.latest_checkpoint)
+                self.warning(
+                    f'Restored checkpoint from: {manager.latest_checkpoint}'
+                )
         else:
-            log.info('No checkpoints found to load from. Continuing')
+            self.info('No checkpoints found to load from. Continuing')
 
         return manager
 
@@ -497,12 +514,12 @@ class Trainer(BaseTrainer):
                 self.aim_track(avgs, prefix='avgs', **kwargs)
             except Exception as e:
                 log.exception(e)
-                log.warning('Unable to aim_track `avgs` !')
+                self.warning('Unable to aim_track `avgs` !')
             try:
                 self.aim_track(record, prefix='record', **kwargs)
             except Exception as e:
                 log.exception(e)
-                log.warning('Unable to aim_track `record` !')
+                self.warning('Unable to aim_track `record` !')
 
     # @tf.function
     def hmc_step(
@@ -611,7 +628,7 @@ class Trainer(BaseTrainer):
 
         if eps is None and str(job_type).lower() == 'hmc':
             eps = self.dynamics.config.eps_hmc
-            log.warn(
+            self.warning(
                 'Step size `eps` not specified for HMC! '
                 f'Using default: {eps:.4f} for generic HMC'
             )
@@ -619,13 +636,13 @@ class Trainer(BaseTrainer):
         if x is None:
             x = self.lattice.random()
 
-        log.warning(f'x.shape (original): {x.shape}')
+        self.warning(f'x.shape (original): {x.shape}')
         if nchains is not None:
             if isinstance(nchains, int) and nchains > 0:
                 x = x[:nchains]  # type: ignore
 
         assert isinstance(x, Tensor)
-        log.warning(f'x[:nchains].shape: {x.shape}')
+        self.warning(f'x[:nchains].shape: {x.shape}')
 
         if writer is not None:
             writer.set_as_default()
@@ -657,7 +674,7 @@ class Trainer(BaseTrainer):
             'eval_steps': eval_steps,
             'nleapfrog': nleapfrog,
         }
-        log.info(
+        self.info(
             '\n'.join([
                 f'{k} = {v}' for k, v in output.items()
                 if k != 'x'
@@ -705,9 +722,9 @@ class Trainer(BaseTrainer):
         xshape = x.shape
         if nchains is not None:
             if x.shape[0] != nchains:
-                log.warning(f'x.shape: {xshape}')
+                self.warning(f'x.shape: {xshape}')
                 x = x[:nchains, ...]  # type:ignore
-                log.warning(f'x[:nchains].shape: {xshape}')
+                self.warning(f'x[:nchains].shape: {xshape}')
 
         eps = setup['eps']
         beta = setup['beta']
@@ -782,7 +799,7 @@ class Trainer(BaseTrainer):
                             # not isinstance(setup['ctx'], Live)
                             step % setup['nprint'] == 0
                     ):
-                        log.info(summary)
+                        self.info(summary)
 
                     refresh_view()
 
@@ -953,7 +970,7 @@ class Trainer(BaseTrainer):
         if summaries is not None:
             summaries.append(summary)
         if verbose:
-            log.info(summary)
+            self.info(summary)
 
         return xout, metrics
 
@@ -1047,7 +1064,7 @@ class Trainer(BaseTrainer):
                             should_print(epoch)
                             # and not isinstance(ctx, Live)
                     ):
-                        log.info(summary)
+                        self.info(summary)
 
                     table = self.update_table(
                         table=table,
@@ -1057,7 +1074,7 @@ class Trainer(BaseTrainer):
 
                     if avgs.get('acc', 1.0) < 1e-5:
                         self.reset_optimizer()
-                        log.warning('Chains are stuck! Re-drawing x !')
+                        self.warning('Chains are stuck! Re-drawing x !')
                         x = self.draw_x()
 
                     refresh_view()
