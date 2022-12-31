@@ -43,23 +43,23 @@ logging.getLogger('PIL.PngImagePlugin').setLevel(logging.CRITICAL)
 logging.getLogger('graphviz._tools').setLevel(logging.CRITICAL)
 logging.getLogger('graphviz').setLevel(logging.CRITICAL)
 
-from l2hmc.utils.rich import get_console
-console = get_console()
-handler = RichHandler(
-    rich_tracebacks=True,
-    tracebacks_show_locals=True,
-    console=console,
-    show_path=False,
-    log_time_format='[%Y-%m-%d %H:%M:%S]',
-    enable_link_path=False,
-)
+# from l2hmc.utils.rich import get_console
+# console = get_console()
+# handler = RichHandler(
+#     rich_tracebacks=True,
+#     tracebacks_show_locals=True,
+#     console=console,
+#     show_path=False,
+#     log_time_format='[%Y-%m-%d %H:%M:%S]',
+#     enable_link_path=False,
+# )
 # log = get_pylogger(
 #     name='root',
 #     handler=handler
 # )
-log = logging.getLogger()
-log.handlers = [handler]
-log.setLevel('INFO')
+log = logging.getLogger(__name__)
+# log.handlers = [handler]
+# log.setLevel('INFO')
 
 
 def get_experiment(
