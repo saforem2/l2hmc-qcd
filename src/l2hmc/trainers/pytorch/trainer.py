@@ -17,6 +17,7 @@ import aim
 from aim import Distribution
 import numpy as np
 from omegaconf import DictConfig
+from hydra.utils import instantiate
 from rich import box, print_json
 from rich.live import Live
 # from rich.logging import RichHandler
@@ -86,9 +87,7 @@ from tqdm.auto import trange
 # log = logging.getLogger(__name__)
 # log = get_pylogger(__name__)
 log = logging.getLogger(__name__)
-log.setLevel('INFO')
-
-
+# log.setLevel('INFO')
 
 Tensor = torch.Tensor
 Module = torch.nn.modules.Module
@@ -131,12 +130,14 @@ class Trainer(BaseTrainer):
             self.g = SU3()
         else:
             raise ValueError
+        # if not isinstance(self.config, ExperimentConfig):
+        self.config: ExperimentConfig = instantiate(cfg)
         # skip_tracking = os.environ.get('SKIP_TRACKING', False)
         # self.verbose = not skip_tracking
-        assert isinstance(
-            self.config,
-            (configs.ExperimentConfig, ExperimentConfig)
-        )
+        # assert isinstance(
+        #     self.config,
+        #     (configs.ExperimentConfig, ExperimentConfig)
+        # )
         self.clip_norm = self.config.learning_rate.clip_norm
         self._lr_warmup = torch.linspace(
             self.config.learning_rate.min_lr,
@@ -148,7 +149,6 @@ class Trainer(BaseTrainer):
         self._dtype = torch.get_default_dtype()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self._device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self._gstep = 0
         self.size = dsetup['size']
         self.rank = dsetup['rank']
         self.local_rank = dsetup['local_rank']
@@ -165,12 +165,25 @@ class Trainer(BaseTrainer):
             else Path(ckpt_dir).resolve()
         )
         self.ckpt_dir.mkdir(exist_ok=True, parents=True)
-        self.load_ckpt()
-        self.dynamics_engine = None
-        if self.config.backend == 'DDP':
-            from torch.nn.parallel import DistributedDataParallel as DDP
-            self.dynamics_engine = DDP(self.dynamics)
 
+        # --------------------------------------------------------
+        # NOTE: 
+        #   - If we want to try and resume training,
+        #     `self.load_ckpt()` will attempt to find a 
+        #     the most recently saved checkpoint that is
+        #     compatible with the current specified architecture.
+        # --------------------------------------------------------
+        if self.config.restore:
+            output = self.load_ckpt()
+            self.dynamics: Dynamics = output['dynamics']
+            # self._optimizer: torch.optim.Optimizer = output['optimizer']
+            ckpt: dict = output['ckpt']
+            self._gstep = ckpt['gstep']
+            # self._gstep = ckpt.get('gstep', ckpt.get('step', 0))
+        else:
+            self._gstep = 0
+
+        log.info(f'self._gstep: {self._gstep}')
         if self.config.dynamics.group == 'U1':
             log.warning('Using `torch.optim.Adam` optimizer')
             self._optimizer = torch.optim.Adam(
@@ -184,29 +197,13 @@ class Trainer(BaseTrainer):
                 lr=self.config.learning_rate.lr_init,
             )
 
-        assert (
-            isinstance(self.dynamics, Dynamics)
-            and isinstance(self.dynamics, nn.Module)
-            and str(self.config.dynamics.group).upper() in ['U1', 'SU3']
-        )
-
-        self.dynamics_engine = None
         self.use_fp16 = False
         self.ds_config = None
-        if self.config.backend in ['hvd', 'horovod']:
-            import horovod.torch as hvd
-            compression = (
-                hvd.Compression.fp16
-                if self.config.compression == 'fp16'
-                else hvd.Compression.none
-            )
-            self.optimizer = hvd.DistributedOptimizer(
-                self._optimizer,
-                named_parameters=self.dynamics.named_parameters(),
-                compression=compression,  # type: ignore
-            )
-            hvd.broadcast_parameters(self.dynamics.state_dict(), root_rank=0)
-            hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
+        self.dynamics_engine = None
+        if self.config.backend == 'DDP':
+            from torch.nn.parallel import DistributedDataParallel as DDP
+            self.optimizer = self._optimizer
+            self.dynamics_engine = DDP(self.dynamics)
 
         elif self.config.backend.lower() in ['ds', 'deepspeed']:
             import deepspeed
@@ -214,23 +211,19 @@ class Trainer(BaseTrainer):
             ds_config_path = Path(CONF_DIR).joinpath('ds_config.json')
             # else:
             #     ds_config_path = Path(self.config.ds_config_path)
-
             # assert ds_config_path.is_file()
             self.ds_config = load_ds_config(ds_config_path)
             log.info(f'Loaded DeepSpeed config from: {ds_config_path}')
             if self._is_chief:
                 print_json(json.dumps(self.ds_config, indent=4))
-
             if self._with_cuda:
                 self.dynamics.cuda()
             if self.ds_config['fp16']['enabled']:
                 self.dynamics = self.dynamics.to(torch.half)
-
             params = filter(
                 lambda p: p.requires_grad,
                 self.dynamics.parameters()
             )
-
             engine, optimizer, _, _ = deepspeed.initialize(
                 model=self.dynamics,
                 model_parameters=params,  # type:ignore
@@ -246,8 +239,30 @@ class Trainer(BaseTrainer):
             if self.use_fp16:
                 self._dtype = torch.half
 
+        elif self.config.backend in ['hvd', 'horovod']:
+            import horovod.torch as hvd
+            compression = (
+                hvd.Compression.fp16
+                if self.config.compression == 'fp16'
+                else hvd.Compression.none
+            )
+            self.optimizer = hvd.DistributedOptimizer(
+                self._optimizer,
+                named_parameters=self.dynamics.named_parameters(),
+                compression=compression,  # type: ignore
+            )
+            hvd.broadcast_parameters(self.dynamics.state_dict(), root_rank=0)
+            hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
+
         else:
             self.optimizer = self._optimizer
+
+        assert (
+            isinstance(self.dynamics, Dynamics)
+            and isinstance(self.dynamics, nn.Module)
+            and str(self.config.dynamics.group).upper() in ['U1', 'SU3']
+        )
+
 
     def distribute_dynamics(
             self,
@@ -256,53 +271,54 @@ class Trainer(BaseTrainer):
             backend: Optional[str] = None,
             build_networks: bool = True,
             ds_config: Optional[dict] = None,
-    ) -> tuple[Dynamics, torch.optim.Optimizer]:
+    ):  # tuple[Dynamics, torch.optim.Optimizer]:
         # model = self.dynamics if model is None else model
         # optimizer = self.optimizer if optimizer is None else optimizer
-        backend = self.config.backend if backend is None else backend
+        # backend = self.config.backend if backend is None else backend
 
-        if dynamics is None:
-            dynamics = (
-                self.build_dynamics(build_networks)
-                if self.dynamics is None else self.dynamics
-            )
+        # if dynamics is None:
+        #     dynamics = (
+        #         self.build_dynamics(build_networks)
+        #         if self.dynamics is None else self.dynamics
+        #     )
 
-        if self._with_cuda:
-            dynamics.cuda()
+        # if self._with_cuda:
+        #     dynamics.cuda()
 
-        if optimizer is None:
-            optimizer = (
-                self.build_optimizer()
-                if self.optimizer is None else self.optimizer
-            )
+        # if optimizer is None:
+        #     optimizer = (
+        #         self.build_optimizer()
+        #         if self.optimizer is None else self.optimizer
+        #     )
 
-        self.load_ckpt(
-            dynamics,
-            optimizer,
-            build_networks=build_networks
-        )
+        # self.load_ckpt(
+        #     dynamics,
+        #     optimizer,
+        #     build_networks=build_networks
+        # )
 
-        assert dynamics is not None and optimizer is not None
-        if backend.lower() in ['deepspeed', 'ds']:
-            import deepspeed
-            model, optimizer, _, _ = deepspeed.initialize(
-                model=dynamics,
-                model_parameters=dynamics.parameters(),  # type:ignore
-                optimizer=optimizer,
-                config=ds_config
-            )
-            assert model is not None
-            assert optimizer is not None
-            return (model, optimizer)
+        # assert dynamics is not None and optimizer is not None
+        # if backend.lower() in ['deepspeed', 'ds']:
+        #     import deepspeed
+        #     model, optimizer, _, _ = deepspeed.initialize(
+        #         model=dynamics,
+        #         model_parameters=dynamics.parameters(),  # type:ignore
+        #         optimizer=optimizer,
+        #         config=ds_config
+        #     )
+        #     assert model is not None
+        #     assert optimizer is not None
+        #     return (model, optimizer)
 
-        elif backend.lower() in ['hvd', 'horovod']:
-            import horovod.torch as hvd
-            hvd.broadcast_parameters(dynamics.state_dict(), root_rank=0)
-            hvd.broadcast_optimizer_state(optimizer, root_rank=0)
+        # elif backend.lower() in ['hvd', 'horovod']:
+        #     import horovod.torch as hvd
+        #     hvd.broadcast_parameters(dynamics.state_dict(), root_rank=0)
+        #     hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
-        assert dynamics is not None
-        assert optimizer is not None
-        return (dynamics, optimizer)
+        # assert dynamics is not None
+        # assert optimizer is not None
+        # return (dynamics, optimizer)
+        pass
 
     def warning(self, s: str):
         if self._is_chief:
@@ -420,7 +436,8 @@ class Trainer(BaseTrainer):
             return
 
         tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
-        ckpt_file = self.ckpt_dir.joinpath(f'ckpt-{era}-{epoch}-{tstamp}.tar')
+        step = self._gstep
+        ckpt_file = self.ckpt_dir.joinpath(f'ckpt-{era}-{epoch}-{step}-{tstamp}.tar')
         if self._is_chief:
             log.info(f'Saving checkpoint to: {ckpt_file.as_posix()}')
         assert isinstance(self.dynamics.xeps, nn.ParameterList)
@@ -432,6 +449,7 @@ class Trainer(BaseTrainer):
             'epoch': epoch,
             'xeps': xeps,
             'veps': veps,
+            'gstep': self._gstep,
             'model_state_dict': self.dynamics.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
         }
@@ -454,15 +472,27 @@ class Trainer(BaseTrainer):
             build_networks: bool = True,
             era: Optional[int] = None,
             epoch: Optional[int] = None,
-    ) -> tuple[Dynamics, torch.optim.Optimizer]:
+    ) -> dict:
         if dynamics is None:
-            dynamics = self.build_dynamics(build_networks=build_networks)
+            dynamics = (
+                self.dynamics if self.dynamics is not None
+                else self.build_dynamics(build_networks=build_networks)
+                # dynamics = self.build_dynamics(build_networks=build_networks)
+            )
 
         if optimizer is None:
-            optimizer = self.build_optimizer()
+            optimizer = (
+                self.optimizer if self.optimizer is not None
+                else self.build_optimizer()
+            )
 
-        if not self._is_chief:
-            return (dynamics, optimizer)
+        output = {
+            'dynamics': dynamics,
+            'optimizer': optimizer,
+            'ckpt': {}
+        }
+        # if not self._is_chief:
+        #     return output
 
         ckpt_file = None
         ckpts = [
@@ -474,7 +504,8 @@ class Trainer(BaseTrainer):
         log.info(f'Looking for checkpoints in:\n {self.ckpt_dir}')
         if len(ckpts) == 0:
             log.warning('No checkpoints found to load from')
-            return (dynamics, optimizer)
+            # return (dynamics, optimizer)
+            return output
 
         if era is not None:
             match = f'ckpt-{era}'
@@ -494,15 +525,21 @@ class Trainer(BaseTrainer):
         if modelfile is not None:
             log.info(f'Loading model from: {modelfile}')
             dynamics.load_state_dict(torch.load(modelfile))
+            output['modelfile'] = modelfile
         if ckpt_file is not None:
             ckpt_file = Path(self.ckpt_dir).joinpath(ckpt_file)
             log.info(f'Loading checkpoint from: {ckpt_file}')
             ckpt = torch.load(ckpt_file)
+            output['ckpt'] = ckpt
+            output['ckpt_file'] = ckpt_file
+            # if (gstep := ckpt.get('gstep', None)) is not None:
+            #     self._gstep = gstep
+                    
             if isinstance(optimizer, torch.optim.Optimizer):
                 optimizer.load_state_dict(ckpt['optimizer_state_dict'])
 
-        return dynamics, optimizer
-
+        # return dynamics, optimizer
+        return output
 
     def should_log(self, epoch):
         return (epoch % self.steps.log == 0 and self._is_chief)
@@ -1084,7 +1121,6 @@ class Trainer(BaseTrainer):
                 )
             self.optimizer.step()
 
-        self._gstep += 1
 
         if isinstance(loss, Tensor):
             loss = loss.item()
@@ -1211,6 +1247,7 @@ class Trainer(BaseTrainer):
             ):
                 self.timers['train'].start()
                 x, metrics = self.train_step((x, beta))  # type:ignore
+                self._gstep += 1
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
                 if (should_log(epoch) or should_print(epoch)):
