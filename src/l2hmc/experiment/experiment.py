@@ -16,6 +16,7 @@ import numpy as np
 from omegaconf import DictConfig, OmegaConf
 import wandb
 import xarray as xr
+import socket
 
 from l2hmc.common import get_timestamp, is_interactive, save_and_analyze_data
 from l2hmc.configs import AIM_DIR, ExperimentConfig, HERE, OUTDIRS_FILE
@@ -205,6 +206,13 @@ class BaseExperiment(ABC):
                                           resolve=True,
                                           throw_on_missing=True)
         run.config.update(cfg_dict)
+        hostname = socket.gethostbyaddr(socket.gethostname())[0].lower()
+        if 'thetagpu' in hostname:
+            run.config['hostname'] = 'ThetaGPU'
+        elif 'polaris' in hostname:
+            run.config['hostname'] = 'Polaris'
+        else:
+            run.config['hostname'] = hostname
         # run.config['hvd_size'] = SIZE
         # print_config(DictConfig(self.config), resolve=True)
 
