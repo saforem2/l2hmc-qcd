@@ -1451,7 +1451,8 @@ class Trainer(BaseTrainer):
         x = self.warmup(b0)
         # for era in trange(nera, disable=(not self._is_chief)):
         for era in range(nera):
-            b = torch.tensor(betas.get(str(era), beta_final))
+            b_ = betas.get(str(era), beta_final)
+            b = torch.tensor(b_)
             if era == (nera - 1) and self.steps.extend_last_era is not None:
                 extend = int(self.steps.extend_last_era)
 
@@ -1462,6 +1463,7 @@ class Trainer(BaseTrainer):
 
                 self.console.rule(f'ERA: {era} / {nera - 1}, BETA: {b:.3f}')
 
+            x = self.warmup(b_)
             epoch_start = time.time()
             x, edata = self.train_epoch(
                 x=x,
