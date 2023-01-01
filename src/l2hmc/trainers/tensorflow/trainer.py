@@ -1250,7 +1250,6 @@ class Trainer(BaseTrainer):
                 self.console.rule(f'ERA: {era} / {nera}, BETA: {b:.3f}')
 
             x = self.warmup(b)
-
             epoch_start = time.time()
             x, edata = self.train_epoch(
                 x=x,
