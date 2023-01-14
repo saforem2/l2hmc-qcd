@@ -10,11 +10,11 @@ import sys
 import warnings
 import time
 from pathlib import Path
+from mpi4py import MPI
 
 import hydra
 from typing import Optional
 from omegaconf.dictconfig import DictConfig
-from rich.logging import RichHandler
 
 from l2hmc.configs import ExperimentConfig
 from l2hmc.utils.rich import print_config
@@ -24,18 +24,8 @@ from l2hmc.utils.plot_helpers import set_plot_style
 warnings.filterwarnings('ignore')
 set_plot_style()
 
-# rlog = get_pylogger('root')
-# rlog.handlers = RichHandler()
-# log = get_pylogger(__name__)
-
-# log.handlers = []
-# log.parent.handlers = []
-# if log.hasHandlers():
-#     log.handlers = []
-
-# log.handlers = [handler]
-
-logging.getLogger('wandb').setLevel(logging.INFO)
+log = logging.getLogger(__name__)
+logging.getLogger('wandb').setLevel(logging.ERROR)
 logging.getLogger('aim').setLevel(logging.ERROR)
 logging.getLogger('filelock').setLevel(logging.CRITICAL)
 logging.getLogger('matplotlib').setLevel(logging.CRITICAL)
@@ -43,23 +33,7 @@ logging.getLogger('PIL.PngImagePlugin').setLevel(logging.CRITICAL)
 logging.getLogger('graphviz._tools').setLevel(logging.CRITICAL)
 logging.getLogger('graphviz').setLevel(logging.CRITICAL)
 
-# from l2hmc.utils.rich import get_console
-# console = get_console()
-# handler = RichHandler(
-#     rich_tracebacks=True,
-#     tracebacks_show_locals=True,
-#     console=console,
-#     show_path=False,
-#     log_time_format='[%Y-%m-%d %H:%M:%S]',
-#     enable_link_path=False,
-# )
-# log = get_pylogger(
-#     name='root',
-#     handler=handler
-# )
-log = logging.getLogger(__name__)
-# log.handlers = [handler]
-# log.setLevel('INFO')
+comm = MPI.COMM_WORLD
 
 
 def get_experiment(
@@ -99,7 +73,6 @@ def get_experiment(
 
 def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
     # --- [0.] Setup ------------------------------------------------------
-    # setup(cfg)
     if overrides is not None:
         from l2hmc.configs import get_config
         cfg.update(get_config(overrides))
@@ -117,23 +90,24 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
 
     nchains_eval = max(2, int(ex.config.dynamics.xshape[0] // 4))
 
+    # TODO -----------------------------------------------------------------
+    # - [ ] Add logic for running distributed inference + HMC
+    #     - [ ] If we're training across N devices (CPU, GPU, TPU),
+    #           we would like to run an indepdent evaluation + HMC process
+    #           on each of them, average the model improvement over these
+    # ----------------------------------------------------------------------
+
     # --- [1.] Train model -------------------------------------------------
     if should_train:
         tstart = time.time()
         _ = ex.train()
         log.info(f'Training took: {time.time() - tstart:.5f}s')
         # --- [2.] Evaluate trained model ----------------------------------
-        # if ex.trainer.rank == 0 and ex.config.steps.test > 0:
         if ex.trainer._is_chief and ex.config.steps.test > 0:
             log.info('Evaluating trained model')
             estart = time.time()
             _ = ex.evaluate(job_type='eval', nchains=nchains_eval)
             log.info(f'Evaluation took: {time.time() - estart:.5f}s')
-
-            try:
-                ex.visualize_model()
-            except AttributeError as e:
-                log.exception(e)
 
     # --- [3.] Run generic HMC for comparison ------------------------------
     if ex.trainer._is_chief and ex.config.steps.test > 0:
@@ -146,16 +120,23 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
             experiment=ex,
             title=f'{ex.config.framework}',
         )
+        # improvement = comm.gather(improvement, root=0)
         if ex.config.init_wandb:
             if ex.run is not None and ex.run is wandb.run:
                 ex.run.log({'model_improvement': improvement})
         log.critical(f'Model improvement: {improvement:.8f}')
 
+    try:
+        ex.visualize_model()
+    except Exception as e:
+        log.exception(e)
+
     return Path(ex._outdir).as_posix()
 
 
 def build_experiment(overrides: Optional[str | list[str]] = None):
-    import warnings; warnings.filterwarnings('ignore')
+    import warnings
+    warnings.filterwarnings('ignore')
     from l2hmc.configs import get_config
     if isinstance(overrides, str):
         overrides = [overrides]
