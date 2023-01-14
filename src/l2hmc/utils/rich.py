@@ -6,7 +6,7 @@ Contains utils for textual layouts using Rich
 from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass, field
 import json
-import logging
+# import logging
 import os
 from pathlib import Path
 import shutil
@@ -16,7 +16,7 @@ from typing import Any
 from omegaconf import DictConfig, OmegaConf
 import pandas as pd
 import rich
-from rich.logging import RichHandler
+# from rich.logging import RichHandler
 from rich.console import Console
 from rich.layout import Layout
 from rich.panel import Panel
@@ -69,6 +69,7 @@ STYLES = {
     'repr.number': Style(color='#AE81FF', bold=False),
     "highlight": Style(color="#111111", bgcolor="#FFFF00", bold=True),
 }
+
 
 def get_console(width: Optional[int] = None, *args, **kwargs) -> Console:
     interactive = is_interactive()

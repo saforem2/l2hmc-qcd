@@ -108,8 +108,8 @@ def save_figure(fig: plt.Figure, fname: str, outdir: os.PathLike):
     pngdir.mkdir(exist_ok=True, parents=True)
     pngfile = pngdir.joinpath(f'{fname}.png')
     svgfile = Path(outdir).joinpath(f'{fname}.svg')
-    fig.savefig(pngfile, dpi=400, bbox_inches='tight')
-    fig.savefig(svgfile, dpi=400, bbox_inches='tight')
+    _ = fig.savefig(pngfile, dpi=400, bbox_inches='tight')
+    _ = fig.savefig(svgfile, dpi=400, bbox_inches='tight')
 
 
 def savefig(fig: plt.Figure, outfile: os.PathLike):
@@ -117,7 +117,7 @@ def savefig(fig: plt.Figure, outfile: os.PathLike):
     parent = fout.parent
     parent.mkdir(exist_ok=True, parents=True)
     log.info(f'Saving figure to: {fout.as_posix()}')
-    fig.savefig(fout.as_posix(), dpi=400, bbox_inches='tight')
+    _ = fig.savefig(fout.as_posix(), dpi=400, bbox_inches='tight')
 
 
 def subplots(**kwargs) -> tuple[plt.Figure, plt.Axes]:
@@ -367,22 +367,33 @@ def plot_combined(
     chain_axis = val.get_axis_num('chain')
     if chain_axis == 0:
         for idx in range(nchains):
-            ax1.plot(steps, val.values[idx, :],
-                     color=color, lw=LW/2., alpha=0.6)
+            _ = ax1.plot(
+                steps,
+                val.values[idx, :],
+                color=color,
+                lw=LW/2.,
+                alpha=0.6
+            )
 
-    ax1.plot(steps, val.mean('chain'), color=color, label=label, lw=1.5*LW)
+    _ = ax1.plot(
+        steps,
+        val.mean('chain'),
+        color=color,
+        label=label,
+        lw=1.5*LW
+    )
     if key is not None and 'eps' in key:
         _ = ax0.set_ylabel('leapfrog')
 
-    ax2.set_xticks([])
-    ax2.set_xticklabels([])
+    _ = ax2.set_xticks([])
+    _ = ax2.set_xticklabels([])
     # sns.despine(ax=ax0, top=True, right=True, left=True, bottom=True)
-    sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
-    sns.despine(ax=ax2, top=True, right=True, left=True, bottom=True)
-    ax2.set_xlabel('')
-    ax1.set_xlabel('draw')
-    sns.despine(subfigs[0])
-    plt.autoscale(enable=True, axis=ax0)
+    _ = sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
+    _ = sns.despine(ax=ax2, top=True, right=True, left=True, bottom=True)
+    _ = ax2.set_xlabel('')
+    _ = ax1.set_xlabel('draw')
+    _ = sns.despine(subfigs[0])
+    _ = plt.autoscale(enable=True, axis=ax0)
 
     return (fig, axes)
 
@@ -451,8 +462,8 @@ def plot_dataArray(
 
         ax = plt.gca()
         assert isinstance(ax, plt.Axes)
-        ax.set_ylabel(key)
-        ax.set_xlabel('draw')
+        _ = ax.set_ylabel(key)
+        _ = ax.set_xlabel('draw')
         # matplotx.line_labels()
         if line_labels:
             matplotx.line_labels()
@@ -470,7 +481,7 @@ def plot_dataArray(
 
     if title is not None:
         fig = plt.gcf()
-        fig.suptitle(title)
+        _ = fig.suptitle(title)
 
     if logfreq is not None:
         ax = plt.gca()
@@ -488,8 +499,8 @@ def plot_dataArray(
             pngdir.mkdir(exist_ok=True, parents=True)
             pngfile = pngdir.joinpath(f'{key}-{tstamp}.png')
             svgfile = Path(outdir).joinpath(f'{key}-{tstamp}.svg')
-            plt.savefig(pngfile, dpi=400, bbox_inches='tight')
-            plt.savefig(svgfile, dpi=400, bbox_inches='tight')
+            _ = plt.savefig(pngfile, dpi=400, bbox_inches='tight')
+            _ = plt.savefig(svgfile, dpi=400, bbox_inches='tight')
             # plt.savefig(Path(outdir).joinpath(f'{key}.svg'),
             #             dpi=400, bbox_inches='tight')
 
@@ -547,10 +558,10 @@ def plot_array(
         raise ValueError(f'Unexpected shape encountered: {arr.shape}')
 
     if xlabel is not None:
-        ax.set_xlabel(xlabel)
+        _ = ax.set_xlabel(xlabel)
 
     if title is not None:
-        ax.set_title(title)
+        _ = ax.set_title(title)
 
     _ = ax.legend(loc='best')
 
@@ -562,8 +573,8 @@ def plot_array(
             pngdir.mkdir(exist_ok=True, parents=True)
             pngfile = pngdir.joinpath(f'{key}-{tstamp}.png')
             svgfile = Path(outdir).joinpath(f'{key}-{tstamp}.svg')
-            plt.savefig(pngfile, dpi=400, bbox_inches='tight')
-            plt.savefig(svgfile, dpi=400, bbox_inches='tight')
+            _ = plt.savefig(pngfile, dpi=400, bbox_inches='tight')
+            _ = plt.savefig(svgfile, dpi=400, bbox_inches='tight')
 
     return fig, ax
 
@@ -639,23 +650,23 @@ def plot_metric(
         gs_kw = {'width_ratios': [1.33, 0.33]}
         (ax, ax1) = subfigs[1].subplots(1, 2, sharey=True,
                                         gridspec_kw=gs_kw)
-        ax.grid(alpha=0.4)
-        ax1.grid(False)
+        _ = ax.grid(alpha=0.4)
+        _ = ax1.grid(False)
         color = plot_kwargs.get('color', 'C0')
         label = plot_kwargs.pop('label', None)
         # label = r'$\langle$' + f' {key} ' + r'$\rangle$'
         label = f'{key}_avg'
-        ax.plot(steps, arr.mean(-1), lw=1.5*LW, label=label, **plot_kwargs)
+        _ = ax.plot(steps, arr.mean(-1), lw=1.5*LW, label=label, **plot_kwargs)
         if num_chains > 0:
             for chain in range(min((num_chains, arr.shape[1]))):
                 plot_kwargs.update({'label': None})
                 ax.plot(steps, arr[:, chain], lw=LW/2., **plot_kwargs)
         sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, shade=True)
-        ax1.set_xticks([])
-        ax1.set_xticklabels([])
-        sns.despine(ax=ax, top=True, right=True)
-        sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
-        ax1.set_xlabel('')
+        _ = ax1.set_xticks([])
+        _ = ax1.set_xticklabels([])
+        _ = sns.despine(ax=ax, top=True, right=True)
+        _ = sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
+        _ = ax1.set_xlabel('')
         if logfreq is not None:
             xticks = ax.get_xticks()
             _ = ax.set_xticklabels([
@@ -666,8 +677,8 @@ def plot_metric(
         # arr.shape = [draws]
         if len(arr.shape) == 1:
             fig, ax = subplots(**subplots_kwargs)
-            ax.plot(steps, arr, **plot_kwargs)
-            ax.grid(True, alpha=0.2)
+            _ = ax.plot(steps, arr, **plot_kwargs)
+            _ = ax.grid(True, alpha=0.2)
             axes = ax
         # arr.shape = [draws, nleapfrog, chains]
         elif len(arr.shape) == 3:
@@ -684,33 +695,33 @@ def plot_metric(
                     # TOO: Plot chains
                     if num_chains > 0:
                         for idx in range(min((num_chains, y.shape[1]))):
-                            ax.plot(steps, y[:, idx], color=color,
-                                    lw=LW/4., alpha=0.7, **plot_kwargs)
+                            _ = ax.plot(steps, y[:, idx], color=color,
+                                        lw=LW/4., alpha=0.7, **plot_kwargs)
 
-                    ax.plot(steps, y.mean(-1), color=color,
-                            label=label, **plot_kwargs)
+                    _ = ax.plot(steps, y.mean(-1), color=color,
+                                label=label, **plot_kwargs)
                 else:
 
-                    ax.plot(steps, y, color=color,
-                            label=label, **plot_kwargs)
+                    _ = ax.plot(steps, y, color=color,
+                                label=label, **plot_kwargs)
             axes = ax
         else:
             raise ValueError('Unexpected shape encountered')
 
-        ax.set_ylabel(key)
+        _ = ax.set_ylabel(key)
     if num_chains > 0 and len(arr.shape) > 1:
         lw = LW / 2.
         for idx in range(min(num_chains, arr.shape[1])):
             # plot values of invidual chains, arr[:, idx]
             # where arr[:, idx].shape = [ndraws, 1]
-            ax.plot(steps, arr[:, idx], alpha=0.5, lw=lw/2., **plot_kwargs)
+            _ = ax.plot(steps, arr[:, idx], alpha=0.5, lw=lw/2., **plot_kwargs)
 
     if line_labels:
         matplotx.line_labels(font_kwargs={'size': 'small'})
 
-    ax.set_xlabel('draw')
+    _ = ax.set_xlabel('draw')
     if title is not None:
-        fig.suptitle(title)
+        _ = fig.suptitle(title)
 
     if logfreq is not None:
         assert isinstance(ax, plt.Axes)
@@ -722,19 +733,19 @@ def plot_metric(
     if outdir is not None:
         outfile = Path(outdir).joinpath(f'{key}.{ext}')
         if not outfile.is_file():
-            plt.savefig(Path(outdir).joinpath(f'{key}.{ext}'),
-                        dpi=400, bbox_inches='tight')
+            _ = plt.savefig(Path(outdir).joinpath(f'{key}.{ext}'),
+                            dpi=400, bbox_inches='tight')
 
     return fig, subfigs, axes
 
 
 def plot_history(
-    data: dict[str, np.ndarray],
-    num_chains: Optional[int] = 0,
-    therm_frac: Optional[float] = 0.,
-    title: Optional[str] = None,
-    outdir: Optional[os.PathLike] = None,
-    plot_kwargs: Optional[dict[str, Any]] = None,
+        data: dict[str, np.ndarray],
+        num_chains: Optional[int] = 0,
+        therm_frac: Optional[float] = 0.,
+        title: Optional[str] = None,
+        outdir: Optional[os.PathLike] = None,
+        plot_kwargs: Optional[dict[str, Any]] = None,
 ):
     for key, val in data.items():
         _ = plot_metric(
@@ -800,13 +811,13 @@ def plot_dataset(
             im = val.plot(ax=ax, cbar_kwargs=cbar_kwargs)  # type:ignore
             # ax.set_ylim(0, )
             im.colorbar.set_label(f'{key}')                # type:ignore
-            sns.despine(subfigs[0], top=True, right=True,
-                        left=True, bottom=True)
+            _ = sns.despine(subfigs[0], top=True, right=True,
+                            left=True, bottom=True)
             if outdir is not None:
-                print(f'Saving figure to: {outfile}')
-                plt.savefig(outfile, dpi=400, bbox_inches='tight')
+                log.info(f'Saving figure to: {outfile}')
+                _ = plt.savefig(outfile, dpi=400, bbox_inches='tight')
         else:
-            fig.savefig(outfile, dpi=400, bbox_inches='tight')
+            _ = fig.savefig(outfile, dpi=400, bbox_inches='tight')
 
     return dataset
 
@@ -883,11 +894,13 @@ def make_ridgeplots(
                 def label(_, color, label):  # type:ignore #noqa
                     ax = plt.gca()
                     assert isinstance(ax, plt.Axes)
-                    ax.set_ylabel('')
-                    ax.set_yticks([])
-                    ax.set_yticklabels([])
-                    ax.text(0, 0.10, label, fontweight='bold', color=color,
-                            ha='left', va='center', transform=ax.transAxes)
+                    _ = ax.set_ylabel('')
+                    _ = ax.set_yticks([])
+                    _ = ax.set_yticklabels([])
+                    _ = ax.text(
+                        0, 0.10, label, fontweight='bold', color=color,
+                        ha='left', va='center', transform=ax.transAxes
+                    )
 
                 _ = g.map(label, key)
                 # Set the subplots to overlap
@@ -910,10 +923,12 @@ def make_ridgeplots(
                     pngdir.mkdir(exist_ok=True, parents=True)
 
                     log.warning(f'Saving figure to: {fsvg.as_posix()}')
-                    plt.savefig(fsvg.as_posix(), bbox_inches='tight')
-                    plt.savefig(fpng.as_posix(), bbox_inches='tight')
+                    _ = plt.savefig(fsvg.as_posix(), bbox_inches='tight')
+                    _ = plt.savefig(fpng.as_posix(), bbox_inches='tight')
 
-                log.info(f'Ridgeplot for {key} took {time.time() - tstart:.3f}s')
+                log.info(
+                    f'Ridgeplot for {key} took {time.time() - tstart:.3f}s'
+                )
 
     #  sns.set(style='whitegrid', palette='bright', context='paper')
     fig = plt.gcf()
@@ -944,6 +959,6 @@ def plot_plaqs(
     if outdir is not None:
         outfile = Path(outdir).joinpath('plaqs_diffs.svg')
         log.info(f'Saving figure to: {outfile}')
-        fig.savefig(outfile.as_posix(), dpi=500, bbox_inches='tight')
+        _ = fig.savefig(outfile.as_posix(), dpi=500, bbox_inches='tight')
 
     return fig, ax
