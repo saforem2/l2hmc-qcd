@@ -30,11 +30,11 @@ def setup_tensorflow(
         ngpus: Optional[int] = None,
 ) -> int:
     import tensorflow as tf
-    dtypes = {
-        'float16': tf.float16,
-        'float32': tf.float32,
-        'float64': tf.float64,
-    }
+    # dtypes = {
+    #     'float16': tf.float16,
+    #     'float32': tf.float32,
+    #     'float64': tf.float64,
+    # }
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     import horovod.tensorflow as hvd
@@ -61,10 +61,11 @@ def setup_tensorflow(
                 'GPU',
             )
             logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-            log.info(
-                f'{len(gpus)}, Physical GPUs and '
-                f'{len(logical_gpus)} Logical GPUs'
-            )
+            if hvd.rank() == 0:
+                log.info(
+                    f'{len(gpus)}, Physical GPUs and '
+                    f'{len(logical_gpus)} Logical GPUs'
+                )
         except RuntimeError as e:
             print(e)
     elif cpus:
@@ -82,7 +83,7 @@ def setup_tensorflow(
     RANK = hvd.rank()
     SIZE = hvd.size()
     LOCAL_RANK = hvd.local_rank()
-    LOCAL_SIZE = hvd.local_size()
+    # LOCAL_SIZE = hvd.local_size()
     os.environ['RANK'] = str(RANK)
     os.environ['WORLD_SIZE'] = str(SIZE)
     os.environ['LOCAL_RANK'] = str(LOCAL_RANK)
@@ -198,8 +199,9 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
     if (eport := os.environ.get('MASTER_PORT', None)) is None:
         os.environ['MASTER_PORT'] = port
     else:
-        log.info(f'Caught MASTER_PORT:{eport} from environment!')
         os.environ['MASTER_PORT'] = eport
+        if rank == 0:
+            log.info(f'Caught MASTER_PORT:{eport} from environment!')
 
     init_process_group(
         rank=rank,
@@ -280,8 +282,10 @@ def setup_torch(
         'float64': torch.float64,
     }
     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
-    torch.backends.cudnn.deterministic = True   # type:ignore
-    torch.backends.cudnn.benchmark = True       # type:ignore
+    torch.backends.cudnn.deterministic = True     # type:ignore
+    torch.backends.cudnn.benchmark = True         # type:ignore
+    torch.backends.cudnn.allow_tf32 = True        # type:ignore
+    torch.backends.cuda.matmul.allow_tf32 = True  # type:ignore
     torch.use_deterministic_algorithms(True)
     dsetup = setup_torch_distributed(backend=backend, port=port)
     rank = dsetup['rank']
@@ -308,7 +312,7 @@ def setup_torch(
         torch.cuda.set_device(local_rank)
 
     log.info(f'Global Rank: {rank} / {size-1}')
-    log.info(f'[{rank}]: Local rank: {local_rank}')
+    # log.info(f'[{rank}]: Local rank: {local_rank}')
     seed_everything(seed * (rank + 1) * (local_rank + 1))
     return rank
 
