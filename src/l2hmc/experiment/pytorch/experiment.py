@@ -11,13 +11,11 @@ from pathlib import Path
 from typing import Any, Optional
 
 import horovod.torch as hvd
+from hydra.utils import instantiate
 from omegaconf import DictConfig
 import torch
 from torch.utils.tensorboard.writer import SummaryWriter
 
-# from l2hmc.common import setup_torch_distributed
-from l2hmc.utils.dist import setup_torch_distributed
-# from l2hmc.utils.logger import get_pylogger
 from l2hmc.configs import NetWeights
 import l2hmc.configs as configs
 from l2hmc.configs import ExperimentConfig
@@ -27,6 +25,7 @@ from l2hmc.experiment.experiment import BaseExperiment
 from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
 from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
 from l2hmc.trainers.pytorch.trainer import Trainer
+from l2hmc.utils.dist import setup_torch_distributed
 from l2hmc.utils.rich import get_console
 
 # log = logging.getLogger(__name__)
@@ -40,8 +39,6 @@ Tensor = torch.Tensor
 # RANK = hvd.rank()
 # LOCAL_RANK = hvd.local_rank()
 
-
-from hydra.utils import instantiate
 
 class Experiment(BaseExperiment):
     def __init__(
