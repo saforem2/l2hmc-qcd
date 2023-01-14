@@ -339,7 +339,8 @@ class ConvStack(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         x.requires_grad_(True)
         x = x.to(DEVICE)
-        self.to(x.dtype)
+        # self.to(x.dtype)
+        # self.to(x.dtype)
         if x.shape != self.xshape:
             try:
                 x = x.reshape(x.shape[0], self.d + 2, self.nt, self.nx)
@@ -465,7 +466,7 @@ class LeapfrogLayer(nn.Module):
         self.net_config = network_config
         self.name = name if name is not None else 'network'
         self.xdim = np.cumprod(xshape[1:])[-1]
-        self._dtype = torch.get_default_dtype()
+        # self._dtype = torch.get_default_dtype()
         self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self._with_cuda = torch.cuda.is_available()
         act_fn = self.net_config.activation_fn
@@ -495,8 +496,9 @@ class LeapfrogLayer(nn.Module):
         self.transf = ScaledTanh(self.units[-1], xdim)
         self.transl = nn.Linear(self.units[-1], xdim)
 
-        if self.net_config.dropout_prob > 0:
-            self.dropout = nn.Dropout(self.net_config.dropout_prob)
+        self.dropout = nn.Dropout(self.net_config.dropout_prob)
+        # if self.net_config.dropout_prob > 0:
+        #     self.dropout = nn.Dropout(self.net_config.dropout_prob)
 
         if self.net_config.use_batch_norm:
             self.batch_norm = nn.BatchNorm1d(self.units[-1], device=DEVICE)
@@ -525,30 +527,29 @@ class LeapfrogLayer(nn.Module):
         if self._with_cuda:
             x = x.cuda()
             v = v.cuda()
+            # self.to(x.dtype)
         # self.input_layer.to(x.dtype)
         z = self.input_layer((x, v))
         for layer in self.hidden_layers:
             # layer.to(z.dtype)
             z = self.activation_fn(layer(z))
 
-        if self.net_config.dropout_prob > 0:
+        if self.net_config.dropout_prob > 0 and self.dropout is not None:
             z = self.dropout(z)
 
         if self.net_config.use_batch_norm:
             z = self.batch_norm(z)
 
+        s = self.nw.s * self.scale(z)
+        t = self.nw.t * self.transl(z)
+        q = self.nw.q * self.transf(z)
         # self.scale.to(z.dtype)
         # self.transf.to(z.dtype)
         # self.transl.to(z.dtype)
-        scale = self.scale(z)
-        transf = self.transf(z)
-        transl = self.transl(z)
-
-        return (
-            self.nw.s * scale,
-            self.nw.t * transl,
-            self.nw.q * transf,
-        )
+        # scale = self.scale(z)
+        # transf = self.transf(z)
+        # transl = self.transl(z)
+        return (s, t, q)
 
 
 def get_network(
@@ -598,6 +599,7 @@ def get_and_call_network(
         net.cuda()
         x = x.cuda()
         v = v.cuda()
+        # net = net.to(x.dtype)
 
     if isinstance(group, U1Phase):
         # TODO: Generalize for 4D SU(3)
@@ -608,12 +610,20 @@ def get_and_call_network(
             isinstance(group, SU3)
             or getattr(group, '_name', None) == 'SU3'
     ):
+        # if is_xnet:
+        #     x = torch.stack([x.real, x.imag], 1)
+        #     pass
         # x = group.group_to_vec(x)
-        # x = torch.cat([x.real, x.imag], dim=1)
-        x = group.group_to_vec(x)
-        v = group.group_to_vec(v)
+        x = torch.cat([x.real, x.imag], dim=1)
+        v = torch.cat([v.real, v.imag], dim=1)
+        # x = group.group_to_vec(x)
+        # v = group.group_to_vec(v)
 
-    _ = net((x, v))
+    try:
+        _ = net((x, v))
+    except RuntimeError as e:
+        # net = net.to(x.dtype)
+        _ = net((x, v))
     return net
 
 
@@ -631,6 +641,15 @@ class NetworkFactory(BaseNetworkFactory):
         cfg = self.get_build_configs()
         if n == 1:
             return nn.ModuleDict({
+                # 'xnet': LeapfrogLayer(
+                #     **cfg['xnet'],
+                #     name='xnet',
+                # ),
+                # 'vnet': LeapfrogLayer(
+                #     **cfg['vnet'],
+                #     name='vnet',
+                # )
+
                 'xnet': get_and_call_network(
                     **cfg['xnet'],
                     is_xnet=True,
@@ -652,7 +671,21 @@ class NetworkFactory(BaseNetworkFactory):
                 name=f'vnet/{lf}',
                 group=group,
             )
+            # vnet[f'{lf}'] = LeapfrogLayer(
+            #     **cfg['vnet'],
+            #     name='vnet',
+            # )
             if split_xnets:
+                # xnet[f'{lf}'] = nn.ModuleDict({
+                #     'first': LeapfrogLayer(
+                #         **cfg['xnet'],
+                #         name='xnet/{lf}/first',
+                #     ),
+                #     'second': LeapfrogLayer(
+                #         **cfg['xnet'],
+                #         name='xnet/{lf}/first',
+                #     )
+                # })
                 xnet[f'{lf}'] = nn.ModuleDict({
                     'first': get_and_call_network(
                         **cfg['xnet'],
@@ -674,5 +707,9 @@ class NetworkFactory(BaseNetworkFactory):
                     name=f'xnet/{lf}',
                     group=group,
                 )
+                # xnet[f'{lf}'] = LeapfrogLayer(
+                #     **cfg['xnet'],
+                #     name=f'xnet/{lf}',
+                # )
 
         return nn.ModuleDict({'xnet': xnet, 'vnet': vnet})

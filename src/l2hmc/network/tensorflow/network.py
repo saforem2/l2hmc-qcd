@@ -374,7 +374,7 @@ class ConvStack(Layer):
         return x
 
 
-class InputLayer(Layer):
+class InputLayer(Model):
     def __init__(
             self,
             xshape: list[int],
@@ -463,15 +463,15 @@ class InputLayer(Layer):
         return self.activation_fn(x + v)
 
 
-class LeapfrogLayer(Layer):
+class LeapfrogLayer(Model):
     def __init__(
             self,
             xshape: list[int],
             network_config: NetworkConfig,
+            group: Optional[U1Phase | SU3 | str] = None,
             input_shapes: Optional[dict[str, int]] = None,
             net_weight: Optional[NetWeight] = None,
             conv_config: Optional[ConvolutionConfig] = None,
-            group: Optional[U1Phase | SU3] = None,
             name: Optional[str] = None,
     ):
         super(LeapfrogLayer, self).__init__(name=name)
@@ -479,12 +479,21 @@ class LeapfrogLayer(Layer):
             net_weight = NetWeight(1., 1., 1.)
 
         self.xshape = xshape
-        self.g = group
-        self.net_config = network_config
         self.nw = net_weight
+        self.net_config = network_config
+        # self._name = name if name is not None else 'network'
         self.xdim = np.cumprod(xshape[1:])[-1]
         act_fn = get_activation(self.net_config.activation_fn)
         self.activation_fn = act_fn
+        self.g = group
+        if group is not None:
+            if isinstance(group, str):
+                if group.lower() in ['u1', 'u1phase']:
+                    self.g = U1Phase()
+                elif group.lower() == 'su3':
+                    self.g = SU3()
+                else:
+                    raise ValueError(f'Unexpected str {group} for group')
 
         self.input_layer = InputLayer(
             xshape=xshape,
@@ -500,8 +509,8 @@ class LeapfrogLayer(Layer):
             h = Dense(units, name=f'hidden.{idx}')
             self.hidden_layers.append(h)
 
-        self.scale = ScaledTanh(self.xdim, name=f'scale')
-        self.transf = ScaledTanh(self.xdim, name=f'transf')
+        self.scale = ScaledTanh(self.xdim, name='scale')
+        self.transf = ScaledTanh(self.xdim, name='transf')
         self.transl = Dense(self.xdim, name='transl')
 
         self.dropout = None
@@ -616,151 +625,151 @@ class NetworkFactory(BaseNetworkFactory):
             vnet[f'{lf}'] = LeapfrogLayer(
                 **cfg['vnet'],
                 name=f'vnet/{lf}',
-                group=group,
+                # group=group,
             )
             if split_xnets:
                 xnet[f'{lf}'] = {
                     'first': LeapfrogLayer(
                         **cfg['xnet'],
                         name=f'xnet/{lf}/first',
-                        group=group,
+                        # group=group,
                     ),
                     'second': LeapfrogLayer(
                         **cfg['xnet'],
                         name=f'xnet/{lf}/second',
-                        group=group,
+                        # group=group,
                     ),
                 }
             else:
                 xnet[f'{lf}'] = LeapfrogLayer(
                     **cfg['xnet'],
                     name=f'xnet/{lf}',
-                    group=group,
+                    # group=group,
                 )
 
         return {'xnet': xnet, 'vnet': vnet}
 
 
-def get_network_configs(
-        xdim: int,
-        network_config: NetworkConfig,
-        # factor: float = 1.,
-        activation_fn: Optional[str | Callable] = None,
-        name: Optional[str] = 'network',
-) -> dict:
-    """Returns network configs."""
-    if isinstance(activation_fn, str):
-        activation_fn = Activation(activation_fn)
-        assert callable(activation_fn)
-        # activation_fn = ACTIVATIONS.get(activation_fn, ACTIVATIONS['relu'])
+# def get_network_configs(
+#         xdim: int,
+#         network_config: NetworkConfig,
+#         # factor: float = 1.,
+#         activation_fn: Optional[str | Callable] = None,
+#         name: Optional[str] = 'network',
+# ) -> dict:
+#     """Returns network configs."""
+#     if isinstance(activation_fn, str):
+#         activation_fn = Activation(activation_fn)
+#         assert callable(activation_fn)
+#         # activation_fn = ACTIVATIONS.get(activation_fn, ACTIVATIONS['relu'])
 
-    assert callable(activation_fn)
-    names = {
-        'x_input': f'{name}_xinput',
-        'v_input': f'{name}_vinput',
-        'x_layer': f'{name}_xLayer',
-        'v_layer': f'{name}_vLayer',
-        'scale': f'{name}_scaleLayer',
-        'transf': f'{name}_transformationLayer',
-        'transl': f'{name}_translationLayer',
-        's_coeff': f'{name}_scaleCoeff',
-        'q_coeff': f'{name}_transformationCoeff',
-    }
-    coeff_kwargs = {
-        'trainable': True,
-        'initial_value': tf.zeros([1, xdim], dtype=TF_FLOAT),
-        'dtype': TF_FLOAT,
-    }
+#     assert callable(activation_fn)
+#     names = {
+#         'x_input': f'{name}_xinput',
+#         'v_input': f'{name}_vinput',
+#         'x_layer': f'{name}_xLayer',
+#         'v_layer': f'{name}_vLayer',
+#         'scale': f'{name}_scaleLayer',
+#         'transf': f'{name}_transformationLayer',
+#         'transl': f'{name}_translationLayer',
+#         's_coeff': f'{name}_scaleCoeff',
+#         'q_coeff': f'{name}_transformationCoeff',
+#     }
+#     coeff_kwargs = {
+#         'trainable': True,
+#         'initial_value': tf.zeros([1, xdim], dtype=TF_FLOAT),
+#         'dtype': TF_FLOAT,
+#     }
 
-    args = {
-        'x': {
-            # 'scale': factor / 2.,
-            'name': names['x_layer'],
-            'units': network_config.units[0],
-            'activation': linear_activation,
-        },
-        'v': {
-            # 'scale': 1. / 2.,
-            'name': names['v_layer'],
-            'units': network_config.units[0],
-            'activation': linear_activation,
-        },
-        'scale': {
-            # 'scale': 0.001 / 2.,
-            'name': names['scale'],
-            'units': xdim,
-            'activation': linear_activation,
-        },
-        'transl': {
-            # 'scale': 0.001 / 2.,
-            'name': names['transl'],
-            'units': xdim,
-            'activation': linear_activation,
-        },
-        'transf': {
-            # 'scale': 0.001 / 2.,
-            'name': names['transf'],
-            'units': xdim,
-            'activation': linear_activation,
-        },
-    }
+#     args = {
+#         'x': {
+#             # 'scale': factor / 2.,
+#             'name': names['x_layer'],
+#             'units': network_config.units[0],
+#             'activation': linear_activation,
+#         },
+#         'v': {
+#             # 'scale': 1. / 2.,
+#             'name': names['v_layer'],
+#             'units': network_config.units[0],
+#             'activation': linear_activation,
+#         },
+#         'scale': {
+#             # 'scale': 0.001 / 2.,
+#             'name': names['scale'],
+#             'units': xdim,
+#             'activation': linear_activation,
+#         },
+#         'transl': {
+#             # 'scale': 0.001 / 2.,
+#             'name': names['transl'],
+#             'units': xdim,
+#             'activation': linear_activation,
+#         },
+#         'transf': {
+#             # 'scale': 0.001 / 2.,
+#             'name': names['transf'],
+#             'units': xdim,
+#             'activation': linear_activation,
+#         },
+#     }
 
-    return {
-        'args': args,
-        'names': names,
-        'activation': activation_fn,
-        'coeff_kwargs': coeff_kwargs,
-    }
+#     return {
+#         'args': args,
+#         'names': names,
+#         'activation': activation_fn,
+#         'coeff_kwargs': coeff_kwargs,
+#     }
 
 
-def setup(
-        xdim: int,
-        network_config: NetworkConfig,
-        name: Optional[str] = 'network',
-) -> dict:
-    """Setup for building network."""
-    layer_kwargs = {
-        'x': {
-            'units': network_config.units[0],
-            'name': f'{name}_xLayer',
-            'activation': linear_activation,
-        },
-        'v': {
-            'units': network_config.units[0],
-            'name': f'{name}_vLayer',
-            'activation': linear_activation,
-        },
-        'scale': {
-            'units': xdim,
-            'name': f'{name}_scaleLayer',
-            'activation': linear_activation,
-        },
-        'transl': {
-            'units': xdim,
-            'name': f'{name}_translationLayer',
-            'activation': linear_activation,
-        },
-        'transf': {
-            'units': xdim,
-            'name': f'{name}_transformationLayer',
-            'activation': linear_activation,
-        },
-    }
+# def setup(
+#         xdim: int,
+#         network_config: NetworkConfig,
+#         name: Optional[str] = 'network',
+# ) -> dict:
+#     """Setup for building network."""
+#     layer_kwargs = {
+#         'x': {
+#             'units': network_config.units[0],
+#             'name': f'{name}_xLayer',
+#             'activation': linear_activation,
+#         },
+#         'v': {
+#             'units': network_config.units[0],
+#             'name': f'{name}_vLayer',
+#             'activation': linear_activation,
+#         },
+#         'scale': {
+#             'units': xdim,
+#             'name': f'{name}_scaleLayer',
+#             'activation': linear_activation,
+#         },
+#         'transl': {
+#             'units': xdim,
+#             'name': f'{name}_translationLayer',
+#             'activation': linear_activation,
+#         },
+#         'transf': {
+#             'units': xdim,
+#             'name': f'{name}_transformationLayer',
+#             'activation': linear_activation,
+#         },
+#     }
 
-    coeff_defaults = {
-        'dtype': TF_FLOAT,
-        'trainable': True,
-        'initial_value': tf.zeros([1, xdim], dtype=TF_FLOAT),
-    }
-    coeff_kwargs = {
-        'scale': {
-            'name': f'{name}_scaleCoeff',
-            **coeff_defaults,
-        },
-        'transf': {
-            'name': f'{name}_transformationCoeff',
-            **coeff_defaults,
-        }
-    }
+#     coeff_defaults = {
+#         'dtype': TF_FLOAT,
+#         'trainable': True,
+#         'initial_value': tf.zeros([1, xdim], dtype=TF_FLOAT),
+#     }
+#     coeff_kwargs = {
+#         'scale': {
+#             'name': f'{name}_scaleCoeff',
+#             **coeff_defaults,
+#         },
+#         'transf': {
+#             'name': f'{name}_transformationCoeff',
+#             **coeff_defaults,
+#         }
+#     }
 
-    return {'layer': layer_kwargs, 'coeff': coeff_kwargs}
+#     return {'layer': layer_kwargs, 'coeff': coeff_kwargs}
