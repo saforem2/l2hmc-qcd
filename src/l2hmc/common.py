@@ -562,7 +562,7 @@ def save_logs(
     tfile.parent.mkdir(exist_ok=True, parents=True)
 
     data = {}
-    console = get_console(record=True, width=235)
+    console = get_console(record=True, width=200)
     if tables is not None:
         for idx, table in tables.items():
             if idx == 0:
