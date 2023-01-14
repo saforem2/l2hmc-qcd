@@ -9,7 +9,7 @@ import logging
 import os
 from pathlib import Path
 import time
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 import aim
 from aim import Distribution
@@ -32,7 +32,7 @@ from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.group.su3.tensorflow.group import SU3
 from l2hmc.group.u1.tensorflow.group import U1Phase
 from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
-from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
+from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1, plaq_exact
 from l2hmc.learning_rate.tensorflow.learning_rate import ReduceLROnPlateau
 from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.network.tensorflow.network import NetworkFactory
@@ -40,16 +40,9 @@ from l2hmc.trackers.tensorflow.trackers import update_summaries
 from l2hmc.trainers.trainer import BaseTrainer
 from l2hmc.utils.history import summarize_dict
 from l2hmc.utils.rich import get_width, is_interactive
-# from l2hmc.utils.logger import get_pylogger
 from l2hmc.utils.step_timer import StepTimer
-# tf.autograph.set_verbosity(0)
-# os.environ['AUTOGRAPH_VERBOSITY'] = '0'
-# JIT_COMPILE = (len(os.environ.get('JIT_COMPILE', '')) > 0)
-# from tqdm.auto import trange
-if is_interactive():
-    from tqdm.rich import trange
-else:
-    from tqdm.auto import trange
+import l2hmc.utils.live_plots as plotter
+from tqdm.auto import trange
 
 # log = get_pylogger(__name__)
 log = logging.getLogger(__name__)
@@ -122,10 +115,11 @@ def is_dist(z: Tensor | ops.EagerTensor | np.ndarray) -> bool:
     )
 
 
-from l2hmc.lattice.u1.tensorflow.lattice import plaq_exact
+Lattice = Union[LatticeU1, LatticeSU3]
 
-# TODO: Replace arguments in __init__ call below with configs.TrainerConfig
+
 class Trainer(BaseTrainer):
+    # TODO: Replace arguments in __init__ call below with configs.TrainerConfig
     def __init__(
             self,
             cfg: DictConfig | ExperimentConfig,
@@ -135,7 +129,6 @@ class Trainer(BaseTrainer):
             skip: Optional[str | list[str]] = None,
     ) -> None:
         super().__init__(cfg=cfg, keep=keep, skip=skip)
-        # assert isinstance(self.config, ExperimentConfig)
         if self.config.compression in [True, 'fp16']:
             self.compression = hvd.Compression.fp16
         else:
@@ -150,33 +143,31 @@ class Trainer(BaseTrainer):
         self.size: int = hvd.size()
         self.rank: int = hvd.rank()
         self.local_rank: int = hvd.local_rank()
-        # self._is_chief: bool = (self.local_rank == 0 and self.rank == 0)
-        self._is_chief: bool = self.check_if_chief()
-        self.lattice = self.build_lattice()
+        self._is_chief: bool = (self.rank == 0)
+        self.lattice: Lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
         self.dynamics: Dynamics = self.build_dynamics(
             build_networks=build_networks
         )
         # Call dynamics to make sure everything initialized
-        self.ckpt_dir = (
+        self.ckpt_dir: Path = (
             Path(CHECKPOINTS_DIR).joinpath('checkpoints')
             if ckpt_dir is None
             else Path(ckpt_dir).resolve()
         )
         self.ckpt_dir.mkdir(exist_ok=True, parents=True)
-        # self.load_ckpt()
-        assert (
-            self.dynamics is not None
-            and isinstance(self.dynamics, Dynamics)
-        )
+        # assert (
+        #     self.dynamics is not None
+        #     and isinstance(self.dynamics, Dynamics)
+        # )
         self.optimizer = self.build_optimizer()
-        self.verbose = self.config.dynamics.verbose
+        self.verbose: bool = self.config.dynamics.verbose
         # compression = 'fp16'
         # self.verbose = not skip_tracking
         # self.compression = HVD_FP_MAP['fp16']
         # self.lr_schedule = self.build_lr_schedule()
         # skip_tracking = os.environ.get('SKIP_TRACKING', False)
-        self.clip_norm = self.config.learning_rate.clip_norm
+        self.clip_norm: float = self.config.learning_rate.clip_norm
         self.reduce_lr = ReduceLROnPlateau(self.config.learning_rate)
         self.reduce_lr.set_model(self.dynamics)
         self.reduce_lr.set_optimizer(self.optimizer)
@@ -198,11 +189,6 @@ class Trainer(BaseTrainer):
         if self._is_chief:
             log.info(s)
 
-    def check_if_chief(self) -> bool:
-        return (
-            self.rank == 0 and self.local_rank == 0
-        )
-
     def call_dynamics(
             self,
             x: Optional[Tensor] = None,
@@ -211,8 +197,6 @@ class Trainer(BaseTrainer):
         beta = 1. if beta is None else beta
         if x is None:
             x = self.dynamics.lattice.random()
-            # state = self.dynamics.random_state(beta)
-            # x = state.x
         inputs = (x, tf.constant(beta, dtype=TF_FLOAT))
         return self.dynamics(inputs)  # type:ignore
 
@@ -409,50 +393,25 @@ class Trainer(BaseTrainer):
     def track_weights(
             self,
             run: Optional[Any] = None,
-            # arun: Optional[Any] = None
     ) -> None:
         if not self._is_chief:
             return
 
-        rename = lambda k: (
-            f"model/{k.replace('/', '.').replace('dynamics', 'networks')}"
-        )
+        def rename(k):
+            return (
+                f"model/{k.replace('/', '.').replace('dynamics', 'networks')}"
+            )
 
-        # f"model/{k.replace('/', '.').replace('dynamics', 'networks')}": v
         if run is not None:
             weights = {
-                rename(k): v for k, v in self.dynamics.get_all_weights().items()
+                rename(k): v
+                for k, v in self.dynamics.get_all_weights().items()
             }
             run.log(weights, commit=False)
             run.log(
                 {f'{k}/avg': tf.reduce_mean(v) for k, v in weights.items()},
                 commit=True
             )
-        # if run is not None:
-        #     weights = {
-        #         k.replace('dynamics', 'networks'): v
-        #         for k, v in weights.items()
-        #     }
-        #     run.log(weights, commit=True)
-
-        # if run is not None:
-        #     run.log({
-        #         k.replace('/', '.').replace('dynamics', 'networks'): v
-        #         for k, v in self.dynamics.get_all_weights()
-        #     }, commit=True)
-            # weights = {
-            #     k.replace('dynamics', 'networks'): v
-            #     for k, v in weights.items()
-            # }
-            # run.log(weights, commit=True)
-            # run.log({f'wandb/{job_type}': record}, commit=False)
-            # run.log({f'avgs/wandb.{job_type}': avgs}, commit=False)
-            # if weights_dict is not None:
-            #     # run.log({'Dynamics': weights}, commit=False)
-            #     run.log(weights_dict, commit=False)
-            # if dQdict is not None:
-            #     run.log(dQdict, commit=True)
-
 
     def track_metrics(
             self,
@@ -462,7 +421,6 @@ class Trainer(BaseTrainer):
             step: Optional[int],
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
-            # log_weights: bool = True,
     ) -> None:
         if not self._is_chief:
             return
@@ -478,19 +436,9 @@ class Trainer(BaseTrainer):
                 }
             }
 
-        # weights_dict = None
-        # if job_type == 'train' and log_weights:
-        #     # weights = self.dynamics.get_weights_dict()
-        #     weights_dict = {
-        #         f'model/{w.name}': w for w in self.dynamics.weights
-        #     }
-
         if run is not None:
             run.log({f'wandb/{job_type}': record}, commit=False)
             run.log({f'avgs/wandb.{job_type}': avgs}, commit=False)
-            # if weights_dict is not None:
-            #     # run.log({'Dynamics': weights}, commit=False)
-            #     run.log(weights_dict, commit=False)
             if dQdict is not None:
                 run.log(dQdict, commit=True)
         if arun is not None:
@@ -502,13 +450,6 @@ class Trainer(BaseTrainer):
 
             if dQdict is not None:
                 self.aim_track({'dQint': dQint}, prefix='dQ', **kwargs)
-
-            # if weights is not None:
-            #     self.aim_track(
-            #         weights,
-            #         prefix='Dynamics',
-            #         **kwargs
-            #     )
 
             try:
                 self.aim_track(avgs, prefix='avgs', **kwargs)
@@ -559,6 +500,7 @@ class Trainer(BaseTrainer):
                  *self.dynamics.xshape[1:]))
             inputs = (x, *inputs[1:])
         xout, metrics = self.dynamics(inputs, training=False)  # type:ignore
+        xout = tf.reshape(xout, (xout.shape[0], *self.dynamics.xshape[1:]))
         xout = self.g.compat_proj(xout)
         xp = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=inputs[0], x_prop=xp, acc=metrics['acc'])
@@ -617,12 +559,13 @@ class Trainer(BaseTrainer):
                 self.config.annealing_schedule.beta_final,
                 dtype=TF_FLOAT
             )
+
         elif isinstance(beta, float):
             beta = tf.constant(beta, dtype=TF_FLOAT)
 
         if nleapfrog is None and str(job_type).lower() == 'hmc':
-            nleapfrog = self.config.dynamics.nleapfrog
-            assert isinstance(nleapfrog, int)
+            nleapfrog = int(self.config.dynamics.nleapfrog)
+            # assert isinstance(nleapfrog, int)
             if self.config.dynamics.merge_directions:
                 nleapfrog *= 2
 
@@ -642,7 +585,8 @@ class Trainer(BaseTrainer):
                 x = x[:nchains]  # type: ignore
 
         assert isinstance(x, Tensor)
-        self.warning(f'x[:nchains].shape: {x.shape}')
+        if nchains is not None:
+            self.warning(f'x[:nchains].shape: {x.shape}')
 
         if writer is not None:
             writer.set_as_default()
@@ -651,7 +595,8 @@ class Trainer(BaseTrainer):
         eval_steps = self.steps.test if eval_steps is None else eval_steps
         assert isinstance(eval_steps, int)
         nprint = (
-            max(1, min(50, eval_steps // 50)) if nprint is None else nprint
+            max(1, min(50, eval_steps // 50))
+            if nprint is None else nprint
         )
         nlog = max((1, min((10, eval_steps))))
         if nlog <= eval_steps:
@@ -662,8 +607,11 @@ class Trainer(BaseTrainer):
                 job_type: {'beta': beta, 'xshape': x.shape.as_list()}
             })
 
-        assert x is not None and isinstance(x, Tensor)
-        assert beta is not None and isinstance(beta, Tensor)
+        assert isinstance(x, Tensor)
+        assert isinstance(beta, Tensor)
+        assert isinstance(nlog, int)
+        assert isinstance(nprint, int)
+        assert isinstance(eval_steps, int)
         output = {
             'x': x,
             'eps': eps,
@@ -730,7 +678,11 @@ class Trainer(BaseTrainer):
         beta = setup['beta']
         table = setup['table']
         nleapfrog = setup['nleapfrog']
+
+        nlog = setup['nlog']
+        nprint = setup['nprint']
         eval_steps = setup['eval_steps']
+
         # assert eps is not None and isinstance(eps, (float, tf.Tensor))
         timer = self.timers.get(job_type, None)
         history = self.histories.get(job_type, None)
@@ -741,6 +693,9 @@ class Trainer(BaseTrainer):
             and x is not None
             and beta is not None
         )
+        assert isinstance(nlog, int)
+        assert isinstance(nprint, int)
+        assert isinstance(eval_steps, int)
         if job_type == 'hmc':
             assert eps is not None
 
@@ -750,15 +705,21 @@ class Trainer(BaseTrainer):
             return self.eval_step(inputs)  # type:ignore
 
         ctx = self.get_context_manager(table)
-        
+
         def refresh_view():
             if isinstance(ctx, Live):
                 ctx.refresh()
                 ctx.console.clear_live()
 
-        x = self.warmup(beta)
-        with self.get_context_manager(table) as ctx:
-            # for step in trange(eval_steps):
+        def _should_emit(step):
+            return (step % nlog == 0 or step % nprint == 0)
+
+        plots = None
+        if is_interactive():
+            plots = plotter.init_plots()
+
+        x = self.warmup(beta, x=x)
+        with ctx:
             for step in trange(
                     eval_steps,
                     dynamic_ncols=True,
@@ -767,12 +728,8 @@ class Trainer(BaseTrainer):
                 timer.start()
                 x, metrics = eval_fn((x, beta))  # type:ignore
                 dt = timer.stop()
-                # if step % setup['nprint'] == 0 or step % setup['nlog'] == 0:
-                if (
-                        # step >= 0 and
-                        (step % setup['nlog'] == 0
-                         or step % setup['nprint'] == 0)
-                ):
+
+                if _should_emit(step):
                     record = {
                         f'{job_type[0]}step': step,
                         'dt': dt,
@@ -782,23 +739,21 @@ class Trainer(BaseTrainer):
                         'dQint': metrics.pop('dQint', None),
                     }
                     record.update(metrics)
-                    avgs, summary = self.record_metrics(run=run,
-                                                        arun=arun,
-                                                        step=step,
-                                                        writer=writer,
-                                                        metrics=record,
-                                                        job_type=job_type)
+                    avgs, summary = self.record_metrics(
+                        run=run,
+                        arun=arun,
+                        step=step,
+                        writer=writer,
+                        metrics=record,
+                        job_type=job_type
+                    )
                     summaries.append(summary)
                     table = self.update_table(
                         table=setup['table'],
                         step=step,
                         avgs=avgs,
                     )
-
-                    if (
-                            # not isinstance(setup['ctx'], Live)
-                            step % setup['nprint'] == 0
-                    ):
+                    if step % nprint == 0:
                         self.info(summary)
 
                     refresh_view()
@@ -825,6 +780,23 @@ class Trainer(BaseTrainer):
                                 eps -= (eps / 10.)
                             else:
                                 eps += (eps / 10.)
+                    if (
+                            is_interactive()
+                            and self._is_chief
+                            and plots is not None
+                    ):
+                        if len(self.histories[job_type].history.keys()) == 0:
+                            plotter.update_plots(
+                                history=metrics,
+                                plots=plots,
+                                logging_steps=nlog,
+                            )
+                        else:
+                            _ = plotter.update_plots(
+                                history=self.histories[job_type].history,
+                                plots=plots,
+                                logging_steps=nlog,
+                            )
 
         if isinstance(ctx, Live):
             ctx.console.clear_live()
@@ -861,10 +833,6 @@ class Trainer(BaseTrainer):
         """
         xinit, beta = inputs
         aw = self.config.loss.aux_weight
-        assert (
-            self.dynamics is not None
-            # and isinstance(self.dynamics, Dynamics)
-        )
         with tf.GradientTape() as tape:
             tape.watch(xinit)
             xout, metrics = self.dynamics(  # type:ignore
@@ -986,6 +954,8 @@ class Trainer(BaseTrainer):
             extend: Optional[int] = None,
             nprint: Optional[int] = None,
             nlog: Optional[int] = None,
+            warmup: bool = True,
+            plots: Optional[Any] = None,
     ) -> tuple[Tensor, dict]:
         rows = {}
         summaries = []
@@ -1020,6 +990,9 @@ class Trainer(BaseTrainer):
                 ctx.refresh()
 
         with ctx:
+            if warmup:
+                x = self.warmup(beta=beta, x=x)
+
             for epoch in trange(
                     nepoch,
                     dynamic_ncols=True,
@@ -1052,9 +1025,6 @@ class Trainer(BaseTrainer):
                         metrics=record,  # metrics from Dynamics
                         job_type='train',
                         log_weights=True,
-                        # model=self.dynamics,
-                        # prefix='Dynamics',
-                        # weights=self.dynamics.get_weights_dict(),
                         optimizer=self.optimizer,
                     )
                     rows[self._gstep] = avgs
@@ -1078,6 +1048,18 @@ class Trainer(BaseTrainer):
                         x = self.draw_x()
 
                     refresh_view()
+                    if (
+                            is_interactive()
+                            and self._is_chief
+                            and plots is not None
+                    ):
+                        if len(self.histories['train'].history.keys()) == 0:
+                            plotter.update_plots(metrics, plots)
+                        else:
+                            plotter.update_plots(
+                                self.histories['train'].history,
+                                plots=plots,
+                            )
 
                 if isinstance(ctx, Live):
                     ctx.console.clear()
@@ -1168,27 +1150,32 @@ class Trainer(BaseTrainer):
             self,
             beta: float | Tensor,
             nsteps: int = 100,
-            tol: float = 1e-3,
+            tol: float = 1e-5,
+            x: Optional[Tensor] = None
     ) -> Tensor:
         # state = self.dynamics.random_state(beta)
-        x = self.dynamics.lattice.random()
+        if x is None:
+            x = self.dynamics.lattice.random()
         if not isinstance(beta, Tensor):
             beta = tf.constant(beta, dtype=TF_FLOAT)
         # btensor = tf.cast(beta, dtype=TF_FLOAT)
         pexact = plaq_exact(beta)
-        for i in range(nsteps):
-            x, metrics = self.dynamics((x, beta))  # type:ignore
+        for step in range(nsteps):
+            x, metrics = self.dynamics((x, beta))
             plaqs = metrics.get('plaqs', None)
+            assert (
+                x is not None
+                and isinstance(x, Tensor)
+            )
             if plaqs is not None:
                 pdiff = tf.math.reduce_sum(tf.math.abs(plaqs - pexact))
                 if pdiff < tol:
                     log.warning(
                         f'Chains thermalized!'
-                        f' step: {i},'
+                        f' step: {step},'
                         f' plaq_diff: {pdiff:.4f}'
                     )
                     return x
-                
         return x
 
     def train(
@@ -1204,6 +1191,7 @@ class Trainer(BaseTrainer):
             nprint: Optional[int] = None,
             nlog: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
+            warmup: bool = True,
             # restore: bool = True,
     ) -> dict:
         """Perform training and return dictionary of results."""
@@ -1234,9 +1222,7 @@ class Trainer(BaseTrainer):
         assert x is not None
         assert nera is not None
         assert train_dir is not None
-        x = self.warmup(
-            betas.get('0', beta_final)
-        )
+
         for era in range(nera):
             b = tf.constant(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
@@ -1249,7 +1235,7 @@ class Trainer(BaseTrainer):
 
                 self.console.rule(f'ERA: {era} / {nera}, BETA: {b:.3f}')
 
-            x = self.warmup(b)
+            # x = self.warmup(b)
             epoch_start = time.time()
             x, edata = self.train_epoch(
                 x=x,
@@ -1261,7 +1247,8 @@ class Trainer(BaseTrainer):
                 extend=extend,
                 nepoch=nepoch,
                 nlog=nlog,
-                nprint=nprint
+                nprint=nprint,
+                warmup=warmup,
             )
 
             self.rows['train'][str(era)] = edata['rows']
@@ -1387,7 +1374,6 @@ class Trainer(BaseTrainer):
     def metric_to_numpy(
             self,
             metric: Any,
-            # key: str = '',
     ):
         """Consistently convert `metric` to np.ndarray."""
         if isinstance(metric, (float, np.ScalarType)):
@@ -1424,10 +1410,6 @@ class Trainer(BaseTrainer):
                 step = step
             if callable(getattr(step, 'item', None)):
                 step = step.item()  # type:ignore
-            # try:
-            #     step = step.item()
-            # except AttributeError:
-            #     pass
 
         for key, val in metrics.items():
             if prefix is not None:

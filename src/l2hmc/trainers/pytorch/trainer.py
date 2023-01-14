@@ -8,6 +8,8 @@ from collections import defaultdict
 from contextlib import nullcontext
 import logging
 import os
+
+import deepspeed
 import json
 from pathlib import Path
 import time
@@ -20,17 +22,16 @@ from omegaconf import DictConfig
 from hydra.utils import instantiate
 from rich import box, print_json
 from rich.live import Live
-# from rich.logging import RichHandler
 from rich.table import Table
-# from rich_logger import RichTablePrinter
 import torch
 from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
 import wandb
+# from transformers.deepspeed import HfDeepSpeedConfig
 
 # from l2hmc.utils.logger import get_pylogger
 
-import l2hmc.configs as configs
+import l2hmc.utils.live_plots as plotter
 from l2hmc.common import (
     ScalarLike,
     TensorLike,
@@ -42,52 +43,23 @@ from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.group.su3.pytorch.group import SU3
 from l2hmc.group.u1.pytorch.group import U1Phase
 from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
-from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
+from l2hmc.lattice.u1.pytorch.lattice import LatticeU1, plaq_exact
 from l2hmc.loss.pytorch.loss import LatticeLoss
 from l2hmc.network.pytorch.network import NetworkFactory
 from l2hmc.trackers.pytorch.trackers import update_summaries
 from l2hmc.trainers.trainer import BaseTrainer
 from l2hmc.utils.history import summarize_dict
 from l2hmc.utils.rich import get_width, is_interactive
-# from l2hmc.utils.rich import get_console
-# from l2hmc.utils.rich_logger import LOGGER_FIELDS
 from l2hmc.utils.step_timer import StepTimer
 # WIDTH = int(os.environ.get('COLUMNS', 150))
 
 # from tqdm.rich import trange
+# if is_interactive():
+#     from tqdm.rich import trange
+# else:
 from tqdm.auto import trange
 
-
-# console = get_console()
-# logging.basicConfig(
-#     level=logging.DEBUG,
-#     format="%(message)s",
-#     datefmt="%X",
-#     handlers=[
-#         RichHandler(
-#             rich_tracebacks=True,
-#             tracebacks_show_locals=True,
-#             console=console,
-#             enable_link_path=False,
-#             show_path=False,
-#         )
-#     ]
-# )
-# log = logging.getLogger(__name__)
-
-# handler = RichHandler(
-#     rich_tracebacks=True,
-#     show_path=False,
-#     console=console,
-# )
-# log.handlers = [handler]
-
-# logging.addLevelName(70, 'CUSTOM')
-
-# log = logging.getLogger(__name__)
-# log = get_pylogger(__name__)
 log = logging.getLogger(__name__)
-# log.setLevel('INFO')
 
 Tensor = torch.Tensor
 Module = torch.nn.modules.Module
@@ -106,12 +78,11 @@ def grab(x: Tensor) -> np.ndarray:
 
 def load_ds_config(fpath: os.PathLike) -> dict:
     ds_config_path = Path(fpath)
-    # assert ds_config_path.is_file()
     with ds_config_path.open('r') as f:
         ds_config = json.load(f)
 
     return ds_config
-    
+
 
 class Trainer(BaseTrainer):
     def __init__(
@@ -130,37 +101,30 @@ class Trainer(BaseTrainer):
             self.g = SU3()
         else:
             raise ValueError
-        # if not isinstance(self.config, ExperimentConfig):
         self.config: ExperimentConfig = instantiate(cfg)
         # skip_tracking = os.environ.get('SKIP_TRACKING', False)
         # self.verbose = not skip_tracking
-        # assert isinstance(
-        #     self.config,
-        #     (configs.ExperimentConfig, ExperimentConfig)
-        # )
         self.clip_norm = self.config.learning_rate.clip_norm
         self._lr_warmup = torch.linspace(
             self.config.learning_rate.min_lr,
             self.config.learning_rate.lr_init,
             2 * self.steps.nepoch
         )
-        # assert isinstance(self.dynamics, Dynamics)
-        dsetup = setup_torch_distributed(self.config.backend)
+        dsetup: dict = setup_torch_distributed(self.config.backend)
         self._dtype = torch.get_default_dtype()
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
         self._device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.size = dsetup['size']
-        self.rank = dsetup['rank']
-        self.local_rank = dsetup['local_rank']
-        self._is_chief = (self.local_rank == 0 and self.rank == 0)
-        # self._is_chief: bool = self.check_if_chief()
-        self._with_cuda = torch.cuda.is_available()
+        self.size: int = dsetup['size']
+        self.rank: int = dsetup['rank']
+        self.local_rank: int = dsetup['local_rank']
+        self._is_chief: bool = (self.local_rank == 0 and self.rank == 0)
+        self._with_cuda: bool = torch.cuda.is_available()
         self.lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
         self.dynamics: Dynamics = self.build_dynamics(
             build_networks=build_networks,
         )
-        self.ckpt_dir = (
+        self.ckpt_dir: Path = (
             Path(CHECKPOINTS_DIR).joinpath('checkpoints')
             if ckpt_dir is None
             else Path(ckpt_dir).resolve()
@@ -168,25 +132,25 @@ class Trainer(BaseTrainer):
         self.ckpt_dir.mkdir(exist_ok=True, parents=True)
 
         # --------------------------------------------------------
-        # NOTE: 
+        # NOTE:
         #   - If we want to try and resume training,
-        #     `self.load_ckpt()` will attempt to find a 
+        #     `self.load_ckpt()` will attempt to find a
         #     the most recently saved checkpoint that is
         #     compatible with the current specified architecture.
         # --------------------------------------------------------
         if self.config.restore:
-            output = self.load_ckpt()
+            output: dict = self.load_ckpt()
             self.dynamics: Dynamics = output['dynamics']
             # self._optimizer: torch.optim.Optimizer = output['optimizer']
             ckpt: dict = output['ckpt']
-            self._gstep = ckpt.get('gstep', ckpt.get('step', 0))
+            self._gstep: int = ckpt.get('gstep', ckpt.get('step', 0))
             if self._is_chief:
                 self.warning(
                     f'Restoring global step from ckpt! '
                     f'self._gstep: {self._gstep}'
                 )
         else:
-            self._gstep = 0
+            self._gstep: int = 0
 
         if self.config.dynamics.group == 'U1':
             self.warning('Using `torch.optim.Adam` optimizer')
@@ -201,8 +165,8 @@ class Trainer(BaseTrainer):
                 lr=self.config.learning_rate.lr_init,
             )
 
-        self.use_fp16 = False
-        self.ds_config = None
+        self.use_fp16: bool = False
+        self.ds_config = {}
         self.dynamics_engine = None
         if self.config.backend == 'DDP':
             from torch.nn.parallel import DistributedDataParallel as DDP
@@ -210,24 +174,24 @@ class Trainer(BaseTrainer):
             self.dynamics_engine = DDP(self.dynamics)
 
         elif self.config.backend.lower() in ['ds', 'deepspeed']:
-            import deepspeed
-            # if self.config.ds_config_path is None:
-            ds_config_path = Path(CONF_DIR).joinpath('ds_config.json')
-            # else:
-            #     ds_config_path = Path(self.config.ds_config_path)
-            # assert ds_config_path.is_file()
-            self.ds_config = load_ds_config(ds_config_path)
-            self.info(f'Loaded DeepSpeed config from: {ds_config_path}')
-            if self._is_chief:
-                print_json(json.dumps(self.ds_config, indent=4))
-            if self._with_cuda:
-                self.dynamics.cuda()
-            if self.ds_config['fp16']['enabled']:
-                self.dynamics = self.dynamics.to(torch.half)
+            # TODO: Move ds_config_path to `conf/config.yaml` to be overridable
+            self.ds_config = self.prepare_ds_config()
             params = filter(
                 lambda p: p.requires_grad,
                 self.dynamics.parameters()
             )
+            if self._with_cuda:
+                self.dynamics.cuda()
+
+            if (
+                    (fp16 := self.ds_config.get('fp16', None)) is not None
+                    and fp16.get('enabled', False)
+            ):
+                self.dynamics = self.dynamics.to(torch.half)
+
+            if self._is_chief:
+                print_json(json.dumps(self.ds_config, indent=4))
+
             engine, optimizer, _, _ = deepspeed.initialize(
                 model=self.dynamics,
                 model_parameters=params,  # type:ignore
@@ -243,7 +207,7 @@ class Trainer(BaseTrainer):
             if self.use_fp16:
                 self._dtype = torch.half
 
-        elif self.config.backend in ['hvd', 'horovod']:
+        elif self.config.backend.lower() in ['hvd', 'horovod']:
             import horovod.torch as hvd
             compression = (
                 hvd.Compression.fp16
@@ -267,6 +231,50 @@ class Trainer(BaseTrainer):
             and str(self.config.dynamics.group).upper() in ['U1', 'SU3']
         )
 
+    def prepare_ds_config(self) -> dict:
+        if self.config.backend.lower() not in ['ds', 'deepspeed']:
+            return {}
+
+        ds_config = {}
+        ds_config_path = Path(CONF_DIR).joinpath('ds_config.json')
+        ds_config = load_ds_config(ds_config_path)
+        self.info(f'Loaded DeepSpeed config from: {ds_config_path}')
+        pname = 'l2hmc-qcd'
+        if self.config.debug_mode:
+            pname += '-debug'
+
+        ds_config['wandb'].update({
+            "project": pname,
+            "group": f'{self.config.framework}/{self.config.backend}',
+        })
+        # self.ds_config.update({
+        #     'tensorboard': {
+        #         'enabled': True,
+        #         'output_path': Path(os.getcwd()),
+        #     },
+        #     'csv_monitor': {
+        #         'enabled': True,
+        #         'output_path': Path(os.getcwd()).joinpath('csv_monitor'),
+        #     }
+        # })
+
+        ds_config.update({
+            'gradient_accumulation_steps': 1,
+            'train_micro_batch_size_per_gpu': 1,
+        })
+        ds_config['train_batch_size'] = (
+            self.size
+            * ds_config['gradient_accumulation_steps']
+            * ds_config['train_micro_batch_size_per_gpu']
+        )
+        if ds_config['scheduler'].get('params', None) is not None:
+            ds_config['scheduler']['params'].update({
+                'warmup_num_steps': self.config.steps.nepoch,
+                'total_num_steps': (
+                    self.config.steps.nera * self.config.steps.nepoch
+                )
+            })
+        return ds_config
 
     def warning(self, s: str) -> None:
         if self._is_chief:
@@ -275,62 +283,6 @@ class Trainer(BaseTrainer):
     def info(self, s: str) -> None:
         if self._is_chief:
             log.info(s)
-
-    def distribute_dynamics(
-            self,
-            dynamics: Optional[Dynamics] = None,
-            optimizer: Optional[torch.optim.Optimizer] = None,
-            backend: Optional[str] = None,
-            build_networks: bool = True,
-            ds_config: Optional[dict] = None,
-    ):  # tuple[Dynamics, torch.optim.Optimizer]:
-        # model = self.dynamics if model is None else model
-        # optimizer = self.optimizer if optimizer is None else optimizer
-        # backend = self.config.backend if backend is None else backend
-
-        # if dynamics is None:
-        #     dynamics = (
-        #         self.build_dynamics(build_networks)
-        #         if self.dynamics is None else self.dynamics
-        #     )
-
-        # if self._with_cuda:
-        #     dynamics.cuda()
-
-        # if optimizer is None:
-        #     optimizer = (
-        #         self.build_optimizer()
-        #         if self.optimizer is None else self.optimizer
-        #     )
-
-        # self.load_ckpt(
-        #     dynamics,
-        #     optimizer,
-        #     build_networks=build_networks
-        # )
-
-        # assert dynamics is not None and optimizer is not None
-        # if backend.lower() in ['deepspeed', 'ds']:
-        #     import deepspeed
-        #     model, optimizer, _, _ = deepspeed.initialize(
-        #         model=dynamics,
-        #         model_parameters=dynamics.parameters(),  # type:ignore
-        #         optimizer=optimizer,
-        #         config=ds_config
-        #     )
-        #     assert model is not None
-        #     assert optimizer is not None
-        #     return (model, optimizer)
-
-        # elif backend.lower() in ['hvd', 'horovod']:
-        #     import horovod.torch as hvd
-        #     hvd.broadcast_parameters(dynamics.state_dict(), root_rank=0)
-        #     hvd.broadcast_optimizer_state(optimizer, root_rank=0)
-
-        # assert dynamics is not None
-        # assert optimizer is not None
-        # return (dynamics, optimizer)
-        pass
 
     def draw_x(self):
         return self.g.random(
@@ -445,7 +397,9 @@ class Trainer(BaseTrainer):
 
         tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
         step = self._gstep
-        ckpt_file = self.ckpt_dir.joinpath(f'ckpt-{era}-{epoch}-{step}-{tstamp}.tar')
+        ckpt_file = self.ckpt_dir.joinpath(
+            f'ckpt-{era}-{epoch}-{step}-{tstamp}.tar'
+        )
         if self._is_chief:
             log.info(f'Saving checkpoint to: {ckpt_file.as_posix()}')
         assert isinstance(self.dynamics.xeps, nn.ParameterList)
@@ -509,10 +463,9 @@ class Trainer(BaseTrainer):
             if i.endswith('.tar')
         ]
 
-        log.info(f'Looking for checkpoints in:\n {self.ckpt_dir}')
+        self.info(f'Looking for checkpoints in:\n {self.ckpt_dir}')
         if len(ckpts) == 0:
-            log.warning('No checkpoints found to load from')
-            # return (dynamics, optimizer)
+            self.warning('No checkpoints found to load from')
             return output
 
         if era is not None:
@@ -531,18 +484,17 @@ class Trainer(BaseTrainer):
 
         modelfile = self.ckpt_dir.joinpath('model.pth')
         if modelfile is not None:
-            log.info(f'Loading model from: {modelfile}')
+            self.info(f'Loading model from: {modelfile}')
             dynamics.load_state_dict(torch.load(modelfile))
             output['modelfile'] = modelfile
         if ckpt_file is not None:
             ckpt_file = Path(self.ckpt_dir).joinpath(ckpt_file)
-            log.info(f'Loading checkpoint from: {ckpt_file}')
+            self.info(f'Loading checkpoint from: {ckpt_file}')
             ckpt = torch.load(ckpt_file)
             output['ckpt'] = ckpt
             output['ckpt_file'] = ckpt_file
             # if (gstep := ckpt.get('gstep', None)) is not None:
             #     self._gstep = gstep
-                    
             # if isinstance(optimizer, torch.optim.Optimizer):
             #     optimizer.load_state_dict(ckpt['optimizer_state_dict'])
 
@@ -714,13 +666,15 @@ class Trainer(BaseTrainer):
 
     def hmc_step(
             self,
-            inputs: tuple[Tensor, float],
+            inputs: tuple[Tensor, float | Tensor],
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
     ) -> tuple[Tensor, dict]:
         self.dynamics.eval()
         xi, beta = inputs
-        beta = torch.tensor(beta)
+        if isinstance(beta, float):
+            beta = torch.tensor(beta)
+
         if WITH_CUDA:
             xi, beta = xi.cuda(), beta.cuda()
 
@@ -734,6 +688,7 @@ class Trainer(BaseTrainer):
             metrics.update(lmetrics)
 
         metrics.update({'loss': loss.item()})
+        self.dynamics.train()
         return xo.detach(), metrics
 
     def eval_step(
@@ -765,7 +720,7 @@ class Trainer(BaseTrainer):
         metrics.update({
             'loss': loss.item(),
         })
-
+        self.dynamics.train()
         return xout.detach(), metrics
 
     def get_context_manager(self, table: Table) -> Live | nullcontext:
@@ -834,8 +789,10 @@ class Trainer(BaseTrainer):
 
         if eps is None and str(job_type).lower() == 'hmc':
             eps = self.config.dynamics.eps_hmc
-            assert eps is not None
-            log.warn(f'Using step size eps: {eps:.4f} for generic HMC')
+            self.warning(
+                'Step size `eps` not specified for HMC! '
+                f'Using default: {eps:.4f} for generic HMC'
+            )
 
         if x is None:
             x = self.lattice.random()
@@ -843,10 +800,11 @@ class Trainer(BaseTrainer):
         self.warning(f'x.shape (original): {x.shape}')
         if nchains is not None:
             if isinstance(nchains, int) and nchains > 0:
-                x = x[:nchains]
+                x = x[:nchains]  # type: ignore
 
         assert isinstance(x, Tensor)
-        self.warning(f'x[:nchains].shape: {x.shape}')
+        if nchains is not None:
+            self.warning(f'x[:nchains].shape: {x.shape}')
 
         table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
         eval_steps = self.steps.test if eval_steps is None else eval_steps
@@ -939,6 +897,8 @@ class Trainer(BaseTrainer):
             eval_steps is not None
             and timer is not None
             and history is not None
+            and nlog is not None
+            and nprint is not None
         )
 
         def eval_fn(z):
@@ -947,35 +907,34 @@ class Trainer(BaseTrainer):
                 return self.hmc_step(z, eps=eps, nleapfrog=nleapfrog)
             return self.eval_step(z)
 
+        ctx = self.get_context_manager(table)
+
+        def refresh_view():
+            if isinstance(ctx, Live):
+                ctx.refresh()
+                ctx.console.clear_live()
+
         def _should_emit(step):
             return (step % nlog == 0 or step % nprint == 0)
 
+        plots = None
+        if is_interactive():
+            plots = plotter.init_plots()
+
         self.dynamics.eval()
-        # printer = self.get_printer(job_type=job_type)
-        x = self.warmup(beta)
-        with self.get_context_manager(table) as ctx:
+        x = self.warmup(beta=beta, x=x)
+        with ctx:
             for step in trange(
                     eval_steps,
                     dynamic_ncols=True,
                     disable=(not self._is_chief),
+                    leave=True,
             ):
-                # if isinstance(ctx, Live):
-                #     ctx.console.clear()
-                #     ctx.refresh()
-
                 timer.start()
                 x, metrics = eval_fn((x, beta))
                 dt = timer.stop()
-                # if (
-                #         step >= 0 and
-                #         (step % setup['nlog'] == 0
-                #          or step % setup['nprint'] == 0)
-                # ):
+
                 if _should_emit(step):
-                    if isinstance(ctx, Live):
-                        ctx.console.clear_live()
-                        ctx.console.clear()
-                        ctx.refresh()
                     record = {
                         f'{job_type[0]}step': step,
                         'dt': dt,
@@ -985,12 +944,14 @@ class Trainer(BaseTrainer):
                         'dQint': metrics.pop('dQint', None),
                     }
                     record.update(metrics)
-                    avgs, summary = self.record_metrics(run=run,
-                                                        arun=arun,
-                                                        step=step,
-                                                        writer=writer,
-                                                        metrics=record,
-                                                        job_type=job_type)
+                    avgs, summary = self.record_metrics(
+                        run=run,
+                        arun=arun,
+                        step=step,
+                        writer=writer,
+                        metrics=record,
+                        job_type=job_type
+                    )
                     summaries.append(summary)
                     table = self.update_table(
                         table=table,
@@ -998,20 +959,16 @@ class Trainer(BaseTrainer):
                         avgs=avgs,
                     )
 
-                    if (
-                            step % nprint == 0
-                            # step % setup['nprint'] == 0
-                            # and (not isinstance(ctx, Live))
-                    ):
-                        log.info(summary)
-                        if isinstance(ctx, Live):
-                            ctx.refresh()
+                    if step % nprint == 0:
+                        self.info(summary)
+
+                    refresh_view()
 
                     if avgs.get('acc', 1.0) < 1e-5:
                         if stuck_counter < patience:
                             stuck_counter += 1
                         else:
-                            log.warning('Chains are stuck! Redrawing x')
+                            self.warning('Chains are stuck! Redrawing x')
                             x = self.lattice.random()
                             stuck_counter = 0
 
@@ -1025,9 +982,23 @@ class Trainer(BaseTrainer):
                             else:
                                 eps += (eps / 10.)
 
-                    # if isinstance(ctx, Live):
-                    #     ctx.console.clear_live()
-                    #     # ctx.refresh()
+                    if (
+                            is_interactive()
+                            and self._is_chief
+                            and plots is not None
+                    ):
+                        if len(self.histories[job_type].history.keys()) == 0:
+                            _ = plotter.update_plots(
+                                history=metrics,
+                                plots=plots,
+                                logging_steps=nlog,
+                            )
+                        else:
+                            _ = plotter.update_plots(
+                                history=self.histories[job_type].history,
+                                plots=plots,
+                                logging_steps=nlog,
+                            )
 
         if isinstance(ctx, Live):
             ctx.console.clear_live()
@@ -1129,7 +1100,6 @@ class Trainer(BaseTrainer):
                 )
             self.optimizer.step()
 
-
         if isinstance(loss, Tensor):
             loss = loss.item()
 
@@ -1210,6 +1180,8 @@ class Trainer(BaseTrainer):
             extend: int = 1,
             nprint: Optional[int] = None,
             nlog: Optional[int] = None,
+            warmup: bool = True,
+            plots: Optional[Any] = None,
     ) -> tuple[Tensor, dict]:
         self.dynamics.train()
         rows = {}
@@ -1238,6 +1210,8 @@ class Trainer(BaseTrainer):
         def should_log(epoch):
             return (self._is_chief and (epoch % log_freq == 0))
 
+        patience = 10
+        stuck_iters = 0
         with ctx:
             if isinstance(ctx, Live):
                 # tstr = ' '.join([
@@ -1248,6 +1222,10 @@ class Trainer(BaseTrainer):
                 ctx.console.clear_live()
                 ctx.update(table)
 
+            if warmup:
+                x = self.warmup(beta=beta, x=x)
+
+            summary = ""
             for epoch in trange(
                     nepoch,
                     dynamic_ncols=True,
@@ -1258,7 +1236,15 @@ class Trainer(BaseTrainer):
                 self._gstep += 1
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
-                if (should_log(epoch) or should_print(epoch)):
+                # if (acc := metrics.get('acc', None)) is not None:
+                #     if isinstance(acc, Tensor):
+                #         if acc.mean() < 1e-5:
+                #             # self.reset_optimizer()
+                #             self.warning('Chains are stuck! Re-drawing x !')
+                #             x = self.warmup(beta)
+
+                # if (should_log(epoch) or should_print(epoch)):
+                if should_log(epoch):
                     record = {
                         'era': era,
                         'epoch': epoch,
@@ -1283,29 +1269,47 @@ class Trainer(BaseTrainer):
                     rows[self._gstep] = avgs
                     summaries.append(summary)
 
-                    if (
-                            should_print(epoch)
-                            # and not isinstance(ctx, Live)
-                    ):
-                        log.info(summary)
+                    # if (
+                    #         should_print(epoch)
+                    #         # and not isinstance(ctx, Live)
+                    # ):
+                    #     log.info(summary)
                     table = self.update_table(
                         table=table,
                         avgs=avgs,
                         step=epoch,
                     )
-                    if isinstance(ctx, Live):
-                        ctx.console.clear()
-                        ctx.console.clear_live()
-                        ctx.refresh()
-
-                    if avgs.get('acc', 1.0) < 1e-5:
-                        self.reset_optimizer()
-                        self.warning('Chains are stuck! Re-drawing x !')
-                        x = self.draw_x()
-
                     # if isinstance(ctx, Live):
                     #     ctx.console.clear()
                     #     ctx.console.clear_live()
+                    #     ctx.refresh()
+
+                    if avgs.get('acc', 1.0) < 1e-5:
+                        if stuck_iters < patience:
+                            stuck_iters += 1
+                        else:
+                            self.warning('Chains are stuck! Redrawing x')
+                            x = self.lattice.random()
+                            stuck_iters = 0
+
+                    if (
+                            is_interactive()
+                            and self._is_chief
+                            and plots is not None
+                    ):
+                        if len(self.histories['train'].history.keys()) == 0:
+                            plotter.update_plots(metrics, plots)
+                        else:
+                            plotter.update_plots(
+                                self.histories['train'].history,
+                                plots=plots,
+                            )
+
+                if should_print(epoch):
+                    log.info(summary)
+                    if isinstance(ctx, Live):
+                        ctx.console.clear()
+                        ctx.console.clear_live()
 
                 if isinstance(ctx, Live):
                     ctx.console.clear()
@@ -1383,29 +1387,47 @@ class Trainer(BaseTrainer):
 
     def warmup(
             self,
-            beta: float,
+            beta: float | torch.Tensor,
             nsteps: int = 100,
-            tol: float = 1e-3,
+            tol: float = 1e-5,
+            x: Optional[Tensor] = None,
+            nchains: Optional[int] = None,
     ) -> Tensor:
+        """"""
         self.dynamics.eval()
-        x = self.dynamics.lattice.random().to(self._dtype).to(self._device)
-        from l2hmc.lattice.u1.pytorch.lattice import plaq_exact
-        # if not isinstance(beta, Tensor):
-        #     beta = torch.tensor(beta)
+        if x is None:
+            x = (
+                self.dynamics.lattice.random()
+            ).to(self._dtype).to(self._device)
 
-        btensor = torch.tensor(beta, dtype=torch.float)
-        # beta = beta.to(self._dtype).to(self._device)
-        # btensor = torch.tensor(beta).to(self._dtype).to(self._device)
-        pexact = plaq_exact(btensor).to(self._device).to(self._dtype)
-        for _ in range(nsteps):
-            # x, metrics = self.dynamics((x, beta))
+        if nchains is not None:
+            x = x[:nchains]
+
+        if isinstance(beta, float):
+            beta = torch.tensor(beta).to(self._dtype).to(self._device)
+
+        pexact = (
+            plaq_exact(beta).to(self._device).to(self._dtype)
+            if self.config.dynamics.group == 'U1'
+            else None
+        )
+        for step in range(nsteps):
             x, metrics = self.hmc_step((x, beta))
             plaqs = metrics.get('plaqs', None)
-            if plaqs is not None:
+            assert x is not None and isinstance(x, Tensor)
+            if plaqs is not None and pexact is not None:
                 pdiff = (plaqs - pexact).abs().sum()
                 if pdiff < tol:
-                    log.warning(f'Chains thermalized! plaq_diff: {pdiff:.4f}')
+                    log.warning(
+                        f'Chains thermalized!'
+                        f' step: {step},'
+                        f' plaq_diff: {pdiff:.4f}'
+                    )
                     return x
+                if nsteps > 100 and step % 10 == 0 and self._is_chief:
+                    log.info(
+                        f'(warm-up) step: {step}, plaqs: {plaqs.mean():.4f}'
+                    )
 
         self.dynamics.train()
         return x
@@ -1423,6 +1445,7 @@ class Trainer(BaseTrainer):
             nprint: Optional[int] = None,
             nlog: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
+            warmup: bool = True,
     ) -> dict:
         """Perform training and return dictionary of results."""
         self.dynamics.train()
@@ -1443,16 +1466,19 @@ class Trainer(BaseTrainer):
         nepoch = setup['nepoch']
         # extend = setup['extend']
         train_dir = setup['train_dir']
-        beta_final = setup['beta_final']
-        assert x is not None
+        beta_final: float = setup['beta_final']
+        assert x is not None and isinstance(x, Tensor)
         assert nera is not None
         assert train_dir is not None
-        b0 = betas.get('0', beta_final)
-        x = self.warmup(b0)
-        # for era in trange(nera, disable=(not self._is_chief)):
+        plots = None
+        if is_interactive():
+            plots = plotter.init_plots()
+            # configs,
+            # figsize=(9, 3),
+            # dpi=125
+
         for era in range(nera):
-            b_ = betas.get(str(era), beta_final)
-            b = torch.tensor(b_)
+            b = torch.tensor(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
                 extend = int(self.steps.extend_last_era)
 
@@ -1463,7 +1489,6 @@ class Trainer(BaseTrainer):
 
                 self.console.rule(f'ERA: {era} / {nera - 1}, BETA: {b:.3f}')
 
-            x = self.warmup(b_)
             epoch_start = time.time()
             x, edata = self.train_epoch(
                 x=x,
@@ -1476,6 +1501,8 @@ class Trainer(BaseTrainer):
                 nepoch=nepoch,
                 nprint=nprint,
                 nlog=nlog,
+                warmup=warmup,
+                plots=plots,
             )
 
             self.rows['train'][str(era)] = edata['rows']
