@@ -4,21 +4,22 @@ configs.py
 Implements various configuration objects
 """
 from __future__ import absolute_import, annotations, division, print_function
+import json
+import rich.repr
+import logging
+import os
+
 from abc import ABC, abstractmethod
 from collections import namedtuple
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
-import json
-import logging
-import os
 from pathlib import Path
-from typing import Any, Counter, Dict, List, Optional, Tuple
+from typing import Any, Counter, Dict, List, Optional, Sequence, Tuple
 
 from hydra.core.config_store import ConfigStore
 import numpy as np
 from omegaconf import DictConfig
 
-import rich.repr
 # from l2hmc.utils.logger import get_pylogger
 
 
@@ -81,7 +82,7 @@ def flatten_dict(d: dict, sep: str = '/', pre='') -> dict:
         pre + sep + k if pre else k: v
         for kk, vv in d.items()
         for k, v in flatten_dict(vv, sep, kk).items()
-    } if isinstance(d, dict) else {pre: d }
+    } if isinstance(d, dict) else {pre: d}
 
 
 def add_to_outdirs_file(outdir: os.PathLike):
@@ -108,8 +109,9 @@ def list_to_str(x: list) -> str:
     else:
         return '-'.join([str(i) for i in x])
 
-@rich.repr.auto
+
 @dataclass
+@rich.repr.auto
 class BaseConfig(ABC):
 
     @abstractmethod
@@ -125,7 +127,7 @@ class BaseConfig(ABC):
     def asdict(self) -> dict:
         return asdict(self)
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         return deepcopy(self.__dict__)
 
     def to_file(self, fpath: os.PathLike) -> None:
@@ -308,16 +310,16 @@ class Steps(BaseConfig):
 
 @dataclass
 class ConvolutionConfig(BaseConfig):
-    filters: List[int]
-    sizes: Optional[List[int]] = None
-    pool: Optional[List[int]] = None
+    filters: Sequence[int]
+    sizes: Optional[Sequence[int]] = None
+    pool: Optional[Sequence[int]] = None
     # activation: str
     # paddings: list[int]
 
     def __post_init__(self):
         if self.sizes is None:
             logger.warning('Using default filter size of 2')
-            self.sizes = len(self.filters) * [2]
+            self.sizes = list(len(self.filters) * [2])
         if self.pool is None:
             logger.warning('Using default pooling size of 2')
             self.pool = len(self.filters) * [2]
@@ -329,15 +331,15 @@ class ConvolutionConfig(BaseConfig):
     def to_str(self):
         if len(self.filters) > 0:
             outstr = [
-                list_to_str(self.filters),
+                list_to_str(list(self.filters)),
             ]
             if self.sizes is not None:
                 outstr.append(
-                    list_to_str(self.sizes)
+                    list_to_str(list(self.sizes))
                 )
             if self.pool is not None:
                 outstr.append(
-                    list_to_str(self.pool)
+                    list_to_str(list(self.pool))
                 )
 
             return '_'.join(outstr)
@@ -346,7 +348,7 @@ class ConvolutionConfig(BaseConfig):
 
 @dataclass
 class NetworkConfig(BaseConfig):
-    units: List[int]
+    units: Sequence[int]
     activation_fn: str
     dropout_prob: float
     use_batch_norm: bool = True
@@ -437,9 +439,9 @@ class LossConfig(BaseConfig):
 
 @dataclass
 class InputSpec(BaseConfig):
-    xshape: List[int] | Tuple[int]
-    xnet: Optional[Dict[str, List[int] | Tuple[int]]] = None
-    vnet: Optional[Dict[str, List[int] | Tuple[int]]] = None
+    xshape: Sequence[int]
+    xnet: Optional[Dict[str, Sequence[int]]] = None
+    vnet: Optional[Dict[str, Sequence[int]]] = None
 
     def to_str(self):
         return '-'.join([str(i) for i in self.xshape])
@@ -456,6 +458,10 @@ class InputSpec(BaseConfig):
             self.xnet = {'x': self.xshape, 'v': self.xshape}
         if self.vnet is None:
             self.vnet = {'x': self.xshape, 'v': self.xshape}
+
+
+# @dataclass
+# class DeepSpeedConfig(BaseConfig):
 
 
 @dataclass
@@ -512,7 +518,7 @@ class ExperimentConfig(BaseConfig):
         #     #     json.load(self.ds_config_path)
         #     # })
 
-        w = int(os.environ.get('COLUMNS', 235))
+        w = int(os.environ.get('COLUMNS', 200))
         self.width = w if self.width is None else self.width
         if self.framework in SYNONYMS['tensorflow']:
             self.backend = 'hvd'
@@ -542,6 +548,16 @@ class ExperimentConfig(BaseConfig):
             nera=self.steps.nera,
             nepoch=self.steps.nepoch,
         )
+
+    def load_ds_config(self, fpath: Optional[os.PathLike]) -> dict:
+        fname = self.ds_config_path if fpath is None else fpath
+        assert fname is not None
+        cpath = Path(fname)
+        ds_config = {}
+        if cpath.is_file():
+            pass
+
+        return ds_config
 
     def to_str(self) -> str:
         dynstr = self.dynamics.to_str()
