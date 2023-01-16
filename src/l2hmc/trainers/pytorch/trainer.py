@@ -14,6 +14,8 @@ import json
 from pathlib import Path
 import time
 from typing import Any, Callable, Optional
+from rich.console import ConsoleRenderable
+# from rich.align import Align
 
 import aim
 from aim import Distribution
@@ -400,8 +402,6 @@ class Trainer(BaseTrainer):
         ckpt_file = self.ckpt_dir.joinpath(
             f'ckpt-{era}-{epoch}-{step}-{tstamp}.tar'
         )
-        if self._is_chief:
-            log.info(f'Saving checkpoint to: {ckpt_file.as_posix()}')
         assert isinstance(self.dynamics.xeps, nn.ParameterList)
         assert isinstance(self.dynamics.veps, nn.ParameterList)
         xeps = [e.detach().cpu().numpy() for e in self.dynamics.xeps]
@@ -419,8 +419,12 @@ class Trainer(BaseTrainer):
             ckpt.update(metrics)
 
         torch.save(ckpt, ckpt_file)
-        modelfile = self.ckpt_dir.joinpath('model.pth')
+        modelfile = self.ckpt_dir.joinpath(
+            f'model-{era}-{epoch}-{step}-{tstamp}.pth'
+        )
         torch.save(self.dynamics.state_dict(), modelfile)
+        self.info(f'Saving checkpoint to: {ckpt_file.as_posix()}')
+        self.info(f'Saving modelfile to: {modelfile.as_posix()}')
         if run is not None:
             assert run is wandb.run
             artifact = wandb.Artifact('model', type='model')
@@ -456,11 +460,15 @@ class Trainer(BaseTrainer):
         # if not self._is_chief:
         #     return output
 
-        ckpt_file = None
         ckpts = [
             Path(self.ckpt_dir).joinpath(i)
             for i in os.listdir(self.ckpt_dir)
             if i.endswith('.tar')
+        ]
+        modelfiles = [
+            Path(self.ckpt_dir).joinpath(i)
+            for i in os.listdir(self.ckpt_dir)
+            if i.endswith('.pth')
         ]
 
         self.info(f'Looking for checkpoints in:\n {self.ckpt_dir}')
@@ -468,21 +476,33 @@ class Trainer(BaseTrainer):
             self.warning('No checkpoints found to load from')
             return output
 
+        ckpt_file = None
+        modelfile = None
         if era is not None:
-            match = f'ckpt-{era}'
+            cmatch = f'ckpt-{era}'
+            mmatch = f'model-{era}'
             if epoch is not None:
-                match += f'-{epoch}'
+                cmatch += f'-{epoch}'
+                mmatch += f'-{epoch}'
             for ckpt in ckpts:
-                if match in ckpt.as_posix():
+                if cmatch in ckpt.as_posix():
                     ckpt_file = ckpt
+            for mfile in modelfiles:
+                if mmatch in mfile.as_posix():
+                    modelfile = mfile
         else:
             ckpts = sorted(
                 ckpts,
                 key=lambda t: os.stat(t).st_mtime
             )
+            mfiles = sorted(
+                modelfiles,
+                key=lambda t: os.stat(t).st_mtime
+            )
             ckpt_file = ckpts[-1]
+            modelfile = mfiles[-1]
 
-        modelfile = self.ckpt_dir.joinpath('model.pth')
+        # modelfile = self.ckpt_dir.joinpath('model.pth')
         if modelfile is not None:
             self.info(f'Loading model from: {modelfile}')
             dynamics.load_state_dict(torch.load(modelfile))
@@ -723,20 +743,24 @@ class Trainer(BaseTrainer):
         self.dynamics.train()
         return xout.detach(), metrics
 
-    def get_context_manager(self, table: Table) -> Live | nullcontext:
+    def get_context_manager(
+            self,
+            renderable: ConsoleRenderable,
+    ) -> Live | nullcontext:
         make_live = (
             self._is_chief
             and self.size == 1          # not worth the trouble when dist.
             and not is_interactive()    # AND not in a jupyter / ipython kernel
             and int(get_width()) > 100  # make sure wide enough to fit table
         )
+        # renderable_c = Align.center(renderable)
         if make_live:
             return Live(
-                table,
+                renderable,
                 # screen=True,
                 transient=True,
                 # redirect_stdout=True,
-                # auto_refresh=False,
+                auto_refresh=False,
                 console=self.console,
                 vertical_overflow='visible'
             )
@@ -929,6 +953,7 @@ class Trainer(BaseTrainer):
                     dynamic_ncols=True,
                     disable=(not self._is_chief),
                     leave=True,
+                    desc=job_type
             ):
                 timer.start()
                 x, metrics = eval_fn((x, beta))
@@ -1166,7 +1191,7 @@ class Trainer(BaseTrainer):
         if verbose:
             log.info(summary)
 
-        return xout.detach(), metrics
+        return xout.detach(), record
 
     def train_epoch(
             self,
@@ -1188,10 +1213,13 @@ class Trainer(BaseTrainer):
         summaries = []
         extend = 1 if extend is None else extend
         # record = {'era': 0, 'epoch': 0, 'beta': 0.0, 'dt': 0.0}
+        # from rich.layout import Layout
         table = Table(
+            expand=True,
             box=box.HORIZONTALS,
             row_styles=['dim', 'none'],
         )
+        # layout = Layout(table)
 
         nepoch = self.steps.nepoch if nepoch is None else nepoch
         assert isinstance(nepoch, int)
@@ -1210,18 +1238,15 @@ class Trainer(BaseTrainer):
         def should_log(epoch):
             return (self._is_chief and (epoch % log_freq == 0))
 
+        def refresh_view():
+            if isinstance(ctx, Live):
+                ctx.console.clear_live()
+                ctx.update(table)
+                ctx.refresh()
+
         patience = 10
         stuck_iters = 0
         with ctx:
-            if isinstance(ctx, Live):
-                # tstr = ' '.join([
-                #     f'ERA: {era} / {self.steps.nera - 1}',
-                #     f'BETA: {beta:.3f}',
-                # ])
-                # ctx.console.rule(tstr)
-                ctx.console.clear_live()
-                ctx.update(table)
-
             if warmup:
                 x = self.warmup(beta=beta, x=x)
 
@@ -1230,6 +1255,8 @@ class Trainer(BaseTrainer):
                     nepoch,
                     dynamic_ncols=True,
                     disable=(not self._is_chief),
+                    desc='Training',
+                    leave=True
             ):
                 self.timers['train'].start()
                 x, metrics = self.train_step((x, beta))  # type:ignore
@@ -1292,6 +1319,7 @@ class Trainer(BaseTrainer):
                             x = self.lattice.random()
                             stuck_iters = 0
 
+                    refresh_view()
                     if (
                             is_interactive()
                             and self._is_chief
@@ -1306,15 +1334,16 @@ class Trainer(BaseTrainer):
                             )
 
                 if should_print(epoch):
+                    refresh_view()
                     log.info(summary)
-                    if isinstance(ctx, Live):
-                        ctx.console.clear()
-                        ctx.console.clear_live()
+                    # if isinstance(ctx, Live):
+                    #     ctx.console.clear()
+                    #     ctx.console.clear_live()
 
                 if isinstance(ctx, Live):
                     ctx.console.clear()
                     ctx.console.clear_live()
-                    ctx.refresh()
+                    # ctx.refresh()
 
         data = {
             'rows': rows,
