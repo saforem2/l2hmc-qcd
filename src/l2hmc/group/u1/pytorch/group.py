@@ -4,7 +4,7 @@ group/u1/pytorch/group.py
 Contains pytorch implementation of `U1Phase`
 """
 from __future__ import absolute_import, division, print_function, annotations
-from typing import Optional
+from typing import Optional, Sequence
 
 import torch
 
@@ -21,7 +21,7 @@ PT_FLOAT = torch.get_default_dtype()
 
 
 def rand_unif(
-        shape: list[int],
+        shape: Sequence[int],
         a: float,
         b: float,
         requires_grad: bool = True
@@ -30,7 +30,7 @@ def rand_unif(
     return rand.clone().detach().requires_grad_(requires_grad)
 
 
-def random_angle(shape: list[int], requires_grad: bool = True) -> Tensor:
+def random_angle(shape: Sequence[int], requires_grad: bool = True) -> Tensor:
     """Returns random angle with `shape` and values in (-pi, pi)."""
     return rand_unif(shape, -PI, PI, requires_grad=requires_grad)
 
@@ -139,11 +139,11 @@ class U1Phase(Group):
         # TODO: Fix for U1
         return x
 
-    def random(self, shape: list[int]) -> Tensor:
-        return self.compat_proj(TWO_PI * torch.rand(shape))
+    def random(self, shape: Sequence[int]) -> Tensor:
+        return self.compat_proj(TWO_PI * torch.rand(*shape))
 
-    def random_momentum(self, shape: list[int]) -> Tensor:
-        return torch.randn(shape).reshape(shape[0], -1)
+    def random_momentum(self, shape: Sequence[int]) -> Tensor:
+        return torch.randn(*shape).reshape(shape[0], -1)
 
     def kinetic_energy(self, p: Tensor) -> Tensor:
         return 0.5 * p.flatten(1).square().sum(-1)
