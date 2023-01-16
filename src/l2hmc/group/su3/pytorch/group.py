@@ -4,7 +4,7 @@ group/su3/pytorch/group.py
 Contains PyTorch implementation of `SU3` object
 """
 from __future__ import absolute_import, division, print_function, annotations
-from typing import Optional
+from typing import Optional, Sequence
 
 import torch
 
@@ -18,7 +18,7 @@ from l2hmc.group.su3.pytorch.utils import (
     norm2,
     randTAH3,
     projectSU,
-    projectTAH,
+    # projectTAH,
     eyeOf
 )
 
@@ -106,13 +106,13 @@ class SU3(Group):
         """
         return projectSU(x)
 
-    def random(self, shape: list[int]) -> Tensor:
+    def random(self, shape: Sequence[int]) -> Tensor:
         """Returns (batched) random SU(3) matrices."""
-        r = torch.randn(shape, requires_grad=True, device=DEVICE)
-        i = torch.randn(shape, requires_grad=True, device=DEVICE)
+        r = torch.randn(*shape, requires_grad=True, device=DEVICE)
+        i = torch.randn(*shape, requires_grad=True, device=DEVICE)
         return projectSU(torch.complex(r, i)).to(DEVICE)
 
-    def random_momentum(self, shape: list[int]) -> Tensor:
+    def random_momentum(self, shape: Sequence[int]) -> Tensor:
         """Returns (batched) Traceless Anti-Hermitian matrices"""
         return randTAH3(shape[:-2])
 
@@ -209,8 +209,8 @@ class SU3(Group):
     def norm2(
             self,
             x: Tensor,
-            axis: list[int] = [-2, -1],
-            exclude: Optional[list[int]] = None,
+            axis: Sequence[int] = [-2, -1],
+            exclude: Optional[Sequence[int]] = None,
     ) -> Tensor:
         """No reduction if axis is empty"""
         if x.dtype in [torch.complex64, torch.complex128]:
@@ -219,7 +219,7 @@ class SU3(Group):
         if exclude is None:
             if len(axis) == 0:
                 return n
-            return n.sum(axis)
+            return n.sum(*axis)
         return n.sum([
             i for i in range(len(n.shape)) if i not in exclude
         ])

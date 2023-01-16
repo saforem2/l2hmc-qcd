@@ -4,7 +4,7 @@ group/pytorch/utils.py
 """
 from __future__ import absolute_import, annotations, division, print_function
 from math import pi as PI
-from typing import Optional
+from typing import Optional, Sequence
 from typing import Callable
 
 import numpy as np
@@ -42,7 +42,7 @@ def cmax(x: Tensor, y: Tensor) -> Tensor:
 
 
 def unit(
-        shape: list[int],
+        shape: Sequence[int],
         dtype: Optional[torch.dtype] = torch.complex64,
 ):
     batch_shape = list([1] * (len(shape) - 2))
@@ -145,8 +145,8 @@ def expm(m: Tensor, order: int = 12) -> Tensor:
 
 def norm2(
         x: Tensor,
-        axis: list[int] = [-2, -1],
-        exclude: Optional[list[int]] = None,
+        axis: Sequence[int] = [-2, -1],
+        exclude: Optional[Sequence[int]] = None,
 ) -> Tensor:
     """No reduction if axis is empty"""
     # n = torch.real(torch.multiply(x.conj(), x))
@@ -156,11 +156,12 @@ def norm2(
     if exclude is None:
         if len(axis) == 0:
             return n
-        return n.sum(axis)
+        return n.sum(tuple(axis))
     return n.sum([i for i in range(len(n.shape)) if i not in exclude])
 
 
-def randTAH3(shape: list[int]):
+def randTAH3(shape: Sequence[int]):
+    shape = tuple(shape)
     r3 = SQRT1by2 * torch.randn(shape, device=DEVICE)
     r8 = SQRT1by2 * SQRT1by3 * torch.randn(shape, device=DEVICE)
     m00 = torch.complex(torch.zeros_like(r3), r8 + r3)
