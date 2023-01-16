@@ -126,51 +126,83 @@ class Experiment(BaseExperiment):
             vnet.set_net_weight(net_weights.v)
 
     def visualize_model(self, x: Optional[Tensor] = None):
+        import graphviz
+        # from torchview import draw_graph
         from torchviz import make_dot  # type: ignore
-        if x is None:
-            state = self.trainer.dynamics.random_state(1.)
-            x = state.x
-            v = state.v
-        else:
-            v = torch.rand_like(x)
+        state = self.trainer.dynamics.random_state(1.)
 
-        assert isinstance(x, Tensor)
-        assert isinstance(v, Tensor)
-        sx0, tx0, qx0 = 0.0, 0.0, 0.0
-        sv, tv, qv = 0.0, 0.0, 0.0
-        # for step in range(self.config.dynamics.nleapfrog):
-        sx0, tx0, qx0 = self.trainer.dynamics._call_xnet(
-            0, inputs=(x, v), first=True
-        )
-        sv, tv, qv = self.trainer.dynamics._call_vnet(
-            0, inputs=(x, v),
-        )
-        xparams = dict(
-            self.trainer.dynamics.xnet.named_parameters()
-        )
-        vparams = dict(
-            self.trainer.dynamics.vnet.named_parameters()
-        )
         outdir = Path(self._outdir).joinpath('network_diagrams')
         outdir.mkdir(exist_ok=True, parents=True)
-        make_dot(sx0, params=xparams).render(
-            outdir.joinpath('scale-xnet-0').as_posix(), format='png'
+        fpxnet = outdir.joinpath('xnet.png')
+        fpvnet = outdir.joinpath('vnet.png')
+        force = self.trainer.dynamics.grad_potential(state.x, state.beta)
+        vnet = self.trainer.dynamics._get_vnet(0)
+        xnet = self.trainer.dynamics._get_xnet(0, first=True)
+        sv, tv, qv = self.trainer.dynamics._call_vnet(0, (state.x, force))
+        sx, tx, qx = self.trainer.dynamics._call_xnet(
+            0,
+            (state.x, state.v),
+            first=True
         )
-        make_dot(tx0, params=xparams).render(
-            outdir.joinpath('transl-xnet-0').as_posix(), format='png'
-        )
-        make_dot(qx0, params=xparams).render(
-            outdir.joinpath('transf-xnet-0').as_posix(), format='png'
-        )
-        make_dot(sv, params=vparams).render(
-            outdir.joinpath('scale-vnet-0').as_posix(), format='png'
-        )
-        make_dot(tv, params=vparams).render(
-            outdir.joinpath('transl-vnet-0').as_posix(), format='png'
-        )
-        make_dot(qv, params=vparams).render(
-            outdir.joinpath('transf-vnet-0').as_posix(), format='png'
-        )
+        outputs = {
+            'v': {
+                'scale': sv,
+                'transl': tv,
+                'transf': qv,
+            },
+            'x': {
+                'scale': sx,
+                'transl': tx,
+                'transf': qx,
+            },
+        }
+        for key, val in outputs.items():
+            for k, v in val.items():
+                net = xnet if key == 'x' else vnet
+                make_dot(
+                    v,
+                    params=dict(net.named_parameters()),
+                    show_attrs=True,
+                    show_saved=True
+                ).render(
+                    outdir.joinpath(f'{key}net{k}.gv').resolve().as_posix(),
+                    # format='png'
+                )
+        # sx0, tx0, qx0 = 0.0, 0.0, 0.0
+        # sv, tv, qv = 0.0, 0.0, 0.0
+        # # for step in range(self.config.dynamics.nleapfrog):
+        # sx0, tx0, qx0 = self.trainer.dynamics._call_xnet(
+        #     0, inputs=(x, v), first=True
+        # )
+        # sv, tv, qv = self.trainer.dynamics._call_vnet(
+        #     0, inputs=(x, v),
+        # )
+        # xparams = dict(
+        #     self.trainer.dynamics.xnet.named_parameters()
+        # )
+        # vparams = dict(
+        #     self.trainer.dynamics.vnet.named_parameters()
+        # )
+        # outdir = Path(self._outdir).joinpath('network_diagrams')
+        # outdir.mkdir(exist_ok=True, parents=True)
+        # make_dot(sx0, params=xparams).render(
+        #     outdir.joinpath('scale-xnet-0').as_posix(), format='png'
+        # )
+        # make_dot(tx0, params=xparams).render(
+        #     outdir.joinpath('transl-xnet-0').as_posix(), format='png'
+        # )
+        # make_dot(qx0, params=xparams).render(
+        #     outdir.joinpath('transf-xnet-0').as_posix(), format='png'
+        # )
+        # make_dot(sv, params=vparams).render(
+        #     outdir.joinpath('scale-vnet-0').as_posix(), format='png'
+        # )
+        # make_dot(tv, params=vparams).render(
+        #     outdir.joinpath('transl-vnet-0').as_posix(), format='png'
+        # )
+        # make_dot(qv, params=vparams).render(
+        #     outdir.joinpath('transf-vnet-0').as_posix(), format='png'
+        # )
 
     def update_wandb_config(
             self,
