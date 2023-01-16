@@ -1,10 +1,18 @@
 {
-  "train_batch_size": 512,
   "steps_per_print": 100,
+  "wall_clock_breakdown": true,
+  "flops_profiler": {
+    "enabled": true,
+    "profile_step": 1,
+    "module_depth": -1,
+    "top_modules": 1,
+    "detailed": true,
+    "output_file": null
+  },
   "optimizer": {
     "type": "Adam",
     "params": {
-      "lr": 0.005,
+      "lr": 0.001,
       "betas": [
         0.8,
         0.999
@@ -14,15 +22,13 @@
     }
   },
   "scheduler": {
-    "type": "WarmupLR",
+    "type": "WarmupDecayLR",
     "params": {
       "warmup_min_lr": 0.000001,
       "warmup_max_lr": 0.001,
-      "warmup_num_steps": 100
+      "warmup_num_steps": 1000
     }
   },
-  "gradient_clipping": 1.0,
-  "prescale_gradients": false,
   "fp16": {
       "enabled": false,
       "fp16_master_weights_and_grads": false,
@@ -32,21 +38,20 @@
       "min_loss_scale": 1,
       "initial_scale_power": 15
   },
-  "wall_clock_breakdown": false,
-  "zero_optimization": {
-      "stage": 1,
-      "allgather_partitions": true,
-      "reduce_scatter": true,
-      "allgather_bucket_size": 50000000,
-      "reduce_bucket_size": 50000000,
-      "overlap_comm": true,
-      "contiguous_gradients": true,
-      "cpu_offload": false
-  },
   "comms_logger": {
-    "enabled": false,
-    "verbose": false,
-    "prof_all": false,
+    "enabled": true,
+    "verbose": true,
+    "prof_all": true,
     "debug": false
+  },
+  "wandb": {
+    "enabled": true
+  },
+  "autotuning": {
+    "enabled": false,
+    "arg_mappings": {
+      "train_micro_batch_size_per_gpu": "--per_device_train_batch_size",
+      "gradient_accumulation_steps": "--gradient_accumulation_steps"
+    }
   }
 }
