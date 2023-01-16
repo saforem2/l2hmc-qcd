@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -l
 # -------------------------------------------------------
 # UG Section 2.5, page UG-24 Job Submission Options
 # Add another # at the beginning of the line to comment out a line
@@ -45,37 +45,66 @@ echo "Job running in: ${DIR}"
 
 NCPUS=$(getconf _NPROCESSORS_ONLN)
 
+# if [[ ! -z "${CONDA_EXE}" ]] ; # && [[ $(hostname) == theta* ]] ; then
+
+#   if [[ $(hostname) == theta* ]]; then
+#     module load conda/2022-07-01 ; conda activate base
+#     VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-01"  # -libaio"
+
+#   elif [[ $(hostname) == x* ]]; then
+#     module load conda ; conda activate base
+#     VENV_DIR="${ROOT}/venvs/polaris/2023-01-10"
+#   fi
+# fi
+
+
 # ---- Check if running on ThetaGPU ----------------------------
 if [[ $(hostname) == theta* ]]; then
-  echo "-----------------------"
-  echo "| Running on ThetaGPU |"
-  echo "-----------------------"
-  module load conda/2022-07-01
-  conda activate base
+  MACHINE="ThetaGPU"
+  # echo "-----------------------"
+  # echo "| Running on ThetaGPU |"
+  # echo "-----------------------"
+  # module load conda/2022-07-01 ; conda activate base
+  # module load conda/2023-01-11 ; conda activate base
+  # conda activate /lus/grand/projects/datascience/foremans/locations/thetaGPU/miniconda3/envs/2023-01-11/
+  # VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-01-deepspeed"
+  # VENV_DIR="${ROOT}/venvs/thetaGPU/2023-01-11"
+  # module load conda/2023-01-11 ; conda activate base
+  # VENV_DIR="${ROOT}/venvs/thetaGPU/2023-01-11"  # -libaio"
+  if [[ ! -z "${CONDA_EXE}" ]] ; then
+    module load conda/2022-07-01 ; conda activate base
+    VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-01"  # -libaio"
+  fi
+
   NRANKS=$(wc -l < ${COBALT_NODEFILE})
   HOSTFILE=${COBALT_NODEFILE}
   NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
   NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
   MPI_COMMAND=$(which mpirun)
+  # -x PYTHONSTARTUP \
   MPI_FLAGS="-n ${NGPUS} \
     --hostfile ${HOSTFILE} \
     -npernode ${NGPU_PER_RANK} \
     -x PYTHONUSERBASE \
-    -x PYTHONSTARTUP \
     -x http_proxy \
     -x https_proxy \
     -x PATH \
     -x LD_LIBRARY_PATH"
-  VENV_DIR="../../venvs/thetaGPU/2022-07-01/"
-  # VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-01"
 
 # ---- Check if running on Polaris -----------------------------
 elif [[ $(hostname) == x* ]]; then
-  echo "----------------------"
-  echo "| Running on Polaris |"
-  echo "----------------------"
-  export IBV_FORK_SAFE=1
-  export NCCL_COLLNET_ENABLE=1
+  # echo "----------------------"
+  # echo "| Running on Polaris |"
+  # echo "----------------------"
+  MACHINE="Polaris"
+
+  if [[ ! -z "${CONDA_EXE}" ]] ; then
+    # module load conda/2023-01-10; conda activate base
+    # VENV_DIR="${ROOT}/venvs/polaris/2023-01-10"
+    module load conda/2022-09-08; conda activate base
+    VENV_DIR="${ROOT}/venvs/polaris/2022-09-08"
+  fi
+
   NRANKS=$(wc -l < ${PBS_NODEFILE})
   HOSTFILE=${PBS_NODEFILE}
   NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
@@ -83,16 +112,19 @@ elif [[ $(hostname) == x* ]]; then
   MPI_COMMAND=$(which mpiexec)
   # --cpu-bind verbose,list:0,8,16,24 \
   MPI_FLAGS="--envall \
+    --verbose \
     -n ${NGPUS} \
     --depth ${NCPUS} \
     --ppn ${NGPU_PER_RANK} \
     --hostfile ${HOSTFILE}"
-  module load conda/2022-09-08
-  conda activate base
-  VENV_DIR="${ROOT}/venvs/polaris/2022-09-08"
+  # module load conda/2022-09-08; conda activate base
+  unset MPICH_GPU_SUPPORT_ENABLED
+  export IBV_FORK_SAFE=1
+  export NCCL_COLLNET_ENABLE=1
 
 # ---- Check if running on MacOS --------------------------------
 else
+  MACHINE=$(hostname)
   VENV_DIR="${ROOT}/venv/"
   if [[ $(uname) == Darwin* ]]; then
     # ---- Check if environment has an mpirun executable ----------
@@ -118,23 +150,25 @@ fi
 #
 # 2. Perform Editable install
 # -----------------------------------------------------------
-if [[ -f "${VENV_DIR}/bin/activate" ]]; then
-  echo "Found venv at: ${VENV_DIR}"
-  source "${VENV_DIR}/bin/activate"
-  python3 -m pip install --upgrade pip setuptools wheel
-  python3 -m pip install -e "${ROOT}"
-else
-  if [[ -f "${ROOT}/venv/bin/activate" ]]; then
-    echo "Found venv at: ${ROOT}/venv/, using that"
+if [[ ! -z "${VIRTUAL_ENV}" ]] ; then
+  if [[ -f "${VENV_DIR}/bin/activate" ]]; then
+    echo "Found venv at: ${VENV_DIR}"
     source "${VENV_DIR}/bin/activate"
-    python3 -m pip install --upgrade pip setuptools wheel
-    python3 -m pip install -e "${ROOT}"
+    # python3 -m pip install --upgrade pip setuptools wheel
+    # python3 -m pip install -e "${ROOT}"
   else
-    echo "Creating new venv at: ${VENV_DIR}"
-    python3 -m venv "${ROOT}/venv/" --system-site-packages
-    python3 -m pip install --upgrade pip setuptools wheel
-    source "${VENV_DIR}/bin/activate"
-    python3 -m pip install -e "${ROOT}" --no-deps
+    if [[ -f "${ROOT}/venv/bin/activate" ]]; then
+      echo "Found venv at: ${ROOT}/venv/, using that"
+      source "${VENV_DIR}/bin/activate"
+      # python3 -m pip install --upgrade pip setuptools wheel
+      # python3 -m pip install -e "${ROOT}"
+    else
+      echo "Creating new venv at: ${VENV_DIR}"
+      python3 -m venv "${ROOT}/venv/" --system-site-packages
+      python3 -m pip install --upgrade pip setuptools wheel
+      source "${VENV_DIR}/bin/activate"
+      python3 -m pip install -e "${ROOT}" --no-deps
+    fi
   fi
 fi
 
@@ -143,14 +177,17 @@ export OMP_NUM_THREADS=$NCPUS
 export WIDTH=$COLUMNS
 export COLUMNS=$COLUMNS
 echo "WIDTH: ${COLUMNS}"
-export NCCL_DEBUG=INFO
-export KMP_SETTINGS=TRUE
+export NCCL_DEBUG=ERROR
+
+export WANDB_CACHE_DIR="${ROOT}/.cache/wandb"
+# export WANDB_
+# export KMP_SETTINGS=TRUE
 # export OMPI_MCA_opal_cuda_support=TRUE
 # export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/cuda/lib64"
 # export KMP_AFFINITY='granularity=fine,verbose,compact,1,0'
 
 export TF_ENABLE_AUTO_MIXED_PRECISION=1
-export TF_XLA_FLAGS="--tf_xla_auto_jit=2 --tf_xla_enable_xla_devices"
+# export TF_XLA_FLAGS="--tf_xla_auto_jit=2 --tf_xla_enable_xla_devices"
 
 LOGDIR="${DIR}/logs"
 LOGFILE="${LOGDIR}/${TSTAMP}-${HOST}_ngpu${NGPUS}_ncpu${NCPUS}.log"
@@ -179,11 +216,13 @@ EXEC="${MPI_COMMAND} ${MPI_FLAGS} $(which python3) ${MAIN}"
 
 
 # ---- Print job information -------------------------------------------------
-echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
-echo "┃ STARTING A NEW RUN ON ${NGPUS} GPUs ${NCPUS} CPUS       ┃"
-echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
 echo -e '\n'
-printf '%.s─' $(seq 1 $(tput cols))
+# printf '%.s─' $(seq 1 $(tput cols))
+echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "┃ STARTING A NEW RUN @ ${MACHINE} ON ${NGPUS} GPUs ${NCPUS} CPUS  "
+echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "┃  - hostname: $(hostname)"
 echo "┃  - DATE: ${TSTAMP}"
 echo "┃  - NCPUS: ${NCPUS}"
 echo "┃  - NRANKS: ${NRANKS}"
@@ -195,7 +234,8 @@ echo "┃  - python3: $(which python3)"
 echo "┃  - mpirun: ${MPI_COMMAND}"
 echo "┃  - l2hmc: $(python3 -c 'import l2hmc; print(l2hmc.__file__)')"
 echo "┃  - exec: ${EXEC} $@"
-printf '%.s─' $(seq 1 $(tput cols))
+echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+# printf '%.s─' $(seq 1 $(tput cols))
 echo -e '\n'
 
 
