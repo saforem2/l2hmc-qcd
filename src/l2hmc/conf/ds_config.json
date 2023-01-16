@@ -1,16 +1,17 @@
 {
-  "steps_per_print": 100,
-  "wall_clock_breakdown": true,
+  "steps_per_print": 1000,
+  "wall_clock_breakdown": false,
+  "prescale_gradients": false,
   "flops_profiler": {
     "enabled": true,
     "profile_step": 1,
     "module_depth": -1,
     "top_modules": 1,
     "detailed": true,
-    "output_file": null
+    "output_file": "ds-flops-profiler.log"
   },
   "optimizer": {
-    "type": "Adam",
+    "type": "AdamW",
     "params": {
       "lr": 0.001,
       "betas": [
@@ -39,9 +40,9 @@
       "initial_scale_power": 15
   },
   "comms_logger": {
-    "enabled": true,
-    "verbose": true,
-    "prof_all": true,
+    "enabled": false,
+    "verbose": false,
+    "prof_all": false,
     "debug": false
   },
   "wandb": {
@@ -53,5 +54,15 @@
       "train_micro_batch_size_per_gpu": "--per_device_train_batch_size",
       "gradient_accumulation_steps": "--gradient_accumulation_steps"
     }
+  },
+  "zero_optimization": {
+    "stage": 1,
+    "allgather_partitions": true,
+    "reduce_scatter": true,
+    "allgather_bucket_size": 50000000,
+    "reduce_bucket_size": 50000000,
+    "overlap_comm": true,
+    "contiguous_gradients": true,
+    "cpu_offload": false
   }
 }
