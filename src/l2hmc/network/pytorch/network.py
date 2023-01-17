@@ -6,7 +6,7 @@ Contains the pytorch implementation of the Normalizing Flow network
 used to train the L2HMC model.
 """
 from __future__ import absolute_import, annotations, division, print_function
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Sequence
 import logging
 
 import numpy as np
@@ -35,11 +35,11 @@ Tensor = torch.Tensor
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 ACTIVATION_FNS = {
-    'elu': nn.ELU(),
+    'elu': nn.ELU(inplace=True),
     'tanh': nn.Tanh(),
-    'relu': nn.ReLU(),
+    'relu': nn.ReLU(inplace=True),
     'swish': nn.SiLU(),
-    'leaky_relu': nn.LeakyReLU(),
+    'leaky_relu': nn.LeakyReLU(inplace=True),
 }
 
 
@@ -184,19 +184,17 @@ class ScaledTanh(nn.Module):
                 out_features,
                 requires_grad=True,
                 device=DEVICE
-            )  # .exp()
+            )
         )
-        # self.coeff = torch.zeros(1, out_features, requires_grad=True)
         self.layer = nn.Linear(
             in_features=in_features,
             out_features=out_features,
-            bias=False,
+            # bias=False,
             device=DEVICE,
         )
         # self.tanh = nn.Tanh()
-        self._with_cuda = False
-        if torch.cuda.is_available():
-            self._with_cuda = True
+        self._with_cuda = torch.cuda.is_available()
+        if self._with_cuda:
             self.coeff = self.coeff.cuda()
             self.layer = self.layer.cuda()
             self.cuda()
@@ -241,7 +239,7 @@ def calc_output_size(
 class ConvStack(nn.Module):
     def __init__(
             self,
-            xshape: list[int] | tuple[int],
+            xshape: Sequence[int],
             conv_config: ConvolutionConfig,
             activation_fn: Any,
             use_batch_norm: bool = False,
@@ -345,7 +343,8 @@ class ConvStack(nn.Module):
             try:
                 x = x.reshape(x.shape[0], self.d + 2, self.nt, self.nx)
             except (ValueError, RuntimeError):
-                x = x.reshape(*self.xshape)
+                x = x.reshape((x.shape[0], *self.xshape[1:]))
+                # x = x.reshape(*self.xshape)
 
         for layer in self.layers:
             x = layer(x)
@@ -356,11 +355,11 @@ class ConvStack(nn.Module):
 class InputLayer(nn.Module):
     def __init__(
             self,
-            xshape: list[int],
+            xshape: Sequence[int],
             network_config: NetworkConfig,
             activation_fn: Callable[[Tensor], Tensor],
             conv_config: Optional[ConvolutionConfig] = None,
-            input_shapes: Optional[dict[str, int]] = None,
+            input_shapes: Optional[dict[str, Sequence[int] | int]] = None,
     ) -> None:
         super(InputLayer, self).__init__()
         self.xshape = xshape
@@ -376,16 +375,24 @@ class InputLayer(nn.Module):
 
         self.input_shapes = {}
         for key, val in input_shapes.items():
-            if isinstance(val, (list, tuple)):
-                self.input_shapes[key] = np.cumprod(val)[-1]
-            elif isinstance(val, int):
+            # if isinstance(val, Sequence[int]):
+            if isinstance(val, int):
                 self.input_shapes[key] = val
             else:
-                raise ValueError(
-                    'Unexpected value in input_shapes!\n'
-                    f'\tinput_shapes: {input_shapes}\n'
-                    f'\t  val: {val}'
-                )
+                try:
+                    self.input_shapes[key] = np.cumprod(val)[-1]
+                except Exception as e:
+                    log.error(
+                        'Unexpected value in input_shapes!\n'
+                        f'\tinput_shapes: {input_shapes}\n'
+                        f'\t  val: {val}'
+                    )
+                    raise e
+                # raise ValueError(
+                #     'Unexpected value in input_shapes!\n'
+                #     f'\tinput_shapes: {input_shapes}\n'
+                #     f'\t  val: {val}'
+                # )
 
         self.conv_config = conv_config
         self.activation_fn = activation_fn
@@ -450,9 +457,9 @@ class InputLayer(nn.Module):
 class LeapfrogLayer(nn.Module):
     def __init__(
             self,
-            xshape: list[int],
+            xshape: Sequence[int],
             network_config: NetworkConfig,
-            input_shapes: Optional[dict[str, int]] = None,
+            input_shapes: Optional[dict[str, int | Sequence[int]]] = None,
             net_weight: Optional[NetWeight] = None,
             conv_config: Optional[ConvolutionConfig] = None,
             name: Optional[str] = None,
@@ -553,9 +560,9 @@ class LeapfrogLayer(nn.Module):
 
 
 def get_network(
-        xshape: list[int],
+        xshape: Sequence[int],
         network_config: NetworkConfig,
-        input_shapes: Optional[dict[str, int]] = None,
+        input_shapes: Optional[dict[str, int | Sequence[int]]] = None,
         net_weight: Optional[NetWeight] = None,
         conv_config: Optional[ConvolutionConfig] = None,
         name: Optional[str] = None,
@@ -571,17 +578,23 @@ def get_network(
 
 
 def get_and_call_network(
-        xshape: list[int],
+        xshape: Sequence[int],
         *,
         network_config: NetworkConfig,
         is_xnet: bool,
         group: U1Phase | SU3,
-        input_shapes: Optional[dict[str, int]] = None,
+        input_shapes: Optional[dict[str, int | Sequence[int]]] = None,
         net_weight: Optional[NetWeight] = None,
         conv_config: Optional[ConvolutionConfig] = None,
         name: Optional[str] = None,
 ) -> LeapfrogLayer:
     """Wrapper function for instantiating created LeapfrogLayers."""
+    # if isinstance(group, U1Phase):
+    #     x = torch.rand(xshape)
+    # elif isinstance(group, SU3):
+    x = group.random(xshape)
+    v = group.random_momentum(xshape)
+
     net = get_network(
         xshape=xshape,
         network_config=network_config,
@@ -590,11 +603,7 @@ def get_and_call_network(
         conv_config=conv_config,
         name=name,
     )
-    # if isinstance(group, U1Phase):
-    #     x = torch.rand(xshape)
-    # elif isinstance(group, SU3):
-    x = group.random(xshape)
-    v = group.random_momentum(xshape)
+
     if torch.cuda.is_available():
         net.cuda()
         x = x.cuda()
@@ -610,20 +619,23 @@ def get_and_call_network(
             isinstance(group, SU3)
             or getattr(group, '_name', None) == 'SU3'
     ):
+        if is_xnet:
+            x = torch.cat([x.real, x.imag], dim=1)
+            v = torch.cat([v.real, v.imag], dim=1)
+        else:
+            x = group.group_to_vec(x)
+            v = group.group_to_vec(v)
         # if is_xnet:
         #     x = torch.stack([x.real, x.imag], 1)
         #     pass
         # x = group.group_to_vec(x)
-        x = torch.cat([x.real, x.imag], dim=1)
-        v = torch.cat([v.real, v.imag], dim=1)
         # x = group.group_to_vec(x)
         # v = group.group_to_vec(v)
 
-    try:
-        _ = net((x, v))
-    except RuntimeError as e:
-        # net = net.to(x.dtype)
-        _ = net((x, v))
+    # except RuntimeError as e:
+    #     # net = net.to(x.dtype)
+    #     _ = net((x, v))
+    _ = net((x, v))
     return net
 
 
@@ -637,39 +649,85 @@ class NetworkFactory(BaseNetworkFactory):
         """Build LeapfrogNetwork."""
         # TODO: if n == 0: build hmcNetwork (return zeros)
         assert n >= 1, 'Must build at least one network'
+        # 'xnet': {
+        #     'net_weight': self.nw.x,
+        #     'xshape': self.input_spec.xshape,
+        #     'input_shapes': self.input_spec.xnet,
+        #     'network_config': self.network_config,
+        #     'conv_config': self.conv_config,
+        # },
+        # 'vnet': {
+        #     'net_weight': self.nw.v,
+        #     'xshape': self.input_spec.xshape,
+        #     'input_shapes': self.input_spec.vnet,
+        #     'network_config': self.network_config,
+        # }
 
-        cfg = self.get_build_configs()
+        # cfg = self.get_build_configs()
         if n == 1:
+            xnet = get_and_call_network(
+                xshape=self.input_spec.xshape,
+                network_config=self.network_config,
+                is_xnet=True,
+                group=group,
+                input_shapes=self.input_spec.xnet,
+                net_weight=self.nw.x,
+                conv_config=self.conv_config,
+                name='xnet'
+            )
+            vnet = get_and_call_network(
+                xshape=self.input_spec.xshape,
+                network_config=self.network_config,
+                is_xnet=False,
+                group=group,
+                input_shapes=self.input_spec.vnet,
+                net_weight=self.nw.v,
+                conv_config=self.conv_config,
+                name='vnet'
+            )
+            # return nn.ModuleDict({
+            #     # 'xnet': LeapfrogLayer(
+            #     #     **cfg['xnet'],
+            #     #     name='xnet',
+            #     # ),
+            #     # 'vnet': LeapfrogLayer(
+            #     #     **cfg['vnet'],
+            #     #     name='vnet',
+            #     # )
+            #     'xnet': get_and_call_network(
+            #         **cfg['xnet'],
+            #         is_xnet=True,
+            #         group=group,
+            #     ),
+            #     'vnet': get_and_call_network(
+            #         **cfg['vnet'],
+            #         is_xnet=False,
+            #         group=group
+            #     ),
+            # })
             return nn.ModuleDict({
-                # 'xnet': LeapfrogLayer(
-                #     **cfg['xnet'],
-                #     name='xnet',
-                # ),
-                # 'vnet': LeapfrogLayer(
-                #     **cfg['vnet'],
-                #     name='vnet',
-                # )
-
-                'xnet': get_and_call_network(
-                    **cfg['xnet'],
-                    is_xnet=True,
-                    group=group,
-                ),
-                'vnet': get_and_call_network(
-                    **cfg['vnet'],
-                    is_xnet=False,
-                    group=group
-                ),
+                'xnet': xnet,
+                'vnet': vnet,
             })
 
         vnet = nn.ModuleDict()
         xnet = nn.ModuleDict()
         for lf in range(n):
+            # vnet[f'{lf}'] = get_and_call_network(
+            #     **cfg['vnet'],
+            #     is_xnet=False,
+            #     name=f'vnet/{lf}',
+            #     group=group,
+            # )
             vnet[f'{lf}'] = get_and_call_network(
-                **cfg['vnet'],
+                xshape=self.input_spec.xshape,
+                network_config=self.network_config,
                 is_xnet=False,
-                name=f'vnet/{lf}',
                 group=group,
+                input_shapes=self.input_spec.vnet,
+                net_weight=self.nw.v,
+                conv_config=self.conv_config,
+                name=f'vnet/{lf}'
             )
             # vnet[f'{lf}'] = LeapfrogLayer(
             #     **cfg['vnet'],
@@ -686,27 +744,55 @@ class NetworkFactory(BaseNetworkFactory):
                 #         name='xnet/{lf}/first',
                 #     )
                 # })
+                # xnet[f'{lf}'] = get_and_call_network(
+                #     xshape=self.input_spec.xshape,
+                #     network_config=self.network_config,
+                #     is_xnet=True,
+                #     group=group,
+                #     input_shapes=self.input_spec.xnet,
+                #     net_weight=self.nw.x,
+                #     conv_config=self.conv_config,
+                #     name=f'xnet/{lf}'
+                # )
                 xnet[f'{lf}'] = nn.ModuleDict({
                     'first': get_and_call_network(
-                        **cfg['xnet'],
+                        xshape=self.input_spec.xshape,
+                        network_config=self.network_config,
                         is_xnet=True,
-                        name=f'xnet/{lf}/first',
                         group=group,
+                        input_shapes=self.input_spec.xnet,
+                        net_weight=self.nw.x,
+                        conv_config=self.conv_config,
+                        name=f'xnet/{lf}/first',
                     ),
                     'second': get_and_call_network(
-                        **cfg['xnet'],
+                        xshape=self.input_spec.xshape,
+                        network_config=self.network_config,
                         is_xnet=True,
-                        name=f'xnet/{lf}/second',
                         group=group,
+                        input_shapes=self.input_spec.xnet,
+                        net_weight=self.nw.x,
+                        conv_config=self.conv_config,
+                        name=f'xnet/{lf}/second',
                     ),
                 })
             else:
                 xnet[f'{lf}'] = get_and_call_network(
-                    **cfg['xnet'],
+                    xshape=self.input_spec.xshape,
+                    network_config=self.network_config,
                     is_xnet=True,
-                    name=f'xnet/{lf}',
                     group=group,
+                    input_shapes=self.input_spec.xnet,
+                    net_weight=self.nw.x,
+                    conv_config=self.conv_config,
+                    name=f'xnet/{lf}'
                 )
+                # xnet[f'{lf}'] = get_and_call_network(
+                #     **cfg['xnet'],
+                #     is_xnet=True,
+                #     name=f'xnet/{lf}',
+                #     group=group,
+                # )
                 # xnet[f'{lf}'] = LeapfrogLayer(
                 #     **cfg['xnet'],
                 #     name=f'xnet/{lf}',
