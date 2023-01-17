@@ -81,6 +81,9 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
     assert isinstance(ex.config, ExperimentConfig)
 
     if ex.trainer._is_chief:
+        # from rich import print
+        # log.info(ex.cfg)
+        print(ex.config)
         print_config(ex.cfg, resolve=True)
 
     should_train: bool = (
