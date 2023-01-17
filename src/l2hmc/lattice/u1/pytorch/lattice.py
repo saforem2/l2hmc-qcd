@@ -35,6 +35,8 @@ def area_law(beta: float, nplaqs: int):
 
 
 def plaq_exact(beta: float | Tensor):
+    if beta.dtype != torch.float32:
+        beta = beta.to(torch.float32)
     # return i1(beta) / i0(beta)
     ratio = (i1(beta) / i0(beta))
     return ratio.to(DTYPE)
