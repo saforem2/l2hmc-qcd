@@ -122,9 +122,6 @@ class Dynamics(nn.Module):
         self.potential_fn = potential_fn
         self.nlf = self.config.nleapfrog
         self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        # state = self.random_state(1.0)
-        # self.xdim = self.flatten(state.x).shape[1]
-        # self.vdim = self.flatten(state.v).shape[]
 
         if self.config.group == 'U1':
             self.g = U1Phase()
@@ -186,11 +183,6 @@ class Dynamics(nn.Module):
             if self._networks_built:
                 self.xnet.cuda()
                 self.vnet.cuda()
-            # if network_factory is not None and self._networks_built:
-            #     self.xnet.cuda()
-            #     self.vnet.cuda()
-            # self.networks.cuda()
-            # self.cuda()
 
     def get_models(self) -> dict:
         if self.config.use_separate_networks:
@@ -224,13 +216,11 @@ class Dynamics(nn.Module):
         """Build networks."""
         split = self.config.use_split_xnets
         n = self.nlf if self.config.use_separate_networks else 1
-        # gstr = 'SU3' if isinstance(self.g, SU3) else 'U1'
         networks = network_factory.build_networks(
             n,
             split,
             group=self.g,
         )
-        # networks = network_factory.build_networks(n, split)
         return networks
 
     @torch.no_grad()
@@ -364,8 +354,6 @@ class Dynamics(nn.Module):
             raise TypeError
 
         rg = (not self.config.eps_fixed)
-        # xeps = {}
-        # veps = {}
         self.xeps = nn.ParameterList()
         self.veps = nn.ParameterList()
         for lf in range(self.config.nleapfrog):
@@ -375,12 +363,6 @@ class Dynamics(nn.Module):
             self.veps.append(nn.parameter.Parameter(
                 data=torch.tensor(ve[str(lf)]), requires_grad=rg
             ))
-
-        # self.xeps = xeps
-        # self.veps = veps
-        # xeps = nn.ParameterDict(xeps)
-        # veps = nn.ParameterDict(veps)
-
 
     def forward(
             self,
@@ -740,7 +722,7 @@ class Dynamics(nn.Module):
     ) -> tuple[State, dict]:
         sumlogdet = torch.zeros(
             (state.x.shape[0],),
-            dtype=state.x.dtype,
+            # dtype=state.x.dtype,
             device=state.x.device,
         )
         sldf = torch.zeros_like(sumlogdet)
@@ -936,15 +918,20 @@ class Dynamics(nn.Module):
             s, t, q: Scaling, Translation, and Transformation functions
         """
         x, force = inputs
-        if torch.cuda.is_available():
-            x, force = x.cuda(), force.cuda()
-        # if isinstance(self.g, SU3):
-        # if self.config.group == 'SU3':
-        #     x = self.g.group_to_vec(x)
-        #     force = self.g.group_to_vec(force)
+
+        if self.config.group == 'SU3':
+            x = self.group_to_vec(x)
+            force = self.group_to_vec(force)
+            # x = torch.stack([x.real, x.imag], 1)
+            # force = torch.stack([force.real, force.imag], 1)
 
         vnet = self._get_vnet(step)
         assert callable(vnet)
+        if torch.cuda.is_available():
+            x, force = x.cuda(), force.cuda()
+            gdtype = torch.get_autocast_gpu_dtype()
+            x = x.to(gdtype)
+            force = force.to(gdtype)
 
         return vnet((x, force))
 
@@ -965,14 +952,20 @@ class Dynamics(nn.Module):
         xnet = self._get_xnet(step, first)
         assert callable(xnet)
         x, v = inputs
+
+        if self.config.group == 'U1':
+            x = self.g.group_to_vec(x)
+
+        if self.config.group == 'SU3':
+            x = self.unflatten(x)
+            x = torch.stack([x.real, x.imag], 1)
+            v = torch.stack([v.real, v.imag], 1)
+
         if torch.cuda.is_available():
             x, v = x.cuda(), v.cuda()
-
-        # if isinstance(self.g, SU3):
-        #     x = x.reshape(self.xshape)
-        #     # x = torch.stack([x.real, x.imag], 1)
-        if isinstance(self.g, U1Phase):
-            x = self.g.group_to_vec(x.reshape(-1, *self.xshape[1:]))
+            gdtype = torch.get_autocast_gpu_dtype()
+            x = x.to(gdtype)
+            v = v.to(gdtype)
 
         return xnet((x, v))
 
@@ -1052,89 +1045,43 @@ class Dynamics(nn.Module):
     def _update_v_fwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the forward direction"""
         assert isinstance(self.veps, nn.ParameterList)
-        # eps = self.veps[step]  # .clamp_min_(0.)
         eps = self.veps[step].to(state.x.dtype)
         force = self.grad_potential(state.x, state.beta)
-        force = force.reshape_as(state.v)
-        # x = self.g.compat_proj(state.x)
-        # x = state.x
-        # v = state.v
-        # # if isinstance(self.g, SU3):
-        # if self.config.group == 'SU3':
-        #     x = self.group_to_vec(state.x)
-        #     v = self.group_to_vec(state.v)
-        #     force = self.group_to_vec(force)
+        # force = force.reshape_as(state.x)
 
         s, t, q = self._call_vnet(step, (state.x, force))
 
         logjac = eps * s / 2.  # jacobian factor, also used in exp_s below
         logdet = self.flatten(logjac).sum(1)
-
-        # if isinstance(self.g, SU3):
-        if self.config.group == 'SU3':
-            exps_ = self.g.exp(self.unflatten(logjac))
-            expt_ = self.g.exp(self.unflatten(t))
-            expq_ = self.g.exp(self.unflatten(q))
-            z = torch.zeros_like(exps_)
-            exp_s = self.group_to_vec(torch.complex(exps_, z))
-            t = self.group_to_vec(torch.complex(expt_, z))
-            exp_q = self.group_to_vec(torch.complex(expq_, z))
-        elif isinstance(self.g, U1Phase):
-            # logdet = logjac.flatten(1).sum(dim=1)
-            exp_s = logjac.exp()  # .reshape_as(state.v)
-            exp_q = (eps * q).exp()  # .reshape_as(force)
-        else:
-            raise TypeError
-            # t = t.reshape_as(force)
-
+        jac = logjac.exp_()
+        force = force.reshape_as(state.v)
+        exp_s = jac.reshape_as(state.v)
+        exp_q = (eps * q).exp_().reshape_as(state.v)
+        t = t.reshape_as(state.v)
         vf = exp_s * state.v - 0.5 * eps * (force * exp_q + t)
-        # if isinstance(self.g, SU3):
-        if self.config.group == 'SU3':
-            vf = self.g.projectTAH(
-                self.g.vec_to_group(vf)
-            )
 
-        return State(state.x, vf, state.beta), logdet
+        return State(state.x, vf, state.beta), logdet.real
 
     def _update_v_bwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the backward direction"""
         assert isinstance(self.veps, nn.ParameterList)
         eps = self.veps[step]  # .clamp_min_(0.)
         force = self.grad_potential(state.x, state.beta)
-        # x = self.g.compat_proj(state.x)
         x = state.x
         v = state.v
-        # if isinstance(self.g, SU3):
-        if self.config.group == 'SU3':
-            x = self.group_to_vec(x)
-            v = self.group_to_vec(v)
-            force = self.group_to_vec(force)
 
         s, t, q = self._call_vnet(step, (x, force))
 
         logjac = (-eps * s / 2.)  # jacobian factor, also used in exp_s below
-        # logdet = logjac.flatten(1).sum(dim=1)
-        logdet = self.flatten(logjac).sum(dim=1)
-        if self.config.group == 'SU3':
-            exps_ = self.g.exp(self.unflatten(logjac))
-            expt_ = self.g.exp(self.unflatten(t))
-            expq_ = self.g.exp(self.unflatten(q))
-            z = torch.zeros_like(exps_)
-            exp_s = self.group_to_vec(torch.complex(exps_, z))
-            t = self.group_to_vec(torch.complex(expt_, z))
-            exp_q = self.group_to_vec(torch.complex(expq_, z))
-        elif self.config.group == 'U1':
-            exp_s = torch.exp(logjac)  # .reshape_as(state.v)
-            exp_q = torch.exp(eps * q)  # .reshape_as(force)
-        else:
-            raise ValueError
-        # t = t  # .reshape_as(force)
+        v = v.reshape((-1, *self.xshape[1:]))
+        logdet = logjac.sum(1)
+        exp_s = logjac.exp_().reshape_as(v)
+        exp_q = (eps * q).exp_().reshape_as(v)
+        t = t.reshape_as(v)
+        force = force.reshape_as(v)
         vb = exp_s * (v + 0.5 * eps * (force * exp_q + t))
-        # if isinstance(self.g, SU3):
-        if self.config.group == 'SU3':
-            vb = self.g.vec_to_group(vb)
 
-        return State(state.x, vb, state.beta), logdet
+        return State(state.x, vb, state.beta), logdet.real
 
     def _update_x_fwd(
             self,
@@ -1144,32 +1091,19 @@ class Dynamics(nn.Module):
             first: bool,
     ) -> tuple[State, Tensor]:
         """Single x update in the forward direction"""
-        # assert isinstance(self.xeps, nn.ParameterList)
         eps = self.xeps[step]  # .clamp_min_(0.)
-        # assert isinstance(eps, (Tensor, nn.parameter.Parameter))
-        # eps.clamp_min_(eps)
         mb = (torch.ones_like(m) - m).to(self.device)
-        # if isinstance(self.g, SU3):
-        if self.config.group == 'SU3':
-            x = state.x
-            xm_init = self.group_to_vec(
-                self.unflatten(
-                    m * self.flatten(state.x)
-                )
-            )
-            v = self.group_to_vec(state.v)
-            inputs = (xm_init, v)
-        else:
-            x = state.x.flatten(1)
-            v = state.v.reshape_as(x)
-            xm_init = m * x
-            inputs = (xm_init, state.v)
+        x = state.x.reshape(state.x.shape[0], -1)
+        v = state.v.reshape_as(x)
+        xm_init = m * x
+        inputs = (xm_init, state.v)
 
         s, t, q = self._call_xnet(step, inputs, first=first)
+
         s = eps * s
         q = eps * q
-        exp_s = s.exp()
-        exp_q = q.exp()
+        exp_s = s.exp_()
+        exp_q = q.exp_()
         if isinstance(self.g, U1Phase):
             if self.config.use_ncp:
                 halfx = (x / 2.).flatten(1)
@@ -1185,45 +1119,23 @@ class Dynamics(nn.Module):
                 xf = xm_init + (mb * xp)
                 logdet = (mb * s).sum(dim=1)
 
-        # elif isinstance(self.g, SU3):
         elif self.config.group == 'SU3':
-            mx_ = self.unflatten(
-                torch.where(
-                    m.to(torch.bool),
-                    (xflat := self.flatten(state.x)),
-                    torch.zeros_like(xflat)
-                )
-            )
-            xr_ = self.group_to_vec(
-                self.unflatten(xflat)
-            )
-            exp_s_ = self.group_to_vec(
-                exp_s.to(state.x.dtype)
-            ).reshape_as(xr_)
-            exp_q_ = self.group_to_vec(
-                exp_q.to(state.x.dtype)
-            ).reshape_as(xr_)
-            t_ = self.group_to_vec(
-                t.to(state.x.dtype)
-            ).reshape_as(xr_)
-            # exp_s_ = self.g.group_to_vec(exp_s).reshape_as(xr_)
-            # exp_q_ = self.group_to_vec(exp_q).reshape_as(xr_)
-            # t_ = self.group_to_vec(t).reshape_as(xr_)
-            xnew = xr_ * exp_s_ + eps * (v * exp_q_ + t_)
-            xnew_ = xnew.reshape_as(xr_)
-            mbx_ = self.unflatten(mb) * self.g.vec_to_group(xnew_)
-            xf = mx_ + mbx_
-            logjac = torch.where(
-                self.unflatten(mb).to(torch.bool),
-                self.g.vec_to_group(exp_s_).log(),
-                0.0,
-            )
-            logdet = self.flatten(self.g.norm2(logjac)).sum(1)
+            x = x.reshape((-1, *self.xshape[1:]))
+            xm_init = xm_init.reshape((-1, *self.xshape[1:]))
+            exp_s = exp_s.reshape_as(x).to(x.dtype)
+            exp_q = exp_q.reshape_as(x).to(x.dtype)
+            t = t.reshape_as(x).to(x.dtype)
+            eps = eps.to(x.dtype)
+            v = v.reshape_as(x)
+            xp = self.g.update_gauge(x, eps * (v * exp_q + t))
+            xf = xm_init + (mb * self.flatten(xp)).reshape_as(xm_init)
+            logdet = (mb * s.to(x.dtype)).sum(axis=1)
+
         else:
             raise ValueError('Unexpected value for `self.g`')
 
         xf = self.g.compat_proj(xf)
-        return State(x=xf, v=state.v, beta=state.beta), logdet
+        return State(x=xf, v=state.v, beta=state.beta), logdet.real
 
     def _update_x_bwd(
             self,
@@ -1236,22 +1148,10 @@ class Dynamics(nn.Module):
         assert isinstance(self.xeps, nn.ParameterList)
         eps = self.xeps[step]  # .clamp_min_(0.)
         mb = (torch.ones_like(m) - m).to(self.device)
-        # if isinstance(self.g, SU3):
-        if self.config.group == 'SU3':
-            x = state.x
-            xm_init = self.group_to_vec(
-                self.unflatten(
-                    m * self.flatten(state.x)
-                )
-            )
-            v = self.group_to_vec(state.v)
-            inputs = (xm_init, v)
-        else:
-            x = state.x.flatten(1)
-            v = state.v.reshape_as(x)
-            xm_init = m * x
-            inputs = (xm_init, v)
-
+        x = state.x.reshape((state.x.shape[0], -1))
+        v = state.v.reshape_as(x)
+        xm_init = m * x
+        inputs = (xm_init, state.v)
         s, t, q = self._call_xnet(step, inputs, first=first)
         s = (-eps) * s
         q = eps * q
@@ -1273,46 +1173,24 @@ class Dynamics(nn.Module):
                 xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
                 xb = xm_init + (mb * xnew)
                 logdet = (mb * s).sum(dim=1)
-        # elif isinstance(self.g, SU3):
         elif self.config.group == 'SU3':
-            mx_ = self.unflatten(
-                torch.where(
-                    m.to(torch.bool),
-                    (xflat := self.flatten(state.x)),
-                    torch.zeros_like(xflat)
-                )
+            exp_s = exp_s.reshape(state.x.shape).to(state.x.dtype)
+            exp_q = exp_q.reshape(state.x.shape).to(state.x.dtype)
+            t = t.reshape_as(exp_s).to(state.x.dtype)
+            eps = eps.to(state.x.dtype)
+            xnew = exp_s * self.g.update_gauge(
+                state.x,
+                -(eps * (state.v * exp_q + t))
             )
-            xr_ = self.group_to_vec(
-                self.unflatten(xflat)
-            )
-            exp_s_ = self.group_to_vec(
-                exp_s.to(state.x.dtype)
-            ).reshape_as(xr_)
-            exp_q_ = self.group_to_vec(
-                exp_q.to(state.x.dtype)
-            ).reshape_as(xr_)
-            t_ = self.group_to_vec(
-                t.to(state.x.dtype)
-            ).reshape_as(xr_)
-            # exp_s_ = exp_s.reshape_as(xr_)
-            # exp_q_ = exp_q.reshape_as(xr_)
-            # t_ = t.reshape_as(xr_)
-            xnew = exp_s_ * (xr_ - eps * (v * exp_q_ + t_))
-            xnew_ = xnew.reshape_as(xr_)
-            mbx_ = self.unflatten(mb) * self.g.vec_to_group(xnew_)
-            xb = mx_ + mbx_
-            logjac = torch.where(
-                self.unflatten(mb).to(torch.bool),
-                self.g.vec_to_group(exp_s_).log(),
-                0.0
-            )
-            logdet = self.flatten(self.g.norm2(logjac)).sum(1)
-            # xb = mx_ + self.g.vec_to_group(xnew_)
+            xb = (
+                xm_init + (mb * self.flatten(xnew))
+            ).reshape((-1, *self.xshape[1:]))
+            logdet = (mb * s.to(mb.dtype)).sum(1)  # .real
         else:
             raise ValueError('Unexpected value for `self.g`')
 
         xb = self.g.compat_proj(xb)
-        return State(x=xb, v=state.v, beta=state.beta), logdet
+        return State(x=xb, v=state.v, beta=state.beta), logdet.real
 
     def hamiltonian(self, state: State) -> Tensor:
         """Returns the total energy H = KE + PE."""

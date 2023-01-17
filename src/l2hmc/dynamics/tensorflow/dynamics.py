@@ -16,7 +16,6 @@ import logging
 
 import numpy as np
 import tensorflow as tf
-import pandas as pd
 
 from l2hmc import configs as cfgs
 from l2hmc.network.tensorflow.network import dummy_network, NetworkFactory
@@ -823,16 +822,8 @@ class Dynamics(Model):
     def get_all_weights(self) -> dict:
         xnets = self._get_all_xnets()
         vnets = self._get_all_vnets()
-        # weights = {
-        #     self.format_weight_name(w.name): w
-        #     for w in self.weights
-        # }
         weights = {}
         for xnet in xnets:
-            xweights = {
-                self.rename_weight(w.name): w
-                for w in xnet.weights
-            }
             weights.update({
                 f'{self.rename_weight(w.name)}': w
                 for w in xnet.weights
@@ -842,7 +833,7 @@ class Dynamics(Model):
                 # self.format_weight_name(w.name): w
                 f'{self.rename_weight(w.name)}': w
                 for w in vnet.weights
-           })
+            })
 
         return cfgs.flatten_dict(weights)
 
@@ -905,19 +896,14 @@ class Dynamics(Model):
         x, v = inputs
         assert isinstance(x, Tensor) and isinstance(v, Tensor)
         xnet = self._get_xnet(step, first)
-        # if isinstance(self.g, U1Phase):
         if self.config.group == 'U1':
             x = self.g.group_to_vec(x)
 
-        # elif isinstance(self.g, SU3):
         elif self.config.group == 'SU3':
-            x = tf.reshape(x, self.xshape)
+            x = self.unflatten(x)
             x = tf.stack([tf.math.real(x), tf.math.imag(x)], 1)
-        # x = self.g.group_to_vec(x)
-        # assert xnet is not None and isinstance(xnet, LeapfrogLayer)
         assert callable(xnet)
         s, t, q = xnet((x, v), training)
-        # return xnet((x, v), training)
         return (s, t, q)
 
     def _forward_lf(
@@ -987,7 +973,7 @@ class Dynamics(Model):
         return tf.reshape(x, (x.shape[0], *self.xshape[1:]))
 
     def group_to_vec(self, x: Tensor) -> Tensor:
-        """For SU(3), returns an 8-component real-valued vector from SU(3) matrix"""
+        """For x in SU(3), returns an 8-component real-valued vector"""
         return self.g.group_to_vec(self.unflatten(x))
 
     def vec_to_group(self, x: Tensor) -> Tensor:
@@ -1026,12 +1012,10 @@ class Dynamics(Model):
         # jacobian factor, used in exp_s below
         halfeps = tf.scalar_mul(0.5, eps)
         jac = tf.scalar_mul(halfeps, s)
-        # jac = eps * s / 2.  # jacobian factor, also used in exp_s below
         logdet = tf.reduce_sum(jac, axis=1)
         exp_s = tf.reshape(tf.exp(jac), state.v.shape)
         exp_q = tf.reshape(tf.exp(tf.scalar_mul(eps, q)), force.shape)
         t = tf.reshape(t, force.shape)
-        # exp_q = tf.exp(eps * q)
         vf = exp_s * state.v - tf.scalar_mul(halfeps, (force * exp_q + t))
 
         return State(state.x, vf, state.beta), logdet
@@ -1048,7 +1032,6 @@ class Dynamics(Model):
         s, t, q = self._call_vnet(step, (state.x, force), training=training)
         halfeps = tf.scalar_mul(0.5, eps)
         logjac = tf.scalar_mul(tf.scalar_mul(-1., halfeps), s)
-        # logjac = (-eps * s / 2.)
         v = tf.reshape(state.v, (-1, *self.xshape[1:]))
         logdet = tf.reduce_sum(logjac, axis=1)
         exp_s = tf.reshape(tf.exp(logjac), v.shape)
@@ -1079,7 +1062,6 @@ class Dynamics(Model):
         q = tf.scalar_mul(eps, q)
         exp_s = tf.exp(s)
         exp_q = tf.exp(q)
-        # if isinstance(self.g, U1Phase):
         if self.config.group == 'U1':
             if self.config.use_ncp:
                 halfx = self.flatten(x / TWO)
@@ -1095,7 +1077,6 @@ class Dynamics(Model):
                 xf = xm_init + (mb * xp)
                 logdet = tf.reduce_sum((mb * s), axis=1)
 
-        # elif isinstance(self.g, SU3):
         elif self.config.group == 'SU3':
             x = tf.reshape(state.x, self.xshape)
             xm_init = tf.reshape(xm_init, self.xshape)
@@ -1104,9 +1085,6 @@ class Dynamics(Model):
             t = tf.cast(tf.reshape(t, self.xshape), x.dtype)
             eps = tf.cast(eps, x.dtype)
             v = tf.reshape(state.v, self.xshape)
-            # xp = x * exp_s + eps * (v * exp_q + t)
-
-            # xp = x + eps * (v * exp_q + t)
             xp = self.g.update_gauge(x, eps * (v * exp_q + t))
             xf = xm_init + tf.reshape((mb * self.flatten(xp)), xm_init.shape)
             logdet = tf.reduce_sum(mb * tf.cast(s, x.dtype), axis=1)
@@ -1140,7 +1118,6 @@ class Dynamics(Model):
         exp_q = tf.exp(q)
         exp_s = tf.exp(s)
 
-        # if isinstance(self.g, U1Phase):
         if self.config.group == 'U1':
             if self.config.use_ncp:
                 halfx = x / TWO
@@ -1164,7 +1141,7 @@ class Dynamics(Model):
                 xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
                 xb = xm_init + mb * xnew
                 logdet = tf.reduce_sum(mb * s, axis=1)
-        # elif isinstance(self.g, SU3):
+
         elif self.config.group == 'SU3':
             exp_s = tf.cast(tf.reshape(exp_s, state.x.shape), state.x.dtype)
             exp_q = tf.cast(tf.reshape(exp_q, state.x.shape), state.x.dtype)
