@@ -24,13 +24,20 @@ from l2hmc.configs import Charges, LatticeMetrics
 TWOPI = 2. * PI
 Tensor = torch.Tensor
 
+DTYPE = torch.get_default_dtype()
+
+if torch.cuda.is_available():
+    DTYPE = torch.get_autocast_gpu_dtype()
+
 
 def area_law(beta: float, nplaqs: int):
     return (i1(beta) / i0(beta)) ** nplaqs
 
 
 def plaq_exact(beta: float | Tensor):
-    return i1(beta) / i0(beta)
+    # return i1(beta) / i0(beta)
+    ratio = (i1(beta) / i0(beta))
+    return ratio.to(DTYPE)
 
 
 def project_angle(x: Tensor) -> Tensor:
