@@ -114,6 +114,8 @@ class Trainer(BaseTrainer):
         )
         dsetup: dict = setup_torch_distributed(self.config.backend)
         self._dtype = torch.get_default_dtype()
+        if torch.cuda.is_available():
+            self._dtype = torch.get_autocast_gpu_dtype()
         self.device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
         self._device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.size: int = dsetup['size']
