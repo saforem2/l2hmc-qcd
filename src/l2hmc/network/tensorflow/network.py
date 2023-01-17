@@ -625,26 +625,26 @@ class NetworkFactory(BaseNetworkFactory):
             vnet[f'{lf}'] = LeapfrogLayer(
                 **cfg['vnet'],
                 name=f'vnet/{lf}',
-                # group=group,
+                group=group,
             )
             if split_xnets:
                 xnet[f'{lf}'] = {
                     'first': LeapfrogLayer(
                         **cfg['xnet'],
                         name=f'xnet/{lf}/first',
-                        # group=group,
+                        group=group,
                     ),
                     'second': LeapfrogLayer(
                         **cfg['xnet'],
                         name=f'xnet/{lf}/second',
-                        # group=group,
+                        group=group,
                     ),
                 }
             else:
                 xnet[f'{lf}'] = LeapfrogLayer(
                     **cfg['xnet'],
                     name=f'xnet/{lf}',
-                    # group=group,
+                    group=group,
                 )
 
         return {'xnet': xnet, 'vnet': vnet}
