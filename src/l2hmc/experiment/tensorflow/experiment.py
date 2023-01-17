@@ -12,7 +12,6 @@ from omegaconf import DictConfig
 
 from typing import Any, Optional
 from pathlib import Path
-import l2hmc
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
 from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
@@ -99,17 +98,47 @@ class Experiment(BaseExperiment):
     def visualize_model(self) -> None:
         assert self.trainer is not None and isinstance(self.trainer, Trainer)
         state = self.trainer.dynamics.random_state(1.)
-        x = self.trainer.dynamics.flatten(state.x)
-        v = self.trainer.dynamics.flatten(state.v)
-        _ = self.trainer.dynamics._call_vnet(0, (x, v), training=True)
-        _ = self.trainer.dynamics._call_xnet(
+        force = self.trainer.dynamics.grad_potential(state.x, state.beta)
+        vnet = self.trainer.dynamics._get_vnet(0)
+        xnet = self.trainer.dynamics._get_xnet(0, first=True)
+        sv, tv, qv = self.trainer.dynamics._call_vnet(
             0,
-            (x, v),
+            (state.x, force),
+            training=True
+        )
+        sx, tx, qx = self.trainer.dynamics._call_xnet(
+            0,
+            (state.x, state.v),
             first=True,
             training=True
         )
-        vnet = self.trainer.dynamics._get_vnet(0)
-        xnet = self.trainer.dynamics._get_xnet(0, first=True)
+        outputs = {
+            'v': {
+                'scale': sv,
+                'transl': tv,
+                'transf': qv,
+            },
+            'x': {
+                'scale': sx,
+                'transl': tx,
+                'transf': qx,
+            },
+        }
+        outdir = Path(self._outdir).joinpath('network_diagrams')
+        outdir.mkdir(exist_ok=True, parents=True)
+        for key, val in outputs.items():
+            for k, v in val.items():
+                net = xnet if key == 'x' else vnet
+                dot = tf.keras.utils.model_to_dot(
+                    net,
+                    show_shapes=True,
+                    expand_nested=True,
+                    show_layer_activations=True
+
+                )
+                fout = outdir.joinpath(f'{key}-{k}.png').resolve().as_posix()
+                log.info(f'Saving model visualizations to: {fout}')
+                dot.write_png(fout)
 
         # ddot = tf.keras.utils.model_to_dot(self.trainer.dynamics,
         #                                    show_shapes=True,
@@ -124,8 +153,8 @@ class Experiment(BaseExperiment):
         #                                    expand_nested=True,
         #                                    show_layer_activations=True)
         # log.info('Saving model visualizations to: [xnet,vnet].png')
-        # outdir = Path(self._outdir).joinpath('network_diagrams')
-        # outdir.mkdir(exist_ok=True, parents=True)
+        # outdir = path(self._outdir).joinpath('network_diagrams')
+        # outdir.mkdir(exist_ok=true, parents=true)
         # # ddot.write_png(outdir.joinpath('dynamics.png').as_posix())
         # xdot.write_png(outdir.joinpath('xnet.png').as_posix())
         # vdot.write_png(outdir.joinpath('vnet.png').as_posix())

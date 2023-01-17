@@ -17,7 +17,6 @@ import torch
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from l2hmc.configs import NetWeights
-import l2hmc.configs as configs
 from l2hmc.configs import ExperimentConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics as ptDynamics
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
@@ -126,24 +125,26 @@ class Experiment(BaseExperiment):
             vnet.set_net_weight(net_weights.v)
 
     def visualize_model(self, x: Optional[Tensor] = None):
-        import graphviz
+        # import graphviz
         # from torchview import draw_graph
         from torchviz import make_dot  # type: ignore
         state = self.trainer.dynamics.random_state(1.)
 
         outdir = Path(self._outdir).joinpath('network_diagrams')
         outdir.mkdir(exist_ok=True, parents=True)
-        fpxnet = outdir.joinpath('xnet.png')
-        fpvnet = outdir.joinpath('vnet.png')
+        # fpxnet = outdir.joinpath('xnet.png')
+        # fpvnet = outdir.joinpath('vnet.png')
         force = self.trainer.dynamics.grad_potential(state.x, state.beta)
         vnet = self.trainer.dynamics._get_vnet(0)
         xnet = self.trainer.dynamics._get_xnet(0, first=True)
-        sv, tv, qv = self.trainer.dynamics._call_vnet(0, (state.x, force))
-        sx, tx, qx = self.trainer.dynamics._call_xnet(
-            0,
-            (state.x, state.v),
-            first=True
-        )
+        sv, tv, qv = vnet((state.x, force))
+        sx, tx, qx = xnet((state.x, state.v))
+        # sv, tv, qv = self.trainer.dynamics._call_vnet(0, (state.x, force))
+        # sx, tx, qx = self.trainer.dynamics._call_xnet(
+        #     0,
+        #     (state.x, state.v),
+        #     first=True
+        # )
         outputs = {
             'v': {
                 'scale': sv,
@@ -159,15 +160,17 @@ class Experiment(BaseExperiment):
         for key, val in outputs.items():
             for k, v in val.items():
                 net = xnet if key == 'x' else vnet
-                make_dot(
+                _ = make_dot(
                     v,
                     params=dict(net.named_parameters()),
                     show_attrs=True,
                     show_saved=True
-                ).render(
-                    outdir.joinpath(f'{key}net{k}.gv').resolve().as_posix(),
-                    # format='png'
-                )
+                ).save(f'{key}-{k}.gv')
+                # ).render(
+                #     f'{key}-{k}.png',
+                #     # outdir.joinpath(f'{key}net{k}.gv').as_posix(),
+                #     # format='png'
+                # )
         # sx0, tx0, qx0 = 0.0, 0.0, 0.0
         # sv, tv, qv = 0.0, 0.0, 0.0
         # # for step in range(self.config.dynamics.nleapfrog):

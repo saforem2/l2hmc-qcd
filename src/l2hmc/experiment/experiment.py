@@ -67,6 +67,10 @@ class BaseExperiment(ABC):
         # self.skip = skip
 
     @abstractmethod
+    def visualize_model(self, x: Optional[Any] = None) -> None:
+        pass
+
+    @abstractmethod
     def train(self) -> dict:
         pass
 
