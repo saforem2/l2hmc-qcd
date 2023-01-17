@@ -310,13 +310,16 @@ class Steps(BaseConfig):
 
 @dataclass
 class ConvolutionConfig(BaseConfig):
-    filters: Sequence[int]
+    filters: Optional[Sequence[int]] = None
     sizes: Optional[Sequence[int]] = None
     pool: Optional[Sequence[int]] = None
     # activation: str
     # paddings: list[int]
 
     def __post_init__(self):
+        if self.filters is None:
+            return
+
         if self.sizes is None:
             logger.warning('Using default filter size of 2')
             self.sizes = list(len(self.filters) * [2])
@@ -329,6 +332,8 @@ class ConvolutionConfig(BaseConfig):
         assert self.pool is not None
 
     def to_str(self):
+        if self.filters is None:
+            return
         if len(self.filters) > 0:
             outstr = [
                 list_to_str(list(self.filters)),
@@ -342,7 +347,7 @@ class ConvolutionConfig(BaseConfig):
                     list_to_str(list(self.pool))
                 )
 
-            return '_'.join(outstr)
+            return '-'.join(['conv', '_'.join(outstr)])
         return ''
 
 
@@ -358,7 +363,7 @@ class NetworkConfig(BaseConfig):
         ustr = '-'.join([str(int(i)) for i in self.units])
         dstr = f'dp-{self.dropout_prob:2.1f}'
         bstr = f'bn-{self.use_batch_norm}'
-        return '_'.join([ustr, dstr, bstr])
+        return '-'.join(['net', '_'.join([ustr, dstr, bstr])])
         # outstr = [f'nh-{ustr}_act-{self.activation_fn}']
         # if self.dropout_prob > 0:
         #     outstr.append(f'dp-{self.dropout_prob:2.1f}')
@@ -393,6 +398,8 @@ class DynamicsConfig(BaseConfig):
 
     def __post_init__(self):
         assert self.group.upper() in ['U1', 'SU3']
+        # NOTE ---------------------------------------------
+        # --------------------------------------------------
         if self.eps_hmc is None:
             # if not specified, use a trajectory length of 1
             self.eps_hmc = 1.0 / self.nleapfrog
@@ -400,6 +407,7 @@ class DynamicsConfig(BaseConfig):
             self.dim = 2
             self.nt, self.nx = self.latvolume
             self.xshape = (self.nchains, self.dim, *self.latvolume)
+            self.vshape = (self.nchains, self.dim, *self.latvolume)
             assert len(self.xshape) == 4
             assert len(self.latvolume) == 2
             self.xdim = int(np.cumprod(self.xshape[1:])[-1])
@@ -408,13 +416,22 @@ class DynamicsConfig(BaseConfig):
             self.link_shape = (3, 3)
             self.vec_shape = 8
             self.nt, self.nx, self.ny, self.nz = self.latvolume
+            # xshape : [Nb, 4, Nt, Nx, Ny, Nz, 3, 3]
             self.xshape = (
                 self.nchains,
                 self.dim,
                 *self.latvolume,
                 *self.link_shape
             )
+            # vshape : [Nb, 4, Nt, Nx, Ny, Nz, 8]
+            self.vshape = (
+                self.nchains,
+                self.dim,
+                *self.latvolume,
+                self.vec_shape
+            )
             assert len(self.xshape) == 8
+            assert len(self.vshape) == 7
             assert len(self.latvolume) == 4
             self.xdim = int(np.cumprod(self.xshape[1:])[-1])
         else:
@@ -440,8 +457,8 @@ class LossConfig(BaseConfig):
 @dataclass
 class InputSpec(BaseConfig):
     xshape: Sequence[int]
-    xnet: Optional[Dict[str, Sequence[int]]] = None
-    vnet: Optional[Dict[str, Sequence[int]]] = None
+    xnet: Optional[Dict[str, int | Sequence[int]]] = None
+    vnet: Optional[Dict[str, int | Sequence[int]]] = None
 
     def to_str(self):
         return '-'.join([str(i) for i in self.xshape])
@@ -449,8 +466,18 @@ class InputSpec(BaseConfig):
     def __post_init__(self):
         if len(self.xshape) == 2:
             self.xdim = self.xshape[-1]
+            self.vshape = self.xshape
+            self.vdim = self.xshape[-1]
         elif len(self.xshape) > 2:
-            self.xdim = np.cumprod(self.xshape[1:])[-1]
+            # xshape: [Nb, 4, Nt, Nx, Ny, Nz, 3, 3]
+            self.xdim: int = np.cumprod(self.xshape[1:])[-1]
+            # lat_shape: [Nb, 4, Nt, Nx, Ny, Nz]
+            lat_shape = self.xshape[:-2]
+            # vdim: 8 = 3 ** 2 - 1
+            vd = (self.xshape[-1] ** 2) - 1
+            # vshape = [Nb, 4, Nt, Nx, Ny, Nz, 8]
+            self.vshape: Sequence[int] = (*lat_shape, vd)
+            self.vdim: int = np.cumprod(self.vshape[1:])[-1]
         else:
             raise ValueError(f'Invalid `xshape`: {self.xshape}')
 
