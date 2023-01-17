@@ -137,8 +137,15 @@ class Experiment(BaseExperiment):
         force = self.trainer.dynamics.grad_potential(state.x, state.beta)
         vnet = self.trainer.dynamics._get_vnet(0)
         xnet = self.trainer.dynamics._get_xnet(0, first=True)
-        sv, tv, qv = vnet((state.x, force))
-        sx, tx, qx = xnet((state.x, state.v))
+        dtype = (
+            torch.get_autocast_gpu_dtype() if torch.cuda.is_available() 
+            else torch.get_default_dtype()
+        )
+        x = state.x.to(dtype)
+        v = state.v.to(dtype)
+        force = force.to(dtype)
+        sv, tv, qv = vnet((x, force))
+        sx, tx, qx = xnet((x, v))
         # sv, tv, qv = self.trainer.dynamics._call_vnet(0, (state.x, force))
         # sx, tx, qx = self.trainer.dynamics._call_xnet(
         #     0,
@@ -158,14 +165,14 @@ class Experiment(BaseExperiment):
             },
         }
         for key, val in outputs.items():
-            for k, v in val.items():
+            for kk, vv in val.items():
                 net = xnet if key == 'x' else vnet
                 _ = make_dot(
-                    v,
+                    vv,
                     params=dict(net.named_parameters()),
                     show_attrs=True,
                     show_saved=True
-                ).save(f'{key}-{k}.gv')
+                ).save(f'{key}-{kk}.gv')
                 # ).render(
                 #     f'{key}-{k}.png',
                 #     # outdir.joinpath(f'{key}net{k}.gv').as_posix(),
