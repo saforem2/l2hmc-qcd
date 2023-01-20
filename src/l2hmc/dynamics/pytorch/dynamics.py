@@ -154,13 +154,18 @@ class Dynamics(nn.Module):
 
         log.debug(f'dynamics._networks_built: {self._networks_built}')
         self.masks = self._build_masks()
-        self._dtype = torch.get_default_dtype()
+        self._dtype: torch.dtype = torch.get_default_dtype()
+        if self._networks_built:
+            vnet = self._get_vnet(0)
+            self._dtype: torch.dtype = (
+                vnet.input_layer.xlayer.weight.dtype  # type:ignore
+            )
 
         self.xeps = nn.ParameterList([
             nn.parameter.Parameter(
                 torch.tensor(
                     self.config.eps,
-                ).to(self._dtype).to(self._device),  # .clamp(min=0.0),
+                ), # .to(self._dtype).to(self._device),  # .clamp(min=0.0),
                 requires_grad=(not self.config.eps_fixed)
             )
             for _ in range(self.config.nleapfrog)
@@ -169,7 +174,7 @@ class Dynamics(nn.Module):
             nn.parameter.Parameter(
                 torch.tensor(
                     self.config.eps,
-                ).to(self._dtype).to(self._device),  # .clamp(min=0.0),
+                ),  # .clamp(min=0.0),
                 requires_grad=(not self.config.eps_fixed),
             )
             for _ in range(self.config.nleapfrog)
@@ -369,8 +374,8 @@ class Dynamics(nn.Module):
             inputs: tuple[Tensor, Tensor]
     ) -> tuple[Tensor, dict]:
         x, beta = inputs
-        x = x.to(self._device).to(self._dtype)
-        beta = beta.to(self._device).to(self._dtype)
+        x = x.to(self._device) #.to(self._dtype)
+        beta = beta.to(self._device) #.to(self._dtype)
         if self.config.merge_directions:
             outputs = self.apply_transition_fb(inputs)
         else:
@@ -850,7 +855,7 @@ class Dynamics(nn.Module):
     @staticmethod
     def _get_direction_masks(batch_size: int) -> tuple[Tensor, Tensor]:
         """Returns (forward_mask, backward_mask)."""
-        fwd = (torch.rand(batch_size) > 0.5).to(torch.float)
+        fwd = (torch.rand(batch_size) > 0.5) #.to(torch.float)
         bwd = torch.ones_like(fwd) - fwd
 
         return fwd, bwd
@@ -927,11 +932,13 @@ class Dynamics(nn.Module):
 
         vnet = self._get_vnet(step)
         assert callable(vnet)
-        if torch.cuda.is_available():
-            x, force = x.cuda(), force.cuda()
-            gdtype = torch.get_autocast_gpu_dtype()
-            x = x.to(gdtype)
-            force = force.to(gdtype)
+        # if torch.cuda.is_available():
+        #     x = x.to(self._dtype).to(self.device)
+        #     force = force.to(self._dtype).to(self.device)
+        #     # x, force = x.cuda(), force.cuda()
+        #     # # gdtype = torch.get_autocast_gpu_dtype()
+        #     # x = x.to(gdtype)
+        #     # force = force.to(gdtype)
 
         return vnet((x, force))
 
@@ -961,11 +968,13 @@ class Dynamics(nn.Module):
             x = torch.stack([x.real, x.imag], 1)
             v = torch.stack([v.real, v.imag], 1)
 
-        if torch.cuda.is_available():
-            x, v = x.cuda(), v.cuda()
-            gdtype = torch.get_autocast_gpu_dtype()
-            x = x.to(gdtype)
-            v = v.to(gdtype)
+        # if torch.cuda.is_available():
+        #     # x, v = x.cuda(), v.cuda()
+        #     x = x.to(self._dtype).to(self.device)
+        #     v = v.to(self._dtype).to(self.device)
+        #     # gdtype = torch.get_autocast_gpu_dtype()
+        #     # x = x.to(gdtype)
+        #     # v = v.to(gdtype)
 
         return xnet((x, v))
 
@@ -1045,7 +1054,7 @@ class Dynamics(nn.Module):
     def _update_v_fwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the forward direction"""
         assert isinstance(self.veps, nn.ParameterList)
-        eps = self.veps[step].to(state.x.dtype)
+        eps = self.veps[step]
         force = self.grad_potential(state.x, state.beta)
         # force = force.reshape_as(state.x)
 
