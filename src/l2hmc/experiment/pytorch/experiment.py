@@ -128,30 +128,37 @@ class Experiment(BaseExperiment):
         # import graphviz
         # from torchview import draw_graph
         from torchviz import make_dot  # type: ignore
+        device = self.trainer.device
         state = self.trainer.dynamics.random_state(1.)
+        m, _ = self.trainer.dynamics._get_mask(0)
+        # x = state.x.reshape((state.x.shape[0], -1)).to(device)
+        beta = state.beta.to(device)
+        m = m.to(device)
+        x = state.x.to(device)
+        v = state.v.to(device)
 
         outdir = Path(self._outdir).joinpath('network_diagrams')
         outdir.mkdir(exist_ok=True, parents=True)
         # fpxnet = outdir.joinpath('xnet.png')
         # fpvnet = outdir.joinpath('vnet.png')
-        force = self.trainer.dynamics.grad_potential(state.x, state.beta)
         vnet = self.trainer.dynamics._get_vnet(0)
         xnet = self.trainer.dynamics._get_xnet(0, first=True)
-        dtype = (
-            torch.get_autocast_gpu_dtype() if torch.cuda.is_available() 
-            else torch.get_default_dtype()
-        )
-        x = state.x.to(dtype)
-        v = state.v.to(dtype)
-        force = force.to(dtype)
-        sv, tv, qv = vnet((x, force))
-        sx, tx, qx = xnet((x, v))
-        # sv, tv, qv = self.trainer.dynamics._call_vnet(0, (state.x, force))
-        # sx, tx, qx = self.trainer.dynamics._call_xnet(
-        #     0,
-        #     (state.x, state.v),
-        #     first=True
-        # )
+
+        with torch.autocast(  # type:ignore
+            dtype=torch.float32,
+            device_type='cuda' if torch.cuda.is_available() else 'cpu'
+        ):
+            force = self.trainer.dynamics.grad_potential(x, state.beta)
+            sv, tv, qv = self.trainer.dynamics._call_vnet(0, (x, force))
+            xm = self.trainer.dynamics.unflatten(
+                m * self.trainer.dynamics.flatten(x)
+            )
+            sx, tx, qx = self.trainer.dynamics._call_xnet(
+                0,
+                (xm, v),
+                first=True
+            )
+
         outputs = {
             'v': {
                 'scale': sv,
@@ -167,6 +174,7 @@ class Experiment(BaseExperiment):
         for key, val in outputs.items():
             for kk, vv in val.items():
                 net = xnet if key == 'x' else vnet
+                net = net.to(vv.dtype)
                 _ = make_dot(
                     vv,
                     params=dict(net.named_parameters()),
