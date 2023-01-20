@@ -1,5 +1,6 @@
 """
 trainer.py
+
 Implements methods for training L2HMC sampler
 """
 from __future__ import absolute_import, annotations, division, print_function
@@ -8,7 +9,7 @@ import logging
 import os
 from pathlib import Path
 import time
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 import aim
 from aim import Distribution
@@ -23,6 +24,7 @@ from tensorflow._api.v2.train import CheckpointManager
 import tensorflow.python.framework.ops as ops
 from tensorflow.python.keras import backend as K
 
+from l2hmc import configs
 from l2hmc.common import ScalarLike
 from l2hmc.configs import ExperimentConfig
 from l2hmc.configs import CHECKPOINTS_DIR
@@ -30,7 +32,7 @@ from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.group.su3.tensorflow.group import SU3
 from l2hmc.group.u1.tensorflow.group import U1Phase
 from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
-from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
+from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1, plaq_exact
 from l2hmc.learning_rate.tensorflow.learning_rate import ReduceLROnPlateau
 from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.network.tensorflow.network import NetworkFactory
@@ -39,20 +41,17 @@ from l2hmc.trainers.trainer import BaseTrainer
 from l2hmc.utils.history import summarize_dict
 from l2hmc.utils.rich import get_width, is_interactive
 from l2hmc.utils.step_timer import StepTimer
-# tf.autograph.set_verbosity(0)
-# os.environ['AUTOGRAPH_VERBOSITY'] = '0'
-# JIT_COMPILE = (len(os.environ.get('JIT_COMPILE', '')) > 0)
-if is_interactive():
-    from tqdm.notebook import trange
-else:
-    from tqdm.rich import trange
+import l2hmc.utils.live_plots as plotter
+from tqdm.auto import trange
 
+# log = get_pylogger(__name__)
 log = logging.getLogger(__name__)
 
 Tensor = tf.Tensor
 Array = np.ndarray
 TF_FLOAT = tf.keras.backend.floatx()
 NP_INT = (np.int8, np.int16, np.int32, np.int64)
+Layer = tf.keras.layers.Layer
 Model = tf.keras.Model
 Optimizer = tf.keras.optimizers.Optimizer
 TensorLike = tf.types.experimental.TensorLike
@@ -116,8 +115,11 @@ def is_dist(z: Tensor | ops.EagerTensor | np.ndarray) -> bool:
     )
 
 
-# TODO: Replace arguments in __init__ call below with configs.TrainerConfig
+Lattice = Union[LatticeU1, LatticeSU3]
+
+
 class Trainer(BaseTrainer):
+    # TODO: Replace arguments in __init__ call below with configs.TrainerConfig
     def __init__(
             self,
             cfg: DictConfig | ExperimentConfig,
@@ -127,49 +129,76 @@ class Trainer(BaseTrainer):
             skip: Optional[str | list[str]] = None,
     ) -> None:
         super().__init__(cfg=cfg, keep=keep, skip=skip)
-        # assert isinstance(self.config, ExperimentConfig)
         if self.config.compression in [True, 'fp16']:
             self.compression = hvd.Compression.fp16
         else:
             self.compression = hvd.Compression.none
 
-        self._gstep = 0
-        self.lattice = self.build_lattice()
+        assert isinstance(
+            self.config,
+            (configs.ExperimentConfig, ExperimentConfig)
+        )
+
+        self._gstep: int = 0
+        self.size: int = hvd.size()
+        self.rank: int = hvd.rank()
+        self.local_rank: int = hvd.local_rank()
+        self._is_chief: bool = (self.rank == 0)
+        self.lattice: Lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
-        self.dynamics = self.build_dynamics(
+        self.dynamics: Dynamics = self.build_dynamics(
             build_networks=build_networks
         )
-        self.ckpt_dir = (
+        # Call dynamics to make sure everything initialized
+        self.ckpt_dir: Path = (
             Path(CHECKPOINTS_DIR).joinpath('checkpoints')
             if ckpt_dir is None
             else Path(ckpt_dir).resolve()
         )
         self.ckpt_dir.mkdir(exist_ok=True, parents=True)
-        # self.load_ckpt()
-        assert (
-            self.dynamics is not None
-            and isinstance(self.dynamics, Dynamics)
-        )
+        # assert (
+        #     self.dynamics is not None
+        #     and isinstance(self.dynamics, Dynamics)
+        # )
         self.optimizer = self.build_optimizer()
-        self.verbose = self.config.dynamics.verbose
+        self.verbose: bool = self.config.dynamics.verbose
         # compression = 'fp16'
         # self.verbose = not skip_tracking
         # self.compression = HVD_FP_MAP['fp16']
         # self.lr_schedule = self.build_lr_schedule()
         # skip_tracking = os.environ.get('SKIP_TRACKING', False)
-        self.clip_norm = self.config.learning_rate.clip_norm
+        self.clip_norm: float = self.config.learning_rate.clip_norm
         self.reduce_lr = ReduceLROnPlateau(self.config.learning_rate)
         self.reduce_lr.set_model(self.dynamics)
         self.reduce_lr.set_optimizer(self.optimizer)
-        self.rank = hvd.local_rank()
-        self.global_rank = hvd.rank()
-        self._is_chief = self.rank == 0 and self.global_rank == 0
+        # self.rank = hvd.local_rank()
+        # self.global_rank = hvd.rank()
+        # self._is_chief = self.rank == 0 and self.global_rank == 0
         if self.config.dynamics.group == 'U1':
             self.g = U1Phase()
         elif self.config.dynamics.group == 'SU3':
             self.g = SU3()
         else:
             raise ValueError
+
+    def warning(self, s: str) -> None:
+        if self._is_chief:
+            log.warning(s)
+
+    def info(self, s: str) -> None:
+        if self._is_chief:
+            log.info(s)
+
+    def call_dynamics(
+            self,
+            x: Optional[Tensor] = None,
+            beta: Optional[float] = None,
+    ) -> tuple[Tensor, dict[str, Tensor]]:
+        beta = 1. if beta is None else beta
+        if x is None:
+            x = self.dynamics.lattice.random()
+        inputs = (x, tf.constant(beta, dtype=TF_FLOAT))
+        return self.dynamics(inputs)  # type:ignore
 
     def draw_x(self):
         return flatten(self.g.random(
@@ -178,7 +207,7 @@ class Trainer(BaseTrainer):
 
     def reset_optimizer(self) -> None:
         if len(self.optimizer.variables()) > 0:
-            log.warning('Resetting optimizer state!')
+            self.warning('Resetting optimizer state!')
             for var in self.optimizer.variables():
                 var.assign(tf.zeros_like(var))
 
@@ -237,7 +266,8 @@ class Trainer(BaseTrainer):
         return K.get_value(self.optimizer.lr)
 
     def setup_CheckpointManager(self):
-        log.info(f'Looking for checkpoints in: {self.ckpt_dir}')
+        # log.info(f'Looking for checkpoints in: {self.ckpt_dir}')
+        self.info(f'Looking for checkpoints in: {self.ckpt_dir}')
         ckpt = tf.train.Checkpoint(dynamics=self.dynamics,
                                    optimizer=self.optimizer)
         manager = tf.train.CheckpointManager(
@@ -245,11 +275,15 @@ class Trainer(BaseTrainer):
             self.ckpt_dir.as_posix(),
             max_to_keep=5
         )
-        if manager.latest_checkpoint:
-            ckpt.restore(manager.latest_checkpoint)
-            log.warning(f'Restored checkpoint from: {manager.latest_checkpoint}')
+        # if manager.latest_checkpoint and self.config.restore:
+        if self.config.restore:
+            if manager.latest_checkpoint:
+                ckpt.restore(manager.latest_checkpoint)
+                self.warning(
+                    f'Restored checkpoint from: {manager.latest_checkpoint}'
+                )
         else:
-            log.info('No checkpoints found to load from. Continuing')
+            self.info('No checkpoints found to load from. Continuing')
 
         return manager
 
@@ -283,8 +317,10 @@ class Trainer(BaseTrainer):
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
-            model: Optional[Model] = None,
+            # model: Optional[Model | Layer] = None,
             optimizer: Optional[Optimizer] = None,
+            # weights: Optional[dict] = None,
+            log_weights: bool = True,
     ):
         # record = {} if record is None else record
         assert job_type in ['train', 'eval', 'hmc']
@@ -312,15 +348,36 @@ class Trainer(BaseTrainer):
 
         # if writer is not None and self.verbose and step is not None:
         if step is not None:
-            update_summaries(step=step,
-                             model=model,
-                             metrics=metrics,
-                             prefix=job_type,
-                             optimizer=optimizer)
+            update_summaries(
+                    step=step,
+                    # model=model,
+                    # weights=weights,
+                    metrics=metrics,
+                    prefix=job_type,
+                    optimizer=optimizer,
+                    # job_type=job_type,
+            )
+            # if model is not None and job_type == 'train':
+            #     update_summaries(
+            #         step=step,
+            #         model=self.dynamics,
+            #         prefix='model',
+            #         job_type=job_type,
+            #     )
+            # if job_type == 'train' and log_weights:
+            #     weights = {
+            #         f'{w.name}': w
+            #         for w in self.dynamics.weights
+            #     }
+            #     log_dict(weights, step, prefix='debug-weights')
+
             if writer is not None:
                 writer.flush()
 
         if self.config.init_wandb or self.config.init_aim:
+            if job_type == 'train' and log_weights:
+                self.track_weights(run=run)
+
             self.track_metrics(
                 record=metrics,
                 avgs=avgs,
@@ -328,9 +385,33 @@ class Trainer(BaseTrainer):
                 step=step,
                 run=run,
                 arun=arun,
+                # log_weights=log_weights,
             )
 
         return avgs, summary
+
+    def track_weights(
+            self,
+            run: Optional[Any] = None,
+    ) -> None:
+        if not self._is_chief:
+            return
+
+        def rename(k):
+            return (
+                f"model/{k.replace('/', '.').replace('dynamics', 'networks')}"
+            )
+
+        if run is not None:
+            weights = {
+                rename(k): v
+                for k, v in self.dynamics.get_all_weights().items()
+            }
+            run.log(weights, commit=False)
+            run.log(
+                {f'{k}/avg': tf.reduce_mean(v) for k, v in weights.items()},
+                commit=True
+            )
 
     def track_metrics(
             self,
@@ -341,8 +422,9 @@ class Trainer(BaseTrainer):
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
     ) -> None:
-        if self.rank != 0:
+        if not self._is_chief:
             return
+
         dQdict = None
         dQint = record.get('dQint', None)
         if dQint is not None:
@@ -373,12 +455,12 @@ class Trainer(BaseTrainer):
                 self.aim_track(avgs, prefix='avgs', **kwargs)
             except Exception as e:
                 log.exception(e)
-                log.warning('Unable to aim_track `avgs` !')
+                self.warning('Unable to aim_track `avgs` !')
             try:
                 self.aim_track(record, prefix='record', **kwargs)
             except Exception as e:
                 log.exception(e)
-                log.warning('Unable to aim_track `record` !')
+                self.warning('Unable to aim_track `record` !')
 
     # @tf.function
     def hmc_step(
@@ -418,6 +500,7 @@ class Trainer(BaseTrainer):
                  *self.dynamics.xshape[1:]))
             inputs = (x, *inputs[1:])
         xout, metrics = self.dynamics(inputs, training=False)  # type:ignore
+        xout = tf.reshape(xout, (xout.shape[0], *self.dynamics.xshape[1:]))
         xout = self.g.compat_proj(xout)
         xp = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=inputs[0], x_prop=xp, acc=metrics['acc'])
@@ -435,17 +518,17 @@ class Trainer(BaseTrainer):
 
     def get_context_manager(self, table: Table) -> Live | nullcontext:
         make_live = (
-            int(get_width()) > 150    # make sure wide enough to fit table
-            and self._is_chief
-            and hvd.size() == 1       # not worth the trouble when distributed
+            self._is_chief
+            and self.size == 1       # not worth the trouble when distributed
             and not is_interactive()  # AND not in a jupyter / ipython kernel
+            and int(get_width()) > 120    # make sure wide enough to fit table
         )
         if make_live:
             return Live(
                 table,
                 # screen=True,
-                transient=True,
-                # auto_refresh=False,
+                # transient=True,
+                auto_refresh=False,
                 console=self.console,
                 vertical_overflow='visible'
             )
@@ -476,18 +559,19 @@ class Trainer(BaseTrainer):
                 self.config.annealing_schedule.beta_final,
                 dtype=TF_FLOAT
             )
+
         elif isinstance(beta, float):
             beta = tf.constant(beta, dtype=TF_FLOAT)
 
         if nleapfrog is None and str(job_type).lower() == 'hmc':
-            nleapfrog = self.config.dynamics.nleapfrog
-            assert isinstance(nleapfrog, int)
+            nleapfrog = int(self.config.dynamics.nleapfrog)
+            # assert isinstance(nleapfrog, int)
             if self.config.dynamics.merge_directions:
                 nleapfrog *= 2
 
         if eps is None and str(job_type).lower() == 'hmc':
             eps = self.dynamics.config.eps_hmc
-            log.warn(
+            self.warning(
                 'Step size `eps` not specified for HMC! '
                 f'Using default: {eps:.4f} for generic HMC'
             )
@@ -495,13 +579,14 @@ class Trainer(BaseTrainer):
         if x is None:
             x = self.lattice.random()
 
-        log.warning(f'x.shape (original): {x.shape}')
+        self.warning(f'x.shape (original): {x.shape}')
         if nchains is not None:
             if isinstance(nchains, int) and nchains > 0:
                 x = x[:nchains]  # type: ignore
 
         assert isinstance(x, Tensor)
-        log.warning(f'x[:nchains].shape: {x.shape}')
+        if nchains is not None:
+            self.warning(f'x[:nchains].shape: {x.shape}')
 
         if writer is not None:
             writer.set_as_default()
@@ -510,7 +595,8 @@ class Trainer(BaseTrainer):
         eval_steps = self.steps.test if eval_steps is None else eval_steps
         assert isinstance(eval_steps, int)
         nprint = (
-            max(1, min(50, eval_steps // 50)) if nprint is None else nprint
+            max(1, min(50, eval_steps // 50))
+            if nprint is None else nprint
         )
         nlog = max((1, min((10, eval_steps))))
         if nlog <= eval_steps:
@@ -521,8 +607,11 @@ class Trainer(BaseTrainer):
                 job_type: {'beta': beta, 'xshape': x.shape.as_list()}
             })
 
-        assert x is not None and isinstance(x, Tensor)
-        assert beta is not None and isinstance(beta, Tensor)
+        assert isinstance(x, Tensor)
+        assert isinstance(beta, Tensor)
+        assert isinstance(nlog, int)
+        assert isinstance(nprint, int)
+        assert isinstance(eval_steps, int)
         output = {
             'x': x,
             'eps': eps,
@@ -533,7 +622,7 @@ class Trainer(BaseTrainer):
             'eval_steps': eval_steps,
             'nleapfrog': nleapfrog,
         }
-        log.info(
+        self.info(
             '\n'.join([
                 f'{k} = {v}' for k, v in output.items()
                 if k != 'x'
@@ -581,15 +670,19 @@ class Trainer(BaseTrainer):
         xshape = x.shape
         if nchains is not None:
             if x.shape[0] != nchains:
-                log.warning(f'x.shape: {xshape}')
+                self.warning(f'x.shape: {xshape}')
                 x = x[:nchains, ...]  # type:ignore
-                log.warning(f'x[:nchains].shape: {xshape}')
+                self.warning(f'x[:nchains].shape: {xshape}')
 
         eps = setup['eps']
         beta = setup['beta']
         table = setup['table']
         nleapfrog = setup['nleapfrog']
+
+        nlog = setup['nlog']
+        nprint = setup['nprint']
         eval_steps = setup['eval_steps']
+
         # assert eps is not None and isinstance(eps, (float, tf.Tensor))
         timer = self.timers.get(job_type, None)
         history = self.histories.get(job_type, None)
@@ -600,6 +693,9 @@ class Trainer(BaseTrainer):
             and x is not None
             and beta is not None
         )
+        assert isinstance(nlog, int)
+        assert isinstance(nprint, int)
+        assert isinstance(eval_steps, int)
         if job_type == 'hmc':
             assert eps is not None
 
@@ -608,17 +704,32 @@ class Trainer(BaseTrainer):
                 return self.hmc_step(inputs, eps=eps, nleapfrog=nleapfrog)
             return self.eval_step(inputs)  # type:ignore
 
-        with self.get_context_manager(table) as ctx:
-            for step in range(eval_steps):
+        ctx = self.get_context_manager(table)
+
+        def refresh_view():
+            if isinstance(ctx, Live):
+                ctx.refresh()
+                ctx.console.clear_live()
+
+        def _should_emit(step):
+            return (step % nlog == 0 or step % nprint == 0)
+
+        plots = None
+        if is_interactive():
+            plots = plotter.init_plots()
+
+        x = self.warmup(beta, x=x)
+        with ctx:
+            for step in trange(
+                    eval_steps,
+                    dynamic_ncols=True,
+                    disable=(not self._is_chief),
+            ):
                 timer.start()
                 x, metrics = eval_fn((x, beta))  # type:ignore
                 dt = timer.stop()
-                # if step % setup['nprint'] == 0 or step % setup['nlog'] == 0:
-                if (
-                        step == 0
-                        or step % setup['nlog'] == 0
-                        or step % setup['nprint'] == 0
-                ):
+
+                if _should_emit(step):
                     record = {
                         f'{job_type[0]}step': step,
                         'dt': dt,
@@ -628,35 +739,25 @@ class Trainer(BaseTrainer):
                         'dQint': metrics.pop('dQint', None),
                     }
                     record.update(metrics)
-                    if job_type == 'hmc' and dynamic_step_size:
-                        acc = metrics.get('acc_mask', None)
-                        record['eps'] = eps
-                        if acc is not None and eps is not None:
-                            acc_avg = tf.reduce_mean(acc)
-                            if acc_avg < 0.66:
-                                eps -= (eps / 10.)
-                            else:
-                                eps += (eps / 10.)
-
-                    avgs, summary = self.record_metrics(run=run,
-                                                        arun=arun,
-                                                        step=step,
-                                                        writer=writer,
-                                                        metrics=record,
-                                                        job_type=job_type)
+                    avgs, summary = self.record_metrics(
+                        run=run,
+                        arun=arun,
+                        step=step,
+                        writer=writer,
+                        metrics=record,
+                        job_type=job_type
+                    )
                     summaries.append(summary)
-
-                    if (
-                            # not isinstance(setup['ctx'], Live)
-                            step % setup['nprint'] == 0
-                    ):
-                        log.info(summary)
-
                     table = self.update_table(
                         table=setup['table'],
                         step=step,
                         avgs=avgs,
                     )
+                    if step % nprint == 0:
+                        self.info(summary)
+
+                    refresh_view()
+
                     # if step == 0:
                     #     table = add_columns(avgs, table)
                     # else:
@@ -670,8 +771,35 @@ class Trainer(BaseTrainer):
                             x = self.lattice.random()
                             stuck_counter = 0
 
-                if isinstance(ctx, Live):
-                    ctx.console.clear_live()
+                    if job_type == 'hmc' and dynamic_step_size:
+                        acc = metrics.get('acc_mask', None)
+                        record['eps'] = eps
+                        if acc is not None and eps is not None:
+                            acc_avg = tf.reduce_mean(acc)
+                            if acc_avg < 0.66:
+                                eps -= (eps / 10.)
+                            else:
+                                eps += (eps / 10.)
+                    if (
+                            is_interactive()
+                            and self._is_chief
+                            and plots is not None
+                    ):
+                        if len(self.histories[job_type].history.keys()) == 0:
+                            plotter.update_plots(
+                                history=metrics,
+                                plots=plots,
+                                logging_steps=nlog,
+                            )
+                        else:
+                            _ = plotter.update_plots(
+                                history=self.histories[job_type].history,
+                                plots=plots,
+                                logging_steps=nlog,
+                            )
+
+        if isinstance(ctx, Live):
+            ctx.console.clear_live()
 
         tables[str(0)] = table
 
@@ -705,10 +833,6 @@ class Trainer(BaseTrainer):
         """
         xinit, beta = inputs
         aw = self.config.loss.aux_weight
-        assert (
-            self.dynamics is not None
-            # and isinstance(self.dynamics, Dynamics)
-        )
         with tf.GradientTape() as tape:
             tape.watch(xinit)
             xout, metrics = self.dynamics(  # type:ignore
@@ -756,6 +880,68 @@ class Trainer(BaseTrainer):
 
         return xout, metrics
 
+    def train_step_detailed(
+            self,
+            x: Optional[Tensor] = None,
+            beta: Optional[Tensor | float] = None,
+            era: int = 0,
+            epoch: int = 0,
+            run: Optional[Any] = None,
+            arun: Optional[Any] = None,
+            writer: Optional[Any] = None,
+            rows: Optional[dict] = None,
+            summaries: Optional[list] = None,
+            verbose: bool = True,
+    ) -> tuple[Tensor, dict]:
+        # tstart = time.time()
+        # xinit, beta = inputs
+        # xinit = self.g.compat_proj(self.dynamics.unflatten(xinit))
+        # beta = tf.constant(beta) if isinstance(beta, float) else beta
+        if x is None:
+            x = self.dynamics.lattice.random()
+        if beta is None:
+            beta = self.config.annealing_schedule.beta_init
+
+        if isinstance(beta, float):
+            beta = tf.constant(beta)
+
+        self.timers['train'].start()
+        xout, metrics = self.train_step((x, beta))  # type:ignore
+        dt = self.timers['train'].stop()
+        record = {
+            'era': era,
+            'epoch': epoch,
+            'tstep': self._gstep,
+            'dt': dt,
+            'beta': beta,
+            'loss': metrics.pop('loss', None),
+            'dQsin': metrics.pop('dQsin', None),
+            'dQint': metrics.pop('dQint', None),
+            **metrics,
+        }
+        # record.update(metrics)
+        avgs, summary = self.record_metrics(
+            run=run,
+            arun=arun,
+            step=self._gstep,
+            writer=writer,
+            metrics=record,  # metrics from Dynamics
+            job_type='train',
+            log_weights=True,
+            # model=self.dynamics,
+            # prefix='Dynamics',
+            # weights=self.dynamics.get_weights_dict(),
+            optimizer=self.optimizer,
+        )
+        if rows is not None:
+            rows[self._gstep] = avgs
+        if summaries is not None:
+            summaries.append(summary)
+        if verbose:
+            self.info(summary)
+
+        return xout, metrics
+
     def train_epoch(
             self,
             x: Tensor,
@@ -766,6 +952,10 @@ class Trainer(BaseTrainer):
             nepoch: Optional[int] = None,
             writer: Optional[Any] = None,
             extend: Optional[int] = None,
+            nprint: Optional[int] = None,
+            nlog: Optional[int] = None,
+            warmup: bool = True,
+            plots: Optional[Any] = None,
     ) -> tuple[Tensor, dict]:
         rows = {}
         summaries = []
@@ -781,27 +971,41 @@ class Trainer(BaseTrainer):
         assert isinstance(nepoch, int)
         nepoch *= extend
         losses = []
-        with self.get_context_manager(table) as ctx:
+        ctx = self.get_context_manager(table)
+
+        log_freq = self.steps.log if nlog is None else nlog
+        print_freq = self.steps.print if nprint is None else nprint
+        assert log_freq is not None and print_freq is not None
+
+        def should_print(epoch):
+            return (self._is_chief and (epoch % print_freq == 0))
+
+        def should_log(epoch):
+            return (self._is_chief and (epoch % log_freq == 0))
+
+        def refresh_view():
             if isinstance(ctx, Live):
-                tstr = ' '.join([
-                    f'ERA: {era}/{self.steps.nera - 1}',
-                    f'BETA: {beta:.3f}',
-                ])
-                ctx.console.clear()
                 ctx.console.clear_live()
-                ctx.console.rule(tstr)
                 ctx.update(table)
+                ctx.refresh()
+
+        with ctx:
+            if warmup:
+                x = self.warmup(beta=beta, x=x)
 
             for epoch in trange(
                     nepoch,
                     dynamic_ncols=True,
-                    disable=(not self._is_chief)
+                    disable=(not self._is_chief),
+                    leave=True,
+                    desc='Training'
             ):
                 self.timers['train'].start()
                 x, metrics = self.train_step((x, beta))  # type:ignore
+                self._gstep += 1
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
-                if self.should_log(epoch) or self.should_print(epoch):
+                if (should_print(epoch) or should_log(epoch)):
                     record = {
                         'era': era,
                         'epoch': epoch,
@@ -820,16 +1024,17 @@ class Trainer(BaseTrainer):
                         writer=writer,
                         metrics=record,  # metrics from Dynamics
                         job_type='train',
-                        model=self.dynamics,
+                        log_weights=True,
                         optimizer=self.optimizer,
                     )
                     rows[self._gstep] = avgs
                     summaries.append(summary)
+
                     if (
-                            self.should_print(epoch)
-                            and not isinstance(ctx, Live)
+                            should_print(epoch)
+                            # and not isinstance(ctx, Live)
                     ):
-                        log.info(summary)
+                        self.info(summary)
 
                     table = self.update_table(
                         table=table,
@@ -839,10 +1044,23 @@ class Trainer(BaseTrainer):
 
                     if avgs.get('acc', 1.0) < 1e-5:
                         self.reset_optimizer()
-                        log.warning('Chains are stuck! Re-drawing x !')
+                        self.warning('Chains are stuck! Re-drawing x !')
                         x = self.draw_x()
 
-                self._gstep += 1
+                    refresh_view()
+                    if (
+                            is_interactive()
+                            and self._is_chief
+                            and plots is not None
+                    ):
+                        if len(self.histories['train'].history.keys()) == 0:
+                            plotter.update_plots(metrics, plots)
+                        else:
+                            plotter.update_plots(
+                                self.histories['train'].history,
+                                plots=plots,
+                            )
+
                 if isinstance(ctx, Live):
                     ctx.console.clear()
                     ctx.console.clear_live()
@@ -928,6 +1146,38 @@ class Trainer(BaseTrainer):
             'beta_final': beta_final,
         }
 
+    def warmup(
+            self,
+            beta: float | Tensor,
+            nsteps: int = 100,
+            tol: float = 1e-5,
+            x: Optional[Tensor] = None
+    ) -> Tensor:
+        # state = self.dynamics.random_state(beta)
+        if x is None:
+            x = self.dynamics.lattice.random()
+        if not isinstance(beta, Tensor):
+            beta = tf.constant(beta, dtype=TF_FLOAT)
+        # btensor = tf.cast(beta, dtype=TF_FLOAT)
+        pexact = plaq_exact(beta)
+        for step in range(nsteps):
+            x, metrics = self.dynamics((x, beta))
+            plaqs = metrics.get('plaqs', None)
+            assert (
+                x is not None
+                and isinstance(x, Tensor)
+            )
+            if plaqs is not None:
+                pdiff = tf.math.reduce_sum(tf.math.abs(plaqs - pexact))
+                if pdiff < tol:
+                    log.warning(
+                        f'Chains thermalized!'
+                        f' step: {step},'
+                        f' plaq_diff: {pdiff:.4f}'
+                    )
+                    return x
+        return x
+
     def train(
             self,
             x: Optional[Tensor] = None,
@@ -938,9 +1188,17 @@ class Trainer(BaseTrainer):
             writer: Optional[Any] = None,
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
+            nprint: Optional[int] = None,
+            nlog: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
+            warmup: bool = True,
+            # restore: bool = True,
     ) -> dict:
         """Perform training and return dictionary of results."""
+        # _, _ = self.call_dynamics(
+        #     beta=self.config.annealing_schedule.beta_init
+        # )
+
         setup = self._setup_training(
             x=x,
             skip=skip,
@@ -948,6 +1206,7 @@ class Trainer(BaseTrainer):
             nera=nera,
             nepoch=nepoch,
             beta=beta,
+            # restore=restore,
         )
         era = 0
         # epoch = 0
@@ -963,6 +1222,7 @@ class Trainer(BaseTrainer):
         assert x is not None
         assert nera is not None
         assert train_dir is not None
+
         for era in range(nera):
             b = tf.constant(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
@@ -975,6 +1235,7 @@ class Trainer(BaseTrainer):
 
                 self.console.rule(f'ERA: {era} / {nera}, BETA: {b:.3f}')
 
+            # x = self.warmup(b)
             epoch_start = time.time()
             x, edata = self.train_epoch(
                 x=x,
@@ -985,6 +1246,9 @@ class Trainer(BaseTrainer):
                 writer=writer,
                 extend=extend,
                 nepoch=nepoch,
+                nlog=nlog,
+                nprint=nprint,
+                warmup=warmup,
             )
 
             self.rows['train'][str(era)] = edata['rows']
@@ -1110,14 +1374,13 @@ class Trainer(BaseTrainer):
     def metric_to_numpy(
             self,
             metric: Any,
-            # key: str = '',
     ):
         """Consistently convert `metric` to np.ndarray."""
         if isinstance(metric, (float, np.ScalarType)):
             return np.array(metric)
 
         if isinstance(metric, list):
-            if isinstance(metric[0], Tensor):
+            if isinstance(metric[0], (Tensor, tf.Variable)):
                 return tf.stack(metric)
             if isinstance(metric[0], np.ndarray):
                 return np.stack(metric)
@@ -1147,10 +1410,6 @@ class Trainer(BaseTrainer):
                 step = step
             if callable(getattr(step, 'item', None)):
                 step = step.item()  # type:ignore
-            # try:
-            #     step = step.item()
-            # except AttributeError:
-            #     pass
 
         for key, val in metrics.items():
             if prefix is not None:

@@ -1,28 +1,34 @@
 """
-config.py
+configs.py
 
 Implements various configuration objects
 """
 from __future__ import absolute_import, annotations, division, print_function
+import json
+import rich.repr
+import logging
+import os
+
+from abc import ABC, abstractmethod
 from collections import namedtuple
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
-import json
-from abc import ABC, abstractmethod
-import logging
-import os
 from pathlib import Path
-from typing import Any, Counter, Dict, List, Optional, Tuple
+from typing import Any, Counter, Dict, List, Optional, Sequence
 
 from hydra.core.config_store import ConfigStore
 import numpy as np
 from omegaconf import DictConfig
-# from omegaconf import MISSING
+
+# from l2hmc.utils.logger import get_pylogger
 
 
+# logger = get_pylogger(__name__)
+# log = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
 
 
+# -- Configure useful Paths -----------------------
 HERE = Path(os.path.abspath(__file__)).parent
 PROJECT_DIR = HERE.parent.parent
 CONF_DIR = HERE.joinpath('conf')
@@ -37,8 +43,9 @@ OUTPUTS_DIR.mkdir(exist_ok=True, parents=True)
 CHECKPOINTS_DIR.mkdir(exist_ok=True, parents=True)
 OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 
-State = namedtuple('State', ['x', 'v', 'beta'])
 
+# -- namedtuple objects -------------------------------------------------------
+State = namedtuple('State', ['x', 'v', 'beta'])
 MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
 
 SYNONYMS = {
@@ -54,7 +61,28 @@ SYNONYMS = {
         'tflow',
         'tensorflow',
     ],
+    'horovod': [
+        'h',
+        'hv',
+        'hvd',
+        'horovod',
+    ],
+    'DDP': [
+        'ddp',
+    ],
+    'deepspeed': [
+        'ds',
+        'deepspeed',
+    ]
 }
+
+
+def flatten_dict(d: dict, sep: str = '/', pre='') -> dict:
+    return {
+        pre + sep + k if pre else k: v
+        for kk, vv in d.items()
+        for k, v in flatten_dict(vv, sep, kk).items()
+    } if isinstance(d, dict) else {pre: d}
 
 
 def add_to_outdirs_file(outdir: os.PathLike):
@@ -83,6 +111,7 @@ def list_to_str(x: list) -> str:
 
 
 @dataclass
+@rich.repr.auto
 class BaseConfig(ABC):
 
     @abstractmethod
@@ -98,7 +127,7 @@ class BaseConfig(ABC):
     def asdict(self) -> dict:
         return asdict(self)
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         return deepcopy(self.__dict__)
 
     def to_file(self, fpath: os.PathLike) -> None:
@@ -133,24 +162,8 @@ class LatticeMetrics:
             'plaqs': self.plaqs,
             'sinQ': self.charges.sinQ,
             'intQ': self.charges.intQ,
-            'p4x4': self.p4x4,
+            'p4x4': self.p4x4
         }
-
-
-# @dataclass
-# class AcceleratorConfig(BaseConfig):
-#     device_placement: Optional[bool] = True
-#     split_batches: Optional[bool] = False
-#     mixed_precision: Optional[str] = 'no'
-#     cpu: Optional[bool] = False
-#     deepspeed_plugin: Optional[Any] = None
-#     # fsdp_plugin: Optional[Any] = None
-#     rng_types: Optional[list[str]] = None
-#     log_with: Optional[list[str]] = None
-#     logging_dir: Optional[str | os.PathLike] = None
-#     dispatch_batches: Optional[bool] = False
-#     step_scheduler_with_optimizer: Optional[bool] = True
-#     kwargs_handlers: Optional[list[Any]] = None
 
 
 @dataclass
@@ -170,6 +183,9 @@ class wandbSetup(BaseConfig):
         if self.settings is None:
             self.settings = {'start_method': 'thread'}
 
+    def to_str(self) -> str:
+        return ''
+
 
 @dataclass
 class wandbConfig(BaseConfig):
@@ -178,26 +194,6 @@ class wandbConfig(BaseConfig):
     def to_str(self) -> str:
         return self.to_json()
 
-
-# @dataclass
-# class U1Config(BaseConfig):
-#     steps: Steps
-#     network: NetworkConfig
-#     dynamics: DynamicsConfig
-#     loss: LossConfig
-#     net_weights: NetWeights
-#     # conv: Optional[ConvolutionConfig] = None
-#     backend: str = MISSING
-#
-#     def __post_init__(self):
-#         self.xshape = self.dynamics.xshape
-#         xdim = self.dynamics.xdim
-#         self.input_spec = InputSpec(
-#             xshape=self.dynamics.xshape,  # type:ignore
-#             xnet={'x': [xdim, int(2)], 'v': [xdim, ]},
-#             vnet={'x': [xdim, ], 'v': [xdim, ]}
-#         )
-#
 
 @dataclass
 class NetWeight(BaseConfig):
@@ -208,9 +204,9 @@ class NetWeight(BaseConfig):
      - t: scales the translation function in the update
      - q: scales the force (v) transformation function in the v (x) updates
     """
-    s: float = 1.
-    t: float = 1.
-    q: float = 1.
+    s: float = field(default=1.)
+    t: float = field(default=1.)
+    q: float = field(default=1.)
 
     def to_dict(self):
         return {'s': self.s, 't': self.t, 'q': self.q}
@@ -317,57 +313,51 @@ class Steps(BaseConfig):
 
 @dataclass
 class ConvolutionConfig(BaseConfig):
-    filters: List[int]
-    sizes: List[int]
-    pool: Optional[List[int]] = None
+    filters: Optional[Sequence[int]] = None
+    sizes: Optional[Sequence[int]] = None
+    pool: Optional[Sequence[int]] = None
     # activation: str
     # paddings: list[int]
 
     def __post_init__(self):
-        assert len(self.filters) == len(self.sizes)
+        if self.filters is None:
+            return
+
+        if self.sizes is None:
+            logger.warning('Using default filter size of 2')
+            self.sizes = list(len(self.filters) * [2])
         if self.pool is None:
             logger.warning('Using default pooling size of 2')
-            self.pool = [2] * len(self.filters)
-        # if isinstance(self.sizes, int):
-        #     self.sizes = len(self.filters) * self.sizes
-        # if isinstance(self.pool, int):
-        #     self.pool = len(self.filters) * self.pool
+            self.pool = len(self.filters) * [2]
 
-        # if self.pool is None:
-        #     logger.warning('Using default pooling size of 2')
-        #     self.pool = len(self.filters) * [2]
-        # if isinstance(self.pool, int):
-        #     self.pool = len(self.filters) * [self.pool]
-        # if isinstance(self.pool, int):
-        #     p = self.pool
-        # elif isinstance(self.pool, list):
-        #     p = self.pool[0]
-        # else:
-        #     logger.warning('Using default pooling size of 2')
-        #     p = 2
-        # if len(self.pool) != len(self.filters):
-        #     self.pool = len(self.filters) * [p]
-
+        assert len(self.filters) == len(self.sizes)
+        assert len(self.filters) == len(self.pool)
         assert self.pool is not None
 
-    def to_str(self):
+    def to_str(self) -> str:
+        if self.filters is None:
+            return 'conv-None'
+
         if len(self.filters) > 0:
             outstr = [
-                list_to_str(self.filters),
-                list_to_str(self.sizes),
+                list_to_str(list(self.filters)),
             ]
+            if self.sizes is not None:
+                outstr.append(
+                    list_to_str(list(self.sizes))
+                )
             if self.pool is not None:
                 outstr.append(
-                    list_to_str(self.pool)
+                    list_to_str(list(self.pool))
                 )
 
-            return '_'.join(outstr)
+            return '-'.join(['conv', '_'.join(outstr)])
         return ''
 
 
 @dataclass
 class NetworkConfig(BaseConfig):
-    units: List[int]
+    units: Sequence[int]
     activation_fn: str
     dropout_prob: float
     use_batch_norm: bool = True
@@ -377,7 +367,7 @@ class NetworkConfig(BaseConfig):
         ustr = '-'.join([str(int(i)) for i in self.units])
         dstr = f'dp-{self.dropout_prob:2.1f}'
         bstr = f'bn-{self.use_batch_norm}'
-        return '_'.join([ustr, dstr, bstr])
+        return '-'.join(['net', '_'.join([ustr, dstr, bstr])])
         # outstr = [f'nh-{ustr}_act-{self.activation_fn}']
         # if self.dropout_prob > 0:
         #     outstr.append(f'dp-{self.dropout_prob:2.1f}')
@@ -412,6 +402,8 @@ class DynamicsConfig(BaseConfig):
 
     def __post_init__(self):
         assert self.group.upper() in ['U1', 'SU3']
+        # NOTE ---------------------------------------------
+        # --------------------------------------------------
         if self.eps_hmc is None:
             # if not specified, use a trajectory length of 1
             self.eps_hmc = 1.0 / self.nleapfrog
@@ -419,20 +411,31 @@ class DynamicsConfig(BaseConfig):
             self.dim = 2
             self.nt, self.nx = self.latvolume
             self.xshape = (self.nchains, self.dim, *self.latvolume)
+            self.vshape = (self.nchains, self.dim, *self.latvolume)
             assert len(self.xshape) == 4
             assert len(self.latvolume) == 2
             self.xdim = int(np.cumprod(self.xshape[1:])[-1])
         elif self.group.upper() == 'SU3':
             self.dim = 4
             self.link_shape = (3, 3)
+            self.vec_shape = 8
             self.nt, self.nx, self.ny, self.nz = self.latvolume
+            # xshape : [Nb, 4, Nt, Nx, Ny, Nz, 3, 3]
             self.xshape = (
                 self.nchains,
                 self.dim,
                 *self.latvolume,
                 *self.link_shape
             )
+            # vshape : [Nb, 4, Nt, Nx, Ny, Nz, 8]
+            self.vshape = (
+                self.nchains,
+                self.dim,
+                *self.latvolume,
+                self.vec_shape
+            )
             assert len(self.xshape) == 8
+            assert len(self.vshape) == 7
             assert len(self.latvolume) == 4
             self.xdim = int(np.cumprod(self.xshape[1:])[-1])
         else:
@@ -457,9 +460,9 @@ class LossConfig(BaseConfig):
 
 @dataclass
 class InputSpec(BaseConfig):
-    xshape: List[int] | Tuple[int]
-    xnet: Optional[Dict[str, List[int] | Tuple[int]]] = None
-    vnet: Optional[Dict[str, List[int] | Tuple[int]]] = None
+    xshape: Sequence[int]
+    xnet: Optional[Dict[str, int | Sequence[int]]] = None
+    vnet: Optional[Dict[str, int | Sequence[int]]] = None
 
     def to_str(self):
         return '-'.join([str(i) for i in self.xshape])
@@ -467,8 +470,18 @@ class InputSpec(BaseConfig):
     def __post_init__(self):
         if len(self.xshape) == 2:
             self.xdim = self.xshape[-1]
+            self.vshape = self.xshape
+            self.vdim = self.xshape[-1]
         elif len(self.xshape) > 2:
-            self.xdim = np.cumprod(self.xshape[1:])[-1]
+            # xshape: [Nb, 4, Nt, Nx, Ny, Nz, 3, 3]
+            self.xdim: int = np.cumprod(self.xshape[1:])[-1]
+            # lat_shape: [Nb, 4, Nt, Nx, Ny, Nz]
+            lat_shape = self.xshape[:-2]
+            # vdim: 8 = 3 ** 2 - 1
+            vd = (self.xshape[-1] ** 2) - 1
+            # vshape = [Nb, 4, Nt, Nx, Ny, Nz, 8]
+            self.vshape: Sequence[int] = (*lat_shape, vd)
+            self.vdim: int = np.cumprod(self.vshape[1:])[-1]
         else:
             raise ValueError(f'Invalid `xshape`: {self.xshape}')
 
@@ -476,6 +489,74 @@ class InputSpec(BaseConfig):
             self.xnet = {'x': self.xshape, 'v': self.xshape}
         if self.vnet is None:
             self.vnet = {'x': self.xshape, 'v': self.xshape}
+
+
+# @dataclass
+# class DeepSpeedConfig(BaseConfig):
+
+@dataclass
+class FlopsProfiler:
+    enabled: bool = False
+    profile_step: int = 1
+    module_depth: int = -1
+    top_modules: int = 1
+    detailed: bool = True
+    output_file: Optional[os.PathLike | str | Path] = None
+
+    def __post_init__(self):
+        pass
+        # if self.output_file is None:
+        #     self.output_file = Path(os.getcwd()).joinpath(
+        #         'ds-flops-profiler.log'
+        #     ).resolve().as_posix()
+
+
+# @dataclass
+# class dsOptimizer:
+#     type: str = "AdamW"
+#     params: dict
+
+
+# @dataclass
+# class DeepSpeedConfig(BaseConfig):
+#     fpath: Optional[os.PathLike] = None
+#     wall_clock_breakdown: Optional[bool] = None
+#     prescale_gradients: Optional[bool] = None
+#     flops_profiler:
+
+
+
+@dataclass
+class OptimizerConfig:
+    type: str
+    params: Optional[dict] = field(default_factory=dict)
+
+
+@dataclass
+class fp16Config:
+    enabled: bool
+    auto_cast: bool = True
+    fp16_master_weights_and_grads: bool = False
+    min_loss_scale: float = 0.
+
+
+@dataclass
+class CommsLogger:
+    enabled: bool
+    verbose: bool = True
+    prof_all: bool = True
+    debug: bool = False
+
+
+@dataclass
+class AutoTuning:
+    enabled: bool
+    arg_mappings: Optional[dict] = field(default_factory=dict)
+
+
+@dataclass
+class ZeroOptimization:
+    stage: int
 
 
 @dataclass
@@ -493,6 +574,7 @@ class ExperimentConfig(BaseConfig):
     annealing_schedule: AnnealingSchedule
     # ----- Optional (w/ defaults) ------------
     # conv: Optional[ConvolutionConfig] = None
+    restore: bool = True
     c1: float = 0.0
     port: str = '2345'
     compile: bool = True
@@ -505,7 +587,9 @@ class ExperimentConfig(BaseConfig):
     precision: str = 'float32'
     ignore_warnings: bool = True
     backend: str = 'hvd'
+    # ds_config: dict = field(default_factory=dict)
     # ----- Optional (w/o defaults) -----------
+    ds_config_path: Optional[Any] = None
     name: Optional[str] = None
     name: Optional[str] = None
     width: Optional[int] = None
@@ -513,17 +597,50 @@ class ExperimentConfig(BaseConfig):
     compression: Optional[str] = None
 
     def __post_init__(self):
+        self.ds_config = {}
         self.xdim = self.dynamics.xdim
         self.xshape = self.dynamics.xshape
-        w = int(os.environ.get('COLUMNS', 235))
+        if self.ds_config_path is None:
+            fpath = Path(CONF_DIR).joinpath('ds_config.json')
+            self.ds_config_path = fpath.resolve().as_posix()
+
+        # self.ds_config = {}
+        # if self.ds_config_path is not None:
+        #     fpath = Path(self.ds_config_path)
+        #     assert fpath.is_file()
+        #     with fpath.open('r') as f:
+        #         self.ds_config.update(
+        #             json.load(f)
+        #         )
+
+        #     # assert Path(self.ds_config_path).is_file()
+        #     # with open(Path())
+        #     # self.ds_config.update({
+        #     #     json.load(self.ds_config_path)
+        #     # })
+
+        w = int(os.environ.get('COLUMNS', 200))
         self.width = w if self.width is None else self.width
-        if self.framework == 'pytorch':
+        if self.framework in SYNONYMS['tensorflow']:
+            self.backend = 'hvd'
+        elif self.framework in SYNONYMS['pytorch']:
             if self.backend is None:
+                logger.warning('Backend not specified, using DDP')
                 self.backend = 'DDP'
-                logger.warning(
-                    f'Backend not specified, using DDP with {self.framework}'
-                )
-            assert self.backend.lower() in ['hvd', 'horovod', 'ddp']
+
+            assert self.backend.lower() in [
+                'hvd', 'horovod', 'ddp', 'ds', 'deepspeed',
+            ]
+        else:
+            raise ValueError(
+                f'Unexpected value for framework: {self.framework}'
+            )
+        # if self.framework == 'pytorch':
+        #     if self.backend is None:
+        #         self.backend = 'DDP'
+        #         logger.warning(
+        #             f'Backend not specified, using DDP with {self.framework}'
+        #         )
 
         if self.debug_mode:
             self.compile = False
@@ -532,6 +649,19 @@ class ExperimentConfig(BaseConfig):
             nera=self.steps.nera,
             nepoch=self.steps.nepoch,
         )
+
+    def load_ds_config(self, fpath: Optional[os.PathLike]) -> dict:
+        fname = self.ds_config_path if fpath is None else fpath
+        assert fname is not None
+        cpath = Path(fname)
+        ds_config = {}
+        if cpath.is_file():
+            pass
+
+        return ds_config
+
+    def set_ds_config(self, ds_config: dict) -> None:
+        self.ds_config = ds_config
 
     def to_str(self) -> str:
         dynstr = self.dynamics.to_str()
@@ -544,10 +674,16 @@ class ExperimentConfig(BaseConfig):
 
     def rank(self):
         if self.framework in SYNONYMS['pytorch']:
-            import horovod.torch as hvd
-            if not hvd.is_initialized():
-                hvd.init()
-            return hvd.rank()
+            if self.backend.lower() in SYNONYMS['horovod']:
+                import horovod.torch as hvd
+                if not hvd.is_initialized():
+                    hvd.init()
+                return hvd.rank()
+            elif self.backend.lower() in SYNONYMS['DDP']:
+                return int(os.environ.get('RANK', 0))
+            elif self.backend.lower() in SYNONYMS['deepspeed']:
+                import torch.distributed as dist
+                return dist.get_rank()
         elif self.framework in SYNONYMS['tensorflow']:
             import horovod.tensorflow as hvd
             if not hvd.is_initialized():

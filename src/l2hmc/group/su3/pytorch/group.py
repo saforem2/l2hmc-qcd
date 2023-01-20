@@ -4,6 +4,7 @@ group/su3/pytorch/group.py
 Contains PyTorch implementation of `SU3` object
 """
 from __future__ import absolute_import, division, print_function, annotations
+from typing import Optional, Sequence
 
 import torch
 
@@ -11,12 +12,14 @@ from l2hmc.group.group import Group
 from l2hmc.group.su3.pytorch.utils import (
     checkU,
     checkSU,
+    eigs3x3,
     su3_to_vec,
     vec_to_su3,
     norm2,
     randTAH3,
     projectSU,
-    projectTAH,
+    # projectTAH,
+    eyeOf
 )
 
 import logging
@@ -30,7 +33,12 @@ DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class SU3(Group):
     def __init__(self) -> None:
-        super().__init__(dim=4, shape=[3, 3], dtype=torch.complex128)
+        super().__init__(
+            dim=4,
+            shape=[3, 3],
+            dtype=torch.complex128,
+            name='SU3',
+        )
 
     def update_gauge(
             self,
@@ -84,7 +92,12 @@ class SU3(Group):
         R = - T^a tr[T^a (X - X†)]
           = T^a ∂_a (- tr[X + X†])
         """
-        return projectTAH(x)
+        nc = torch.tensor(x.shape[-1]).to(x.dtype)
+        r = 0.5 * (x - x.adjoint())
+        d = torch.diagonal(r, dim1=-2, dim2=-1).sum(-1) / nc
+        r = r - d.reshape(d.shape + (1, 1)) * eyeOf(x)
+        # return projectTAH(x)
+        return r
 
     def compat_proj(self, x: Tensor) -> Tensor:
         """Arbitrary matrix C projects to skew-hermitian B := (C - C^H) / 2
@@ -93,13 +106,13 @@ class SU3(Group):
         """
         return projectSU(x)
 
-    def random(self, shape: list[int]) -> Tensor:
+    def random(self, shape: Sequence[int]) -> Tensor:
         """Returns (batched) random SU(3) matrices."""
-        r = torch.randn(shape, requires_grad=True, device=DEVICE)
-        i = torch.randn(shape, requires_grad=True, device=DEVICE)
+        r = torch.randn(*shape, requires_grad=True, device=DEVICE)
+        i = torch.randn(*shape, requires_grad=True, device=DEVICE)
         return projectSU(torch.complex(r, i)).to(DEVICE)
 
-    def random_momentum(self, shape: list[int]) -> Tensor:
+    def random_momentum(self, shape: Sequence[int]) -> Tensor:
         """Returns (batched) Traceless Anti-Hermitian matrices"""
         return randTAH3(shape[:-2])
 
@@ -144,3 +157,69 @@ class SU3(Group):
         assert torch.abs(torch.mean(torch.einsum('bii->b', B))) < 1e-6
 
         return B
+
+    @staticmethod
+    def rsqrtPHM3f(
+            tr: Tensor,
+            p2: Tensor,
+            det: Tensor
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        e0, e1, e2 = eigs3x3(tr, p2, det)
+        se0 = e0.abs().sqrt()
+        se1 = e1.abs().sqrt()
+        se2 = e2.abs().sqrt()
+        u = se0 + se1 + se2
+        w = se0 * se1 * se2
+        d = w * (se0 + se1) * (se0 + se2) * (se1 + se2)
+        di = 1.0 / d
+        c0 = di * (
+            w * u * u
+            + e0 * se0 * (e1 + e2)
+            + e1 * se1 * (e0 + e2)
+            + e2 * se2 * (e0 + e1)
+        )
+        c1 = -(tr * u + w) * di
+        c2 = u * di
+
+        return c0, c1, c2
+
+    def rsqrtPHM3(self, x: Tensor) -> Tensor:
+        tr = torch.diagonal(x, dim1=-2, dim2=-1).sum(-1).real
+        x2 = x @ x
+        p2 = torch.diagonal(x2, dim1=-2, dim2=-1).sum(-1).real
+        det = x.det().real
+        c0_, c1_, c2_ = self.rsqrtPHM3f(tr, p2, det)
+        c0 = c0_.reshape(c0_.shape + (1, 1)).to(x.dtype)
+        c1 = c1_.reshape(c1_.shape + (1, 1)).to(x.dtype)
+        c2 = c2_.reshape(c2_.shape + (1, 1)).to(x.dtype)
+        return c0 * eyeOf(x) + c1 * x + c2 * x2
+
+    def projectU(self, x: Tensor) -> Tensor:
+        t = x.mH @ x
+        t2 = self.rsqrtPHM3(t)
+        return x @ t2
+
+    def projectSU(self, x: Tensor) -> Tensor:
+        nc = x.shape[-1]
+        m = self.projectU(x)
+        d = m.det().to(x.dtype)
+        p = (1.0 / (-nc)) * torch.atan2(d.imag, d.real)
+        return m * torch.complex(p.cos(), p.sin()).reshape(p.shape + (1, 1))
+
+    def norm2(
+            self,
+            x: Tensor,
+            axis: Sequence[int] = [-2, -1],
+            exclude: Optional[Sequence[int]] = None,
+    ) -> Tensor:
+        """No reduction if axis is empty"""
+        if x.dtype in [torch.complex64, torch.complex128]:
+            x = x.abs()
+        n = x.square()
+        if exclude is None:
+            if len(axis) == 0:
+                return n
+            return n.sum(*axis)
+        return n.sum([
+            i for i in range(len(n.shape)) if i not in exclude
+        ])

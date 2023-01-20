@@ -1,0 +1,65 @@
+{
+  "dump_state": false,
+  "prescale_gradients": false,
+  "wall_clock_breakdown": true,
+  "zero_allow_untested_optimizer": true,
+  "flops_profiler": {
+    "enabled": true,
+    "profile_step": 1,
+    "module_depth": -1,
+    "top_modules": 1,
+    "detailed": true,
+    "output_file": null
+  },
+  "optimizer": {
+    "type": "AdamW"
+  },
+  "fp16": {
+    "enabled": true,
+    "auto_cast": true,
+    "fp16_master_weights_and_grads": false,
+    "min_loss_scale": 0
+  },
+  "bf16": {
+    "enabled": false
+  },
+  "comms_logger": {
+    "enabled": false,
+    "verbose": true,
+    "prof_all": true,
+    "debug": false
+  },
+  "wandb": {
+    "enabled": true
+  },
+  "autotuning": {
+    "enabled": false,
+    "arg_mappings": {
+      "train_micro_batch_size_per_gpu": "--per_device_train_batch_size",
+      "gradient_accumulation_steps": "--gradient_accumulation_steps"
+    }
+  },
+  "zero_optimization": {
+    "stage": 2,
+    "allgather_partitions": true,
+    "reduce_scatter": true,
+    "allgather_bucket_size": 5e8,
+    "reduce_bucket_size": 5e8,
+    "overlap_comm": true,
+    "contiguous_gradients": true,
+    "offload_param": {
+      "device": "nvme",
+      "nvme_path": "/raid/scratch"
+    },
+    "offload_optimizer": {
+      "device": "cpu",
+      "nvme_path": "/raid/scratch/",
+      "pin_memory": false,
+      "buffer_count": 4,
+      "fast_init": true
+    }
+  },
+  "amp": {
+    "enabled": false
+  }
+}

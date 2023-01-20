@@ -11,21 +11,24 @@ from pathlib import Path
 from typing import Any, Optional
 
 import horovod.torch as hvd
+from hydra.utils import instantiate
 from omegaconf import DictConfig
 import torch
 from torch.utils.tensorboard.writer import SummaryWriter
 
-from l2hmc.common import setup_torch_distributed
 from l2hmc.configs import NetWeights
-import l2hmc.configs as configs
 from l2hmc.configs import ExperimentConfig
+from l2hmc.dynamics.pytorch.dynamics import Dynamics as ptDynamics
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.experiment.experiment import BaseExperiment
 from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
 from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
 from l2hmc.trainers.pytorch.trainer import Trainer
+from l2hmc.utils.dist import setup_torch_distributed
 from l2hmc.utils.rich import get_console
 
+# log = logging.getLogger(__name__)
+# log = get_pylogger(__name__)
 log = logging.getLogger(__name__)
 
 # LOCAL_RANK = os.environ.get('OMPI_COMM_WORLD_LOCAL_RANK', '0')
@@ -45,11 +48,14 @@ class Experiment(BaseExperiment):
             skip: Optional[str | list[str]] = None,
     ) -> None:
         super().__init__(cfg=cfg)
-        assert isinstance(
-            self.config,
-            (ExperimentConfig,
-             configs.ExperimentConfig)
-        )
+        if not isinstance(self.config, ExperimentConfig):
+            self.config = instantiate(cfg)
+        assert isinstance(self.config, ExperimentConfig)
+        # assert isinstance(
+        #     self.config,
+        #     (ExperimentConfig,
+        #      configs.ExperimentConfig)
+        # )
         self.ckpt_dir = self.config.get_checkpoint_dir()
         self.trainer: Trainer = self.build_trainer(
             keep=keep,
@@ -72,6 +78,7 @@ class Experiment(BaseExperiment):
                 f'Initialize WandB from {self._rank}:{self._local_rank}'
             )
             run = super()._init_wandb()
+            assert run is wandb.run
             run.watch(
                 # self.trainer.dynamics,
                 self.trainer.dynamics.networks,
@@ -79,7 +86,6 @@ class Experiment(BaseExperiment):
                 log_graph=True,
                 criterion=self.trainer.loss_fn,
             )
-            assert run is wandb.run
             run.config['SIZE'] = self._size
 
         if self._rank == 0 and self.config.init_aim:
@@ -99,7 +105,7 @@ class Experiment(BaseExperiment):
         self._is_built = True
         assert callable(self.trainer.loss_fn)
         assert isinstance(self.trainer, Trainer)
-        assert isinstance(self.trainer.dynamics, Dynamics)
+        assert isinstance(self.trainer.dynamics, (ptDynamics, Dynamics))
         assert isinstance(self.trainer.lattice, (LatticeU1, LatticeSU3))
         # if not isinstance(self.cfg, ExperimentConfig):
         #     self.cfg = hydra.utils.instantiate(cfg)
@@ -119,51 +125,102 @@ class Experiment(BaseExperiment):
             vnet.set_net_weight(net_weights.v)
 
     def visualize_model(self, x: Optional[Tensor] = None):
+        # import graphviz
+        # from torchview import draw_graph
         from torchviz import make_dot  # type: ignore
-        if x is None:
-            state = self.trainer.dynamics.random_state(1.)
-            x = state.x
-            v = state.v
-        else:
-            v = torch.rand_like(x)
+        device = self.trainer.device
+        state = self.trainer.dynamics.random_state(1.)
+        m, _ = self.trainer.dynamics._get_mask(0)
+        # x = state.x.reshape((state.x.shape[0], -1)).to(device)
+        beta = state.beta.to(device)
+        m = m.to(device)
+        x = state.x.to(device)
+        v = state.v.to(device)
 
-        assert isinstance(x, Tensor)
-        assert isinstance(v, Tensor)
-        sx0, tx0, qx0 = 0.0, 0.0, 0.0
-        sv, tv, qv = 0.0, 0.0, 0.0
-        # for step in range(self.config.dynamics.nleapfrog):
-        sx0, tx0, qx0 = self.trainer.dynamics._call_xnet(
-            0, inputs=(x, v), first=True
-        )
-        sv, tv, qv = self.trainer.dynamics._call_vnet(
-            0, inputs=(x, v),
-        )
-        xparams = dict(
-            self.trainer.dynamics.xnet.named_parameters()
-        )
-        vparams = dict(
-            self.trainer.dynamics.vnet.named_parameters()
-        )
         outdir = Path(self._outdir).joinpath('network_diagrams')
         outdir.mkdir(exist_ok=True, parents=True)
-        make_dot(sx0, params=xparams).render(
-            outdir.joinpath('scale-xnet-0').as_posix(), format='png'
-        )
-        make_dot(tx0, params=xparams).render(
-            outdir.joinpath('transl-xnet-0').as_posix(), format='png'
-        )
-        make_dot(qx0, params=xparams).render(
-            outdir.joinpath('transf-xnet-0').as_posix(), format='png'
-        )
-        make_dot(sv, params=vparams).render(
-            outdir.joinpath('scale-vnet-0').as_posix(), format='png'
-        )
-        make_dot(tv, params=vparams).render(
-            outdir.joinpath('transl-vnet-0').as_posix(), format='png'
-        )
-        make_dot(qv, params=vparams).render(
-            outdir.joinpath('transf-vnet-0').as_posix(), format='png'
-        )
+        # fpxnet = outdir.joinpath('xnet.png')
+        # fpvnet = outdir.joinpath('vnet.png')
+        vnet = self.trainer.dynamics._get_vnet(0)
+        xnet = self.trainer.dynamics._get_xnet(0, first=True)
+
+        with torch.autocast(  # type:ignore
+            dtype=torch.float32,
+            device_type='cuda' if torch.cuda.is_available() else 'cpu'
+        ):
+            force = self.trainer.dynamics.grad_potential(x, state.beta)
+            sv, tv, qv = self.trainer.dynamics._call_vnet(0, (x, force))
+            xm = self.trainer.dynamics.unflatten(
+                m * self.trainer.dynamics.flatten(x)
+            )
+            sx, tx, qx = self.trainer.dynamics._call_xnet(
+                0,
+                (xm, v),
+                first=True
+            )
+
+        outputs = {
+            'v': {
+                'scale': sv,
+                'transl': tv,
+                'transf': qv,
+            },
+            'x': {
+                'scale': sx,
+                'transl': tx,
+                'transf': qx,
+            },
+        }
+        for key, val in outputs.items():
+            for kk, vv in val.items():
+                net = xnet if key == 'x' else vnet
+                net = net.to(vv.dtype)
+                _ = make_dot(
+                    vv,
+                    params=dict(net.named_parameters()),
+                    show_attrs=True,
+                    show_saved=True
+                ).save(f'{key}-{kk}.gv')
+                # ).render(
+                #     f'{key}-{k}.png',
+                #     # outdir.joinpath(f'{key}net{k}.gv').as_posix(),
+                #     # format='png'
+                # )
+        # sx0, tx0, qx0 = 0.0, 0.0, 0.0
+        # sv, tv, qv = 0.0, 0.0, 0.0
+        # # for step in range(self.config.dynamics.nleapfrog):
+        # sx0, tx0, qx0 = self.trainer.dynamics._call_xnet(
+        #     0, inputs=(x, v), first=True
+        # )
+        # sv, tv, qv = self.trainer.dynamics._call_vnet(
+        #     0, inputs=(x, v),
+        # )
+        # xparams = dict(
+        #     self.trainer.dynamics.xnet.named_parameters()
+        # )
+        # vparams = dict(
+        #     self.trainer.dynamics.vnet.named_parameters()
+        # )
+        # outdir = Path(self._outdir).joinpath('network_diagrams')
+        # outdir.mkdir(exist_ok=True, parents=True)
+        # make_dot(sx0, params=xparams).render(
+        #     outdir.joinpath('scale-xnet-0').as_posix(), format='png'
+        # )
+        # make_dot(tx0, params=xparams).render(
+        #     outdir.joinpath('transl-xnet-0').as_posix(), format='png'
+        # )
+        # make_dot(qx0, params=xparams).render(
+        #     outdir.joinpath('transf-xnet-0').as_posix(), format='png'
+        # )
+        # make_dot(sv, params=vparams).render(
+        #     outdir.joinpath('scale-vnet-0').as_posix(), format='png'
+        # )
+        # make_dot(tv, params=vparams).render(
+        #     outdir.joinpath('transl-vnet-0').as_posix(), format='png'
+        # )
+        # make_dot(qv, params=vparams).render(
+        #     outdir.joinpath('transf-vnet-0').as_posix(), format='png'
+        # )
 
     def update_wandb_config(
             self,
@@ -307,8 +364,10 @@ class Experiment(BaseExperiment):
             writer: Optional[Any] = None,
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
+            nprint: Optional[int] = None,
+            nlog: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
-            rich: Optional[bool] = None,
+            # rich: Optional[bool] = None,
     ):
         # nchains = 16 if nchains is None else nchains
         jobdir = self.get_jobdir(job_type='train')
@@ -333,6 +392,8 @@ class Experiment(BaseExperiment):
                 train_dir=jobdir,
                 skip=skip,
                 beta=beta,
+                # nprint=nprint,
+                # nlog=nlog
             )
         else:
             output = self.trainer.train(
@@ -345,6 +406,8 @@ class Experiment(BaseExperiment):
                 train_dir=jobdir,
                 skip=skip,
                 beta=beta,
+                nprint=nprint,
+                nlog=nlog
             )
         # if self.trainer._is_chief:
         #     summaryfile = jobdir.joinpath('summaries.txt')

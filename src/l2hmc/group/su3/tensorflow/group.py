@@ -30,14 +30,20 @@ TF_FLOAT = tf.dtypes.as_dtype(tf.keras.backend.floatx())
 
 class SU3(Group):
     def __init__(self):
-        super().__init__(dim=4, shape=[3, 3], dtype=tf.complex128)
+        self._nc = 3
+        self._free_params = 8
+        super().__init__(
+            dim=4,
+            shape=[3, 3],
+            dtype=tf.complex128
+        )
 
     def update_gauge(
             self,
             x: Tensor,
             p: Tensor,
     ) -> Tensor:
-        return tf.linalg.expm(p) @ x
+        return tf.matmul(tf.linalg.expm(p), x)
 
     def checkSU(self, x: Tensor) -> tuple[Tensor, Tensor]:
         """Returns the average and maximum of the sumf of deviations of:

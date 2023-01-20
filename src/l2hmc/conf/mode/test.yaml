@@ -8,17 +8,20 @@
 
 defaults:
   - override /wandb: debug.yaml
-  - override /steps: debug.yaml
+  - override /steps: test.yaml
   - override /network: debug.yaml
   - override /dynamics: debug.yaml
   - override /annealing_schedule: constant.yaml
-  - override /logdir: default.yaml
+  - override /logdir: debug.yaml
 
 debug_mode: True
 
 hydra:
   # sets level of all command line loggers to 'DEBUG'
-  verbose: ['l2hmc', 'tensorflow', 'pytorch', 'numpy']
+  # verbose: ['l2hmc', 'tensorflow', 'pytorch', 'numpy']
+  verbose: ['l2hmc']
+  job:
+    chdir: true
 
   # https://hydra.cc/docs/tutorials/basic/running_your_app/logging/
   # use this to set level of only chosen command line loggers to 'DEBUG'
@@ -31,4 +34,4 @@ hydra:
   #   subdir: ${hydra.job.num}
 
 # disable rich config printing, since it will be already printed by hydra when `verbose: True`
-print_config: False
+print_config: True

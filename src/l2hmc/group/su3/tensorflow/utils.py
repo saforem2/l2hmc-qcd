@@ -16,21 +16,24 @@ import tensorflow as tf
 Array = np.array
 Tensor = tf.Tensor
 
-ONE_HALF = 1. / 2.
-ONE_THIRD = 1. / 3.
-TWO_PI = tf.constant(2. * PI)
-
-SQRT1by2 = tf.constant(np.sqrt(1. / 2.))
-SQRT1by3 = tf.constant(np.sqrt(1. / 3.))
-
-
-Array = np.array
-Tensor = tf.Tensor
-PI = tf.convert_to_tensor(PI)
-SQRT1by3 = tf.math.sqrt(1. / 3.)
-
 TF_FLOAT = tf.keras.backend.floatx()
 TF_COMPLEX = tf.complex64 if TF_FLOAT == tf.float32 else tf.complex128
+
+ONE_HALF = 1. / 2.
+ONE_THIRD = 1. / 3.
+TWO_PI = tf.constant(2. * PI, dtype=TF_FLOAT)
+
+# SQRT1by2 = tf.constant(np.sqrt(1. / 2.), dtype=TF_FLOAT)
+# SQRT1by3 = tf.constant(np.sqrt(1. / 3.), dtype=TF_FLOAT)
+SQRT1by2 = tf.cast(tf.math.sqrt(1. / 2.), dtype=TF_FLOAT)
+SQRT1by3 = tf.cast(tf.math.sqrt(1. / 3.), dtype=TF_FLOAT)
+
+
+# Array = np.array
+# Tensor = tf.Tensor
+PI = tf.convert_to_tensor(PI)
+# SQRT1by3 = tf.math.sqrt(1. / 3.)
+
 # --------------------------------------------
 # For SU(3) f^abc v[..., c]
 # [T^a, T^b] = f^abc T^c
@@ -159,7 +162,11 @@ def eigs3(tr, p2, det):
     return e0, e1, e2
 
 
-def rsqrtPHM3f(tr, p2, det):
+def rsqrtPHM3f(
+        tr: Tensor,
+        p2: Tensor,
+        det: Tensor
+) -> tuple[Tensor, Tensor, Tensor]:
     l0, l1, l2 = eigs3(tr, p2, det)
     sl0 = tf.math.sqrt(tf.math.abs(l0))
     sl1 = tf.math.sqrt(tf.math.abs(l1))
@@ -183,6 +190,10 @@ def rsqrtPHM3(x: Tensor) -> Tensor:
     c0 = tf.cast(tf.reshape(c0_, c0_.shape + [1, 1]), x.dtype)
     c1 = tf.cast(tf.reshape(c1_, c1_.shape + [1, 1]), x.dtype)
     c2 = tf.cast(tf.reshape(c2_, c2_.shape + [1, 1]), x.dtype)
+    # term0 = c0 * eyeOf(x)
+    # term1 = tf.math.multiply(c1, x)
+    # term2 = tf.math.multiply(c2, x2)
+    # return term0 + term1 + term2
     # e3 = tf.eye(3, batch_shape=[1] * len(c0.shape), dtype=c0_.dtype)
     # term0 = tf.cast(c0_ * e3, x.dtype)
     # # term0 = tf.cast(
@@ -192,7 +203,11 @@ def rsqrtPHM3(x: Tensor) -> Tensor:
     # term1 = tf.multiply(x, tf.cast(c1_, x.dtype))
     # term2 = tf.multiply(x, tf.cast(c2_, x.dtype))
     # return term0 + term1 + term2
-    return c0 * eyeOf(x) + c1 * x + c2 * x2
+    return (
+        c0 * eyeOf(x)
+        + tf.math.multiply(c1, x)
+        + c2 * x2
+    )
 
 
 def projectU(x: Tensor) -> Tensor:
@@ -216,7 +231,8 @@ def projectSU(x: Tensor) -> Tensor:
     )
     p = const * at2
     # p = (1.0 / (-nc)) * tf.math.atan2(tf.math.imag(d), tf.math.real(d))
-    y = m * tf.cast(
+    # y = m * tf.cast(
+    y = tf.math.multiply(m, tf.cast(
         tf.reshape(
             tf.complex(
                 tf.math.cos(p),
@@ -225,9 +241,10 @@ def projectSU(x: Tensor) -> Tensor:
             p.shape + [1, 1]
         ),
         m.dtype
-    )
+    ))
 
-    return tf.cast(y, TF_COMPLEX)
+    # return tf.cast(y, TF_COMPLEX)
+    return y
 
 
 def projectTAH(x: Tensor) -> Tensor:
@@ -275,7 +292,11 @@ def checkSU(x: Tensor) -> tuple[Tensor, Tensor]:
         2.0 * (nc * nc + 1),
         TF_FLOAT
     )
-    return tf.math.sqrt(a / c), tf.math.sqrt(b / c)
+    # return tf.math.sqrt(a / c), tf.math.sqrt(b / c)
+    return (
+        tf.math.sqrt(tf.math.divide(a, c)),
+        tf.math.sqrt(tf.math.divide(b, c))
+    )
 
 
 def su3_to_vec(x: Tensor) -> Tensor:

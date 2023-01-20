@@ -4,7 +4,7 @@ eps: 0.05
 group: 'U1'
 verbose: true
 nchains: 512
-nleapfrog: 6
+nleapfrog: 4
 eps_hmc: null
 use_ncp: true
 eps_fixed: false

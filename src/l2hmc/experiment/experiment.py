@@ -16,22 +16,25 @@ import numpy as np
 from omegaconf import DictConfig, OmegaConf
 import wandb
 import xarray as xr
+import socket
 
 from l2hmc.common import get_timestamp, is_interactive, save_and_analyze_data
 from l2hmc.configs import AIM_DIR, ExperimentConfig, HERE, OUTDIRS_FILE
 from l2hmc.trainers.trainer import BaseTrainer
+# from l2hmc.utils.logger import get_pylogger
 from l2hmc.utils.step_timer import StepTimer
 # import l2hmc.utils.plot_helpers as hplt
 
+# log = get_pylogger(__name__)
 log = logging.getLogger(__name__)
 
 
-def get_logger(rank: int) -> logging.Logger:
-    return (
-        logging.getLogger(__name__)
-        if rank == 0
-        else logging.getLogger(None)
-    )
+# def get_logger(rank: int) -> logging.Logger:
+#     return (
+#         logging.getLogger(__name__)
+#         if rank == 0
+#         else logging.getLogger(None)
+#     )
 
 
 class BaseExperiment(ABC):
@@ -44,12 +47,12 @@ class BaseExperiment(ABC):
         super().__init__()
         self._created = get_timestamp('%Y-%m-%d-%H%M%S')
         self.cfg = cfg
-        self.config = instantiate(cfg)
-        import l2hmc.configs as configs
-        assert isinstance(self.config, (
-            ExperimentConfig,
-            configs.ExperimentConfig,
-        ))
+        self.config: ExperimentConfig = instantiate(cfg)
+        # import l2hmc.configs as configs
+        # assert isinstance(self.config, (
+        #     ExperimentConfig,
+        #     configs.ExperimentConfig,
+        # ))
         assert self.config.framework.lower() in [
             'pt', 'tf', 'pytorch', 'torch', 'tensorflow'
         ]
@@ -62,6 +65,10 @@ class BaseExperiment(ABC):
         # self._build_networks = build_networks
         # self.keep = keep
         # self.skip = skip
+
+    @abstractmethod
+    def visualize_model(self, x: Optional[Any] = None) -> None:
+        pass
 
     @abstractmethod
     def train(self) -> dict:
@@ -85,6 +92,7 @@ class BaseExperiment(ABC):
 
     @abstractmethod
     def update_wandb_config(self, run_id: Optional[str] = None) -> None:
+        """Must Be overridden to specify uniquie run_id for W&B run"""
         pass
 
     @abstractmethod
@@ -142,6 +150,7 @@ class BaseExperiment(ABC):
         self.config.wandb.setup.update({
             'tags': [
                 f'{self.config.framework}',
+                f'{self.config.backend}',
                 f'nlf-{self.config.dynamics.nleapfrog}',
                 f'beta_final-{self.config.annealing_schedule.beta_final}',
                 f'{latstr}',
@@ -161,7 +170,30 @@ class BaseExperiment(ABC):
         self.update_wandb_config(run_id=run_id)
         # log.warning(f'os.getcwd(): {os.getcwd()}')
         wandb.tensorboard.patch(root_logdir=os.getcwd())
-        run = wandb.init(dir=os.getcwd(), **self.config.wandb.setup)
+        # nlf = self.config.dynamics.nleapfrog
+        # vol = 'x'.join([str(i) for i in self.config.dynamics.latvolume])
+        # be = self.config.backend
+        # ABBREVIATIONS = {
+        #     'ds': 'ds',
+        #     'deepspeed': 'ds',
+        #     'hvd': 'hvd',
+        #     'horovod': 'hvd',
+        #     'ddp': 'ddp',
+        #     'pt': 'pt',
+        #     'pytorch': 'pt',
+        #     'torch': 'pt',
+        #     'tf': 'tf',
+        #     'tensorflow': 'tf',
+        # }
+        # be = ABBREVIATIONS.get(self.config.backend.lower())
+        # fw = ABBREVIATIONS.get(self.config.framework)
+        # wbname = f'{fw}-{be}-{vol}-nlf{nlf}-{run_id[:4]}'
+        # wbname = f'lf{nlf}-{be}-{fw}-{vol}-{run_id[:4]}'
+        run = wandb.init(
+            dir=os.getcwd(),
+            # name=wbname,
+            **self.config.wandb.setup,
+        )
         # if self.config.framework in ['pt', 'torch', 'pytorch']:
         #     assert run is not None and run is wandb.run
         #     if dynamics is not None:
@@ -178,6 +210,13 @@ class BaseExperiment(ABC):
                                           resolve=True,
                                           throw_on_missing=True)
         run.config.update(cfg_dict)
+        hostname = socket.gethostbyaddr(socket.gethostname())[0].lower()
+        if 'thetagpu' in hostname:
+            run.config['hostname'] = 'ThetaGPU'
+        elif 'polaris' in hostname:
+            run.config['hostname'] = 'Polaris'
+        else:
+            run.config['hostname'] = hostname
         # run.config['hvd_size'] = SIZE
         # print_config(DictConfig(self.config), resolve=True)
 
@@ -316,7 +355,8 @@ class BaseExperiment(ABC):
                                   nchains=nchains,
                                   job_type=job_type,
                                   framework=self.config.framework)
-
+        log.info('Done saving and analyzing data.')
+        log.info('Creating summaries for WandB, Aim')
         dQint = dset.data_vars.get('dQint', None)
         if dQint is not None:
             dQint = dQint.values

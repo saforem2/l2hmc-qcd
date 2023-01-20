@@ -6,7 +6,6 @@ Contains utils for textual layouts using Rich
 from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass, field
 import json
-import logging
 import os
 from pathlib import Path
 import shutil
@@ -32,19 +31,10 @@ import rich.syntax
 from rich.table import Table
 import rich.tree
 
-from l2hmc.configs import Steps
-from l2hmc.configs import OUTPUTS_DIR
+# from l2hmc.configs import Steps
 
 
-log = logging.getLogger(__name__)
-
-# from typing import Any, Callable, Optional
-# from rich import box
-# from rich.live import Live
-# import logging
-# import time
-# import numpy as np
-
+# log = logging.getLogger(__name__)
 
 # WIDTH = max(150, int(os.environ.get('COLUMNS', 150)))
 size = shutil.get_terminal_size()
@@ -71,6 +61,22 @@ STYLES = {
 }
 
 
+def get_console(*args, **kwargs) -> Console:
+    interactive = is_interactive()
+    from rich.theme import Theme
+    theme = Theme(STYLES)
+
+    console = Console(
+        force_jupyter=interactive,
+        log_path=False,
+        theme=theme,
+        *args,
+        **kwargs
+    )
+
+    return console
+
+
 def is_interactive() -> bool:
     from IPython import get_ipython
     eval = os.environ.get('INTERACTIVE', None) is not None
@@ -88,43 +94,6 @@ def get_width():
     return size.columns
 
 
-def get_console(width: Optional[int] = None, *args, **kwargs) -> Console:
-    interactive = is_interactive()
-    try:
-        from rich_theme_manager import Theme
-        theme = Theme('dark', styles=STYLES)
-    except ImportError:
-        from rich.theme import Theme
-        theme = Theme(STYLES)
-
-    console = Console(
-        force_jupyter=interactive,
-        log_path=False,
-        theme=theme,
-        *args,
-        **kwargs
-    )
-    if width is None:
-        if is_interactive():
-            columns = 120
-        else:
-            columns = os.environ.get('COLUMNS', os.environ.get('WIDTH', None))
-            if columns is None:
-                if not interactive:
-                    size = shutil.get_terminal_size()
-                    columns = size.columns
-                else:
-                    columns = 120
-            else:
-                columns = int(columns)
-
-        width = int(max(columns, 120))
-        console.width = width
-        console._width = width
-
-    return console
-
-
 def make_layout(ratio: int = 4, visible: bool = True) -> Layout:
     """Define the layout."""
     layout = Layout(name='root', visible=visible)
@@ -132,24 +101,13 @@ def make_layout(ratio: int = 4, visible: bool = True) -> Layout:
         Layout(name='main', ratio=ratio, visible=visible),
         Layout(name='footer', visible=visible),
     )
-    # Layout(name='left'),
-    # Layout(name='main', ratio=3),
-    # layout['right'].split_column(
-    #     Layout(name='top'),
-    #     Layout(name='footer')
-    # )
-    # layout['footer'].split_column(
-    #     Layout(name='top'),
-    #     Layout(name='bottom'),
-    # )
     return layout
 
 
 def build_layout(
-        steps: Steps,
+        steps: Any,
         visible: bool = True,
         job_type: Optional[str] = 'train',
-        # columns: Optional[list[str]] = None
 ) -> dict:
     job_progress = Progress(
         "{task.description}",
@@ -206,14 +164,6 @@ def build_layout(
             # padding=(1, 1),
         )
     )
-    # avgs_table = Table.grid(expand=True)
-    # avgs_table.add_row(
-    #     Panel.fit(
-    #         ' ',
-    #         title='Avgs:',
-    #         border_style='white',
-    #     )
-    # )
     layout = make_layout(visible=visible)
     if visible:
         layout['root']['footer'].update(progress_table)
@@ -311,7 +261,7 @@ def print_config(
         resolve (bool, optional): Whether to resolve reference fields of
             DictConfig.
     """
-
+    from l2hmc.configs import OUTPUTS_DIR
     # style = "dim"
     tree = rich.tree.Tree("CONFIG")  # , style=style, guide_style=style)
 

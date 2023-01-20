@@ -7,16 +7,18 @@ from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass
 from math import pi
 import os
+import re
 from pathlib import Path
 from typing import Callable, Optional
 from typing import Tuple
 import logging
+# from copy import deepcopy
 
 import numpy as np
 import tensorflow as tf
 
 from l2hmc import configs as cfgs
-from l2hmc.network.tensorflow.network import NetworkFactory
+from l2hmc.network.tensorflow.network import dummy_network, NetworkFactory
 from l2hmc.group.u1.tensorflow.group import U1Phase
 from l2hmc.group.su3.tensorflow.group import SU3
 from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
@@ -60,11 +62,16 @@ class State:
         assert isinstance(self.beta, Tensor)
 
     def to_numpy(self):
-        # type: ignore
+        if tf.executing_eagerly():
+            return {
+                'x': self.x.numpy(),  # type:ignore
+                'v': self.v.numpy(),  # type:ignore
+                'beta': self.beta.numpy(),  # type:ignore
+            }
         return {
-            'x': self.x.numpy(),  # type:ignore
-            'v': self.v.numpy(),  # type:ignore
-            'beta': self.beta.numpy(),  # type:ignore
+            'x': self.x,
+            'v': self.v,
+            'beta': self.beta,
         }
 
 
@@ -85,17 +92,6 @@ def xy_repr(x: Tensor) -> Tensor:
     return tf.stack([tf.math.cos(x), tf.math.sin(x)], axis=-1)
 
 
-def dummy_network(
-        x: Tensor,
-        *_,
-) -> tuple[Tensor, Tensor, Tensor]:
-    return (
-        tf.zeros_like(x),
-        tf.zeros_like(x),
-        tf.zeros_like(x)
-    )
-
-
 class Dynamics(Model):
     def __init__(
             self,
@@ -111,21 +107,7 @@ class Dynamics(Model):
         self.xshape = self.config.xshape
         self.potential_fn = potential_fn
         self.nlf = self.config.nleapfrog
-        # self.midpt = self.config.nleapfrog // 2
-        self.network_factory = network_factory
-        if network_factory is not None:
-            self._networks_built = True
-            self.xnet, self.vnet = self._build_networks(network_factory)
-            self.networks = {'xnet': self.xnet, 'vnet': self.vnet}
-        else:
-            self._networks_built = False
-            self.xnet = dummy_network
-            self.vnet = dummy_network
-            self.networks = {
-                'xnet': self.xnet,
-                'vnet': self.vnet
-            }
-        self.masks = self._build_masks()
+
         if self.config.group == 'U1':
             self.g = U1Phase()
             self.lattice = LatticeU1(self.config.nchains,
@@ -138,6 +120,23 @@ class Dynamics(Model):
             raise ValueError('Unexpected value for `self.config.group`')
 
         assert isinstance(self.g, (U1Phase, SU3))
+        # self.midpt = self.config.nleapfrog // 2
+        self.network_factory = network_factory
+        if network_factory is not None:
+            self._networks_built = True
+            self.networks = self._build_networks(network_factory)
+            self.xnet = self.networks['xnet']
+            self.vnet = self.networks['vnet']
+            # self.networks = {'xnet': self.xnet, 'vnet': self.vnet}
+        else:
+            self._networks_built = False
+            self.xnet = dummy_network
+            self.vnet = dummy_network
+            self.networks = {
+                'xnet': self.xnet,
+                'vnet': self.vnet
+            }
+        self.masks = self._build_masks()
 
         self.xeps = []
         self.veps = []
@@ -153,12 +152,106 @@ class Dynamics(Model):
             self.xeps.append(xalpha)
             self.veps.append(valpha)
 
-    def _build_networks(self, network_factory):
+    def get_models(self) -> dict:
+        if self.config.use_separate_networks:
+            xnet = {}
+            vnet = {}
+            for lf in range(self.config.nleapfrog):
+                vnet[str(lf)] = self._get_vnet(lf)
+                xnet[f'{lf}/first'] = self._get_xnet(lf, first=True)
+                if self.config.use_split_xnets:
+                    xnet[f'{lf}/second'] = self._get_xnet(lf, first=False)
+                    # xnet[str(lf)] = {
+                    #     '0': self._get_xnet(lf, first=True),
+                    #     '1': self._get_xnet(lf, first=False),
+                    # }
+                else:
+                    xnet[str(lf)] = self._get_xnet(lf, first=True)
+        else:
+            vnet = self._get_vnet(0)
+            xnet = self._get_xnet(0, first=True)
+            if self.config.use_split_xnets:
+                xnet1 = self._get_xnet(0, first=False)
+                xnet = {
+                    'first': xnet,
+                    'second': xnet1,
+                }
+                # xnet = {
+                #     '0': self._get_xnet(0, first=True),
+                #     '1': self._get_xnet(0, first=False),
+                # }
+            else:
+                xnet = self._get_xnet(0, first=True)
+
+        return {'xnet': xnet, 'vnet': vnet}
+
+    def get_weights_dict(self) -> dict:
+        # template = {str(lf): {} for lf in range(self.config.nleapfrog)}
+        # xweights = deepcopy(template)
+        # vweights = deepcopy(template)
+        # xweights = {}
+        # vweights = {}
+        weights = {}
+        if self.config.use_separate_networks:
+            for lf in range(self.config.nleapfrog):
+                vnet = self._get_vnet(lf)
+                weights.update(vnet.get_weights_dict())
+                # vweights[str(lf)] = vnet.get_weights_dict()
+
+                xnet0 = self._get_xnet(lf, first=True)
+                weights.update(xnet0.get_weights_dict())
+                # xweights[str(lf)] = xnet0.get_weights_dict()
+                # xweights[f'{lf}'] = xnet0.get_weights_dict()
+                if self.config.use_split_xnets:
+                    xnet1 = self._get_xnet(lf, first=False)
+                    # xweights[str(lf)].update(xnet1.get_weights_dict())
+                    weights.update(xnet1.get_weights_dict())
+        else:
+            vnet = self._get_vnet(0)
+            weights = vnet.get_weights_dict()
+            # weights.update(vnet.get_weights_dict())
+            # weights = vnet.get_weights_dict()
+            xnet0 = self._get_xnet(0, first=True)
+            weights.update(xnet0.get_weights_dict())
+            # xweights = xnet0.get_weights_dict()
+            # weights.update(xnet0.get_weights_dict())
+            # weights = xnet0.get_weights_dict()
+            if self.config.use_split_xnets:
+                xnet1 = self._get_xnet(0, first=False)
+                weights.update(xnet1.get_weights_dict())
+                # xweights = {
+                #     '0': xnet0.get_weights_dict(),
+                #     '1': xnet1.get_weights_dict()
+                # }
+
+        # xw = pd.json_normalize(xweights, sep='/').to_dict()
+        # vw = pd.json_normalize(vweights, sep='/').to_dict()
+        weights = {
+            f'model/{k}': v for k, v in weights.items()
+        }
+        # weights.update({
+        #     f'Dynamics/{k}': v for k, v in vweights.items()
+        # })
+        # return pd.json_normalize(weights, sep='/').to_dict()
+        # weights = pd.json_normalize(weights, sep='/')
+        # xweights = pd.io.json.json_normalize(xweights, sep)
+        # return {'xnet': weights, 'vnet': weights}
+        return weights
+
+    def _build_networks(
+            self,
+            network_factory: NetworkFactory
+    ) -> dict:
         """Build networks."""
         split = self.config.use_split_xnets
         n = self.nlf if self.config.use_separate_networks else 1
-        networks = network_factory.build_networks(n, split)
-        return networks['xnet'], networks['vnet']
+        networks = network_factory.build_networks(
+            n,
+            split,
+            group=self.g,
+        )
+        # return networks['xnet'], networks['vnet']
+        return networks
 
     def call(
             self,
@@ -281,13 +374,13 @@ class Dynamics(Model):
 
         x_prop = tf.where(
             tf.cast(mf, bool),
-            self.flatten(fwd['proposed'].x),
-            self.flatten(bwd['proposed'].x)
+            fwd['proposed'].x,
+            bwd['proposed'].x
         )
         v_prop = tf.where(
             tf.cast(mf, bool),
-            self.flatten(fwd['proposed'].v),
-            self.flatten(bwd['proposed'].v)
+            fwd['proposed'].v,
+            bwd['proposed'].v
         )
 
         mfwd = fwd['metrics']
@@ -305,13 +398,13 @@ class Dynamics(Model):
 
         v_out = tf.where(
             tf.cast(ma, bool),
-            self.flatten(v_prop),
-            self.flatten(v_init)
+            v_prop,
+            v_init
         )
         x_out = tf.where(
             tf.cast(ma, bool),
-            self.flatten(x_prop),
-            self.flatten(x_init),
+            x_prop,
+            x_init,
         )
         sumlogdet = tf.where(
             tf.cast(ma_, bool),
@@ -327,8 +420,6 @@ class Dynamics(Model):
 
         metrics = {}
         for (key, vf), (_, vb) in zip(mfwd.items(), mbwd.items()):
-            vf = tf.math.real(vf)
-            vb = tf.math.real(vb)
             try:
                 vfb = ma_ * (mf_ * vf + mb_ * vb)  # + mr_ * v0
             except ValueError:
@@ -454,7 +545,8 @@ class Dynamics(Model):
         x = tf.reshape(state.x, state.v.shape)
         force = self.grad_potential(x, state.beta)        # f = dU / dx
         eps = tf.constant(eps, dtype=force.dtype)
-        halfeps = tf.constant(eps / 2.0, dtype=force.dtype)
+        halfeps = tf.constant(tf.scalar_mul(0.5, eps), dtype=force.dtype)
+        # halfeps = tf.constant(eps / 2.0, dtype=force.dtype)
         v = state.v - halfeps * force
         x = self.g.update_gauge(x, eps * v)
         force = self.grad_potential(x, state.beta)       # calc force, again
@@ -677,11 +769,73 @@ class Dynamics(Model):
         if not self._networks_built:
             return self.vnet
         vnet = self.vnet
-        assert isinstance(vnet, (dict, tf.keras.Model))
+        # assert isinstance(vnet, (dict, tf.keras.Model))
         if self.config.use_separate_networks and isinstance(vnet, dict):
             return vnet[str(step)]
         # assert isinstance(vnet, (CallableNetwork))
         return self.vnet
+
+    def _get_xnets(
+            self,
+            step: int,
+    ) -> list[Model]:
+        xnets = [
+            self._get_xnet(step, first=True)
+        ]
+        if self.config.use_separate_networks:
+            xnets.append(
+                self._get_xnet(step, first=False)
+            )
+        return xnets
+
+    def _get_all_xnets(self) -> list[Model]:
+        xnets = []
+        for step in range(self.config.nleapfrog):
+            nets = self._get_xnets(step)
+            for net in nets:
+                xnets.append(net)
+        return xnets
+
+    def _get_all_vnets(self) -> list[Model]:
+        return [
+            self._get_vnet(step)
+            for step in range(self.config.nleapfrog)
+        ]
+        # for step in range(self.config.nleapfrog):
+        #     nets = self._get_vnet(step)
+
+    @staticmethod
+    def rename_weight(
+            name: str,
+            sep: Optional[str] = None,
+    ) -> str:
+        new_name = (
+            name.rstrip(':0').replace('kernel', 'weight')
+        )
+        new_name = re.sub(r'\_\d', '', new_name)
+        if sep is not None:
+            new_name.replace('.', '/')
+            new_name.replace('/', sep)
+
+        return new_name
+
+    def get_all_weights(self) -> dict:
+        xnets = self._get_all_xnets()
+        vnets = self._get_all_vnets()
+        weights = {}
+        for xnet in xnets:
+            weights.update({
+                f'{self.rename_weight(w.name)}': w
+                for w in xnet.weights
+            })
+        for vnet in vnets:
+            weights.update({
+                # self.format_weight_name(w.name): w
+                f'{self.rename_weight(w.name)}': w
+                for w in vnet.weights
+            })
+
+        return cfgs.flatten_dict(weights)
 
     def _get_xnet(
             self,
@@ -692,7 +846,7 @@ class Dynamics(Model):
         if not self._networks_built:
             return self.xnet
         xnet = self.xnet
-        assert isinstance(xnet, (tf.keras.Model, dict))
+        # assert isinstance(xnet, (tf.keras.Model, dict))
         if self.config.use_separate_networks and isinstance(xnet, dict):
             xnet = xnet[str(step)]
             if self.config.use_split_xnets:
@@ -722,11 +876,7 @@ class Dynamics(Model):
         x, force = inputs
         vnet = self._get_vnet(step)
         assert callable(vnet)
-        # if isinstance(self.g, SU3):
-        #     x = tf.reshape(x, self.xshape)
-        #     x = tf.stack([tf.math.real(x), tf.math.imag(x)], 1)
-        #     # force = tf.reshape(force, self.xshape)
-        # # x = self.g.group_to_vec(x)
+        # x = self.g.group_to_vec(x)
         return vnet((x, force), training)
 
     def _call_xnet(
@@ -746,17 +896,14 @@ class Dynamics(Model):
         x, v = inputs
         assert isinstance(x, Tensor) and isinstance(v, Tensor)
         xnet = self._get_xnet(step, first)
-        if isinstance(self.g, U1Phase):
+        if self.config.group == 'U1':
             x = self.g.group_to_vec(x)
 
-        elif isinstance(self.g, SU3):
-            x = tf.reshape(x, self.xshape)
+        elif self.config.group == 'SU3':
+            x = self.unflatten(x)
             x = tf.stack([tf.math.real(x), tf.math.imag(x)], 1)
-        # x = self.g.group_to_vec(x)
-        # assert xnet is not None and isinstance(xnet, LeapfrogLayer)
         assert callable(xnet)
         s, t, q = xnet((x, v), training)
-        # return xnet((x, v), training)
         return (s, t, q)
 
     def _forward_lf(
@@ -822,6 +969,31 @@ class Dynamics(Model):
 
         return state, sumlogdet
 
+    def unflatten(self, x: Tensor) -> Tensor:
+        return tf.reshape(x, (x.shape[0], *self.xshape[1:]))
+
+    def group_to_vec(self, x: Tensor) -> Tensor:
+        """For x in SU(3), returns an 8-component real-valued vector"""
+        return self.g.group_to_vec(self.unflatten(x))
+
+    def vec_to_group(self, x: Tensor) -> Tensor:
+        if x.shape[1:] != self.xshape[1:]:
+            x = self.unflatten(x)
+
+        if self.config.group == 'SU3':
+            return self.g.vec_to_group(x)
+
+        xrT, xiT = tf.transpose(x)
+        return tf.complex(tf.transpose(xrT), tf.transpose(xiT))
+
+    @staticmethod
+    def stack_complex_as_real(x: Tensor) -> Tensor:
+        assert x.dtype in [tf.complex64, tf.complex128]
+        return tf.stack([
+            tf.math.real(x),
+            tf.math.imag(x),
+        ], axis=-1)
+
     def _update_v_fwd(
             self,
             step: int,
@@ -840,13 +1012,10 @@ class Dynamics(Model):
         # jacobian factor, used in exp_s below
         halfeps = tf.scalar_mul(0.5, eps)
         jac = tf.scalar_mul(halfeps, s)
-        # jac = eps * s / 2.  # jacobian factor, also used in exp_s below
         logdet = tf.reduce_sum(jac, axis=1)
-
         exp_s = tf.reshape(tf.exp(jac), state.v.shape)
         exp_q = tf.reshape(tf.exp(tf.scalar_mul(eps, q)), force.shape)
         t = tf.reshape(t, force.shape)
-        # exp_q = tf.exp(eps * q)
         vf = exp_s * state.v - tf.scalar_mul(halfeps, (force * exp_q + t))
 
         return State(state.x, vf, state.beta), logdet
@@ -863,7 +1032,6 @@ class Dynamics(Model):
         s, t, q = self._call_vnet(step, (state.x, force), training=training)
         halfeps = tf.scalar_mul(0.5, eps)
         logjac = tf.scalar_mul(tf.scalar_mul(-1., halfeps), s)
-        # logjac = (-eps * s / 2.)
         v = tf.reshape(state.v, (-1, *self.xshape[1:]))
         logdet = tf.reduce_sum(logjac, axis=1)
         exp_s = tf.reshape(tf.exp(logjac), v.shape)
@@ -894,7 +1062,7 @@ class Dynamics(Model):
         q = tf.scalar_mul(eps, q)
         exp_s = tf.exp(s)
         exp_q = tf.exp(q)
-        if isinstance(self.g, U1Phase):
+        if self.config.group == 'U1':
             if self.config.use_ncp:
                 halfx = self.flatten(x / TWO)
                 _x = TWO * tf.math.atan(tf.math.tan(halfx) * exp_s)
@@ -909,7 +1077,7 @@ class Dynamics(Model):
                 xf = xm_init + (mb * xp)
                 logdet = tf.reduce_sum((mb * s), axis=1)
 
-        elif isinstance(self.g, SU3):
+        elif self.config.group == 'SU3':
             x = tf.reshape(state.x, self.xshape)
             xm_init = tf.reshape(xm_init, self.xshape)
             exp_s = tf.cast(tf.reshape(exp_s, self.xshape), x.dtype)
@@ -917,7 +1085,7 @@ class Dynamics(Model):
             t = tf.cast(tf.reshape(t, self.xshape), x.dtype)
             eps = tf.cast(eps, x.dtype)
             v = tf.reshape(state.v, self.xshape)
-            xp = x * exp_s + eps * (v * exp_q + t)
+            xp = self.g.update_gauge(x, eps * (v * exp_q + t))
             xf = xm_init + tf.reshape((mb * self.flatten(xp)), xm_init.shape)
             logdet = tf.reduce_sum(mb * tf.cast(s, x.dtype), axis=1)
         else:
@@ -950,7 +1118,7 @@ class Dynamics(Model):
         exp_q = tf.exp(q)
         exp_s = tf.exp(s)
 
-        if isinstance(self.g, U1Phase):
+        if self.config.group == 'U1':
             if self.config.use_ncp:
                 halfx = x / TWO
                 halfx_scale = exp_s * tf.tan(halfx)
@@ -973,7 +1141,8 @@ class Dynamics(Model):
                 xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
                 xb = xm_init + mb * xnew
                 logdet = tf.reduce_sum(mb * s, axis=1)
-        elif isinstance(self.g, SU3):
+
+        elif self.config.group == 'SU3':
             exp_s = tf.cast(tf.reshape(exp_s, state.x.shape), state.x.dtype)
             exp_q = tf.cast(tf.reshape(exp_q, state.x.shape), state.x.dtype)
             t = tf.cast(tf.reshape(t, state.x.shape), state.x.dtype)

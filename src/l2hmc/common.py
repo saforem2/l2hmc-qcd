@@ -79,98 +79,13 @@ def get_timestamp(fstr=None):
     return now.strftime(fstr)
 
 
-def init_process_group(
-        rank: int | str,
-        world_size: int | str,
-        backend: Optional[str] = None,
-) -> None:
-    import torch.distributed as dist
-    if torch.cuda.is_available():
-        backend = 'nccl' if backend is None else str(backend)
-    else:
-        backend = 'gloo' if backend is None else str(backend)
-
-    dist.init_process_group(
-        backend=backend,
-        rank=int(rank),
-        world_size=int(world_size),
-        init_method='env://',
-    )
-
-
-def setup_torch_distributed(
-        backend: str,
-        port: str = '2345',
-) -> dict:
-    rank = os.environ.get('RANK', None)
-    size = os.environ.get('WORLD_SIZE', None)
-    local_rank = os.environ.get('LOCAL_RANK', None)
-    INITIALIZED = False
-    if rank is not None and size is not None and local_rank is not None:
-        INITIALIZED = True
-    assert backend in ['ddp', 'DDP', 'horovod', 'hvd']
-    log.info(f'Using {backend} for distributed training')
-    if backend in ['ddp', 'DDP']:
-        import socket
-        from mpi4py import MPI
-        local_rank = int(os.environ.get(
-            'PMI_LOCAL_RANK',
-            os.environ.get(
-                'OMPI_COMM_WORLD_LOCAL_RANK',
-                '0',
-            )
-        ))
-        size = int(MPI.COMM_WORLD.Get_size())
-        rank = int(MPI.COMM_WORLD.Get_rank())
-        os.environ['LOCAL_RANK'] = str(local_rank)
-        os.environ['RANK'] = str(rank)
-        os.environ['WORLD_SIZE'] = str(size)
-        master_addr = (
-            socket.gethostname() if rank == 0 else None
-        )
-        master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
-        os.environ['MASTER_ADDR'] = master_addr
-        if (eport := os.environ.get('MASTER_PORT', None)) is None:
-            os.environ['MASTER_PORT'] = port
-        else:
-            log.info(f'Caught MASTER_PORT:{eport} from environment!')
-            os.environ['MASTER_PORT'] = eport
-        if not INITIALIZED:
-            init_process_group(
-                rank=rank,
-                world_size=size,
-                backend='nccl' if torch.cuda.is_available() else 'gloo'
-            )
-        # if local_rank == 0 and rank == 0:
-        #     log.info('DDP INFO:')
-        #     log.info('---------')
-        #     log.info(f'SIZE: {size}')
-        #     log.info(f'RANK: {rank}')
-        #     log.info(f'LOCAL_RANK: {local_rank}')
-
-    elif backend in ['horovod', 'hvd']:
-        import horovod.torch as hvd
-        hvd.init() if not hvd.is_initialized() else None
-        rank = hvd.rank()
-        size = hvd.size()
-        local_rank = hvd.local_rank()
-        # if local_rank == 0 and rank == 0:
-        #     log.info('\n'.join([
-        #         'Horovod info:',
-        #         '-------------',
-        #         f'SIZE: {size}',
-        #         f'RANK: {rank}',
-        #         f'LOCAL_RANK: {local_rank}',
-        #         '-------------',
-        #     ]))
-    else:
-        log.warning(f'Unexpected backend specified: {backend}')
-        log.error('Setting size = 1, rank = 0, local_rank = 0')
-        size = 1
-        rank = 0
-        local_rank = 0
-
-    return {'size': size, 'rank': rank, 'local_rank': local_rank}
+def seed_everything(seed: int):
+    import random
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
 
 
 def check_diff(x, y, name: Optional[str] = None):
@@ -647,7 +562,7 @@ def save_logs(
     tfile.parent.mkdir(exist_ok=True, parents=True)
 
     data = {}
-    console = get_console(record=True, width=235)
+    console = get_console(record=True, width=200)
     if tables is not None:
         for idx, table in tables.items():
             if idx == 0:

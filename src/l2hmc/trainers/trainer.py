@@ -35,13 +35,15 @@ class BaseTrainer(ABC):
     ):
         self._created = get_timestamp()
         if isinstance(cfg, DictConfig):
-            self.config = instantiate(cfg)
+            self.config: ExperimentConfig = instantiate(cfg)
         else:
-            self.config = cfg
+            self.config: ExperimentConfig = cfg
 
-        assert isinstance(self.config,
-                          (configs.ExperimentConfig,
-                           ExperimentConfig))
+        # self._is_chief: bool = self.check_if_chief()
+
+        # assert isinstance(self.config,
+        #                   (configs.ExperimentConfig,
+        #                    ExperimentConfig))
         assert self.config.framework in [
             'pt',
             'tf',
@@ -117,6 +119,14 @@ class BaseTrainer(ABC):
             'hmc': StepTimer(evals_per_step=self._nlf),
         }
 
+    @abstractmethod
+    def warning(self, s: str) -> None:
+        pass
+
+    @abstractmethod
+    def info(self, s: str) -> None:
+        pass
+
     def set_console(self, console: Console) -> None:
         self.console = console
 
@@ -137,7 +147,7 @@ class BaseTrainer(ABC):
         pass
 
     @abstractmethod
-    def build_dynamics(self):
+    def build_dynamics(self, build_networks: bool = True):
         pass
 
     @abstractmethod
@@ -283,14 +293,15 @@ class BaseTrainer(ABC):
         pass
 
     def get_input_spec(self) -> InputSpec:
-        xdim = self.config.dynamics.xdim
         xshape = self.config.dynamics.xshape
         if self.config.dynamics.group == 'U1':
+            xdim = self.config.dynamics.xdim
             input_dims = {
                 'xnet': {'x': [xdim, 2], 'v': [xdim, ]},
                 'vnet': {'x': [xdim, ], 'v': [xdim, ]},
             }
         elif self.config.dynamics.group == 'SU3':
+            xdim = np.cumprod(xshape[1:-2])[-1] * 8
             input_dims = {
                 'xnet': {'x': [xdim, ], 'v': [xdim, ]},
                 'vnet': {'x': [xdim, ], 'v': [xdim, ]},

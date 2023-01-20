@@ -9,6 +9,9 @@ from typing import Optional, Union
 import numpy as np
 import torch
 from torch.utils.tensorboard.writer import SummaryWriter
+
+# from l2hmc.network.pytorch.network import nested_children
+# from l2hmc.utils.logger import get_pylogger
 # from l2hmc.common import grab_tensor
 
 # from l2hmc.common import grab_tensor
@@ -18,6 +21,7 @@ Array = np.ndarray
 Scalar = Union[float, int, bool, np.floating]
 ArrayLike = Union[Tensor, Array, Scalar]
 
+# log = get_pylogger(__name__)
 log = logging.getLogger(__name__)
 
 
@@ -131,7 +135,13 @@ def update_summaries(
         for name, param in model.named_parameters():
             if param.requires_grad:
                 tag = f'model/{name}'
-                log_item(writer=writer, val=param.detach(), step=step, tag=tag)
+                log_item(writer=writer, val=param, step=step, tag=tag)
+        # children = nested_children(model)
+        # for name, child in children.items():
+        #     log_item(writer=writer, val=child.parameters(), step=step, tag=tag)
+        # for m in model.register_buffer
+        #     if isinstance(m, nn.Linear):
+
 
     if optimizer is not None:
         for group in optimizer.param_groups:
