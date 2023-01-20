@@ -14,7 +14,7 @@ from collections import namedtuple
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Counter, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Counter, Dict, List, Optional, Sequence
 
 from hydra.core.config_store import ConfigStore
 import numpy as np
@@ -183,6 +183,9 @@ class wandbSetup(BaseConfig):
         if self.settings is None:
             self.settings = {'start_method': 'thread'}
 
+    def to_str(self) -> str:
+        return ''
+
 
 @dataclass
 class wandbConfig(BaseConfig):
@@ -201,9 +204,9 @@ class NetWeight(BaseConfig):
      - t: scales the translation function in the update
      - q: scales the force (v) transformation function in the v (x) updates
     """
-    s: float = 1.
-    t: float = 1.
-    q: float = 1.
+    s: float = field(default=1.)
+    t: float = field(default=1.)
+    q: float = field(default=1.)
 
     def to_dict(self):
         return {'s': self.s, 't': self.t, 'q': self.q}
@@ -331,9 +334,10 @@ class ConvolutionConfig(BaseConfig):
         assert len(self.filters) == len(self.pool)
         assert self.pool is not None
 
-    def to_str(self):
+    def to_str(self) -> str:
         if self.filters is None:
-            return
+            return 'conv-None'
+
         if len(self.filters) > 0:
             outstr = [
                 list_to_str(list(self.filters)),
@@ -490,6 +494,70 @@ class InputSpec(BaseConfig):
 # @dataclass
 # class DeepSpeedConfig(BaseConfig):
 
+@dataclass
+class FlopsProfiler:
+    enabled: bool = False
+    profile_step: int = 1
+    module_depth: int = -1
+    top_modules: int = 1
+    detailed: bool = True
+    output_file: Optional[os.PathLike | str | Path] = None
+
+    def __post_init__(self):
+        pass
+        # if self.output_file is None:
+        #     self.output_file = Path(os.getcwd()).joinpath(
+        #         'ds-flops-profiler.log'
+        #     ).resolve().as_posix()
+
+
+# @dataclass
+# class dsOptimizer:
+#     type: str = "AdamW"
+#     params: dict
+
+
+# @dataclass
+# class DeepSpeedConfig(BaseConfig):
+#     fpath: Optional[os.PathLike] = None
+#     wall_clock_breakdown: Optional[bool] = None
+#     prescale_gradients: Optional[bool] = None
+#     flops_profiler:
+
+
+
+@dataclass
+class OptimizerConfig:
+    type: str
+    params: Optional[dict] = field(default_factory=dict)
+
+
+@dataclass
+class fp16Config:
+    enabled: bool
+    auto_cast: bool = True
+    fp16_master_weights_and_grads: bool = False
+    min_loss_scale: float = 0.
+
+
+@dataclass
+class CommsLogger:
+    enabled: bool
+    verbose: bool = True
+    prof_all: bool = True
+    debug: bool = False
+
+
+@dataclass
+class AutoTuning:
+    enabled: bool
+    arg_mappings: Optional[dict] = field(default_factory=dict)
+
+
+@dataclass
+class ZeroOptimization:
+    stage: int
+
 
 @dataclass
 class ExperimentConfig(BaseConfig):
@@ -519,6 +587,7 @@ class ExperimentConfig(BaseConfig):
     precision: str = 'float32'
     ignore_warnings: bool = True
     backend: str = 'hvd'
+    # ds_config: dict = field(default_factory=dict)
     # ----- Optional (w/o defaults) -----------
     ds_config_path: Optional[Any] = None
     name: Optional[str] = None
@@ -528,8 +597,13 @@ class ExperimentConfig(BaseConfig):
     compression: Optional[str] = None
 
     def __post_init__(self):
+        self.ds_config = {}
         self.xdim = self.dynamics.xdim
         self.xshape = self.dynamics.xshape
+        if self.ds_config_path is None:
+            fpath = Path(CONF_DIR).joinpath('ds_config.json')
+            self.ds_config_path = fpath.resolve().as_posix()
+
         # self.ds_config = {}
         # if self.ds_config_path is not None:
         #     fpath = Path(self.ds_config_path)
@@ -585,6 +659,9 @@ class ExperimentConfig(BaseConfig):
             pass
 
         return ds_config
+
+    def set_ds_config(self, ds_config: dict) -> None:
+        self.ds_config = ds_config
 
     def to_str(self) -> str:
         dynstr = self.dynamics.to_str()
