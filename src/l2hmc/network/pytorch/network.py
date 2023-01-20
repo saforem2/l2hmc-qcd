@@ -294,37 +294,38 @@ class ConvStack(nn.Module):
         self.xdim = np.cumprod(xshape[1:])[-1]
         self.activation_fn = activation_fn
         self.layers = nn.ModuleList()
-        if (nfilters := len(conv_config.filters)) > 0:
-            if (
-                    conv_config.sizes is not None
-                    and nfilters == len(conv_config.sizes)
-            ):
-                self.layers.append(
-                    PeriodicPadding(
-                        conv_config.sizes[0] - 1
-                    )
-                )
-                # in_channels, out_channels, kernel_size
-                self.layers.append(
-                    nn.LazyConv2d(
-                        conv_config.filters[0],
-                        conv_config.sizes[0],
-                    )
-                )
-                for idx, (f, n) in enumerate(zip(
-                        conv_config.filters[1:],
-                        conv_config.sizes[1:],
-                )):
-                    self.layers.append(PeriodicPadding(n - 1))
-                    self.layers.append(nn.LazyConv2d(f, n))
-                    if (idx + 1) % 2 == 0:
-                        p = (
-                            2 if conv_config.pool is None
-                            else conv_config.pool[idx]
+        if conv_config.filters is not None:
+            if (nfilters := len(list(conv_config.filters))) > 0:
+                if (
+                        conv_config.sizes is not None
+                        and nfilters == len(conv_config.sizes)
+                ):
+                    self.layers.append(
+                        PeriodicPadding(
+                            conv_config.sizes[0] - 1
                         )
-                        self.layers.append(nn.MaxPool2d(p))
+                    )
+                    # in_channels, out_channels, kernel_size
+                    self.layers.append(
+                        nn.LazyConv2d(
+                            conv_config.filters[0],
+                            conv_config.sizes[0],
+                        )
+                    )
+                    for idx, (f, n) in enumerate(zip(
+                            conv_config.filters[1:],
+                            conv_config.sizes[1:],
+                    )):
+                        self.layers.append(PeriodicPadding(n - 1))
+                        self.layers.append(nn.LazyConv2d(f, n))
+                        if (idx + 1) % 2 == 0:
+                            p = (
+                                2 if conv_config.pool is None
+                                else conv_config.pool[idx]
+                            )
+                            self.layers.append(nn.MaxPool2d(p))
 
-                    self.layers.append(self.activation_fn)
+                        self.layers.append(self.activation_fn)
 
         self.layers.append(nn.Flatten())
         if use_batch_norm:
@@ -534,6 +535,7 @@ class LeapfrogLayer(nn.Module):
         if self._with_cuda:
             x = x.cuda()
             v = v.cuda()
+
             # self.to(x.dtype)
         # self.input_layer.to(x.dtype)
         z = self.input_layer((x, v))
