@@ -17,6 +17,7 @@ from typing import Any, Callable, Optional
 from rich.console import ConsoleRenderable
 # from rich.align import Align
 
+from torch.cuda.amp.grad_scaler import GradScaler
 import aim
 from aim import Distribution
 import numpy as np
@@ -40,7 +41,7 @@ from l2hmc.common import (
     get_timestamp,
 )
 from l2hmc.utils.dist import setup_torch_distributed
-from l2hmc.configs import CHECKPOINTS_DIR, ExperimentConfig, CONF_DIR
+from l2hmc.configs import CHECKPOINTS_DIR, ExperimentConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.group.su3.pytorch.group import SU3
 from l2hmc.group.u1.pytorch.group import U1Phase
@@ -112,17 +113,22 @@ class Trainer(BaseTrainer):
             self.config.learning_rate.lr_init,
             2 * self.steps.nepoch
         )
+        self.use_fp16: bool = (
+            self.config.precision.lower() in ['fp16', '16', 'half']
+        )
         dsetup: dict = setup_torch_distributed(self.config.backend)
-        self._dtype = torch.get_default_dtype()
-        if torch.cuda.is_available():
-            self._dtype = torch.get_autocast_gpu_dtype()
-        self.device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self._device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
+        # self._device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.size: int = dsetup['size']
         self.rank: int = dsetup['rank']
         self.local_rank: int = dsetup['local_rank']
         self._is_chief: bool = (self.local_rank == 0 and self.rank == 0)
         self._with_cuda: bool = torch.cuda.is_available()
+        self._dtype = torch.get_default_dtype()
+        self.device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
+        if torch.cuda.is_available() and self.use_fp16:
+            self._dtype = torch.get_autocast_gpu_dtype()
+            self.warning(f'Using {self._dtype} on {self.device}!')
+
         self.lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
         self.dynamics: Dynamics = self.build_dynamics(
@@ -134,6 +140,9 @@ class Trainer(BaseTrainer):
             else Path(ckpt_dir).resolve()
         )
         self.ckpt_dir.mkdir(exist_ok=True, parents=True)
+        # if self.use_fp16:
+        #     self.dynamics = self.dynamics.to(torch.half)
+        #     # self.warning(f'Dynamics.dtype: {self.dynamics.dtype}')
 
         # --------------------------------------------------------
         # NOTE:
@@ -169,62 +178,26 @@ class Trainer(BaseTrainer):
                 lr=self.config.learning_rate.lr_init,
             )
 
-        self.use_fp16: bool = False
+        # --------------------------------------------------------------------
+        # BACKEND SPECIFIC SETUP
+        # ----------------------
+        # NOTE: DeepSpeed automatically handles gradient scaling when training
+        # with mixed precision.
         self.ds_config = {}
+        self.grad_scaler = None  # Needed for Horovod, DDP
         self.dynamics_engine = None
         if self.config.backend == 'DDP':
             from torch.nn.parallel import DistributedDataParallel as DDP
             self.optimizer = self._optimizer
             self.dynamics_engine = DDP(self.dynamics)
+            self.grad_scaler = GradScaler()
 
         elif self.config.backend.lower() in ['ds', 'deepspeed']:
-            # TODO: Move ds_config_path to `conf/config.yaml` to be overridable
-            self.ds_config = self.prepare_ds_config()
-            params = filter(
-                lambda p: p.requires_grad,
-                self.dynamics.parameters()
-            )
-            if self._with_cuda:
-                self.dynamics.cuda()
-
-            if (
-                    (fp16 := self.ds_config.get('fp16', None)) is not None
-                    and fp16.get('enabled', False)
-            ):
-                self.dynamics = self.dynamics.to(torch.half)
-
-            if self._is_chief:
-                print_json(json.dumps(self.ds_config, indent=4))
-
-            engine, optimizer, _, _ = deepspeed.initialize(
-                model=self.dynamics,
-                model_parameters=params,  # type:ignore
-                # optimizer=self._optimizer,
-                config=self.ds_config
-            )
-            assert engine is not None
-            assert optimizer is not None
-            self.dynamics_engine = engine
-            self.optimizer = optimizer
-            self.use_fp16 = self.dynamics_engine.fp16_enabled()
-            self._device = self.dynamics_engine.local_rank
-            if self.use_fp16:
-                self._dtype = torch.half
+            self._setup_deepspeed()
 
         elif self.config.backend.lower() in ['hvd', 'horovod']:
-            import horovod.torch as hvd
-            compression = (
-                hvd.Compression.fp16
-                if self.config.compression == 'fp16'
-                else hvd.Compression.none
-            )
-            self.optimizer = hvd.DistributedOptimizer(
-                self._optimizer,
-                named_parameters=self.dynamics.named_parameters(),
-                compression=compression,  # type: ignore
-            )
-            hvd.broadcast_parameters(self.dynamics.state_dict(), root_rank=0)
-            hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
+            # self.grad_scaler = GradScaler()
+            self._setup_horovod()
 
         else:
             self.optimizer = self._optimizer
@@ -235,22 +208,76 @@ class Trainer(BaseTrainer):
             and str(self.config.dynamics.group).upper() in ['U1', 'SU3']
         )
 
+    def _setup_deepspeed(self) -> None:
+        # TODO: Move ds_config_path to `conf/config.yaml` to be overridable
+        self.ds_config = self.prepare_ds_config()
+        params = filter(
+            lambda p: p.requires_grad,
+            self.dynamics.parameters()
+        )
+        if self._with_cuda:
+            self.dynamics.cuda()
+
+        if (
+                (fp16 := self.ds_config.get('fp16', None)) is not None
+                and fp16.get('enabled', False)
+        ):
+            self.dynamics = self.dynamics.to(torch.half)
+
+        if self._is_chief:
+            print_json(json.dumps(self.ds_config, indent=4))
+
+        engine, optimizer, _, _ = deepspeed.initialize(
+            model=self.dynamics,
+            model_parameters=params,  # type:ignore
+            # optimizer=self._optimizer,
+            config=self.ds_config
+        )
+        assert engine is not None
+        assert optimizer is not None
+        self.dynamics_engine = engine
+        self.optimizer = optimizer
+        self.use_fp16 = self.dynamics_engine.fp16_enabled()
+        self.device = self.dynamics_engine.local_rank
+        if self.use_fp16:
+            self._dtype = torch.half
+
+    def _setup_horovod(self) -> None:
+        import horovod.torch as hvd
+        compression = (
+            hvd.Compression.fp16 if self.use_fp16
+            else hvd.Compression.none
+        )
+        self.optimizer = hvd.DistributedOptimizer(
+            self._optimizer,
+            named_parameters=self.dynamics.named_parameters(),
+            compression=compression,  # type: ignore
+        )
+        hvd.broadcast_parameters(self.dynamics.state_dict(), root_rank=0)
+        hvd.broadcast_optimizer_state(self.optimizer, root_rank=0)
+
     def prepare_ds_config(self) -> dict:
         if self.config.backend.lower() not in ['ds', 'deepspeed']:
             return {}
 
         ds_config = {}
-        ds_config_path = Path(CONF_DIR).joinpath('ds_config.json')
-        ds_config = load_ds_config(ds_config_path)
-        self.info(f'Loaded DeepSpeed config from: {ds_config_path}')
+        # ds_config_path = Path(CONF_DIR).joinpath('ds_config.json')
+        assert self.config.ds_config_path is not None
+        ds_config = load_ds_config(self.config.ds_config_path)
+        self.info(
+            f'Loaded DeepSpeed config from: {self.config.ds_config_path}'
+        )
         pname = 'l2hmc-qcd'
         if self.config.debug_mode:
             pname += '-debug'
 
-        ds_config['wandb'].update({
-            "project": pname,
-            "group": f'{self.config.framework}/{self.config.backend}',
-        })
+        if self.config.init_wandb:
+            ds_config['wandb'].update({
+                "project": pname,
+                "group": f'{self.config.framework}/{self.config.backend}',
+            })
+        else:
+            ds_config['wandb'] = {}
         # self.ds_config.update({
         #     'tensorboard': {
         #         'enabled': True,
@@ -271,13 +298,24 @@ class Trainer(BaseTrainer):
             * ds_config['gradient_accumulation_steps']
             * ds_config['train_micro_batch_size_per_gpu']
         )
-        if ds_config['scheduler'].get('params', None) is not None:
-            ds_config['scheduler']['params'].update({
-                'warmup_num_steps': self.config.steps.nepoch,
-                'total_num_steps': (
-                    self.config.steps.nera * self.config.steps.nepoch
-                )
-            })
+        scheduler = ds_config.get('scheduler', None)
+        if scheduler is not None:
+            sparams = scheduler.get('params', None)
+            if sparams is not None:
+                ds_config['scheduler']['params'].update({
+                    'warmup_num_steps': self.config.steps.nepoch,
+                    'total_num_steps': (
+                        self.config.steps.nera * self.config.steps.nepoch
+                    )
+                })
+        # if ds_config['scheduler'].get('params', None) is not None:
+        #     ds_config['scheduler']['params'].update({
+        #         'warmup_num_steps': self.config.steps.nepoch,
+        #         'total_num_steps': (
+        #             self.config.steps.nera * self.config.steps.nepoch
+        #         )
+        #     })
+        self.config.set_ds_config(ds_config)
         return ds_config
 
     def warning(self, s: str) -> None:
@@ -611,7 +649,6 @@ class Trainer(BaseTrainer):
     ) -> None:
         if self.local_rank != 0:
             return
-        # assert self.config.init_aim or self.config.init_wandb
         dQdict = None
         dQint = record.get('dQint', None)
         if dQint is not None:
@@ -698,7 +735,9 @@ class Trainer(BaseTrainer):
             beta = torch.tensor(beta)
 
         if WITH_CUDA:
-            xi, beta = xi.cuda(), beta.cuda()
+            xi = xi.to(self._dtype).to(self.device)
+            beta = beta.to(self._dtype).to(self.device)
+            # xi, beta = xi.cuda(), beta.cuda()
 
         xo, metrics = self.dynamics.apply_transition_hmc(
             (xi, beta), eps=eps, nleapfrog=nleapfrog,
@@ -719,20 +758,25 @@ class Trainer(BaseTrainer):
     ) -> tuple[Tensor, dict]:
         self.dynamics.eval()
         xinit, beta = inputs
-        beta = torch.tensor(beta).to(self._device)
-        if WITH_CUDA:
-            xinit = xinit.cuda()
-            beta = beta.cuda()
-            # xinit, beta = xinit.cuda(), torch.tensor(beta).cuda()
-        if self.use_fp16:
-            xinit = xinit.half()
-            beta = beta.half()
-            # self.dynamics_engine = self.dynamics_engine.to(xinit.dtype)
+        beta = torch.tensor(beta).to(self.device)
+        xinit = xinit.to(self.device)
+        #   # xinit = xinit.to(self._dtype).to(self.device)
+        #   # beta = beta.to(self._dtype).to(self.device)
+        #   # xinit, beta = xinit.cuda(), torch.tensor(beta).cuda()
+        # if self.use_fp16:
+        #     xinit = xinit.half()
+        #     beta = beta.half()
+        #     # self.dynamics_engine = self.dynamics_engine.to(xinit.dtype)
 
-        if self.dynamics_engine is not None:
-            xout, metrics = self.dynamics_engine((xinit, beta))
-        else:
+        # if self.dynamics_engine is not None:
+        #     xout, metrics = self.dynamics_engine((xinit, beta))
+        # else:
+        with torch.autocast(  # type:ignore
+                device_type='cuda' if WITH_CUDA else 'cpu',
+                dtype=torch.float32
+        ):
             xout, metrics = self.dynamics((xinit, beta))
+
         xprop = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
         if self.config.dynamics.verbose:
@@ -926,12 +970,18 @@ class Trainer(BaseTrainer):
             and nlog is not None
             and nprint is not None
         )
+        self.dynamics.to(torch.float32)
+        device_type = 'cuda' if WITH_CUDA else 'cpu'
 
         def eval_fn(z):
-            if job_type == 'hmc':
-                assert eps is not None
-                return self.hmc_step(z, eps=eps, nleapfrog=nleapfrog)
-            return self.eval_step(z)
+            with torch.autocast(  # type:ignore
+                dtype=torch.float32,
+                device_type=device_type,
+            ):
+                if job_type == 'hmc':
+                    assert eps is not None
+                    return self.hmc_step(z, eps=eps, nleapfrog=nleapfrog)
+                return self.eval_step(z)
 
         ctx = self.get_context_manager(table)
 
@@ -1053,8 +1103,8 @@ class Trainer(BaseTrainer):
         if WITH_CUDA:
             if self.config.dynamics.group == 'U1':
                 # Send to GPU with specified (real) precision
-                xinit = xinit.to(self._device).to(self._dtype)
-                beta = beta.to(self._device).to(self._dtype)
+                xinit = xinit.to(self.device)  # .to(self._dtype)
+                beta = beta.to(self.device)  # .to(self._dtype)
                 # xinit, beta = xinit.cuda(), beta.cuda()
 
         if self.use_fp16:
@@ -1078,54 +1128,78 @@ class Trainer(BaseTrainer):
         self.optimizer.zero_grad()
         # xinit = xinit.to(self._dtype).to(self._device)
         # beta = torch.tensor(beta).to(self._dtype).to(self._device)
-        if self.use_fp16:
-            xinit = xinit.half()
-            beta = torch.tensor(beta).half()
+        # if self.grad_scaler is not None:
+        #     ctx = torch.autocast(  # type:ignore
+        #         device_type=self.device,
+        #         dtype=self._dtype
+        #     )
+        # else:
+        #     ctx = nullcontext()
+        #     if self.use_fp16:
+        #         xinit = xinit.half()
+        #         beta = beta.half()
 
-        if self.dynamics_engine is not None:
-            xout, metrics = self.dynamics_engine((xinit, beta))
-        else:
-            xout, metrics = self.dynamics((xinit, beta))
+        # if self.use_fp16:
+        #     xinit = xinit.half()
+        #     beta = torch.tensor(beta).half()
 
-        xprop = metrics.pop('mc_states').proposed.x
-
-        # [2.] Calc loss
-        loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
-
-        if (aw := self.config.loss.aux_weight) > 0:
-            yinit = self.g.random(xout.shape)
-            yinit.requires_grad_(True)
-            if WITH_CUDA:
-                yinit = yinit.cuda()
-
-            if self.use_fp16:
-                yinit = yinit.half()
-
+        with torch.autocast(  # type:ignore
+                dtype=self._dtype,
+                device_type='cuda' if torch.cuda.is_available() else 'cpu'
+        ):
             if self.dynamics_engine is not None:
-                _, metrics_ = self.dynamics_engine((yinit, beta))
+                xout, metrics = self.dynamics_engine((xinit, beta))
             else:
-                _, metrics_ = self.dynamics((yinit, beta))
+                xout, metrics = self.dynamics((xinit, beta))
 
-            yprop = metrics_.pop('mc_states').proposed.x
-            aux_loss = aw * self.loss_fn(x_init=yinit,
-                                         x_prop=yprop,
-                                         acc=metrics_['acc'])
-            loss += aw * aux_loss
+            xprop = metrics.pop('mc_states').proposed.x
+            # [2.] Calc loss
+            loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
+            if (aw := self.config.loss.aux_weight) > 0:
+                yinit = self.g.random(xout.shape).to(self.device)
+                yinit.requires_grad_(True)
+                # if WITH_CUDA:
+                #     yinit = yinit.cuda().half()
+                # if self.use_fp16:
+                #     yinit = yinit.half()
+
+                if self.dynamics_engine is not None:
+                    _, metrics_ = self.dynamics_engine((yinit, beta))
+                else:
+                    _, metrics_ = self.dynamics((yinit, beta))
+                yprop = metrics_.pop('mc_states').proposed.x
+                aux_loss = aw * self.loss_fn(x_init=yinit,
+                                             x_prop=yprop,
+                                             acc=metrics_['acc'])
+                loss += aw * aux_loss
 
         # # [3.] Backpropagate gradients
         # self.accelerator.backward(loss)
-        if self.config.backend.lower() in ['ds', 'deepspeed']:
-            if self.dynamics_engine is not None:
-                self.dynamics_engine.backward(loss)  # type:ignore
-                self.dynamics_engine.step()  # type:ignore
+        if (
+                self.config.backend.lower() in ['ds', 'deepspeed']
+                and self.dynamics_engine is not None
+        ):
+            self.dynamics_engine.backward(loss)  # type:ignore
+            self.dynamics_engine.step()  # type:ignore
         else:
-            loss.backward()
-            if self.config.learning_rate.clip_norm > 0.0:
-                torch.nn.utils.clip_grad.clip_grad_norm(
-                    self.dynamics.parameters(),
-                    max_norm=self.clip_norm
-                )
-            self.optimizer.step()
+            if self.grad_scaler is not None:
+                self.grad_scaler.scale(loss).backward()  # type:ignore
+                # if self.config.learning_rate.clip_norm > 0:
+                #     self.grad_scaler.unscale_(self.optimizer)
+                #     torch.nn.utils.clip_grad.clip_grad_norm_(
+                #         self.dynamics.parameters(),
+                #         max_norm=self.clip_norm
+                #     )
+                self.grad_scaler.step(self.optimizer)
+                self.grad_scaler.update()
+            else:
+                if self.config.learning_rate.clip_norm > 0.0:
+                    torch.nn.utils.clip_grad.clip_grad_norm(
+                        self.dynamics.parameters(),
+                        max_norm=self.clip_norm
+                    )
+                loss.backward()
+                self.optimizer.step()
 
         if isinstance(loss, Tensor):
             loss = loss.item()
@@ -1158,7 +1232,7 @@ class Trainer(BaseTrainer):
             beta = self.config.annealing_schedule.beta_init
 
         if isinstance(beta, float):
-            beta = torch.tensor(beta).to(self._dtype).to(self._device)
+            beta = torch.tensor(beta).to(self._dtype).to(self.device)
 
         self.timers['train'].start()
         xout, metrics = self.train_step((x, beta))
@@ -1429,16 +1503,16 @@ class Trainer(BaseTrainer):
         if x is None:
             x = (
                 self.dynamics.lattice.random()
-            ).to(self._dtype).to(self._device)
+            ).to(self._dtype).to(self.device)
 
         if nchains is not None:
             x = x[:nchains]
 
         if isinstance(beta, float):
-            beta = torch.tensor(beta).to(self._dtype).to(self._device)
+            beta = torch.tensor(beta).to(self._dtype).to(self.device)
 
         pexact = (
-            plaq_exact(beta).to(self._device).to(self._dtype)
+            plaq_exact(beta).to(self.device).to(self._dtype)
             if self.config.dynamics.group == 'U1'
             else None
         )
