@@ -1,51 +1,32 @@
 {
-  "wall_clock_breakdown": true,
+  "dump_state": false,
   "prescale_gradients": false,
+  "wall_clock_breakdown": true,
+  "zero_allow_untested_optimizer": true,
   "flops_profiler": {
     "enabled": true,
     "profile_step": 1,
     "module_depth": -1,
     "top_modules": 1,
     "detailed": true,
-    "output_file": "ds-flops-profiler.log"
+    "output_file": null
   },
   "optimizer": {
-    "type": "AdamW",
-    "params": {
-      "lr": 0.001,
-      "betas": [
-        0.8,
-        0.999
-      ],
-      "eps": 1e-8,
-      "weight_decay": 3e-7
-    }
-  },
-  "scheduler": {
-    "type": "WarmupDecayLR",
-    "params": {
-      "warmup_min_lr": 0.000001,
-      "warmup_max_lr": 0.001,
-      "warmup_num_steps": 1000
-    }
+    "type": "AdamW"
   },
   "fp16": {
     "enabled": true,
     "auto_cast": true,
     "fp16_master_weights_and_grads": false,
-    "loss_scale": 0,
-    "loss_scale_window": 500,
-    "hysteresis": 2,
-    "min_loss_scale": 1,
-    "initial_scale_power": 16
+    "min_loss_scale": 0
   },
   "bf16": {
     "enabled": false
   },
   "comms_logger": {
     "enabled": false,
-    "verbose": false,
-    "prof_all": false,
+    "verbose": true,
+    "prof_all": true,
     "debug": false
   },
   "wandb": {
@@ -64,9 +45,19 @@
     "reduce_scatter": true,
     "allgather_bucket_size": 5e8,
     "reduce_bucket_size": 5e8,
-    "overlap_comm": false,
+    "overlap_comm": true,
     "contiguous_gradients": true,
-    "cpu_offload": false
+    "offload_param": {
+      "device": "nvme",
+      "nvme_path": "/raid/scratch"
+    },
+    "offload_optimizer": {
+      "device": "cpu",
+      "nvme_path": "/raid/scratch/",
+      "pin_memory": false,
+      "buffer_count": 4,
+      "fast_init": true
+    }
   },
   "amp": {
     "enabled": false
