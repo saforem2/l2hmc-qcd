@@ -760,22 +760,11 @@ class Trainer(BaseTrainer):
         xinit, beta = inputs
         beta = torch.tensor(beta).to(self.device)
         xinit = xinit.to(self.device)
-        #   # xinit = xinit.to(self._dtype).to(self.device)
-        #   # beta = beta.to(self._dtype).to(self.device)
-        #   # xinit, beta = xinit.cuda(), torch.tensor(beta).cuda()
-        # if self.use_fp16:
-        #     xinit = xinit.half()
-        #     beta = beta.half()
-        #     # self.dynamics_engine = self.dynamics_engine.to(xinit.dtype)
-
-        # if self.dynamics_engine is not None:
-        #     xout, metrics = self.dynamics_engine((xinit, beta))
-        # else:
-        with torch.autocast(  # type:ignore
-                device_type='cuda' if WITH_CUDA else 'cpu',
-                dtype=torch.float32
-        ):
-            xout, metrics = self.dynamics((xinit, beta))
+        # with torch.autocast(  # type:ignore
+        #         device_type='cuda' if WITH_CUDA else 'cpu',
+        #         dtype=torch.float32
+        # ):
+        xout, metrics = self.dynamics((xinit, beta))
 
         xprop = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
@@ -933,6 +922,7 @@ class Trainer(BaseTrainer):
             nleapfrog: Optional[int] = None,
             dynamic_step_size: Optional[bool] = None,
             nprint: Optional[int] = None,
+            make_plots: bool = True,
     ) -> dict:
         """Evaluate dynamics."""
         assert job_type in ['eval', 'hmc']
@@ -972,12 +962,16 @@ class Trainer(BaseTrainer):
         )
         self.dynamics.to(torch.float32)
         device_type = 'cuda' if WITH_CUDA else 'cpu'
-
-        def eval_fn(z):
-            with torch.autocast(  # type:ignore
+        if device_type == 'cuda':
+            ctx = torch.autocast(  # type:ignore
                 dtype=torch.float32,
                 device_type=device_type,
-            ):
+            )
+        else:
+            ctx = nullcontext()
+
+        def eval_fn(z):
+            with ctx:
                 if job_type == 'hmc':
                     assert eps is not None
                     return self.hmc_step(z, eps=eps, nleapfrog=nleapfrog)
@@ -994,7 +988,7 @@ class Trainer(BaseTrainer):
             return (step % nlog == 0 or step % nprint == 0)
 
         plots = None
-        if is_interactive():
+        if is_interactive() and make_plots:
             plots = plotter.init_plots()
 
         self.dynamics.eval()
