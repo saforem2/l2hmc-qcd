@@ -159,7 +159,8 @@ class LatticeSU3(Lattice):
 
     def _plaquette_field(self, x: Tensor, needs_rect: bool = False):
         # y.shape = [nb, d, nt, nx, nx, nx, 3, 3]
-        x = x.view(self._shape)
+        # x = x.view(self._shape)
+        x = x.view((x.shape[0], *self._shape[1:]))
         # x = tf.reshape(x, self._shape)
         assert isinstance(x, Tensor)
         assert len(x.shape) == 8
@@ -193,7 +194,8 @@ class LatticeSU3(Lattice):
             needs_rect: bool = False
     ) -> tuple[Tensor, Tensor]:
         # y.shape = [nb, d, nt, nx, nx, nx, 3, 3]
-        x = x.view(self._shape)
+        # x = x.view(self._shape)
+        x = x.view((x.shape[0], *self._shape[1:]))
         # x = tf.reshape(x, self._shape)
         assert isinstance(x, Tensor)
         assert len(x.shape) == 8
