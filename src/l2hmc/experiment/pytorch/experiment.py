@@ -145,7 +145,7 @@ class Experiment(BaseExperiment):
         xnet = self.trainer.dynamics._get_xnet(0, first=True)
 
         with torch.autocast(  # type:ignore
-            dtype=torch.float32,
+            # dtype=torch.float32,
             device_type='cuda' if torch.cuda.is_available() else 'cpu'
         ):
             force = self.trainer.dynamics.grad_potential(x, state.beta)
