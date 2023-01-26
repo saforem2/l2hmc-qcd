@@ -308,6 +308,15 @@ class Trainer(BaseTrainer):
                         self.config.steps.nera * self.config.steps.nepoch
                     )
                 })
+        if not self.use_fp16:
+            fp16 = ds_config.get('fp16', None)
+            if fp16 is not None:
+                self.warning(f'Turning of `fp16` in ds_config!')
+                ds_config.update({
+                    'fp16': {
+                        'enabled': False,
+                    }
+                })
         # if ds_config['scheduler'].get('params', None) is not None:
         #     ds_config['scheduler']['params'].update({
         #         'warmup_num_steps': self.config.steps.nepoch,
@@ -735,8 +744,8 @@ class Trainer(BaseTrainer):
             beta = torch.tensor(beta)
 
         if WITH_CUDA:
-            xi = xi.to(self._dtype).to(self.device)
-            beta = beta.to(self._dtype).to(self.device)
+            xi = xi.to(self.device)
+            beta = beta.to(self.device)
             # xi, beta = xi.cuda(), beta.cuda()
 
         xo, metrics = self.dynamics.apply_transition_hmc(
@@ -960,18 +969,23 @@ class Trainer(BaseTrainer):
             and nlog is not None
             and nprint is not None
         )
-        self.dynamics.to(torch.float32)
+        # self.dynamics.to(self._dtype)
         device_type = 'cuda' if WITH_CUDA else 'cpu'
+        # if self.config.dynamics.group.lower() == 'u1':
+        #     dtype = torch.float32
+        # elif self.config.dynamics.group.lower() == 'su3':
+
+        # self.dynamics.to(dtype)
         if device_type == 'cuda':
-            ctx = torch.autocast(  # type:ignore
-                dtype=torch.float32,
+            fpctx = torch.autocast(  # type:ignore
+                # dtype=dtype,
                 device_type=device_type,
             )
         else:
-            ctx = nullcontext()
+            fpctx = nullcontext()
 
         def eval_fn(z):
-            with ctx:
+            with fpctx:
                 if job_type == 'hmc':
                     assert eps is not None
                     return self.hmc_step(z, eps=eps, nleapfrog=nleapfrog)
@@ -992,8 +1006,8 @@ class Trainer(BaseTrainer):
             plots = plotter.init_plots()
 
         self.dynamics.eval()
-        x = self.warmup(beta=beta, x=x)
         with ctx:
+            x = self.warmup(beta=beta, x=x)
             for step in trange(
                     eval_steps,
                     dynamic_ncols=True,
@@ -1115,27 +1129,9 @@ class Trainer(BaseTrainer):
         # 3. Backpropagate gradients and update network weights
         # --------------------------------------------------------------------
         # [1.] Forward call
-        # with self.accelerator.autocast():
-        # xinit = self.g.compat_proj(xinit.requires_grad_(True))
         xinit.requires_grad_(True)
 
         self.optimizer.zero_grad()
-        # xinit = xinit.to(self._dtype).to(self._device)
-        # beta = torch.tensor(beta).to(self._dtype).to(self._device)
-        # if self.grad_scaler is not None:
-        #     ctx = torch.autocast(  # type:ignore
-        #         device_type=self.device,
-        #         dtype=self._dtype
-        #     )
-        # else:
-        #     ctx = nullcontext()
-        #     if self.use_fp16:
-        #         xinit = xinit.half()
-        #         beta = beta.half()
-
-        # if self.use_fp16:
-        #     xinit = xinit.half()
-        #     beta = torch.tensor(beta).half()
 
         with torch.autocast(  # type:ignore
                 dtype=self._dtype,
@@ -1168,7 +1164,6 @@ class Trainer(BaseTrainer):
                 loss += aw * aux_loss
 
         # # [3.] Backpropagate gradients
-        # self.accelerator.backward(loss)
         if (
                 self.config.backend.lower() in ['ds', 'deepspeed']
                 and self.dynamics_engine is not None
@@ -1226,7 +1221,7 @@ class Trainer(BaseTrainer):
             beta = self.config.annealing_schedule.beta_init
 
         if isinstance(beta, float):
-            beta = torch.tensor(beta).to(self._dtype).to(self.device)
+            beta = torch.tensor(beta).to(self.device)
 
         self.timers['train'].start()
         xout, metrics = self.train_step((x, beta))
@@ -1497,13 +1492,13 @@ class Trainer(BaseTrainer):
         if x is None:
             x = (
                 self.dynamics.lattice.random()
-            ).to(self._dtype).to(self.device)
+            ).to(self.device)
 
         if nchains is not None:
             x = x[:nchains]
 
         if isinstance(beta, float):
-            beta = torch.tensor(beta).to(self._dtype).to(self.device)
+            beta = torch.tensor(beta).to(self.device)
 
         pexact = (
             plaq_exact(beta).to(self.device).to(self._dtype)
@@ -1545,6 +1540,7 @@ class Trainer(BaseTrainer):
             nlog: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
             warmup: bool = True,
+            make_plots: bool = True
     ) -> dict:
         """Perform training and return dictionary of results."""
         self.dynamics.train()
@@ -1570,12 +1566,14 @@ class Trainer(BaseTrainer):
         assert nera is not None
         assert train_dir is not None
         plots = None
-        if is_interactive():
+        if is_interactive() and make_plots:
             plots = plotter.init_plots()
             # configs,
             # figsize=(9, 3),
             # dpi=125
 
+        self.info(f'[TRAINING] x.dtype: {x.dtype}')
+        self.info(f'[TRAINING] self._dtype: {self._dtype}')
         for era in range(nera):
             b = torch.tensor(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
