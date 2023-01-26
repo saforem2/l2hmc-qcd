@@ -45,6 +45,8 @@ if [[ $(hostname) == theta* ]]; then
   conda activate /lus/grand/projects/datascience/foremans/locations/thetaGPU/miniconda3/envs/2022-07-01
   VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-01-deepspeed"  # -libaio"
   # module load conda/2023-01-11 ; conda activate base
+  # VENV_DIR="${ROOT}/venvs/thetaGPU/2023-01-11"  # -libaio"
+  # module load conda/2023-01-11 ; conda activate base
   # VENV_DIR="${ROOT}/venvs/thetaGPU/2023-01-11"
   # fi
 
@@ -87,6 +89,8 @@ elif [[ $(hostname) == x* ]]; then
   NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
   MPI_COMMAND=$(which mpiexec)
   # --cpu-bind verbose,list:0,8,16,24 \
+  export CFLAGS="-I${CONDA_PREFIX}/include/"
+  export LDFLAGS="-L${CONDA_PREFIX}/lib/"
   MPI_FLAGS="--envall \
     --verbose \
     -n ${NGPUS} \
@@ -193,14 +197,16 @@ echo "┃  - PARENT=${PARENT}"
 echo "┃  - ROOT=${ROOT}"
 echo "┃  - LOGDIR=${LOGDIR}"
 echo "┃  - LOGFILE=${LOGFILE}"
-echo "┃━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "┃  - hostname: $(hostname)"
 echo "┃  - DATE: ${TSTAMP}"
 echo "┃  - NCPUS: ${NCPUS}"
 echo "┃  - NRANKS: ${NRANKS}"
 echo "┃  - NGPUS PER RANK: ${NGPU_PER_RANK}"
 echo "┃  - NGPUS TOTAL: ${NGPUS}"
-echo "┃━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "┃  - MAIN: ${MAIN}"
 echo "┃  - Writing logs to ${LOGFILE}"
 echo "┃  - python3: $(which python3)"
@@ -211,10 +217,15 @@ echo "┗━━━━━━━━━━━━━━━━━━━━━━━�
 # printf '%.s─' $(seq 1 $(tput cols))
 echo -e '\n'
 
+echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo '┃ To view output: `tail -f $(tail -1 logs/latest)`'
+echo "┃ Latest logfile: $(tail -1 ./logs/latest)"
+echo "┃ tail -f $(tail -1 logs/latest)"
+echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Run executable command
-${EXEC} $@ 2>&1 > ${LOGFILE} ; ret_code=$?
+${EXEC} $@ > ${LOGFILE} & #; ret_code=$?
 
-if [[ $ret_code != 0 ]]; then exit $ret_code; fi
+# if [[ $ret_code != 0 ]]; then exit $ret_code; fi
 
-wait
+# wait
