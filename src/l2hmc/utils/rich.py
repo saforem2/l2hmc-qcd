@@ -44,6 +44,9 @@ os.environ['COLUMNS'] = f'{WIDTH}'
 # os.environ['COLUMNS'] = f'{size.columns}'
 
 STYLES = {
+    'color': Style(color='#bdbdbd'),
+    'filepath': Style(color='#50FA7B', bold=True),
+    'filename': Style(color='#BD93F9', bold=True),
     'info': Style(color='#29B6F6'),
     'warning': Style(color='#FD971F'),
     'error': Style(color='#FF5252', bold=True),
@@ -55,7 +58,7 @@ STYLES = {
     'log.time': Style(color='#505050'),
     'repr.attrib_name': Style(color="#666666"),
     "hidden": Style(color="#383b3d", dim=True),
-    "num": Style(color="#AE81FF"),
+    "num": Style(color='#81E9FD', bold=True),
     'repr.number': Style(color='#AE81FF', bold=False),
     "highlight": Style(color="#111111", bgcolor="#FFFF00", bold=True),
 }
@@ -78,7 +81,8 @@ def get_console(*args, **kwargs) -> Console:
 
 
 def is_interactive() -> bool:
-    from IPython import get_ipython
+    from IPython.core.getipython import get_ipython
+    # from IPython import get_ipython
     eval = os.environ.get('INTERACTIVE', None) is not None
     bval = get_ipython() is not None
     return (eval or bval)
