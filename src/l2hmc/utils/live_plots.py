@@ -37,14 +37,16 @@ class LivePlotData:
     plot_obj: PlotObject
 
 
-xType = Union[Any, np.ndarray]
+# xType = Union[Any, np.ndarray]
+ArrayLike = Union[np.ndarray, Sequence, list]
 
 
-def moving_average(x: xType, window: int = 10):
-    if len(x.shape) > 0 and x.shape[0] < window:
-        return np.mean(x, keepdims=True)
+def moving_average(x: ArrayLike, window: int = 10):
+    xarr = np.array(x)
+    if len(xarr.shape) > 0 and xarr.shape[0] < window:
+        return np.mean(xarr, keepdims=True)
 
-    return np.convolve(x, np.ones(window), 'valid') / window
+    return np.convolve(xarr, np.ones(window), 'valid') / window
 
 
 def init_plots(
@@ -81,32 +83,35 @@ def init_plots(
 
 def update_plot(
         y: np.ndarray | list,
-        fig: plt.Figure,
         ax: plt.Axes,
         line: list[plt.Line2D],
         display_id: DisplayHandle,
         logging_steps: int = 1,
-):  # -> tuple[plt.Figure, plt.Axes] | None:
+        fig: Optional[plt.Figure] = None,
+) -> None:
     if not is_interactive():
         return
 
     if isinstance(y, list):
         if isinstance(y[0], np.ndarray):
-            y = np.stack(y)
+            yarr: np.ndarray = np.stack(y)
         else:
-            y = np.array(y)
+            yarr: np.ndarray = np.array(y)
+    else:
+        yarr = y
 
-    if len(y.shape) == 2:
-        y = y.mean(-1)
+    if len(yarr.shape) == 2:
+        yarr = yarr.mean(-1)
 
     assert isinstance(y, np.ndarray)
-    x = np.arange(y.shape[0])
-    _ = line[0].set_ydata(y)
-    _ = line[0].set_xdata(logging_steps * x)
-    _ = ax.relim()
-    _ = ax.autoscale_view()
-    _ = fig.canvas.draw()
-    _ = display_id.update(fig)
+    x = np.arange(yarr.shape[0])
+    line[0].set_ydata(yarr)
+    line[0].set_xdata(logging_steps * x)
+    ax.relim()
+    ax.autoscale_view()
+    if fig is not None:
+        fig.canvas.draw()
+        display_id.update(fig)
 
     # return fig, ax
 
@@ -116,13 +121,10 @@ def update_joint_plots(
         plot_data2: LivePlotData,
         display_id: DisplayHandle,
         logging_steps: int = 1,
-        fig: Optional[plt.Figure] = None,
+        fig: Optional[plt.Figure | plt.FigureBase] = None,
 ):
     if not is_interactive():
         return
-
-    if fig is None:
-        fig = plt.gcf()
 
     plot_obj1 = plot_data1.plot_obj
     plot_obj2 = plot_data2.plot_obj
@@ -159,8 +161,17 @@ def update_joint_plots(
     plot_obj1.ax.autoscale_view()
     plot_obj2.ax.autoscale_view()
 
-    fig.canvas.draw()
-    display_id.update(fig)  # need to force colab to update plot
+    # if fig is None:
+    #     fig = plt.gcf()
+
+    if fig is not None:
+        fig.canvas.draw()  # type:ignore
+        # if isinstance(fig, plt.Figure):
+        # elif isinstance(fig, plt.FigureBase):
+        #     fig1 = fig.get_figure()
+        #     fig1.canvas.draw()
+
+        display_id.update(fig)  # need to force colab to update plot
 
     # return fig
 
@@ -186,7 +197,7 @@ def init_live_plot(
     # ax = axs[0]
     # fig, ax = canvas
     assert isinstance(ax, plt.Axes)
-    line = ax.plot([0], [0], c=color, animated=True, **kwargs)
+    line, = ax.plot([0], [0], c=color, animated=True, **kwargs)
 
     # title = None
     # if configs is not None:
@@ -198,21 +209,21 @@ def init_live_plot(
 
     if title is not None and len(title) > 0:
         if isinstance(title, list):
-            _ = fig.suptitle('\n'.join(title))
+            fig.suptitle('\n'.join(title))
         else:
-            _ = fig.suptitle(title)
+            fig.suptitle(title)
 
     if ylabel is not None:
-        _ = ax.set_ylabel(ylabel, color=color)
+        ax.set_ylabel(ylabel, color=color)
 
-    _ = ax.tick_params(axis='y', labelcolor=color)
+    ax.tick_params(axis='y', labelcolor=color)
 
-    _ = ax.autoscale(True, axis='y')
+    ax.autoscale(True, axis='y')
     #  plt.Axes.autoscale(True, axis='y')
     # plt.show()
     display_id = display(fig, display_id=True)
     return {
-        'fig': fig,
+        # 'fig': fig,
         'ax': ax,
         'line': line,
         'display_id': display_id,
@@ -239,7 +250,7 @@ def init_live_joint_plots(
         xlabel: Optional[str] = None,
         colors: Optional[Sequence[str]] = None,
         title: Optional[str] = None,
-        fig: Optional[plt.Figure] = None,
+        fig: Optional[plt.Figure | plt.FigureBase] = None,
         ax: Optional[plt.Axes] = None,
 ):
     #  assert configs is not None if (use_title or set_xlim)
@@ -266,26 +277,31 @@ def init_live_joint_plots(
             constrained_layout=True
         )
         ax = ax0 if isinstance(ax0, plt.Axes) else ax0[0]
-
     else:
         fig = plt.gcf()
+
+    if ax is None:
         ax = plt.gca()
 
-    assert isinstance(ax, plt.Axes)
+    # else:
+    #     fig = plt.gcf()
+    #     ax = plt.gca()
+
+    assert ax is not None and isinstance(ax, plt.Axes)
     ax1 = ax.twinx()
     line0 = ax.plot([0], [0], alpha=0.9, c=colors[0], animated=True)
     line1 = ax1.plot([0], [0], alpha=0.9, c=colors[1], animated=True)  # dummy
 
-    _ = ax.set_ylabel(ylabels[0], color=colors[0])
-    _ = ax1.set_ylabel(ylabels[1], color=colors[1])
+    ax.set_ylabel(ylabels[0], color=colors[0])
+    ax1.set_ylabel(ylabels[1], color=colors[1])
 
-    _ = ax.tick_params(axis='y', labelcolor=colors[0])
-    _ = ax1.tick_params(axis='y', labelcolor=colors[1])
+    ax.tick_params(axis='y', labelcolor=colors[0])
+    ax1.tick_params(axis='y', labelcolor=colors[1])
 
-    _ = ax.grid(False)
-    _ = ax1.grid(False)
+    ax.grid(False)
+    ax1.grid(False)
 
-    _ = ax.set_xlabel('Step' if xlabel is None else xlabel)
+    ax.set_xlabel('Step' if xlabel is None else xlabel)
 
     # if set_xlim:
     #     assert configs is not None
@@ -300,7 +316,8 @@ def init_live_joint_plots(
     #         title = '\n'.join(title)
 
     if title is not None:
-        _ = fig.suptitle(title, font_size='small')
+        if fig is not None:
+            fig.suptitle(title, font_size='small')
 
     #  title = get_title(param, config)
     #  if len(title) > 0:
@@ -363,7 +380,7 @@ def update_plots(
     #         )
     for key, val in history.items():
         if key in plots and key != 'loss':
-            update_plot(
+            _ = update_plot(
                 y=val,
                 # window=window,
                 logging_steps=logging_steps,
