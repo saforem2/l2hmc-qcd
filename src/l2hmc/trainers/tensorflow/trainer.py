@@ -792,7 +792,7 @@ class Trainer(BaseTrainer):
                                 logging_steps=nlog,
                             )
                         else:
-                            _ = plotter.update_plots(
+                            plotter.update_plots(
                                 history=self.histories[job_type].history,
                                 plots=plots,
                                 logging_steps=nlog,
@@ -993,6 +993,7 @@ class Trainer(BaseTrainer):
             if warmup:
                 x = self.warmup(beta=beta, x=x)
 
+            summary = ""
             for epoch in trange(
                     nepoch,
                     dynamic_ncols=True,
@@ -1005,7 +1006,8 @@ class Trainer(BaseTrainer):
                 self._gstep += 1
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
-                if (should_print(epoch) or should_log(epoch)):
+                # if (should_print(epoch) or should_log(epoch)):
+                if should_log(epoch):
                     record = {
                         'era': era,
                         'epoch': epoch,
@@ -1030,18 +1032,11 @@ class Trainer(BaseTrainer):
                     rows[self._gstep] = avgs
                     summaries.append(summary)
 
-                    if (
-                            should_print(epoch)
-                            # and not isinstance(ctx, Live)
-                    ):
-                        self.info(summary)
-
                     table = self.update_table(
                         table=table,
                         step=epoch,
                         avgs=avgs
                     )
-
                     if avgs.get('acc', 1.0) < 1e-5:
                         self.reset_optimizer()
                         self.warning('Chains are stuck! Re-drawing x !')
@@ -1060,6 +1055,10 @@ class Trainer(BaseTrainer):
                                 self.histories['train'].history,
                                 plots=plots,
                             )
+
+                if should_print(epoch):
+                    refresh_view()
+                    log.info(summary)
 
                 if isinstance(ctx, Live):
                     ctx.console.clear()
@@ -1161,7 +1160,7 @@ class Trainer(BaseTrainer):
         # btensor = tf.cast(beta, dtype=TF_FLOAT)
         pexact = plaq_exact(beta)
         for step in range(nsteps):
-            x, metrics = self.dynamics((x, beta))
+            x, metrics = self.dynamics((x, beta))  # type:ignore
             plaqs = metrics.get('plaqs', None)
             assert (
                 x is not None
@@ -1192,7 +1191,7 @@ class Trainer(BaseTrainer):
             nlog: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
             warmup: bool = True,
-            # restore: bool = True,
+            make_plots: bool = True,
     ) -> dict:
         """Perform training and return dictionary of results."""
         # _, _ = self.call_dynamics(
@@ -1223,6 +1222,10 @@ class Trainer(BaseTrainer):
         assert nera is not None
         assert train_dir is not None
 
+        plots = None
+        if is_interactive() and make_plots:
+            plots = plotter.init_plots()
+
         for era in range(nera):
             b = tf.constant(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
@@ -1249,6 +1252,7 @@ class Trainer(BaseTrainer):
                 nlog=nlog,
                 nprint=nprint,
                 warmup=warmup,
+                plots=plots
             )
 
             self.rows['train'][str(era)] = edata['rows']

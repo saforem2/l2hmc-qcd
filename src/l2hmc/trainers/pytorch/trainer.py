@@ -273,21 +273,21 @@ class Trainer(BaseTrainer):
 
         if self.config.init_wandb:
             ds_config['wandb'].update({
-                "project": pname,
-                "group": f'{self.config.framework}/{self.config.backend}',
+                'enabled': True,
+                'project': pname,
+                'group': f'{self.config.framework}/{self.config.backend}',
             })
         else:
             ds_config['wandb'] = {}
-        # self.ds_config.update({
-        #     'tensorboard': {
-        #         'enabled': True,
-        #         'output_path': Path(os.getcwd()),
-        #     },
-        #     'csv_monitor': {
-        #         'enabled': True,
-        #         'output_path': Path(os.getcwd()).joinpath('csv_monitor'),
-        #     }
-        # })
+
+        ds_config['tensorboard'] = {
+            'enabled': True,
+            'output_path': Path(os.getcwd()).resolve().as_posix(),
+        }
+        ds_config['csv_monitor'] = {
+            'enabled': True,
+            'output_path': Path(os.getcwd()).joinpath('csv_monitor').resolve().as_posix(),
+        }
 
         ds_config.update({
             'gradient_accumulation_steps': 1,
@@ -325,6 +325,7 @@ class Trainer(BaseTrainer):
         #         )
         #     })
         self.config.set_ds_config(ds_config)
+        self.ds_config = ds_config
         return ds_config
 
     def warning(self, s: str) -> None:
@@ -1073,13 +1074,13 @@ class Trainer(BaseTrainer):
                             and plots is not None
                     ):
                         if len(self.histories[job_type].history.keys()) == 0:
-                            _ = plotter.update_plots(
+                            plotter.update_plots(
                                 history=metrics,
                                 plots=plots,
                                 logging_steps=nlog,
                             )
                         else:
-                            _ = plotter.update_plots(
+                            plotter.update_plots(
                                 history=self.histories[job_type].history,
                                 plots=plots,
                                 logging_steps=nlog,
@@ -1104,8 +1105,6 @@ class Trainer(BaseTrainer):
     ) -> tuple[Tensor, dict]:
         """Logic for performing a single training step"""
         xinit, beta = inputs
-        # xinit = xinit.to(self._device).to(self._dtype)
-        # # beta = beta.to(self._device).to(self._dtype)
         xinit = self.g.compat_proj(xinit.reshape(self.xshape))
         beta = torch.tensor(beta) if isinstance(beta, float) else beta
         if WITH_CUDA:
@@ -1135,6 +1134,7 @@ class Trainer(BaseTrainer):
 
         with torch.autocast(  # type:ignore
                 dtype=self._dtype,
+                enabled=(not self._dtype == torch.float64),
                 device_type='cuda' if torch.cuda.is_available() else 'cpu'
         ):
             if self.dynamics_engine is not None:
@@ -1361,21 +1361,11 @@ class Trainer(BaseTrainer):
                     rows[self._gstep] = avgs
                     summaries.append(summary)
 
-                    # if (
-                    #         should_print(epoch)
-                    #         # and not isinstance(ctx, Live)
-                    # ):
-                    #     log.info(summary)
                     table = self.update_table(
                         table=table,
                         avgs=avgs,
                         step=epoch,
                     )
-                    # if isinstance(ctx, Live):
-                    #     ctx.console.clear()
-                    #     ctx.console.clear_live()
-                    #     ctx.refresh()
-
                     if avgs.get('acc', 1.0) < 1e-5:
                         if stuck_iters < patience:
                             stuck_iters += 1
