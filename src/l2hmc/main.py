@@ -140,10 +140,11 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
                 ex.run.log({'model_improvement': improvement})
         log.critical(f'Model improvement: {improvement:.8f}')
 
-    try:
-        ex.visualize_model()
-    except Exception as e:
-        log.exception(e)
+    if ex.trainer._is_chief:
+        try:
+            ex.visualize_model()
+        except Exception as e:
+            log.exception(e)
 
     return Path(ex._outdir).as_posix()
 
