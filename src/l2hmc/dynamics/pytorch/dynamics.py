@@ -111,7 +111,6 @@ class Dynamics(nn.Module):
             self,
             potential_fn: Callable,
             config: cfgs.DynamicsConfig,
-            # backend: str = 'horovod',
             network_factory: Optional[NetworkFactory] = None,
     ):
         """Initialization method."""
@@ -142,7 +141,6 @@ class Dynamics(nn.Module):
 
             self.register_module('xnet', self.networks['xnet'])
             self.register_module('vnet', self.networks['vnet'])
-            log.debug('Built networks.')
         else:
             self._networks_built = False
             self.xnet = dummy_network
@@ -152,7 +150,6 @@ class Dynamics(nn.Module):
                 'vnet': self.vnet,
             }
 
-        log.debug(f'dynamics._networks_built: {self._networks_built}')
         self.masks = self._build_masks()
         self._dtype: torch.dtype = torch.get_default_dtype()
         if self._networks_built:
@@ -165,7 +162,7 @@ class Dynamics(nn.Module):
             nn.parameter.Parameter(
                 torch.tensor(
                     self.config.eps,
-                ), # .to(self._dtype).to(self._device),  # .clamp(min=0.0),
+                ),  # .to(self._dtype).to(self._device),  # .clamp(min=0.0),
                 requires_grad=(not self.config.eps_fixed)
             )
             for _ in range(self.config.nleapfrog)
@@ -374,8 +371,8 @@ class Dynamics(nn.Module):
             inputs: tuple[Tensor, Tensor]
     ) -> tuple[Tensor, dict]:
         x, beta = inputs
-        x = x.to(self._device) #.to(self._dtype)
-        beta = beta.to(self._device) #.to(self._dtype)
+        x = x.to(self._device)  # .to(self._dtype)
+        beta = beta.to(self._device)  # .to(self._dtype)
         if self.config.merge_directions:
             outputs = self.apply_transition_fb(inputs)
         else:
@@ -759,8 +756,8 @@ class Dynamics(nn.Module):
                 history = self.update_history(metrics=metrics, history=history)
 
         # Flip momentum
-        m1 = -1.0 * torch.ones_like(state_.v)
-        state_ = State(state_.x, (m1 * state_.v), state_.beta)
+        # m1 = -1.0 * torch.ones_like(state_.v)
+        state_ = State(state_.x, (-state_.v), state_.beta)
 
         # Backward
         for step in range(self.config.nleapfrog):
@@ -773,7 +770,7 @@ class Dynamics(nn.Module):
                 metrics = self.get_metrics(
                     state_,
                     sumlogdet,
-                    step=(self.config.nleapfrog-step-1),
+                    step=(self.config.nleapfrog - step - 1),
                     extras=extras,
                 )
                 history = self.update_history(metrics=metrics, history=history)
@@ -855,7 +852,7 @@ class Dynamics(nn.Module):
     @staticmethod
     def _get_direction_masks(batch_size: int) -> tuple[Tensor, Tensor]:
         """Returns (forward_mask, backward_mask)."""
-        fwd = (torch.rand(batch_size) > 0.5) #.to(torch.float)
+        fwd = (torch.rand(batch_size) > 0.5)  # .to(torch.float)
         bwd = torch.ones_like(fwd) - fwd
 
         return fwd, bwd
@@ -923,7 +920,6 @@ class Dynamics(nn.Module):
             s, t, q: Scaling, Translation, and Transformation functions
         """
         x, force = inputs
-
         if self.config.group == 'SU3':
             x = self.group_to_vec(x)
             force = self.group_to_vec(force)
@@ -956,9 +952,9 @@ class Dynamics(nn.Module):
         Returns:
             s, t, q: Scaling, Translation, and Transformation functions
         """
+        x, v = inputs
         xnet = self._get_xnet(step, first)
         assert callable(xnet)
-        x, v = inputs
 
         if self.config.group == 'U1':
             x = self.g.group_to_vec(x)
@@ -990,16 +986,12 @@ class Dynamics(nn.Module):
         m, mb = self._get_mask(step)
         m, mb = m.to(self.device), mb.to(self.device)
         sumlogdet = torch.zeros(state.x.shape[0], device=self.device)
-
         state, logdet = self._update_v_fwd(step, state)
         sumlogdet = sumlogdet + logdet
-
         state, logdet = self._update_x_fwd(step, state, m, first=True)
         sumlogdet = sumlogdet + logdet
-
         state, logdet = self._update_x_fwd(step, state, mb, first=False)
         sumlogdet = sumlogdet + logdet
-
         state, logdet = self._update_v_fwd(step, state)
         sumlogdet = sumlogdet + logdet
 
@@ -1016,20 +1008,16 @@ class Dynamics(nn.Module):
         """
         # NOTE: Reverse the step count, i.e. count from end of trajectory
         step_r = self.config.nleapfrog - step - 1
-
         m, mb = self._get_mask(step_r)
         m, mb = m.to(self.device), mb.to(self.device)
         sumlogdet = torch.zeros((state.x.shape[0],), device=self.device)
 
         state, logdet = self._update_v_bwd(step_r, state)
         sumlogdet = sumlogdet + logdet
-
         state, logdet = self._update_x_bwd(step_r, state, mb, first=False)
         sumlogdet = sumlogdet + logdet
-
         state, logdet = self._update_x_bwd(step_r, state, m, first=True)
         sumlogdet = sumlogdet + logdet
-
         state, logdet = self._update_v_bwd(step_r, state)
         sumlogdet = sumlogdet + logdet
 
@@ -1056,15 +1044,12 @@ class Dynamics(nn.Module):
         assert isinstance(self.veps, nn.ParameterList)
         eps = self.veps[step]
         force = self.grad_potential(state.x, state.beta)
-        # force = force.reshape_as(state.x)
-
+        # vNet: (x, F) --> (s, t, q)
         s, t, q = self._call_vnet(step, (state.x, force))
-
         logjac = eps * s / 2.  # jacobian factor, also used in exp_s below
         logdet = self.flatten(logjac).sum(1)
-        jac = logjac.exp_()
         force = force.reshape_as(state.v)
-        exp_s = jac.reshape_as(state.v)
+        exp_s = (logjac.exp_()).reshape_as(state.v)
         exp_q = (eps * q).exp_().reshape_as(state.v)
         t = t.reshape_as(state.v)
         vf = exp_s * state.v - 0.5 * eps * (force * exp_q + t)
@@ -1078,12 +1063,10 @@ class Dynamics(nn.Module):
         force = self.grad_potential(state.x, state.beta)
         x = state.x
         v = state.v
-
         s, t, q = self._call_vnet(step, (x, force))
-
         logjac = (-eps * s / 2.)  # jacobian factor, also used in exp_s below
-        v = v.reshape((-1, *self.xshape[1:]))
         logdet = logjac.sum(1)
+        v = v.reshape((-1, *self.xshape[1:]))
         exp_s = logjac.exp_().reshape_as(v)
         exp_q = (eps * q).exp_().reshape_as(v)
         t = t.reshape_as(v)
@@ -1113,7 +1096,7 @@ class Dynamics(nn.Module):
         q = eps * q
         exp_s = s.exp_()
         exp_q = q.exp_()
-        if isinstance(self.g, U1Phase):
+        if self.config.group == 'U1':
             if self.config.use_ncp:
                 halfx = (x / 2.).flatten(1)
                 _x = 2. * (halfx.tan() * exp_s).atan()
@@ -1166,7 +1149,7 @@ class Dynamics(nn.Module):
         q = eps * q
         exp_s = s.exp()
         exp_q = q.exp()
-        if isinstance(self.g, U1Phase):
+        if self.config.group == 'U1':
             if self.config.use_ncp:
                 halfx = x / 2.
                 halfx_scale = exp_s * halfx.tan()
@@ -1185,7 +1168,7 @@ class Dynamics(nn.Module):
         elif self.config.group == 'SU3':
             exp_s = exp_s.reshape(state.x.shape).to(state.x.dtype)
             exp_q = exp_q.reshape(state.x.shape).to(state.x.dtype)
-            t = t.reshape_as(exp_s).to(state.x.dtype)
+            t = t.reshape_as(state.x).to(state.x.dtype)
             eps = eps.to(state.x.dtype)
             xnew = exp_s * self.g.update_gauge(
                 state.x,
