@@ -23,24 +23,31 @@ echo "Job running in: ${DIR}"
 
 NCPUS=$(getconf _NPROCESSORS_ONLN)
 
-# if [[ ! -z "${CONDA_EXE}" ]] ; # && [[ $(hostname) == theta* ]] ; then
+# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+# ┃ Machine Specific Configuration ┃
+# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+# - Because different ALCF resources have different software 
+# stacks, we setup our environment differently depending on the
+# machine in use.
+#
+# - In particular, we must:
+#   1. Identify the machine / ALCF resource being used
+#   2. Load the proper conda module and activate the base env
+#   3. Identify the proper mpi executable
+#   4. Specify the correct flags to pass to our mpi executable
+#
+# - We consider three cases:
+#   1. If $(hostname) startswith theta*, we're on ThetaGPU
+#   2. If $(hostname) startswith x*, we're on Polaris
+# ---------------------------------------------------------------
 
-#   if [[ $(hostname) == theta* ]]; then
-#     module load conda/2022-07-01 ; conda activate base
-#     VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-01"  # -libaio"
 
-#   elif [[ $(hostname) == x* ]]; then
-#     module load conda ; conda activate base
-#     VENV_DIR="${ROOT}/venvs/polaris/2023-01-10"
-#   fi
-# fi
-
-
-# ---- Check if running on ThetaGPU ----------------------------
+# ┏━━━━━━━━━━┓
+# ┃ ThetaGPU ┃
+# ┗━━━━━━━━━━┛ {{{
 if [[ $(hostname) == theta* ]]; then
   MACHINE="ThetaGPU"
   HOSTFILE="${COBALT_NODEFILE}"
-  # if [[ ! -z "${CONDA_EXE}" ]] ; then
   module load conda/2022-07-01 ; conda activate base
   conda activate /lus/grand/projects/datascience/foremans/locations/thetaGPU/miniconda3/envs/2022-07-01
   VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-01-deepspeed"  # -libaio"
@@ -68,20 +75,16 @@ if [[ $(hostname) == theta* ]]; then
     -x https_proxy \
     -x PATH \
     -x LD_LIBRARY_PATH"
+# }}}
 
-# ---- Check if running on Polaris -----------------------------
+# ┏━━━━━━━━━┓
+# ┃ Polaris ┃
+# ┗━━━━━━━━━┛ {{{
 elif [[ $(hostname) == x* ]]; then
-  # echo "----------------------"
-  # echo "| Running on Polaris |"
-  # echo "----------------------"
   MACHINE="Polaris"
 
-  # if [[ ! -z "${CONDA_EXE}" ]] ; then
-    # module load conda/2023-01-10; conda activate base
-    # VENV_DIR="${ROOT}/venvs/polaris/2023-01-10"
   module load conda/2022-09-08; conda activate base
   VENV_DIR="${ROOT}/venvs/polaris/2022-09-08"
-  # fi
 
   NRANKS=$(wc -l < ${PBS_NODEFILE})
   HOSTFILE=${PBS_NODEFILE}
@@ -97,22 +100,24 @@ elif [[ $(hostname) == x* ]]; then
     --depth ${NCPUS} \
     --ppn ${NGPU_PER_RANK} \
     --hostfile ${HOSTFILE}"
-  # module load conda/2022-09-08; conda activate base
   unset MPICH_GPU_SUPPORT_ENABLED
   export IBV_FORK_SAFE=1
   export NCCL_COLLNET_ENABLE=1
+# }}}
 
-# ---- Check if running on MacOS --------------------------------
+# ┏━━━━━━━━━┓
+# ┃ ??????? ┃
+# ┗━━━━━━━━━┛
 else
   MACHINE=$(hostname)
   VENV_DIR="${ROOT}/venv/"
   if [[ $(uname) == Darwin* ]]; then
-    # ---- Check if environment has an mpirun executable ----------
+    # Check if environment has an mpirun executable
     if [[ -x $(which mpirun) ]]; then
       MPI_COMMAND=$(which mpirun)
       MPI_FLAGS="-np ${NCPUS}"
     fi
-  # ---- Otherwise, run without MPI -------------------------------
+  # Otherwise, run without MPI
   else
       MPI_COMMAND=""
       MPI_FLAGS=""
@@ -130,23 +135,23 @@ fi
 #
 # 2. Perform Editable install
 # -----------------------------------------------------------
-if [[ ! -z "${VIRTUAL_ENV}" ]] ; then
-  if [[ -f "${VENV_DIR}/bin/activate" ]]; then
-    echo "Found venv at: ${VENV_DIR}"
+# if [[ ! -z "${VIRTUAL_ENV}" ]] ; then
+if [[ -f "${VENV_DIR}/bin/activate" ]]; then
+  echo "Found venv at: ${VENV_DIR}"
+  source "${VENV_DIR}/bin/activate"
+else
+  if [[ -f "${ROOT}/venv/bin/activate" ]]; then
+    echo "Found venv at: ${ROOT}/venv/, using that"
     source "${VENV_DIR}/bin/activate"
   else
-    if [[ -f "${ROOT}/venv/bin/activate" ]]; then
-      echo "Found venv at: ${ROOT}/venv/, using that"
-      source "${VENV_DIR}/bin/activate"
-    else
-      echo "Creating new venv at: ${VENV_DIR}"
-      python3 -m venv "${ROOT}/venv/" --system-site-packages
-      source "${VENV_DIR}/bin/activate"
-      python3 -m pip install --upgrade pip setuptools wheel
-      python3 -m pip install -e "${ROOT}"
-    fi
+    echo "Creating new venv at: ${VENV_DIR}"
+    python3 -m venv "${ROOT}/venv/" --system-site-packages
+    source "${VENV_DIR}/bin/activate"
+    python3 -m pip install --upgrade pip setuptools wheel
+    python3 -m pip install -e "${ROOT}"
   fi
 fi
+# fi
 
 # ---- Environment settings -----------------------------------------------
 export OMP_NUM_THREADS=$NCPUS
@@ -154,6 +159,7 @@ export WIDTH=$COLUMNS
 export COLUMNS=$COLUMNS
 echo "WIDTH: ${COLUMNS}"
 export NCCL_DEBUG=ERROR
+export MACHINE="${MACHINE}"
 
 export WANDB_CACHE_DIR="${ROOT}/.cache/wandb"
 # export WANDB_
@@ -167,6 +173,7 @@ export TF_ENABLE_AUTO_MIXED_PRECISION=1
 
 LOGDIR="${DIR}/logs"
 LOGFILE="${LOGDIR}/${TSTAMP}-${HOST}_ngpu${NGPUS}_ncpu${NCPUS}.log"
+export LOGFILE=$LOGFILE
 if [ ! -d "${LOGDIR}" ]; then
   mkdir -p ${LOGDIR}
 fi
@@ -183,6 +190,7 @@ echo $LOGFILE >> "${DIR}/logs/latest"
 # -------------------------------
 EXEC="${MPI_COMMAND} ${MPI_FLAGS} $(which python3) ${MAIN}"
 
+export EXEC="$EXEC $@"
 
 # ---- Print job information -------------------------------------------------
 echo -e '\n'
