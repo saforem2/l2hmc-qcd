@@ -575,6 +575,7 @@ class ExperimentConfig(BaseConfig):
     # ----- Optional (w/ defaults) ------------
     # conv: Optional[ConvolutionConfig] = None
     restore: bool = True
+    save: bool = True
     c1: float = 0.0
     port: str = '2345'
     compile: bool = True
