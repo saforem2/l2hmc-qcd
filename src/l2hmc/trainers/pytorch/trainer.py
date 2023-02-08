@@ -12,6 +12,7 @@ import os
 import deepspeed
 import json
 from pathlib import Path
+import socket
 import time
 from typing import Any, Callable, Optional
 from rich.console import ConsoleRenderable
@@ -165,6 +166,8 @@ class Trainer(BaseTrainer):
         else:
             self._gstep: int = 0
 
+        self._estep = 0
+        self._hstep = 0
         if self.config.dynamics.group == 'U1':
             self.warning('Using `torch.optim.Adam` optimizer')
             self._optimizer = torch.optim.Adam(
@@ -280,13 +283,14 @@ class Trainer(BaseTrainer):
         else:
             ds_config['wandb'] = {}
 
+        opath = Path(os.getcwd()).joinpath('ds_outputs').resolve()
         ds_config['tensorboard'] = {
             'enabled': True,
-            'output_path': Path(os.getcwd()).resolve().as_posix(),
+            'output_path': opath.joinpath('ds_tensorboard').as_posix(),
         }
         ds_config['csv_monitor'] = {
             'enabled': True,
-            'output_path': Path(os.getcwd()).joinpath('csv_monitor').resolve().as_posix(),
+            'output_path': opath.joinpath('ds_csv_monitor').as_posix(),
         }
 
         ds_config.update({
@@ -311,12 +315,32 @@ class Trainer(BaseTrainer):
         if not self.use_fp16:
             fp16 = ds_config.get('fp16', None)
             if fp16 is not None:
-                self.warning(f'Turning of `fp16` in ds_config!')
+                self.warning('Turning of `fp16` in ds_config!')
                 ds_config.update({
                     'fp16': {
                         'enabled': False,
                     }
                 })
+
+        zero_opt_config = ds_config.get('zero_optimization', None)
+        if zero_opt_config is not None:
+            hostname = str(
+                socket.gethostbyaddr(socket.gethostname())[0]
+            ).lower()
+            if hostname.startswith('thetagpu'):
+                nvme_path = Path('/raid/scratch/').resolve()
+            elif hostname.startswith('x'):
+                nvme_path = Path('/local/scratch').resolve()
+            else:
+                nvme_path = Path('/local/scratch').resolve()
+
+            if nvme_path.exists():
+                nvme_path = nvme_path.as_posix()
+                self.info(f'[{hostname}] Setting NVMe path to: {nvme_path}')
+                zero_opt_config['offload_param']['nvme_path'] = nvme_path
+                zero_opt_config['offload_optimizer']['nvme_path'] = nvme_path
+                ds_config['zero_optimization'] = zero_opt_config
+
         # if ds_config['scheduler'].get('params', None) is not None:
         #     ds_config['scheduler']['params'].update({
         #         'warmup_num_steps': self.config.steps.nepoch,
@@ -444,7 +468,7 @@ class Trainer(BaseTrainer):
             metrics: Optional[dict] = None,
             run: Optional[Any] = None,
     ) -> None:
-        if not self._is_chief:
+        if not self._is_chief or not self.config.save:
             return
 
         tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
@@ -997,7 +1021,7 @@ class Trainer(BaseTrainer):
         def refresh_view():
             if isinstance(ctx, Live):
                 ctx.refresh()
-                ctx.console.clear_live()
+                # ctx.console.clear_live()
 
         def _should_emit(step):
             return (step % nlog == 0 or step % nprint == 0)
@@ -1137,6 +1161,10 @@ class Trainer(BaseTrainer):
                 enabled=(not self._dtype == torch.float64),
                 device_type='cuda' if torch.cuda.is_available() else 'cpu'
         ):
+            if self._gstep == 0:
+                self.warning(f'[TRAINING] x.dtype: {xinit.dtype}')
+                self.warning(f'[TRAINING] x.device: {xinit.device}')
+
             if self.dynamics_engine is not None:
                 xout, metrics = self.dynamics_engine((xinit, beta))
             else:
@@ -1305,8 +1333,8 @@ class Trainer(BaseTrainer):
 
         def refresh_view():
             if isinstance(ctx, Live):
-                ctx.console.clear_live()
-                ctx.update(table)
+                # ctx.console.clear_live()
+                # ctx.update(table)
                 ctx.refresh()
 
         patience = 10
@@ -1396,7 +1424,7 @@ class Trainer(BaseTrainer):
                     #     ctx.console.clear_live()
 
                 if isinstance(ctx, Live):
-                    ctx.console.clear()
+                    # ctx.console.clear()
                     ctx.console.clear_live()
                     # ctx.refresh()
 
@@ -1603,7 +1631,7 @@ class Trainer(BaseTrainer):
                 else:
                     b += (b / 10.)  # self.config.annealing_schedule._dbeta
 
-            if self._is_chief:
+            if self._is_chief and self.config.save:
                 st0 = time.time()
                 self.save_ckpt(era, epoch, run=run)
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
@@ -1689,7 +1717,7 @@ class Trainer(BaseTrainer):
             self.tables['train'][str(era)] = edata['table']
             self.summaries['train'][str(era)] = edata['summaries']
 
-            if (era + 1) == nera or (era + 1) % 5 == 0:
+            if (era + 1) == nera or (era + 1) % 5 == 0 and self.config.save:
                 self.save_ckpt(era, epoch, run=run)
 
             if self._is_chief:

@@ -291,7 +291,7 @@ class Trainer(BaseTrainer):
             self,
             manager: CheckpointManager,
     ) -> os.PathLike | None:
-        if not self._is_chief:
+        if not self._is_chief or not self.config.save:
             return
 
         ckpt = manager.save()
@@ -1271,7 +1271,8 @@ class Trainer(BaseTrainer):
 
             if self._is_chief:
                 st0 = time.time()
-                self.save_ckpt(manager)
+                if self.config.save:
+                    self.save_ckpt(manager)
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
                 log.info(f'Checkpoint saved to: {self.ckpt_dir}')
                 log.info(f'Era {era} took: {time.time() - epoch_start:<5g}s')
@@ -1359,7 +1360,8 @@ class Trainer(BaseTrainer):
                     b += (b / 10.)
 
             if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
-                _ = self.save_ckpt(manager)
+                if self.config.save:
+                    _ = self.save_ckpt(manager)
 
             if self._is_chief:
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
