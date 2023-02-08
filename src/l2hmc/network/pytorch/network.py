@@ -245,36 +245,28 @@ class ConvStack(nn.Module):
             use_batch_norm: bool = False,
     ) -> None:
         super(ConvStack, self).__init__()
-        # if len(xshape) == 3:
-        #     d, nt, nx = xshape[0], xshape[1], xshape[2]
-        # elif len(xshape) == 4:
-        #     _, d, nt, nx = xshape[0], xshape[1], xshape[2], xshape[3]
-        # elif len(xshape) == 8:
-        #     # b, d, nt, nx, ny, nz, 3, 3
-        #     assert isinstance(xshape, (list, tuple))
-        #     # b = xshape[0]
-        #     d = xshape[1]
-        #     nt, nx, _, _ = xshape[2], xshape[3], xshape[4], xshape[5]
-        #     # b, d, nt, nx, ny, nz, _, _ = *xshape
-        # else:
-        #     raise ValueError(f'Invalid value for `xshape`: {xshape}')
-        # ---------------------------------------------------------------
-        # xshape will be of the form
-        # [batch, dim, *lattice_shape, *link_shape]
-        # -- Cases ------------------------------------------------------
-        # 1. xshape: [dim, nt, nx]
+        # ------------------------------------------------
+        # NOTE:
+        # - xshape will be of the form
+        #   [batch, dim, *lattice_shape, *link_shape]
+        # - Cases:
+        #   1. xshape: [dim, nt, nx]
+        #   2. xshape: [batch, dim, nt, nx]
+        #   3. xshape: [batch, dim, nt, nx, ny, nz, 3, 3]
+        # ------------------------------------------------
+        # -- CASE 1: [dim, nt, nx] -----------------------
         if len(xshape) == 3:
             # lattice_shape: [nt, nx]
             ny, nz = 0, 0
             d, nt, nx = xshape[0], xshape[1], xshape[2]
 
-        # 2. xshape: [batch, dim, nt, nx]
+        # -- CASE 2: [batch, dim, nt, nx] ----------------
         elif len(xshape) == 4:
             # lattice_shape: [nt, nx]
             ny, nz = 0, 0
             _, d, nt, nx = xshape[0], xshape[1], xshape[2], xshape[3]
 
-        # 3. xshape: [batch, dim, nt, nx, ny, nz, 3, 3]
+        # -- CASE 2: [batch, dim, nt, nx, ny, nz, 3, 3] --
         elif len(xshape) == 8:
             # link_shape: [3, 3]
             # lattice_shape = [nt, nx, ny, nz]
@@ -552,12 +544,6 @@ class LeapfrogLayer(nn.Module):
         s = self.nw.s * self.scale(z)
         t = self.nw.t * self.transl(z)
         q = self.nw.q * self.transf(z)
-        # self.scale.to(z.dtype)
-        # self.transf.to(z.dtype)
-        # self.transl.to(z.dtype)
-        # scale = self.scale(z)
-        # transf = self.transf(z)
-        # transl = self.transl(z)
         return (s, t, q)
 
 
@@ -642,6 +628,40 @@ def get_and_call_network(
 
 
 class NetworkFactory(BaseNetworkFactory):
+    def build_xnet(
+            self,
+            group: SU3 | U1Phase,
+            name: Optional[str] = None,
+    ) -> LeapfrogLayer:
+        xname = 'xnet' if name is None else f'xnet/{name}'
+        return get_and_call_network(
+            xshape=self.input_spec.xshape,
+            network_config=self.network_config,
+            is_xnet=True,
+            group=group,
+            input_shapes=self.input_spec.xnet,
+            net_weight=self.nw.x,
+            conv_config=self.conv_config,
+            name=xname,
+        )
+
+    def build_vnet(
+            self,
+            group: SU3 | U1Phase,
+            name: Optional[str] = None,
+    ) -> LeapfrogLayer:
+        vname = 'vnet' if name is None else f'vnet/{name}'
+        return get_and_call_network(
+            xshape=self.input_spec.xshape,
+            network_config=self.network_config,
+            is_xnet=False,
+            group=group,
+            input_shapes=self.input_spec.vnet,
+            net_weight=self.nw.v,
+            conv_config=self.conv_config,
+            name=vname,
+        )
+
     def build_networks(
             self,
             n: int,
@@ -651,86 +671,55 @@ class NetworkFactory(BaseNetworkFactory):
         """Build LeapfrogNetwork."""
         # TODO: if n == 0: build hmcNetwork (return zeros)
         assert n >= 1, 'Must build at least one network'
-        # 'xnet': {
-        #     'net_weight': self.nw.x,
-        #     'xshape': self.input_spec.xshape,
-        #     'input_shapes': self.input_spec.xnet,
-        #     'network_config': self.network_config,
-        #     'conv_config': self.conv_config,
-        # },
-        # 'vnet': {
-        #     'net_weight': self.nw.v,
-        #     'xshape': self.input_spec.xshape,
-        #     'input_shapes': self.input_spec.vnet,
-        #     'network_config': self.network_config,
-        # }
-
-        # cfg = self.get_build_configs()
         if n == 1:
-            xnet = get_and_call_network(
-                xshape=self.input_spec.xshape,
-                network_config=self.network_config,
-                is_xnet=True,
-                group=group,
-                input_shapes=self.input_spec.xnet,
-                net_weight=self.nw.x,
-                conv_config=self.conv_config,
-                name='xnet'
-            )
-            vnet = get_and_call_network(
-                xshape=self.input_spec.xshape,
-                network_config=self.network_config,
-                is_xnet=False,
-                group=group,
-                input_shapes=self.input_spec.vnet,
-                net_weight=self.nw.v,
-                conv_config=self.conv_config,
-                name='vnet'
-            )
-            # return nn.ModuleDict({
-            #     # 'xnet': LeapfrogLayer(
-            #     #     **cfg['xnet'],
-            #     #     name='xnet',
-            #     # ),
-            #     # 'vnet': LeapfrogLayer(
-            #     #     **cfg['vnet'],
-            #     #     name='vnet',
-            #     # )
-            #     'xnet': get_and_call_network(
-            #         **cfg['xnet'],
-            #         is_xnet=True,
-            #         group=group,
-            #     ),
-            #     'vnet': get_and_call_network(
-            #         **cfg['vnet'],
-            #         is_xnet=False,
-            #         group=group
-            #     ),
-            # })
+            # xnet = get_and_call_network(
+            #     xshape=self.input_spec.xshape,
+            #     network_config=self.network_config,
+            #     is_xnet=True,
+            #     group=group,
+            #     input_shapes=self.input_spec.xnet,
+            #     net_weight=self.nw.x,
+            #     conv_config=self.conv_config,
+            #     name='xnet'
+            # )
+            # vnet = get_and_call_network(
+            #     xshape=self.input_spec.xshape,
+            #     network_config=self.network_config,
+            #     is_xnet=False,
+            #     group=group,
+            #     input_shapes=self.input_spec.vnet,
+            #     net_weight=self.nw.v,
+            #     conv_config=self.conv_config,
+            #     name='vnet'
+            # )
             return nn.ModuleDict({
-                'xnet': xnet,
-                'vnet': vnet,
+                'xnet': self.build_xnet(group=group),
+                'vnet': self.build_vnet(group=group),
             })
 
         vnet = nn.ModuleDict()
         xnet = nn.ModuleDict()
         for lf in range(n):
+            vnet[f'{lf}'] = self.build_vnet(
+                group=group,
+                name=f'{lf}',
+            )
             # vnet[f'{lf}'] = get_and_call_network(
             #     **cfg['vnet'],
             #     is_xnet=False,
             #     name=f'vnet/{lf}',
             #     group=group,
             # )
-            vnet[f'{lf}'] = get_and_call_network(
-                xshape=self.input_spec.xshape,
-                network_config=self.network_config,
-                is_xnet=False,
-                group=group,
-                input_shapes=self.input_spec.vnet,
-                net_weight=self.nw.v,
-                conv_config=self.conv_config,
-                name=f'vnet/{lf}'
-            )
+            # vnet[f'{lf}'] = get_and_call_network(
+            #     xshape=self.input_spec.xshape,
+            #     network_config=self.network_config,
+            #     is_xnet=False,
+            #     group=group,
+            #     input_shapes=self.input_spec.vnet,
+            #     net_weight=self.nw.v,
+            #     conv_config=self.conv_config,
+            #     name=f'vnet/{lf}'
+            # )
             # vnet[f'{lf}'] = LeapfrogLayer(
             #     **cfg['vnet'],
             #     name='vnet',
@@ -756,39 +745,44 @@ class NetworkFactory(BaseNetworkFactory):
                 #     conv_config=self.conv_config,
                 #     name=f'xnet/{lf}'
                 # )
+                # xnet[f'{lf}'] = nn.ModuleDict({
+                #     'first': get_and_call_network(
+                #         xshape=self.input_spec.xshape,
+                #         network_config=self.network_config,
+                #         is_xnet=True,
+                #         group=group,
+                #         input_shapes=self.input_spec.xnet,
+                #         net_weight=self.nw.x,
+                #         conv_config=self.conv_config,
+                #         name=f'xnet/{lf}/first',
+                #     ),
+                #     'second': get_and_call_network(
+                #         xshape=self.input_spec.xshape,
+                #         network_config=self.network_config,
+                #         is_xnet=True,
+                #         group=group,
+                #         input_shapes=self.input_spec.xnet,
+                #         net_weight=self.nw.x,
+                #         conv_config=self.conv_config,
+                #         name=f'xnet/{lf}/second',
+                #     ),
+                # })
                 xnet[f'{lf}'] = nn.ModuleDict({
-                    'first': get_and_call_network(
-                        xshape=self.input_spec.xshape,
-                        network_config=self.network_config,
-                        is_xnet=True,
-                        group=group,
-                        input_shapes=self.input_spec.xnet,
-                        net_weight=self.nw.x,
-                        conv_config=self.conv_config,
-                        name=f'xnet/{lf}/first',
-                    ),
-                    'second': get_and_call_network(
-                        xshape=self.input_spec.xshape,
-                        network_config=self.network_config,
-                        is_xnet=True,
-                        group=group,
-                        input_shapes=self.input_spec.xnet,
-                        net_weight=self.nw.x,
-                        conv_config=self.conv_config,
-                        name=f'xnet/{lf}/second',
-                    ),
+                    'first': self.build_xnet(group=group, name=f'{lf}/first'),
+                    'second': self.build_xnet(group=group, name=f'{lf}/second')
                 })
             else:
-                xnet[f'{lf}'] = get_and_call_network(
-                    xshape=self.input_spec.xshape,
-                    network_config=self.network_config,
-                    is_xnet=True,
-                    group=group,
-                    input_shapes=self.input_spec.xnet,
-                    net_weight=self.nw.x,
-                    conv_config=self.conv_config,
-                    name=f'xnet/{lf}'
-                )
+                xnet[f'{lf}'] = self.build_xnet(group=group, name=f'{lf}')
+                # xnet[f'{lf}'] = get_and_call_network(
+                #     xshape=self.input_spec.xshape,
+                #     network_config=self.network_config,
+                #     is_xnet=True,
+                #     group=group,
+                #     input_shapes=self.input_spec.xnet,
+                #     net_weight=self.nw.x,
+                #     conv_config=self.conv_config,
+                #     name=f'xnet/{lf}'
+                # )
                 # xnet[f'{lf}'] = get_and_call_network(
                 #     **cfg['xnet'],
                 #     is_xnet=True,
