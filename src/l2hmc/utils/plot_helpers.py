@@ -852,6 +852,7 @@ def make_ridgeplots(
                 lf_data = {
                     key: [],
                     'lf': [],
+                    'avg': [],
                 }
                 for lf in val.leapfrog.values:
                     # val.shape = (chain, leapfrog, draw)
@@ -869,24 +870,36 @@ def make_ridgeplots(
                         x = x[np.isfinite(x)]
 
                     lf_arr = np.array(len(x) * [f'{lf}'])
+                    avg_arr = np.array(len(x) * [x.mean()])
                     lf_data[key].extend(x)
                     lf_data['lf'].extend(lf_arr)
+                    lf_data['avg'].extend(avg_arr)
 
                 lfdf = pd.DataFrame(lf_data)
-                data[key] = lfdf
+                lfdf_avg = lfdf.groupby('lf')['avg'].mean()
+                lfdf['lf_avg'] = lfdf['lf'].map(lfdf_avg)
 
                 # Initialize the FacetGrid object
                 ncolors = len(val.leapfrog.values)
                 pal = sns.color_palette(cmap, n_colors=ncolors)
                 g = sns.FacetGrid(
                     lfdf,
-                    row='lf', hue='lf',
-                    aspect=15, height=0.25, palette=pal  # type:ignore
+                    row='lf',
+                    hue='lf_avg',
+                    aspect=15,
+                    height=0.25,
+                    palette=pal  # type:ignore
                 )
+                # avgs = lfdf.groupby('leapfrog')[f'Mean {key}']
 
                 # Draw the densities in a few steps
                 _ = g.map(sns.kdeplot, key, cut=1,
+                          bw_adjust=1., clip_on=False,
                           shade=True, alpha=0.7, linewidth=1.25)
+                # _ = sns.histplot()
+                # _ = g.map(sns.histplot, key)
+                #           # rug=False, kde=False, norm_hist=False,
+                #           # shade=True, alpha=0.7, linewidth=1.25)
                 _ = g.map(plt.axhline, y=0, lw=1., alpha=0.9, clip_on=False)
 
                 # Define and use a simple function to
@@ -897,12 +910,22 @@ def make_ridgeplots(
                     _ = ax.set_ylabel('')
                     _ = ax.set_yticks([])
                     _ = ax.set_yticklabels([])
+                    color = ax.lines[-1].get_color()
                     _ = ax.text(
                         0, 0.10, label, fontweight='bold', color=color,
                         ha='left', va='center', transform=ax.transAxes
                     )
 
-                _ = g.map(label, key)
+                # _ = g.map(label, key)
+                for i, ax in enumerate(g.axes.flat):
+                    _ = ax.set_ylabel('')
+                    _ = ax.set_yticks([])
+                    _ = ax.set_yticklabels([])
+                    ax.text(0, 0.10, f'{i}',
+                            fontweight='bold',
+                            ha='left', va='center',
+                            transform=ax.transAxes,
+                            color=ax.lines[-1].get_color())
                 # Set the subplots to overlap
                 _ = g.fig.subplots_adjust(hspace=-0.75)
                 # Remove the axes details that don't play well with overlap
