@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 import logging
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 import aim
 from hydra.utils import instantiate
@@ -102,22 +102,6 @@ class BaseExperiment(ABC):
     def init_aim(self) -> aim.Run:
         return self._init_aim()
 
-    @abstractmethod
-    def _build(
-            self,
-            init_wandb: bool = True,
-            init_aim: bool = True
-    ) -> dict:
-        pass
-
-    def build(
-            self,
-            init_wandb: bool = True,
-            init_aim: bool = True
-    ) -> dict:
-        return self._build(init_wandb=init_wandb,
-                           init_aim=init_aim)
-
     def _init_aim(self) -> aim.Run:
         from aim import Run  # type:ignore
         # tstamp = get_timestamp()
@@ -168,41 +152,12 @@ class BaseExperiment(ABC):
 
         run_id = generate_id()
         self.update_wandb_config(run_id=run_id)
-        # log.warning(f'os.getcwd(): {os.getcwd()}')
         wandb.tensorboard.patch(root_logdir=os.getcwd())
-        # nlf = self.config.dynamics.nleapfrog
-        # vol = 'x'.join([str(i) for i in self.config.dynamics.latvolume])
-        # be = self.config.backend
-        # ABBREVIATIONS = {
-        #     'ds': 'ds',
-        #     'deepspeed': 'ds',
-        #     'hvd': 'hvd',
-        #     'horovod': 'hvd',
-        #     'ddp': 'ddp',
-        #     'pt': 'pt',
-        #     'pytorch': 'pt',
-        #     'torch': 'pt',
-        #     'tf': 'tf',
-        #     'tensorflow': 'tf',
-        # }
-        # be = ABBREVIATIONS.get(self.config.backend.lower())
-        # fw = ABBREVIATIONS.get(self.config.framework)
-        # wbname = f'{fw}-{be}-{vol}-nlf{nlf}-{run_id[:4]}'
-        # wbname = f'lf{nlf}-{be}-{fw}-{vol}-{run_id[:4]}'
         run = wandb.init(
             dir=os.getcwd(),
             # name=wbname,
             **self.config.wandb.setup,
         )
-        # if self.config.framework in ['pt', 'torch', 'pytorch']:
-        #     assert run is not None and run is wandb.run
-        #     if dynamics is not None:
-        #         run.watch(
-        #             dynamics,
-        #             log='all',
-        #             log_graph=True,
-        #             criterion=criterion,
-        #         )
         assert run is wandb.run and run is not None
         wandb.define_metric('dQint_eval', summary='mean')
         run.log_code(HERE.as_posix())
@@ -210,6 +165,28 @@ class BaseExperiment(ABC):
                                           resolve=True,
                                           throw_on_missing=True)
         run.config.update(cfg_dict)
+
+        exec = os.environ.get('EXEC', None)
+        if exec is not None:
+            run.config['exec'] = exec
+
+        hostfile = os.environ.get(
+            'COBALT_NODEFILE',
+            os.environ.get(
+                'PBS_NODEFILE',
+                None
+            ),
+        )
+        if hostfile is not None:
+            if (hpath := Path(hostfile).resolve()).is_file():
+                with hpath.open('r') as f:
+                    hosts = f.readlines()
+                run.config['hosts'] = hosts
+
+        machine = os.environ.get('MACHINE', None)
+        if machine is not None:
+            run.config['machine'] = machine
+
         hostname = socket.gethostbyaddr(socket.gethostname())[0].lower()
         if 'thetagpu' in hostname:
             run.config['hostname'] = 'ThetaGPU'
@@ -217,8 +194,6 @@ class BaseExperiment(ABC):
             run.config['hostname'] = 'Polaris'
         else:
             run.config['hostname'] = hostname
-        # run.config['hvd_size'] = SIZE
-        # print_config(DictConfig(self.config), resolve=True)
 
         return run
 
