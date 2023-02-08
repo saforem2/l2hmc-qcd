@@ -18,36 +18,39 @@ classifiers = [
   "Programming Language :: Python :: 3.8",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
   "bokeh",
   "mpi4py",
-  "nodejs",
   "h5py",
   "seaborn",
   "xarray",
   "joblib",
   "celerite",
-  "pynvim",
-  "neovim",
-  "pyright",
-  "ipython",
   "rich",
   "hydra-core",
   "wandb",
   "arviz",
   "hydra-colorlog",
   "matplotx",
-  "accelerate",
+  "aim",
   "tqdm",
-  "ptipython",
-  "tensorflow",
-  "torch",
-  "horovod[pytorch,tensorflow]"
+  "torchviz",
 ]
 dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = [
+  "nodejs",
+  "pynvim",
+  "neovim",
+  "pyright",
+  "ipython",
+  "ptipython",
+]
 
 [project.urls]
 Documentation = "https://github.com/saforem2/l2hmc-qcd"
@@ -68,35 +71,6 @@ exclude = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/l2hmc"]
 
-[tool.hatch.envs.l2hmc]
-python = "3.10"
-dependencies = [
-  "bokeh",
-  "mpi4py",
-  "nodejs",
-  "h5py",
-  "seaborn",
-  "xarray",
-  "joblib",
-  "celerite",
-  "pynvim",
-  "neovim",
-  "pyright",
-  "ipython",
-  "rich",
-  "hydra-core",
-  "wandb",
-  "arviz",
-  "hydra-colorlog",
-  "matplotx",
-  "accelerate",
-  "tqdm",
-  "ptipython",
-  "tensorflow",
-  "pytorch",
-  "horovod"
-]
-
 [tool.hatch.envs.default]
 dependencies = [
   "pytest",
@@ -107,7 +81,7 @@ cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=src/l2
 no-cov = "cov --no-cov"
 
 [[tool.hatch.envs.test.matrix]]
-python = ["38", "39", "310"]
+python = ["38", "39", "310", "311"]
 
 [tool.coverage.run]
 branch = true
