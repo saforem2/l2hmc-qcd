@@ -17,16 +17,13 @@ from typing import Optional
 from omegaconf.dictconfig import DictConfig
 
 import json
-from l2hmc.configs import ExperimentConfig
-from l2hmc.utils.rich import print_config
-# from l2hmc.utils.logger import get_pylogger
 from l2hmc.utils.plot_helpers import set_plot_style
 
 warnings.filterwarnings('ignore')
 set_plot_style()
 
 log = logging.getLogger()
-logging.getLogger('wandb').setLevel(logging.ERROR)
+logging.getLogger('wandb').setLevel(logging.CRITICAL)
 logging.getLogger('aim').setLevel(logging.ERROR)
 logging.getLogger('filelock').setLevel(logging.CRITICAL)
 logging.getLogger('matplotlib').setLevel(logging.CRITICAL)
@@ -79,23 +76,17 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
         cfg.update(get_config(overrides))
 
     ex = get_experiment(cfg)
-    # assert isinstance(ex.config, ExperimentConfig)
 
     if ex.trainer._is_chief:
-        # from rich import print
-        # log.info(ex.cfg)
         try:
             from omegaconf import OmegaConf
             from rich import print_json
-            # print_json(ex.config.to_json())
             conf = OmegaConf.structured(ex.config)
             cdict = OmegaConf.to_container(conf)
             print_json(json.dumps(cdict))
         except Exception as e:
             log.exception(e)
             log.warning('Continuing!')
-        # print(ex.config)
-        # print_config(ex.cfg, resolve=True)
 
     should_train: bool = (
         ex.config.steps.nera > 0
