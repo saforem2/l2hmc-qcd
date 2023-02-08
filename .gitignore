@@ -27,6 +27,7 @@ doc/hmc/
 doc/comments.tex
 doc/extra_plots.tex
 tags
+**checkpoints/**
 ./pyrightconfig.json
 ./l2hmc-qcd/utils/rich_table_movie.py
 l2hmc-qcd.code-workspace
@@ -42,6 +43,39 @@ src/l2hmc/notebooks/ridgeplots/
 src/l2hmc/notebooks/su3-cpu.ipynb
 src/l2hmc/notebooks/svgs/
 src/l2hmc/notebooks/tests.ipynb
+src/l2hmc/.deepspeed_env
+src/l2hmc/affinity.sh
+src/l2hmc/affinity_thetaGPU.sh
+src/l2hmc/checkpoints/
+src/l2hmc/conf/ds_config-debug.json
+src/l2hmc/conf/dynamics/su3-debug.yaml
+src/l2hmc/conf/network/16-16-16-16.yaml
+src/l2hmc/dynamics/pytorch/dynamics-2023-01-05.py
+src/l2hmc/hostfile
+src/l2hmc/logfiles
+src/l2hmc/main.sh
+src/l2hmc/mlprof-train.sh
+src/l2hmc/mpi_profile.2232990.0
+src/l2hmc/network/pytorch/layers.py
+src/l2hmc/notebooks/SU3d4-Copy1.ipynb
+src/l2hmc/notebooks/SU3d4-Copy3.ipynb
+src/l2hmc/notebooks/experiment.md
+# src/l2hmc/notebooks/l2hmc-2dU1.ipynb
+# src/l2hmc/notebooks/l2hmc.ipynb
+src/l2hmc/notebooks/model.png
+# src/l2hmc/notebooks/pt-4dSU3.ipynb
+# src/l2hmc/notebooks/tensorflow-SU3d4.ipynb
+# notebooks/tf-SU3d4.ipynb
+src/l2hmc/nthmc/
+src/l2hmc/scale_test.sh
+src/l2hmc/test.sh
+src/l2hmc/train-all.sh
+src/l2hmc/trainers/deepspeed/
+src/l2hmc/utils/history-2023-01-03.py
+src/l2hmc/utils/logger.py
+src/l2hmc/utils/misc.py
+src/l2hmc/utils/plot_helpers-2023-02-07.py
+
 
 .vscode/
 bin/restore.sh
