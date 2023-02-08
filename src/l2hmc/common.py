@@ -573,10 +573,17 @@ def save_logs(
             console.print(table)
             html = console.export_html(clear=False)
             text = console.export_text()
-            with open(hfile.as_posix(), 'a') as f:
-                f.write(html)
-            with open(tfile, 'a') as f:
-                f.write(text)
+            try:
+                with open(hfile.as_posix(), 'a') as f:
+                    f.write(html)
+            except Exception as exc:
+                log.exception(exc)
+
+            try:
+                with open(tfile, 'a') as f:
+                    f.write(text)
+            except Exception as exc:
+                log.exception(exc)
 
         df = pd.DataFrame.from_dict(data)
         dfile = Path(logdir).joinpath(f'{job_type}_table.csv')
@@ -585,7 +592,6 @@ def save_logs(
         if run is not None:
             # with open(hfile.as_posix(), 'r') as f:
             #     html = f.read()
-
             # run.log({f'Media/{job_type}': wandb.Html(html)})
             run.log({
                 f'DataFrames/{job_type}': wandb.Table(data=df)
@@ -682,8 +688,8 @@ def plot_dataset(
     outdir.mkdir(exist_ok=True, parents=True)
     # outdir = outdir.joinpath('plots')
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
-    names = ['viridis_r', 'magma', 'mako']
-    cmap = np.random.choice(names, replace=True)
+    # names = ['viridis_r', 'magma', 'mako']
+    # cmap = np.random.choice(names, replace=True)
 
     set_plot_style()
     _ = make_ridgeplots(
@@ -692,7 +698,7 @@ def plot_dataset(
         drop_nans=True,
         drop_zeros=False,
         num_chains=nchains,
-        cmap=cmap,
+        cmap='viridis',
     )
     for key, val in dataset.data_vars.items():
         if key == 'x':
