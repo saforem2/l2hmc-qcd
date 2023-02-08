@@ -34,8 +34,10 @@ class LatticeLoss:
         self.charge_weight = tf.constant(self.config.charge_weight,
                                          dtype=TF_FLOAT)
         if isinstance(self.lattice, LatticeU1):
+            self._group = 'U1'
             self.g = U1Phase()
         elif isinstance(self.lattice, LatticeSU3):
+            self._group = 'SU3'
             self.g = SU3()
         else:
             raise ValueError(f'Unexpected value for `self.g`: {self.g}')
@@ -51,14 +53,47 @@ class LatticeLoss:
     def plaq_loss(self, x1: Tensor, x2: Tensor, acc: Tensor) -> Tensor:
         w1 = self.lattice.wilson_loops(x=x1)
         w2 = self.lattice.wilson_loops(x=x2)
-        return self._plaq_loss(w1=w1, w2=w2, acc=acc)
+        if self._group == 'U1':
+            return self._plaq_loss_u1(w1, w2, acc)
+        if self._group == 'SU3':
+            return self._plaq_loss_su3(w1, w2, acc)
 
-    def charge_loss(self, x1: Tensor, x2: Tensor, acc: Tensor) -> Tensor:
-        w1 = self.lattice.wilson_loops(x=x1)
-        w2 = self.lattice.wilson_loops(x=x2)
-        return self._charge_loss(w1=w1, w2=w2, acc=acc)
+        raise AttributeError(
+            f'Unexpected value for self._group: {self._group}'
+        )
 
     def _plaq_loss(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
+        if self._group == 'U1':
+            return self._plaq_loss_u1(w1, w2, acc)
+        if self._group == 'SU3':
+            return self._plaq_loss_su3(w1, w2, acc)
+
+        raise AttributeError(
+            f'Unexpected value for self._group: {self._group}'
+        )
+
+    def _plaq_loss_su3(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
+        p1 = tf.reduce_sum(
+            tf.math.real(w1),
+            axis=range(2, len(w1.shape))
+        )
+        p2 = tf.reduce_sum(
+            tf.math.real(w2),
+            axis=range(2, len(w1.shape))
+        )
+        dp = tf.math.square(tf.subtract(p2, p1))
+        ploss = tf.multiply(acc, dp)
+        if self.config.use_mixed_loss:
+            ploss += 1e-4  # to prevent division by zero in mixed_loss
+            # will compute loss = [ (const / loss) - (loss / const) ]
+            return tf.reduce_mean(self.mixed_loss(ploss, self.plaq_weight))
+
+        # only use second term:
+        # loss = [ - (loss / const) ]
+        # ploss = tf.cast(ploss, self.plaq_weight.dtype)
+        return (- tf.reduce_mean(ploss / self.plaq_weight))
+
+    def _plaq_loss_u1(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
         dw = tf.subtract(w2, w1)
         dwloops = 2. * (tf.ones_like(w1) - tf.math.cos(dw))
         dwsum = tf.reduce_sum(
@@ -66,20 +101,6 @@ class LatticeLoss:
             axis=tuple(range(1, len(dwloops.shape)))
         )
         ploss = tf.multiply(acc, dwsum)
-        # if isinstance(self.g, U1Phase):
-        #     ploss = acc * tf.reduce_sum(dwloops, axis=(1, 2))
-        # elif isinstance(self.g, SU3):
-        #     # ploss = acc * tf.cast(
-        #     #     tf.reduce_sum(
-        #     #         dwloops, tuple(range(2, 3, len(w1.shape)))
-        #     #     ),
-        #     #     acc.dtype
-        #     # )
-        #     # TODO: Update / implement plaquette loss for 4D SU(3) model
-        #     ploss = tf.constant(0.0)
-        # else:
-        #     raise ValueError(f'Unexpected value for self.g: {self.g}')
-
         if self.config.use_mixed_loss:
             ploss += 1e-4  # to prevent division by zero in mixed_loss
             # will compute loss = [ (const / loss) - (loss / const) ]
@@ -88,7 +109,12 @@ class LatticeLoss:
         # only use second term:
         # loss = [ - (loss / const) ]
         # ploss = tf.cast(ploss, self.plaq_weight.dtype)
-        return (- tf.reduce_mean(ploss / self.plaq_weight))
+        return (-tf.reduce_mean(ploss / self.plaq_weight))
+
+    def charge_loss(self, x1: Tensor, x2: Tensor, acc: Tensor) -> Tensor:
+        w1 = self.lattice.wilson_loops(x=x1)
+        w2 = self.lattice.wilson_loops(x=x2)
+        return self._charge_loss(w1=w1, w2=w2, acc=acc)
 
     def _charge_loss(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
         dq2 = tf.math.square(tf.subtract(
