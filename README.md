@@ -34,19 +34,20 @@
 
 ## Papers 📚, Slides 📊 etc.
 - [📒 Notebooks](./src/l2hmc/notebooks/):
-    - 📙 2D $U(1)$ Model
+    - 📙 2D $U(1)$ Model (w/ `fp32` for training)
     	- [`src/l2hmc/notebooks/l2hmc-2dU1.ipynb`](./src/l2hmc/notebooks/l2hmc-2dU1.ipynb)
     	- [alt link (if Github won't load)](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/l2hmc-2dU1.ipynb)
-    - 📕 4D $SU(3)$ Model
+    - 📕 4D $SU(3)$ Model (w/ `complex128` + `fp64` for training)
         - PyTorch:
             - [`src/l2hmc/notebooks/pytorch-SU3d4.ipynb`](./src/l2hmc/notebooks/l2hmc-2dU1.ipynb)
     	    - [alt link (if github won't load)](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/pytorch-SU3d4.ipynb)
 
-- [Accelerated Sampling Techniques for Lattice Gauge Theory](https://saforem2.github.io/l2hmc-dwq25/#/) @ [BNL & RBRC: DWQ @ 25](https://indico.bnl.gov/event/13576/) (12/2021)
-- [Training Topological Samplers for Lattice Gauge Theory](https://bit.ly/l2hmc-ect2021) from the [*ML for HEP, on and off the Lattice*](https://indico.ectstar.eu/event/77/) @ $\mathrm{ECT}^{*}$ Trento (09/2021) (+ 📊 [slides](https://www.bit.ly/l2hmc-ect2021))
-- [Deep Learning Hamiltonian Monte Carlo](https://arxiv.org/abs/2105.03418) @ [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) **ICLR 2021**
-    - 📚 : [arXiv:2105.03418](https://arxiv.org/abs/2105.03418)  
-    - 📊 : [poster](https://www.bit.ly/l2hmc_poster)
+- Papers:
+    - [Accelerated Sampling Techniques for Lattice Gauge Theory](https://saforem2.github.io/l2hmc-dwq25/#/) @ [BNL & RBRC: DWQ @ 25](https://indico.bnl.gov/event/13576/) (12/2021)
+    - [Training Topological Samplers for Lattice Gauge Theory](https://bit.ly/l2hmc-ect2021) from the [*ML for HEP, on and off the Lattice*](https://indico.ectstar.eu/event/77/) @ $\mathrm{ECT}^{*}$ Trento (09/2021) (+ 📊 [slides](https://www.bit.ly/l2hmc-ect2021))
+    - [Deep Learning Hamiltonian Monte Carlo](https://arxiv.org/abs/2105.03418) @ [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) **ICLR 2021**
+        - 📚 : [arXiv:2105.03418](https://arxiv.org/abs/2105.03418)  
+        - 📊 : [poster](https://www.bit.ly/l2hmc_poster)
 
 
 ## Background
@@ -87,6 +88,14 @@ $ python3 -m pip install l2hmc
 This project uses [`hydra`](https://hydra.cc) for configuration management and
 supports distributed training for both PyTorch and TensorFlow.
 
+In particular, we support:
+
+- TensorFlow (+ Horovod for distributed training)
+- PyTorch +
+    - DDP
+    - Horovod
+    - DeepSpeed
+
 The [`l2hmc/conf/config.yaml`](./src/l2hmc/conf/config.yaml) contains a brief
 explanation of each of the various parameter options, and values can be
 overriden either by modifying the `config.yaml` file, or directly through the
@@ -103,7 +112,6 @@ Documentation Page](https://hydra.cc).
 
 
 # Details
-## L2HMC for LatticeQCD
 
 **Goal:** Use L2HMC to **efficiently** generate _gauge configurations_ for
 calculating observables in lattice QCD.
@@ -113,7 +121,7 @@ simulations in lattice QCD (specifically, a 2D U(1) lattice gauge theory model)
 can be found in [arXiv:2105.03418](https://arxiv.org/abs/2105.03418).
 
 <div align="center">
- <img src="assets/l2hmc_poster.jpeg" alt="l2hmc-qcd poster" width="66%" />
+ <img src="assets/l2hmc_poster.jpeg" alt="l2hmc-qcd poster" width="90%" />
 </div>
 
 ## Organization
