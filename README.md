@@ -32,13 +32,21 @@
 
 # Overview
 
-## Papers 📚, Slides 📊, etc.
-- 📘 [Example Notebook](./src/l2hmc/notebooks/experiment.ipynb) ([alternative link](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/experiment.ipynb) if github won't load)
+## Papers 📚, Slides 📊 etc.
+- [📒 Notebooks](./src/l2hmc/notebooks/):
+    - 📙 2D $U(1)$ Model
+    	- [`src/l2hmc/notebooks/l2hmc-2dU1.ipynb`](./src/l2hmc/notebooks/l2hmc-2dU1.ipynb)
+    	- [alt link (if Github won't load)](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/l2hmc-2dU1.ipynb)
+    - 📕 4D $SU(3)$ Model
+        - PyTorch:
+            - [`src/l2hmc/notebooks/pytorch-SU3d4.ipynb`](./src/l2hmc/notebooks/l2hmc-2dU1.ipynb)
+    	    - [alt link (if github won't load)](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/pytorch-SU3d4.ipynb)
+
 - [Accelerated Sampling Techniques for Lattice Gauge Theory](https://saforem2.github.io/l2hmc-dwq25/#/) @ [BNL & RBRC: DWQ @ 25](https://indico.bnl.gov/event/13576/) (12/2021)
 - [Training Topological Samplers for Lattice Gauge Theory](https://bit.ly/l2hmc-ect2021) from the [*ML for HEP, on and off the Lattice*](https://indico.ectstar.eu/event/77/) @ $\mathrm{ECT}^{*}$ Trento (09/2021) (+ 📊 [slides](https://www.bit.ly/l2hmc-ect2021))
 - [Deep Learning Hamiltonian Monte Carlo](https://arxiv.org/abs/2105.03418) @ [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) **ICLR 2021**
-	- 📚 : [arXiv:2105.03418](https://arxiv.org/abs/2105.03418)  
-	- 📊 : [poster](https://www.bit.ly/l2hmc_poster)
+    - 📚 : [arXiv:2105.03418](https://arxiv.org/abs/2105.03418)  
+    - 📊 : [poster](https://www.bit.ly/l2hmc_poster)
 
 
 ## Background
