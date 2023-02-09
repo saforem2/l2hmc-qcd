@@ -197,6 +197,7 @@ runTensorFlow() {
   TF_ARGS="framework=tensorflow backend=horovod precision=float32"
   singleDevice ${TF_ARGS}
   twoDevices ${TF_ARGS}
+  fourDevices ${TF_ARGS}
   fullNode ${TF_ARGS}
   elasticDistributed ${TF_ARGS}
 }
@@ -215,6 +216,7 @@ runPyTorch() {
       PT_ARGS="framework=pytorch backend=${BE} precision=${PREC}"
       singleDevice ${PT_ARGS}
       twoDevices ${PT_ARGS}
+      fourDevices ${PT_ARGS}
       fullNode ${PT_ARGS}
       elasticDistributed ${PT_ARGS}
     done
