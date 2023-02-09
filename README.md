@@ -23,8 +23,9 @@
   * [Background](#background)
 - [Installation](#installation)
 - [Training](#training)
+  - [Configuration Management](#configuration-management)
+  - [Running @ ALCF](#running-at-ALCF) 
 - [Details](#details)
-  * [L2HMC for LatticeQCD](#l2hmc-for-latticeqcd)
   * [Organization](#organization)
     + [Dynamics / Network](#dynamics---network)
       - [Network Architecture](#network-architecture)
@@ -42,7 +43,7 @@
             - [`src/l2hmc/notebooks/pytorch-SU3d4.ipynb`](./src/l2hmc/notebooks/l2hmc-2dU1.ipynb)
     	    - [alt link (if github won't load)](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/pytorch-SU3d4.ipynb)
 
-- Papers:
+- 📝 Papers:
     - [Accelerated Sampling Techniques for Lattice Gauge Theory](https://saforem2.github.io/l2hmc-dwq25/#/) @ [BNL & RBRC: DWQ @ 25](https://indico.bnl.gov/event/13576/) (12/2021)
     - [Training Topological Samplers for Lattice Gauge Theory](https://bit.ly/l2hmc-ect2021) from the [*ML for HEP, on and off the Lattice*](https://indico.ectstar.eu/event/77/) @ $\mathrm{ECT}^{*}$ Trento (09/2021) (+ 📊 [slides](https://www.bit.ly/l2hmc-ect2021))
     - [Deep Learning Hamiltonian Monte Carlo](https://arxiv.org/abs/2105.03418) @ [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) **ICLR 2021**
@@ -73,9 +74,31 @@ Broadly, given an *analytically* described target distribution, π(x), L2HMC pro
 - Is able to efficiently mix between energy levels.
 - Is capable of traversing low-density zones to mix between modes (often difficult for generic HMC).
 
-
-
 # Installation
+
+## From Source (recommended)
+
+1. Clone + navigate into repo
+
+```bash
+gh repo clone saforem2/l2hmc-qcd
+cd l2hmc-qcd
+```
+
+2. Create a virtualenv, activate + install:
+
+```bash
+mkdir venv
+python3 -m venv venv --system-site-packages
+```
+
+3. Test install
+
+```bash
+python3 -c 'import l2hmc ; print(l2hmc.__file__)'
+```
+
+## From PyPi
 
 - [`l2hmc`](https://pypi.org/project/l2hmc/) on PyPi:
 
@@ -85,10 +108,23 @@ $ python3 -m pip install l2hmc
 
 # Training
 
+## Configuration Management
+
 This project uses [`hydra`](https://hydra.cc) for configuration management and
 supports distributed training for both PyTorch and TensorFlow.
 
-In particular, we support:
+
+The main entry point is [`src/l2hmc/main.py`](./src/l2hmc/main.py),
+which contains  the logic for running an end-to-end `Experiment`.
+
+An `Experiment` consists of the following sub-tasks:
+
+1. Training
+2. Evaluation
+3. HMC (for comparison and to measure model improvement)
+
+
+In particular, we support the following combinations of `framework` + `backend` for distributed training:
 
 - TensorFlow (+ Horovod for distributed training)
 - PyTorch +
@@ -96,19 +132,43 @@ In particular, we support:
     - Horovod
     - DeepSpeed
 
+**All** configuration options can be dynamically overridden via the CLI at runtime, 
+and we can specify our desired `framework` and `backend` combination via:
+
+```Shell
+python3 main.py mode=debug framework=pytorch backend=deepspeed precision=fp16
+```
+
+to run a (non-distributed) Experiment with `pytorch + deepspeed` with `fp16` precision.
+
 The [`l2hmc/conf/config.yaml`](./src/l2hmc/conf/config.yaml) contains a brief
 explanation of each of the various parameter options, and values can be
 overriden either by modifying the `config.yaml` file, or directly through the
 command line, e.g.
 
-```bash
+```Shell
 cd src/l2hmc
 ./train.sh mode=debug framework=pytorch > train.log 2>&1 &
 tail -f train.log $(tail -1 logs/latest)
 ```
 
+Additional information about various configuration options can be found in:
+
+- [`src/l2hmc/configs.py`](./src/l2hmc/configs.py):
+  Contains implementations of the (concrete python objects) that are adjustable for our experiment.
+- [`src/l2hmc/conf/config.yaml`](./src/l2hmc/conf/config.yaml):
+  Starting point with default configuration options for a generic `Experiment`.
+
+
 for more information on how this works I encourage you to read [Hydra's
 Documentation Page](https://hydra.cc).
+
+
+## Running at ALCF
+
+For running with distributed training on ALCF systems, we provide a complete
+[`src/l2hmc/train.sh`](./src/l2hmc/train.sh) 
+script which should run without issues on either Polaris or ThetaGPU @ ALCF.
 
 
 # Details
