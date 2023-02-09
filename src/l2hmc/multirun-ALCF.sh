@@ -9,15 +9,12 @@ echo "Job running in: ${DIR}"
 
 export WANDB_CACHE_DIR="../../.cache/wandb"
 
-
 DEFAULTS="\
   mode=debug \
   conv=none \
   restore=false \
   save=false \
   seed=1234"
-
-
 
 # ┏━━━━━━━━━━┓
 # ┃ ThetaGPU ┃
@@ -63,7 +60,6 @@ setupThetaGPU() {
     # -------------------------------------------------------
   else
     echo "Unexpected hostname: $(hostname)"
-    exit 1
   fi
 }
 
@@ -103,7 +99,6 @@ setupPolaris()  {
     MPIEXEC="${MPI_COMMAND} ${MPI_FLAGS} ${MPI_ELASTIC}"
   else
     echo "Unexpected hostname: $(hostname)"
-    exit 1
   fi
 }
 
@@ -166,25 +161,20 @@ elasticDistributed() {
   NRANKS=$(wc -l < ${COBALT_NODEFILE})
   NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
   NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
-  echo "Running on ${NRANKS} ranks \
+  echo "\
+    Running on ${NRANKS} ranks \
     with ${NGPU_PER_RANK} GPUs each \
     for a total of ${NGPUS} GPUs"
-  if [[ $NRANKS > 1 ]]; then
-    EXEC="\
-      $(which mpiexec) \
-      ${MPI_DEFAULTS} \
-      -n ${NGPUS} \
-      -npernode ${NGPU_PER_RANK} \
-      $(which python3) \
-      ./main.py \
-      ${DEFAULTS}"
-    export EXEC="${EXEC} $@"
-    ${EXEC} $@
-  else
-    echo "NRANKS <= 1: ${NRANKS}"
-  fi
+  EXEC="\
+    ${MPI_COMMAND} \
+    ${MPI_DEFAULTS} \
+    ${MPI_ELASTIC} \
+    $(which python3) \
+    ${MAIN} \
+    ${DEFAULTS}"
+  export EXEC="${EXEC} $@"
+  ${EXEC} $@
 }
-
 
 # ┏━━━━━━━━━━━━━━━━━━━━━━┓
 # ┃ TensorFlow + Horovod ┃
