@@ -15,6 +15,11 @@
 
 </div>
 
+<details closed><summary><b>Testing embedded code</b></summary>
+<p>
+https://github.com/saforem2/l2hmc-qcd/blob/79bb0220cba03f1ffdb3a3fd5989fe42110c8f9e/src/l2hmc/main.py#L170-L179
+</p>
+</details>
 
 # Contents
 
@@ -197,10 +202,6 @@ This generalized leapfrog update takes as input a buffer of lattice
 configurations `x` and generates a proposal configuration `x' = Dynamics(x)` by
 evolving generalized L2HMC dynamics.
 
-<!--The [`GaugeDynamics`](l2hmc-qcd/dynamics/gauge_dynamics.py) is a subclass of `BaseDynamics` containing modifications for the 2D U(1) pure gauge theory.-->
-
-<!--The network is defined in [` l2hmc-qcd/network/functional_net.py`](l2hmc-qcd/network/functional_net.py).-->
-
 
 #### Network Architecture
 
@@ -209,47 +210,7 @@ An illustration of the `leapfrog layer` updating `(x, v) --> (x', v')` can be se
 <div align="center">
  <img src="assets/lflayer.png" alt="leapfrog layer" width=800/>
 </div>
-<!---The network takes as input the position `x`, momentum `v` and and outputs the quantities `sx, tx, qx`, which are then used in the augmented Hamiltonian dynamics to update `x`.--->
 
-<!---Similarly, the network used for updating the momentum variable `v` has an identical architecture, taking as inputs the position `x`, the gradient of the potential, `dUdX`, and the same fictitious time `t`, and outputs the quantities `sv, tv, qv` which are then used to update `v`.--->
-
-<!---**Note:** In the image above, the quantities `x', v''` represent the outputs of a Dense layer followed by a `ReLu` nonlinearity.--->
-
-<!-- ### Lattice -->
-
-<!-- Lattice code can be found in [`lattice/`](./lattice/), specifically: -->
-
-
-<!-- specifically the `GaugeLattice` object that provides the base structure on which our target distribution exists. -->
-
-<!-- Additionally, the `GaugeLattice` object implements a variety of methods for calculating physical observables such as the average plaquette, ɸₚ, and the topological charge Q, -->
-
-<!--### Training
-
-The training loop is implemented in [`l2hmc-qcd/utils/training_utils.py `](l2hmc-qcd/utils/training_utils.py).
-
-To train the sampler on a 2D U(1) gauge model using the parameters specified in [` bin/train_configs.json`](bin/train_configs.json):
-
-```bash
-$ python3 /path/to/l2hmc-qcd/l2hmc-qcd/train.py --json_file=/path/to/l2hmc-qcd/bin/train_configs.json
-```
-
-Or via the [` bin/train.sh `](bin/train.sh) script provided in [` bin/ `](bin/).
-
-## Features
-
-- **Distributed training**
-  (via [`horovod`](https://github.com/horovod/horovod)): If `horovod` is installed, the model can be trained across multiple GPUs (or CPUs) by:
-
-  ```bash
-  #!/bin/bash
-  
-  TRAINER=/path/to/l2hmc-qcd/l2hmc-qcd/train.py
-  JSON_FILE=/path/to/l2hmc-qcd/bin/train_configs.json
-  
-  horovodrun -np ${PROCS} python3 ${TRAINER} --json_file=${JSON_FILE}
-  ```
--->
 
 <div align="center">
 	
