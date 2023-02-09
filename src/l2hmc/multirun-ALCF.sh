@@ -40,7 +40,7 @@ setupThetaGPU() {
     # -------------------------------------------------------------------------
 
     # -- MPI / Comms Setup ----------------------------------
-    NRANKS=$(wc -l < ${HOSTFILE})
+    NRANKS=$(wc -l < "${HOSTFILE}")
     NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
     NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
     MPI_COMMAND=$(which mpirun)
@@ -56,7 +56,7 @@ setupThetaGPU() {
     MPI_ELASTIC="\
       -n ${NGPUS} \
       -npernode ${NGPU_PER_RANK}"
-    MPIEXEC="${MPI_COMMAND} ${MPI_DEFAULTS} ${MPI_ELASTIC}"
+    # MPIEXEC="${MPI_COMMAND} ${MPI_DEFAULTS} ${MPI_ELASTIC}"
     # -------------------------------------------------------
   else
     echo "Unexpected hostname: $(hostname)"
@@ -69,6 +69,7 @@ setupThetaGPU() {
 setupPolaris()  {
   if [[ $(hostname) == x* ]]; then
     export MACHINE="Polaris"
+    HOSTFILE="${PBS_NODEFILE}"
     # -----------------------------------------------
     module load conda/2022-09-08; conda activate base
     VENV_DIR="../../venvs/polaris/2022-09-08"
@@ -82,8 +83,8 @@ setupPolaris()  {
     export LDFLAGS="-L${CONDA_PREFIX}/lib/"
     export IBV_FORK_SAFE=1
     # -----------------------------------------------
-    NRANKS=$(wc -l < ${PBS_NODEFILE})
-    HOSTFILE=${PBS_NODEFILE}
+    NRANKS=$(wc -l < "${HOSTFILE}")
+    # HOSTFILE=${HOSTFILE}
     NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
     NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
     MPI_COMMAND=$(which mpiexec)
@@ -94,22 +95,26 @@ setupPolaris()  {
       --hostfile ${HOSTFILE}"
     MPI_ELASTIC="\
       -n ${NGPUS} \
-      --depth ${NCPUS} \
       --ppn ${NGPU_PER_RANK}"
-    MPIEXEC="${MPI_COMMAND} ${MPI_FLAGS} ${MPI_ELASTIC}"
+    # MPIEXEC="${MPI_COMMAND} ${MPI_FLAGS} ${MPI_ELASTIC}"
   else
     echo "Unexpected hostname: $(hostname)"
   fi
 }
 
+# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+# ┃ Use 1 GPU on a single node ┃
+# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 singleDevice() {
   echo "Running on 1 GPU of ${MACHINE}"
   EXEC="$(which python3) ${MAIN} ${DEFAULTS}"
-  export EXEC="${EXEC} $@"
-  CUDA_VISIBLE_DEVICES=0 ${EXEC} $@
+  # export EXEC="${EXEC} "$@""
+  CUDA_VISIBLE_DEVICES=0 ${EXEC} "$@"
 }
 
-
+# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+# ┃ Use 2 GPUs on a single node ┃
+# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 twoDevices() {
   echo "Running on 2 GPUs of ${MACHINE}"
   EXEC="\
@@ -119,11 +124,14 @@ twoDevices() {
     $(which python3) \
     ${MAIN} \
     ${DEFAULTS}"
-  export EXEC="${EXEC} $@"
-  CUDA_VISIBLE_DEVICES=0,1 ${EXEC} $@
+  # export EXEC="${EXEC} "$@""
+  CUDA_VISIBLE_DEVICES=0,1 ${EXEC} "$@"
 }
 
 
+# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+# ┃ Use 4 GPUs on a single node ┃
+# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 fourDevices() {
   echo "Running on 4 GPUs"
   EXEC="\
@@ -133,11 +141,14 @@ fourDevices() {
     $(which python3) \
     ${MAIN} \
     ${DEFAULTS}"
-  export EXEC="${EXEC} $@"
-  CUDA_VISIBLE_DEVICES=0,1,2,3 ${EXEC} $@
+  # export EXEC="${EXEC} "$@""
+  CUDA_VISIBLE_DEVICES=0,1,2,3 ${EXEC} "$@"
 }
 
 
+# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+# ┃ Use all available GPUs on a single  node ┃
+# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 fullNode() {
   NRANKS=1
   NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
@@ -152,13 +163,16 @@ fullNode() {
     $(which python3) \
     ${MAIN} \
     ${DEFAULTS}"
-  export EXEC="${EXEC} $@"
-  ${EXEC} $@
+  # export EXEC="${EXEC} "$@""
+  ${EXEC} "$@"
 }
 
 
+# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+# ┃ Use all available GPUs on all available nodes ┃
+# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 elasticDistributed() {
-  NRANKS=$(wc -l < ${COBALT_NODEFILE})
+  NRANKS=$(wc -l < "${HOSTFILE}")
   NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
   NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
   echo "\
@@ -172,8 +186,8 @@ elasticDistributed() {
     $(which python3) \
     ${MAIN} \
     ${DEFAULTS}"
-  export EXEC="${EXEC} $@"
-  ${EXEC} $@
+  # export EXEC="${EXEC} "$@""
+  ${EXEC} "$@"
 }
 
 # ┏━━━━━━━━━━━━━━━━━━━━━━┓
@@ -181,21 +195,27 @@ elasticDistributed() {
 # ┗━━━━━━━━━━━━━━━━━━━━━━┛
 runTensorFlow() {
   TF_ARGS="framework=tensorflow backend=horovod precision=float32"
-  singleDevice ${TF_ARGS}
-  twoDevices ${TF_ARGS}
-  fullNode ${TF_ARGS}
+  # singleDevice ${TF_ARGS}
+  # twoDevices ${TF_ARGS}
+  # fullNode ${TF_ARGS}
   elasticDistributed ${TF_ARGS}
 }
 
+# ┏━━━━━━━━━━━━━━━━┓
+# ┃ PyTorch        ┃
+# ┃   + DDP        ┃
+# ┃   + Horovod    ┃
+# ┃   + DeepSpeed  ┃
+# ┗━━━━━━━━━━━━━━━━┛
 runPyTorch() {
   BACKENDS=("DDP" "deepspeed" "horovod")
   PRECISIONS=("fp16" "float32")
-  for BE in ${BACKENDS[@]}; do
-    for PREC in ${PRECISIONS[@]}; do
+  for BE in "${BACKENDS[@]}"; do
+    for PREC in "${PRECISIONS[@]}"; do
       PT_ARGS="framework=pytorch backend=${BE} precision=${PREC}"
-      singleDevice ${PT_ARGS}
-      twoDevices ${PT_ARGS}
-      fullNode ${PT_ARGS}
+      # singleDevice ${PT_ARGS}
+      # twoDevices ${PT_ARGS}
+      # fullNode ${PT_ARGS}
       elasticDistributed ${PT_ARGS}
     done
   done
