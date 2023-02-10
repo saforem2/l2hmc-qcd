@@ -13,8 +13,8 @@ DEFAULTS="\
   mode=debug \
   conv=none \
   restore=false \
-  save=false \
-  seed=1234"
+  save=false
+  seed=${RANDOM}"
 
 # ┏━━━━━━━━━━┓
 # ┃ ThetaGPU ┃
@@ -141,7 +141,6 @@ fourDevices() {
     $(which python3) \
     ${MAIN} \
     ${DEFAULTS}"
-  # export EXEC="${EXEC} "$@""
   CUDA_VISIBLE_DEVICES=0,1,2,3 ${EXEC} "$@"
 }
 
@@ -190,14 +189,18 @@ elasticDistributed() {
   ${EXEC} "$@"
 }
 
+
+TF_DEFAULTS="\
+  framework=tensorflow \
+  backend=horovod \
+  precision=float32"
+
 # ┏━━━━━━━━━━━━━━━━━━━━━━┓
 # ┃ TensorFlow + Horovod ┃
 # ┗━━━━━━━━━━━━━━━━━━━━━━┛
 runTensorFlow() {
-  TF_ARGS="framework=tensorflow backend=horovod precision=float32"
   singleDevice ${TF_ARGS}
   twoDevices ${TF_ARGS}
-  fourDevices ${TF_ARGS}
   fullNode ${TF_ARGS}
   elasticDistributed ${TF_ARGS}
 }
@@ -208,32 +211,86 @@ runTensorFlow() {
 # ┃   + Horovod    ┃
 # ┃   + DeepSpeed  ┃
 # ┗━━━━━━━━━━━━━━━━┛
+PT_DEFAULTS="\
+  framework=pytorch \
+  backend=DDP \
+  precision=float32"
+
 runPyTorch() {
-  BACKENDS=("DDP" "deepspeed" "horovod")
   PRECISIONS=("fp16" "float32")
-  for BE in "${BACKENDS[@]}"; do
-    for PREC in "${PRECISIONS[@]}"; do
+  BACKENDS=("DDP" "deepspeed" "horovod")
+  for PREC in "${PRECISIONS[@]}"; do
+    for BE in "${BACKENDS[@]}"; do
       PT_ARGS="framework=pytorch backend=${BE} precision=${PREC}"
       singleDevice ${PT_ARGS}
       twoDevices ${PT_ARGS}
-      fourDevices ${PT_ARGS}
       fullNode ${PT_ARGS}
       elasticDistributed ${PT_ARGS}
     done
   done
 }
 
+testSingleDevice() {
+  echo "Testing single device w/ PyTorch"
+  singleDevice ${PT_DEFAULTS[@]}
+  echo "Testing single device w/ TensorFlow"
+  singleDevice ${TF_DEFAULTS}
+}
+
+test2Devices() {
+  echo "Testing two devices w/ PyTorch"
+  twoDevices ${PT_DEFAULTS[@]}
+  echo "Testing two devices w/ TensorFlow"
+  twoDevices ${TF_DEFAULTS[@]}
+}
+
+test4Devices() {
+  echo "Testing single device w/ PyTorch"
+  fourDevices ${PT_DEFAULTS[@]}
+  echo "Testing single device w/ TensorFlow"
+  fourDevices ${TF_DEFAULTS[@]}
+}
+
+testFullNode() {
+  echo "Testing full node w/ PyTorch"
+  fullNode ${PT_DEFAULTS[@]}
+  echo "Testing full node w/ TensorFlow"
+  fullNode ${TF_DEFAULTS[@]}
+}
+
+testElastic() {
+  echo "Testing Elastic Training w/ PyTorch"
+  elasticDistributed ${PT_DEFAULTS[@]}
+  echo "Testing Elastic Training w/ TensorFlow"
+  elasticDistributed ${TF_DEFAULTS[@]}
+}
+
 
 if [[ $(hostname) == theta* ]]; then
+  echo "Setting up ThetaGPU from $(hostname)"
   setupThetaGPU
 elif [[ $(hostname) == x* ]]; then
+  echo "Setting up Polaris from $(hostname)"
   setupPolaris
 else
   echo "Unexpected hostname $(hostname)"
 fi
 
-echo "Running TensorFlow on $(hostname)"
-runTensorFlow
 
-echo "Running PyTorch on $(hostname)"
+# testSingleDevice
+# test2Devices
+# testFullNode
+# testElastic
 runPyTorch
+
+# for IDX in $(seq 1 5); do
+# # IDX=0
+#   IDXTSTAMP=$(date "+%Y-%m-%d-%H%M%S")
+#   echo "---------------------------------------------"
+#   echo "Starting iteration: ${IDX} at ${IDXTSTAMP}"
+#   echo "---------------------------------------------"
+#   echo "Running TensorFlow on $(hostname)"
+#   runTensorFlow
+#   echo "Running PyTorch on $(hostname)"
+#   runPyTorch
+# done
