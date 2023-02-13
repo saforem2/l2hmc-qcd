@@ -9,12 +9,32 @@ echo "Job running in: ${DIR}"
 
 export WANDB_CACHE_DIR="../../.cache/wandb"
 
+
+# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+# ┃ Default args passed to ./main.py   ┃
+# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 DEFAULTS="\
   mode=debug \
   conv=none \
   restore=false \
   save=false
   seed=${RANDOM}"
+
+# ┏━━━━━━━━━━━━━━━━━━━━━━━━━┓
+# ┃ Defaults for TensorFlow ┃
+# ┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
+TF_DEFAULTS="\
+  framework=tensorflow \
+  backend=horovod \
+  precision=float32"
+
+# ┏━━━━━━━━━━━━━━━━━━━━━━┓
+# ┃ Defaults for PyTorch ┃
+# ┗━━━━━━━━━━━━━━━━━━━━━━┛
+PT_DEFAULTS="\
+  framework=pytorch \
+  backend=DDP \
+  precision=float32"
 
 # ┏━━━━━━━━━━┓
 # ┃ ThetaGPU ┃
@@ -190,46 +210,6 @@ elasticDistributed() {
 }
 
 
-TF_DEFAULTS="\
-  framework=tensorflow \
-  backend=horovod \
-  precision=float32"
-
-# ┏━━━━━━━━━━━━━━━━━━━━━━┓
-# ┃ TensorFlow + Horovod ┃
-# ┗━━━━━━━━━━━━━━━━━━━━━━┛
-runTensorFlow() {
-  singleDevice ${TF_ARGS}
-  twoDevices ${TF_ARGS}
-  fullNode ${TF_ARGS}
-  elasticDistributed ${TF_ARGS}
-}
-
-# ┏━━━━━━━━━━━━━━━━┓
-# ┃ PyTorch        ┃
-# ┃   + DDP        ┃
-# ┃   + Horovod    ┃
-# ┃   + DeepSpeed  ┃
-# ┗━━━━━━━━━━━━━━━━┛
-PT_DEFAULTS="\
-  framework=pytorch \
-  backend=DDP \
-  precision=float32"
-
-runPyTorch() {
-  PRECISIONS=("fp16" "float32")
-  BACKENDS=("DDP" "deepspeed" "horovod")
-  for PREC in "${PRECISIONS[@]}"; do
-    for BE in "${BACKENDS[@]}"; do
-      PT_ARGS="framework=pytorch backend=${BE} precision=${PREC}"
-      singleDevice ${PT_ARGS}
-      twoDevices ${PT_ARGS}
-      fullNode ${PT_ARGS}
-      elasticDistributed ${PT_ARGS}
-    done
-  done
-}
-
 testSingleDevice() {
   echo "Testing single device w/ PyTorch"
   singleDevice ${PT_DEFAULTS[@]}
@@ -265,6 +245,37 @@ testElastic() {
   elasticDistributed ${TF_DEFAULTS[@]}
 }
 
+# ┏━━━━━━━━━━━━━━━━━━━━━━┓
+# ┃ TensorFlow + Horovod ┃
+# ┗━━━━━━━━━━━━━━━━━━━━━━┛
+runTensorFlow() {
+  singleDevice ${TF_DEFAULTS}
+  twoDevices ${TF_DEFAULTS}
+  fullNode ${TF_DEFAULTS}
+  elasticDistributed ${TF_DEFAULTS}
+}
+
+# ┏━━━━━━━━━━━━━━━━┓
+# ┃ PyTorch        ┃
+# ┃   + DDP        ┃
+# ┃   + Horovod    ┃
+# ┃   + DeepSpeed  ┃
+# ┗━━━━━━━━━━━━━━━━┛
+runPyTorch() {
+  PRECISIONS=("float32" "fp16")
+  BACKENDS=("DDP" "deepspeed" "horovod")
+  for PREC in "${PRECISIONS[@]}"; do
+    for BE in "${BACKENDS[@]}"; do
+      PT_ARGS="framework=pytorch backend=${BE} precision=${PREC}"
+      singleDevice ${PT_ARGS}
+      twoDevices ${PT_ARGS}
+      fullNode ${PT_ARGS}
+      elasticDistributed ${PT_ARGS}
+    done
+  done
+}
+
+
 
 if [[ $(hostname) == theta* ]]; then
   echo "Setting up ThetaGPU from $(hostname)"
@@ -282,6 +293,7 @@ fi
 # testFullNode
 # testElastic
 runPyTorch
+runTensorFlow
 
 # for IDX in $(seq 1 5); do
 # # IDX=0
