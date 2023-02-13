@@ -6,12 +6,12 @@ Experiment base class.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
-import os
+# import os
 from os import PathLike
 from pathlib import Path
 from typing import Any, Optional
 
-import horovod.torch as hvd
+# import horovod.torch as hvd
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 import time
@@ -147,7 +147,7 @@ class Experiment(BaseExperiment):
             # dtype=torch.float32,
             device_type='cuda' if torch.cuda.is_available() else 'cpu'
         ):
-            force = self.trainer.dynamics.grad_potential(x, state.beta)
+            force = self.trainer.dynamics.grad_potential(x, beta)
             sv, tv, qv = self.trainer.dynamics._call_vnet(0, (x, force))
             xm = self.trainer.dynamics.unflatten(
                 m * self.trainer.dynamics.flatten(x)
@@ -276,6 +276,7 @@ class Experiment(BaseExperiment):
         # htmlfile = jobdir.joinpath(f'{fname}.html')
         # console.save_text(txtfile.as_posix(), clear=False)
         # console.save_html(htmlfile.as_posix())
+        log.info(f'Training took: {time.time() - tstart:.4f}')
 
         if self.trainer._is_chief:
             dset = self.save_dataset(

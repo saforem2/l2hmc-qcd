@@ -12,7 +12,7 @@ from omegaconf import DictConfig
 
 from typing import Any, Optional
 from pathlib import Path
-from l2hmc.dynamics.tensorflow.dynamics import Dynamics
+# from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
 from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
 
