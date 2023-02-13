@@ -4,7 +4,7 @@
   "wall_clock_breakdown": false,
   "zero_allow_untested_optimizer": true,
   "flops_profiler": {
-    "enabled": true,
+    "enabled": false,
     "profile_step": 1,
     "module_depth": -1,
     "top_modules": 1,
@@ -25,8 +25,8 @@
   },
   "comms_logger": {
     "enabled": false,
-    "verbose": true,
-    "prof_all": true,
+    "verbose": false,
+    "prof_all": false,
     "debug": false
   },
   "wandb": {
