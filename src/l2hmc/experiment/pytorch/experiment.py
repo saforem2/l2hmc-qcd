@@ -6,6 +6,7 @@ Experiment base class.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
+import os
 from os import PathLike
 from pathlib import Path
 from typing import Any, Optional
@@ -46,12 +47,6 @@ class Experiment(BaseExperiment):
             self.config = instantiate(cfg)
         assert isinstance(self.config, ExperimentConfig)
         self.ckpt_dir = self.config.get_checkpoint_dir()
-        self.trainer: Trainer = self.build_trainer(
-            keep=keep,
-            skip=skip,
-            build_networks=build_networks,
-            ckpt_dir=self.ckpt_dir,
-        )
         dsetup = setup_torch_distributed(self.config.backend)
         self._size = dsetup['size']
         self._rank = dsetup['rank']
@@ -66,13 +61,19 @@ class Experiment(BaseExperiment):
             )
             run = super()._init_wandb()
             assert run is wandb.run
-            run.watch(
-                self.trainer.dynamics.networks,
-                log='all',
-                log_graph=True,
-                criterion=self.trainer.loss_fn,
-            )
+            # run.watch(
+            #     self.trainer.dynamics.networks,
+            #     log='all',
+            #     log_graph=True,
+            #     criterion=self.trainer.loss_fn,
+            # )
             run.config['SIZE'] = self._size
+            # env = os.environ
+            # _ = env.pop('LS_COLORS', None)
+            # run.config['environment'] = env
+            # ds_config = getattr(self.trainer, 'ds_config', None)
+            # if ds_config is not None:
+            #     run.config.update(ds_config)
 
         if self._rank == 0 and self.config.init_aim:
             log.warning(
@@ -85,6 +86,23 @@ class Experiment(BaseExperiment):
                     arun['ngpus'] = self._size
                 else:
                     arun['ncpus'] = self._size
+
+        self.trainer: Trainer = self.build_trainer(
+            keep=keep,
+            skip=skip,
+            build_networks=build_networks,
+            ckpt_dir=self.ckpt_dir,
+        )
+        if run is not None:
+            run.watch(
+                self.trainer.dynamics.networks,
+                log='all',
+                log_graph=True,
+                criterion=self.trainer.loss_fn,
+            )
+            ds_config = getattr(self.trainer, 'ds_config', None)
+            if ds_config is not None:
+                run.config['deepspeed_config'] = ds_config
 
         self.run = run
         self.arun = arun
