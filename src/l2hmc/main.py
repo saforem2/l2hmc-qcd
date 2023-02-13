@@ -135,7 +135,8 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
         try:
             ex.visualize_model()
         except Exception as e:
-            log.exception(e)
+            # log.exception(e)
+            log.error(f'Unable to make visuals for model, continuing!')
 
     return Path(ex._outdir).as_posix()
 
