@@ -15,8 +15,8 @@ HOST=$(hostname)
 # ---- Specify directories and executable for experiment ------------------
 DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd -LP)
 MAIN="${DIR}/main.py"
-PARENT=$(dirname $DIR)
-ROOT=$(dirname $PARENT)
+PARENT=$(dirname "$DIR")
+ROOT=$(dirname "$PARENT")
 
 echo "Job started at: ${TSTAMP} on ${HOST}"
 echo "Job running in: ${DIR}"
@@ -40,199 +40,237 @@ NCPUS=$(getconf _NPROCESSORS_ONLN)
 #   1. If $(hostname) startswith theta*, we're on ThetaGPU
 #   2. If $(hostname) startswith x*, we're on Polaris
 # ---------------------------------------------------------------
-
-
+#
 # ┏━━━━━━━━━━┓
 # ┃ ThetaGPU ┃
-# ┗━━━━━━━━━━┛ {{{
-if [[ $(hostname) == theta* ]]; then
-  MACHINE="ThetaGPU"
-  HOSTFILE="${COBALT_NODEFILE}"
-  module load conda/2022-07-01 ; conda activate base
-  conda activate /lus/grand/projects/datascience/foremans/locations/thetaGPU/miniconda3/envs/2022-07-01
-  VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-01-deepspeed"  # -libaio"
-  # module load conda/2023-01-11 ; conda activate base
-  # VENV_DIR="${ROOT}/venvs/thetaGPU/2023-01-11"  # -libaio"
-  # module load conda/2023-01-11 ; conda activate base
-  # VENV_DIR="${ROOT}/venvs/thetaGPU/2023-01-11"
-  # fi
+# ┗━━━━━━━━━━┛
+setupThetaGPU() {
+  if [[ $(hostname) == theta* ]]; then
+    export MACHINE="ThetaGPU"
+    HOSTFILE="${COBALT_NODEFILE}"
 
-  NRANKS=$(wc -l < ${HOSTFILE})
-  # HOSTFILE=${COBALT_NODEFILE}
-  NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
-  NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
-  MPI_COMMAND=$(which mpirun)
-  export CFLAGS="-I${CONDA_PREFIX}/include/"
-  export LDFLAGS="-L${CONDA_PREFIX}/lib/"
-  # -x PYTHONSTARTUP \
-  MPI_FLAGS="-n ${NGPUS} \
-    --hostfile ${HOSTFILE} \
-    -npernode ${NGPU_PER_RANK} \
-    -x CFLAGS \
-    -x LDFLAGS \
-    -x PYTHONUSERBASE \
-    -x http_proxy \
-    -x https_proxy \
-    -x PATH \
-    -x LD_LIBRARY_PATH"
-# }}}
+    # -- Python / Conda setup -------------------------------------------------
+    module load conda/2022-07-01 ; conda activate base
+    conda activate \
+      /lus/grand/projects/datascience/foremans/locations/thetaGPU/miniconda3/envs/2022-07-01
+    VENV_DIR="../../venvs/thetaGPU/2022-07-01-deepspeed"
+    if [[ -f "${VENV_DIR}/bin/activate" ]]; then
+      # source "${VENV_DIR}/bin/activate"
+      source ../../venvs/thetaGPU/2022-07-01-deepspeed/bin/activate
+    else
+      echo "No venv found"
+      # python3 -m pip install -e "${ROOT}[dev]"
+    fi
+    export CFLAGS="-I${CONDA_PREFIX}/include/"
+    export LDFLAGS="-L${CONDA_PREFIX}/lib/"
+    # -------------------------------------------------------------------------
+
+    # -- MPI / Comms Setup ----------------------------------
+    NRANKS=$(wc -l < "${HOSTFILE}")
+    NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
+    NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
+    MPI_COMMAND=$(which mpirun)
+    MPI_DEFAULTS="\
+      --verbose \
+      --hostfile ${HOSTFILE} \
+      -x CFLAGS \
+      -x LDFLAGS \
+      -x PYTHONUSERBASE \
+      -x http_proxy \
+      -x https_proxy \
+      -x PATH \
+      -x LD_LIBRARY_PATH"
+    MPI_ELASTIC="\
+      -n ${NGPUS} \
+      -npernode ${NGPU_PER_RANK}"
+    # MPIEXEC="${MPI_COMMAND} ${MPI_DEFAULTS} ${MPI_ELASTIC}"
+    # -------------------------------------------------------
+  else
+    echo "Unexpected hostname: $(hostname)"
+  fi
+}
 
 # ┏━━━━━━━━━┓
 # ┃ Polaris ┃
-# ┗━━━━━━━━━┛ {{{
-elif [[ $(hostname) == x* ]]; then
-  MACHINE="Polaris"
+# ┗━━━━━━━━━┛
+setupPolaris()  {
+  if [[ $(hostname) == x* ]]; then
+    export MACHINE="Polaris"
+    HOSTFILE="${PBS_NODEFILE}"
+    # -----------------------------------------------
+    module load conda/2022-09-08; conda activate base
+    VENV_DIR="../../venvs/polaris/2022-09-08"
+    if [[ -f "${VENV_DIR}/bin/activate" ]]; then
+      source "${VENV_DIR}/bin/activate"
+    else
+      echo "No venv found"
+      # python3 -m pip install -e "${ROOT}[dev]"
+    fi
+    export CFLAGS="-I${CONDA_PREFIX}/include/"
+    export LDFLAGS="-L${CONDA_PREFIX}/lib/"
+    export IBV_FORK_SAFE=1
+    # -----------------------------------------------
+    NRANKS=$(wc -l < "${HOSTFILE}")
+    # HOSTFILE=${HOSTFILE}
+    NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
+    NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
+    MPI_COMMAND=$(which mpiexec)
+    # -----------------------------------------------
+    MPI_DEFAULTS="\
+      --envall \
+      --verbose \
+      --hostfile ${HOSTFILE}"
+    MPI_ELASTIC="\
+      -n ${NGPUS} \
+      --ppn ${NGPU_PER_RANK}"
+    # MPIEXEC="${MPI_COMMAND} ${MPI_FLAGS} ${MPI_ELASTIC}"
+  else
+    echo "Unexpected hostname: $(hostname)"
+  fi
+}
 
-  module load conda/2022-09-08; conda activate base
-  VENV_DIR="${ROOT}/venvs/polaris/2022-09-08"
-
-  NRANKS=$(wc -l < ${PBS_NODEFILE})
-  HOSTFILE=${PBS_NODEFILE}
-  NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
-  NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
-  MPI_COMMAND=$(which mpiexec)
-  # --cpu-bind verbose,list:0,8,16,24 \
-  export CFLAGS="-I${CONDA_PREFIX}/include/"
-  export LDFLAGS="-L${CONDA_PREFIX}/lib/"
-  MPI_FLAGS="--envall \
-    --verbose \
-    -n ${NGPUS} \
-    --depth ${NCPUS} \
-    --ppn ${NGPU_PER_RANK} \
-    --hostfile ${HOSTFILE}"
-  unset MPICH_GPU_SUPPORT_ENABLED
-  export IBV_FORK_SAFE=1
-  export NCCL_COLLNET_ENABLE=1
-# }}}
 
 # ┏━━━━━━━━━┓
 # ┃ ??????? ┃
 # ┗━━━━━━━━━┛
-else
-  MACHINE=$(hostname)
-  VENV_DIR="${ROOT}/venv/"
-  if [[ $(uname) == Darwin* ]]; then
-    # Check if environment has an mpirun executable
-    if [[ -x $(which mpirun) ]]; then
-      MPI_COMMAND=$(which mpirun)
-      MPI_FLAGS="-np ${NCPUS}"
-    fi
-  # Otherwise, run without MPI
-  else
-      MPI_COMMAND=""
-      MPI_FLAGS=""
-      echo "HOSTNAME: $(hostname)"
-  fi
-fi
-
-# -----------------------------------------------------------
-# 1. Locate virtual envronment to use:
-#     a. Look for custom venv, unique to specific resource 
-#         (e.g. `l2hmc-qcd/venvs/polaris/2022-09-08`)
-#
-#     b. Otherwise, look for generic environment at:
-#         `l2hmc-qcd/venv/`
-#
-# 2. Perform Editable install
-# -----------------------------------------------------------
-# if [[ ! -z "${VIRTUAL_ENV}" ]] ; then
-if [[ -f "${VENV_DIR}/bin/activate" ]]; then
-  echo "Found venv at: ${VENV_DIR}"
-  source "${VENV_DIR}/bin/activate"
-else
-  if [[ -f "${ROOT}/venv/bin/activate" ]]; then
-    echo "Found venv at: ${ROOT}/venv/, using that"
-    source "${VENV_DIR}/bin/activate"
-  else
-    echo "Creating new venv at: ${VENV_DIR}"
-    python3 -m venv "${ROOT}/venv/" --system-site-packages
-    source "${VENV_DIR}/bin/activate"
-    python3 -m pip install --upgrade pip setuptools wheel
-    python3 -m pip install -e "${ROOT}"
-  fi
-fi
+# else
+#   MACHINE=$(hostname)
+#   VENV_DIR="${ROOT}/venv/"
+#   if [[ $(uname) == Darwin* ]]; then
+#     # Check if environment has an mpirun executable
+#     if [[ -x $(which mpirun) ]]; then
+#       MPI_COMMAND=$(which mpirun)
+#       MPI_FLAGS="-np ${NCPUS}"
+#     fi
+#   # Otherwise, run without MPI
+#   else
+#       MPI_COMMAND=""
+#       MPI_FLAGS=""
+#       echo "HOSTNAME: $(hostname)"
+#   fi
 # fi
+#
+#
+#
+setupJob() {
+  # ---- Environment settings -----------------------------------------------
+  export OMP_NUM_THREADS=$NCPUS
+  export WIDTH=$COLUMNS
+  export COLUMNS=$COLUMNS
+  echo "WIDTH: ${COLUMNS}"
+  export NCCL_DEBUG=ERROR
+  export MACHINE="${MACHINE}"
 
-# ---- Environment settings -----------------------------------------------
-export OMP_NUM_THREADS=$NCPUS
-export WIDTH=$COLUMNS
-export COLUMNS=$COLUMNS
-echo "WIDTH: ${COLUMNS}"
-export NCCL_DEBUG=ERROR
-export MACHINE="${MACHINE}"
+  export WANDB_CACHE_DIR="${ROOT}/.cache/wandb"
+  # export KMP_SETTINGS=TRUE
+  # export OMPI_MCA_opal_cuda_support=TRUE
+  # export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/cuda/lib64"
+  # export KMP_AFFINITY='granularity=fine,verbose,compact,1,0'
 
-export WANDB_CACHE_DIR="${ROOT}/.cache/wandb"
-# export WANDB_
-# export KMP_SETTINGS=TRUE
-# export OMPI_MCA_opal_cuda_support=TRUE
-# export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/cuda/lib64"
-# export KMP_AFFINITY='granularity=fine,verbose,compact,1,0'
+  export TF_ENABLE_AUTO_MIXED_PRECISION=1
+  # export TF_XLA_FLAGS="--tf_xla_auto_jit=2 --tf_xla_enable_xla_devices"
 
-export TF_ENABLE_AUTO_MIXED_PRECISION=1
-# export TF_XLA_FLAGS="--tf_xla_auto_jit=2 --tf_xla_enable_xla_devices"
+  LOGDIR="${DIR}/logs"
+  LOGFILE="${LOGDIR}/${TSTAMP}-${HOST}_ngpu${NGPUS}_ncpu${NCPUS}.log"
+  export LOGFILE=$LOGFILE
+  if [ ! -d "${LOGDIR}" ]; then
+    mkdir -p ${LOGDIR}
+  fi
 
-LOGDIR="${DIR}/logs"
-LOGFILE="${LOGDIR}/${TSTAMP}-${HOST}_ngpu${NGPUS}_ncpu${NCPUS}.log"
-export LOGFILE=$LOGFILE
-if [ ! -d "${LOGDIR}" ]; then
-  mkdir -p ${LOGDIR}
+  # Keep track of latest logfile for easy access
+  echo $LOGFILE >> "${DIR}/logs/latest"
+
+  # Double check everythings in the right spot
+  # printf '%.s─' $(seq 1 $(tput cols))
+
+  # -------------------------------
+  # CONSTRUCT EXECUTABLE TO BE RAN
+  # -------------------------------
+  EXEC="${MPI_COMMAND} ${MPI_DEFAULTS} ${MPI_ELASTIC} $(which python3) ${MAIN}"
+
+  # export EXEC="$EXEC $@"
+}
+
+# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+# ┃ Elastic Training:                              ┃
+# ┃  Use all available GPUs on all available nodes ┃
+# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+elasticDistributed() {
+  NRANKS=$(wc -l < "${HOSTFILE}")
+  NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
+  NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
+  echo "\
+    Running on ${NRANKS} ranks \
+    with ${NGPU_PER_RANK} GPUs each \
+    for a total of ${NGPUS} GPUs"
+  EXEC="\
+    ${MPI_COMMAND} \
+    ${MPI_DEFAULTS} \
+    ${MPI_ELASTIC} \
+    $(which python3) \
+    ${MAIN}"
+  # export EXEC="${EXEC} "$@""
+  ${EXEC} "$@"
+}
+
+
+# ┏━━━━━━━━━━━━━━━━━━━━━━━┓
+# ┃ Print Job Information ┃
+# ┗━━━━━━━━━━━━━━━━━━━━━━━┛
+printJobInfo() {
+  echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "┃ STARTING A NEW RUN @ ${MACHINE} ON ${NGPUS} GPUs ${NCPUS} CPUS  "
+  echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "┃  - DIR=${DIR}"
+  echo "┃  - MAIN=${MAIN}"
+  echo "┃  - PARENT=${PARENT}"
+  echo "┃  - ROOT=${ROOT}"
+  echo "┃  - LOGDIR=${LOGDIR}"
+  echo "┃  - LOGFILE=${LOGFILE}"
+  echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "┃  - hostname: $(hostname)"
+  echo "┃  - DATE: ${TSTAMP}"
+  echo "┃  - NCPUS: ${NCPUS}"
+  echo "┃  - NRANKS: ${NRANKS}"
+  echo "┃  - NGPUS PER RANK: ${NGPU_PER_RANK}"
+  echo "┃  - NGPUS TOTAL: ${NGPUS}"
+  echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "┃  - MAIN: ${MAIN}"
+  echo "┃  - Writing logs to ${LOGFILE}"
+  echo "┃  - python3: $(which python3)"
+  echo "┃  - mpirun: ${MPI_COMMAND}"
+  echo "┃  - l2hmc: $(python3 -c 'import l2hmc; print(l2hmc.__file__)')"
+  echo '┃  - exec: "${EXEC} $@"'
+  echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo '┃ To view output: `tail -f $(tail -1 logs/latest)`'
+  echo "┃ Latest logfile: $(tail -1 ./logs/latest)"
+  echo "┃ tail -f $(tail -1 logs/latest)"
+  echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
+# main() {
+if [[ $(hostname) == theta* ]]; then
+  echo "Setting up ThetaGPU from $(hostname)"
+  setupThetaGPU
+elif [[ $(hostname) == x* ]]; then
+  echo "Setting up Polaris from $(hostname)"
+  setupPolaris
+else
+  echo "Unexpected hostname $(hostname)"
 fi
 
+setupJob
+printJobInfo
+${EXEC} "$@" > ${LOGFILE} &
+# }
 
-# Keep track of latest logfile for easy access
-echo $LOGFILE >> "${DIR}/logs/latest"
-
-# Double check everythings in the right spot
-# printf '%.s─' $(seq 1 $(tput cols))
-
-# -------------------------------
-# CONSTRUCT EXECUTABLE TO BE RAN
-# -------------------------------
-EXEC="${MPI_COMMAND} ${MPI_FLAGS} $(which python3) ${MAIN}"
-
-export EXEC="$EXEC $@"
-
-# ---- Print job information -------------------------------------------------
-echo -e '\n'
-# printf '%.s─' $(seq 1 $(tput cols))
-echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "┃ STARTING A NEW RUN @ ${MACHINE} ON ${NGPUS} GPUs ${NCPUS} CPUS  "
-echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "┃  - DIR=${DIR}"
-echo "┃  - MAIN=${MAIN}"
-echo "┃  - PARENT=${PARENT}"
-echo "┃  - ROOT=${ROOT}"
-echo "┃  - LOGDIR=${LOGDIR}"
-echo "┃  - LOGFILE=${LOGFILE}"
-echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "┃  - hostname: $(hostname)"
-echo "┃  - DATE: ${TSTAMP}"
-echo "┃  - NCPUS: ${NCPUS}"
-echo "┃  - NRANKS: ${NRANKS}"
-echo "┃  - NGPUS PER RANK: ${NGPU_PER_RANK}"
-echo "┃  - NGPUS TOTAL: ${NGPUS}"
-echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "┃  - MAIN: ${MAIN}"
-echo "┃  - Writing logs to ${LOGFILE}"
-echo "┃  - python3: $(which python3)"
-echo "┃  - mpirun: ${MPI_COMMAND}"
-echo "┃  - l2hmc: $(python3 -c 'import l2hmc; print(l2hmc.__file__)')"
-echo "┃  - exec: ${EXEC} $@"
-echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-# printf '%.s─' $(seq 1 $(tput cols))
-echo -e '\n'
-
-echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo '┃ To view output: `tail -f $(tail -1 logs/latest)`'
-echo "┃ Latest logfile: $(tail -1 ./logs/latest)"
-echo "┃ tail -f $(tail -1 logs/latest)"
-echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Run executable command
-${EXEC} $@ > ${LOGFILE} & #; ret_code=$?
+# ${EXEC} $@ > ${LOGFILE} & #; ret_code=$?
 
 # if [[ $ret_code != 0 ]]; then exit $ret_code; fi
 
