@@ -39,7 +39,22 @@ def setup_tensorflow(
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     import horovod.tensorflow as hvd
     hvd.init() if not hvd.is_initialized() else None
-    tf.keras.backend.set_floatx(precision)
+    if precision in [
+            'fp16',
+            'float16',
+            'half',
+            '16',
+            'mixed_float16',
+            'mixed_bfloat16'
+    ]:
+        # from tensorflow.python.keras import mixed_precision
+        tf.keras.mixed_precision.set_global_policy(
+            'mixed_float16'
+        )
+        # tf.keras.backend.set_floatx('mixed_float16')
+        # mixed_precision.set_global_policy('mixed_float16')
+    else:
+        tf.keras.backend.set_floatx(precision)
     TF_FLOAT = tf.keras.backend.floatx()
     eager_mode = os.environ.get('TF_EAGER', None)
     if eager_mode is not None:
