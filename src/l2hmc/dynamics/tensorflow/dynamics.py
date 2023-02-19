@@ -299,14 +299,16 @@ class Dynamics(Model):
         data = self.generate_proposal_fb(inputs, training=training)
         ma_, _ = self._get_accept_masks(data['metrics']['acc'])
         ma = ma_[:, None]
+        vprop = self.flatten(data['proposed'].v)
+        xprop = self.flatten(data['proposed'].x)
         v_out = tf.where(
             tf.cast(ma, bool),
-            (vprop := self.flatten(data['proposed'].v)),
+            vprop,
             tf.cast(self.flatten(data['init'].v), vprop.dtype)
         )
         x_out = tf.where(
             tf.cast(ma, bool),
-            (xprop := self.flatten(data['proposed'].x)),
+            xprop,
             tf.cast(self.flatten(data['init'].x), xprop.dtype)
         )
         sld = data['metrics']['sumlogdet']
