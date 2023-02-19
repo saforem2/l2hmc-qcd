@@ -246,8 +246,8 @@ class Experiment(BaseExperiment):
                 train_dir=jobdir,
                 skip=skip,
                 beta=beta,
-                # nprint=nprint,
-                # nlog=nlog
+                nprint=nprint,
+                nlog=nlog
             )
         else:
             output = self.trainer.train(
