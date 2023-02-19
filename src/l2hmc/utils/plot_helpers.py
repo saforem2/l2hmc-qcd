@@ -355,20 +355,27 @@ def plot_combined(
     ax0 = subfigs[0].subplots(1, 1)
     if 'chain' in val.dims:
         val = val.dropna('chain')
-        _ = xplt.imshow(val, 'draw', 'chain', ax=ax0,
-                        robust=True, add_colorbar=True)
+        _ = xplt.imshow(
+            val[:num_chains, :],
+            'draw',
+            'chain',
+            ax=ax0,
+            robust=True,
+            add_colorbar=True
+        )
     # _ = xplt.pcolormesh(val, 'draw', 'chain', ax=ax0,
     #                     robust=True, add_colorbar=True)
     # sns.despine(ax0)
     nchains = min(num_chains, len(val.coords['chain']))
     label = f'{key}_avg'
     # label = r'$\langle$' + f'{key} ' + r'$\rangle$'
-    steps = np.arange(len(val.coords['draw']))
+    # steps = np.arange(len(val.coords['draw']))
+    steps = val.coords['draw']
     chain_axis = val.get_axis_num('chain')
     if chain_axis == 0:
         for idx in range(nchains):
             _ = ax1.plot(
-                steps,
+                val.coords['draw'].values,
                 val.values[idx, :],
                 color=color,
                 lw=LW/2.,
@@ -376,7 +383,7 @@ def plot_combined(
             )
 
     _ = ax1.plot(
-        steps,
+        val.coords['draw'].values,
         val.mean('chain'),
         color=color,
         label=label,
@@ -422,7 +429,8 @@ def plot_dataArray(
         therm_frac = 0.2
 
     arr = val.values  # shape: [nchains, ndraws]
-    steps = np.arange(len(val.coords['draw']))
+    # steps = np.arange(len(val.coords['draw']))
+    steps = val.coords['draw']
 
     if therm_frac is not None and therm_frac > 0.0:
         drop = int(therm_frac * arr.shape[0])
