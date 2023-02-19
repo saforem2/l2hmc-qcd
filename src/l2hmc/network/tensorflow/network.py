@@ -578,7 +578,12 @@ class LeapfrogLayer(Model):
         #     tf.cast(t, x.dtype),
         #     tf.cast(q, x.dtype)
         # )
-        return (s, t, q)  # type:ignore
+        # return (s, t, q)  # type:ignore
+        return (
+            tf.cast(s, TF_FLOAT),
+            tf.cast(t, TF_FLOAT),
+            tf.cast(q, TF_FLOAT)
+        )
 
 
 class NetworkFactory(BaseNetworkFactory):

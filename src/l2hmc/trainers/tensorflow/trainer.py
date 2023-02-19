@@ -129,9 +129,14 @@ class Trainer(BaseTrainer):
             skip: Optional[str | list[str]] = None,
     ) -> None:
         super().__init__(cfg=cfg, keep=keep, skip=skip)
-        if self.config.compression in [True, 'fp16']:
+        if (
+                (self.config.compression in [True, 'fp16'])
+                or self.config.precision in ['fp16', 'half', 'float16']
+        ):
+            self.use_fp16: bool = True
             self.compression = hvd.Compression.fp16
         else:
+            self.use_fp16: bool = False
             self.compression = hvd.Compression.none
 
         assert isinstance(
@@ -260,7 +265,10 @@ class Trainer(BaseTrainer):
         # TODO: Expand method, re-build LR scheduler, etc
         # TODO: Replace `LearningRateConfig` with `OptimizerConfig`
         # TODO: Optionally, break up in to lrScheduler, OptimizerConfig ?
-        return tf.keras.optimizers.Adam(self.config.learning_rate.lr_init)
+        opt = tf.keras.optimizers.Adam(self.config.learning_rate.lr_init)
+        if self.config.precision in ['fp16', 'half', 'float16']:
+            return tf.keras.mixed_precision.LossScaleOptimizer(opt)
+        return opt
 
     def get_lr(self) -> float:
         return K.get_value(self.optimizer.lr)
@@ -404,7 +412,7 @@ class Trainer(BaseTrainer):
 
         if run is not None:
             weights = {
-                rename(k): v
+                rename(k): tf.cast(v, TF_FLOAT)
                 for k, v in self.dynamics.get_all_weights().items()
             }
             run.log(weights, commit=False)
@@ -833,6 +841,7 @@ class Trainer(BaseTrainer):
         """
         xinit, beta = inputs
         aw = self.config.loss.aux_weight
+        scaled_loss = None
         with tf.GradientTape() as tape:
             tape.watch(xinit)
             xout, metrics = self.dynamics(  # type:ignore
@@ -855,12 +864,25 @@ class Trainer(BaseTrainer):
                 loss += aw * aux_loss
                 # loss = (loss + aux_loss) / (1. + self.aux_weight)
 
-        # tape = hvd.DistributedGradientTape(
-        #     tape,
-        #     compression=self.compression
-        # )
-        tape = hvd.DistributedGradientTape(tape)
-        grads = tape.gradient(loss, self.dynamics.trainable_variables)
+            if self.use_fp16:
+                scaled_loss = self.optimizer.get_scaled_loss(loss)
+
+        tape = hvd.DistributedGradientTape(
+            tape,
+            # compression=self.compression
+        )
+        # tape = hvd.DistributedGradientTape(tape)
+        if scaled_loss is not None:
+            scaled_grads = tape.gradient(
+                scaled_loss,
+                self.dynamics.trainable_variables
+            )
+            grads = self.optimizer.get_unscaled_gradients(
+                scaled_grads,
+            )
+        else:
+            grads = tape.gradient(loss, self.dynamics.trainable_variables)
+
         if self.clip_norm > 0.0:
             grads = [
                 tf.clip_by_norm(grad, clip_norm=self.clip_norm)
@@ -1152,12 +1174,10 @@ class Trainer(BaseTrainer):
             tol: float = 1e-5,
             x: Optional[Tensor] = None
     ) -> Tensor:
-        # state = self.dynamics.random_state(beta)
         if x is None:
             x = self.dynamics.lattice.random()
         if not isinstance(beta, Tensor):
             beta = tf.constant(beta, dtype=TF_FLOAT)
-        # btensor = tf.cast(beta, dtype=TF_FLOAT)
         pexact = plaq_exact(beta)
         for step in range(nsteps):
             x, metrics = self.dynamics((x, beta))  # type:ignore
