@@ -1070,7 +1070,10 @@ class Trainer(BaseTrainer):
                     )
 
                     if step % nprint == 0:
-                        self.info(summary)
+                        if isinstance(ctx, Live):
+                            ctx.console.print(summary)
+                        else:
+                            self.info(summary)
 
                     refresh_view()
 
@@ -1418,7 +1421,10 @@ class Trainer(BaseTrainer):
 
                 if should_print(epoch):
                     refresh_view()
-                    log.info(summary)
+                    if isinstance(ctx, Live):
+                        ctx.console.print(summary)
+                    else:
+                        log.info(summary)
                     # if isinstance(ctx, Live):
                     #     ctx.console.clear()
                     #     ctx.console.clear_live()
@@ -1602,7 +1608,7 @@ class Trainer(BaseTrainer):
                     esummary = self.histories['train'].era_summary(f'{era-1}')
                     log.info(f'Avgs over last era:\n {esummary}\n')
 
-                self.console.rule(f'ERA: {era} / {nera - 1}, BETA: {b:.3f}')
+                self.console.rule(f'ERA: {era} / {nera - 1}, BETA: {b:.3f}', )
 
             epoch_start = time.time()
             x, edata = self.train_epoch(

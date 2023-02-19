@@ -420,30 +420,42 @@ class Dynamics(nn.Module):
             inputs: tuple[Tensor, Tensor]
     ) -> tuple[Tensor, dict]:
         data = self.generate_proposal_fb(inputs)
-        ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
+        ma_, _ = self._get_accept_masks(data['metrics']['acc'])
         ma_ = ma_.to(inputs[0].device)
-        mr_ = mr_.to(inputs[0].device)
+        # mr_ = mr_.to(inputs[0].device)
         ma = ma_[:, None]
-        mr = mr_[:, None]
+        # mr = mr_[:, None]
 
         # NOTE: We construct output states by combining
         #   output = (acc_mask * proposed) + (reject_mask * init)
-        v_out = (
-            ma * data['proposed'].v.flatten(1)
-            + mr * data['init'].v.flatten(1)
+        v_out = torch.where(
+            ma.to(torch.bool),
+            self.flatten(data['proposed'].v),
+            self.flatten(data['init'].v)
         )
-        x_out = (
-            ma * data['proposed'].x.flatten(1)
-            + mr * data['init'].x.flatten(1)
+        x_out = torch.where(
+            ma.to(torch.bool),
+            self.flatten(data['proposed'].x),
+            self.flatten(data['init'].x)
         )
+        # v_out = (
+        #     ma * data['proposed'].v.flatten(1)
+        #     + mr * data['init'].v.flatten(1)
+        # )
+        # x_out = (
+        #     ma * data['proposed'].x.flatten(1)
+        #     + mr * data['init'].x.flatten(1)
+        # )
 
         # NOTE: sumlogdet = (accept * logdet) + (reject * 0)
         sumlogdet = ma_ * data['metrics']['sumlogdet']
 
         state_out = State(x=x_out, v=v_out, beta=data['init'].beta)
-        mc_states = MonteCarloStates(init=data['init'],
-                                     proposed=data['proposed'],
-                                     out=state_out)
+        mc_states = MonteCarloStates(
+            init=data['init'],
+            proposed=data['proposed'],
+            out=state_out
+        )
         data['metrics'].update({
             'beta': data['init'].beta,
             'acc_mask': ma_,
@@ -734,7 +746,12 @@ class Dynamics(nn.Module):
 
         history = {}
         if self.config.verbose:
-            extras = {'sldf': sldf, 'sldb': sldb, 'sld': sumlogdet}
+            extras = {
+                'sldf': sldf,
+                'sldb': sldb,
+                'sldfb': sldf + sldb,
+                'sld': sumlogdet,
+            }
             history = self.update_history(
                 self.get_metrics(state_, sumlogdet, step=0, extras=extras),
                 history=history,
@@ -745,8 +762,14 @@ class Dynamics(nn.Module):
             state_, logdet = self._forward_lf(step, state_)
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
-                sldf += logdet
-                extras = {'sldf': sldf, 'sldb': sldb, 'sld': sumlogdet}
+                # sldf += logdet
+                sldf = sldf + logdet
+                extras = {
+                    'sldf': sldf,
+                    'sldb': sldb,
+                    'sldfb': sldf + sldb,
+                    'sld': sumlogdet,
+                }
                 metrics = self.get_metrics(
                     state_,
                     sumlogdet,
@@ -764,8 +787,14 @@ class Dynamics(nn.Module):
             state_, logdet = self._backward_lf(step, state_)
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
-                sldb += logdet
-                extras = {'sldf': sldf, 'sldb': sldb, 'sld': sumlogdet}
+                # sldb += loget
+                sldb = sldb + logdet
+                extras = {
+                    'sldf': sldf,
+                    'sldb': sldb,
+                    'sldfb': sldf + sldb,
+                    'sld': sumlogdet,
+                }
                 # Reverse step count to correctly order metrics at each step
                 metrics = self.get_metrics(
                     state_,
@@ -1063,6 +1092,7 @@ class Dynamics(nn.Module):
         force = self.grad_potential(state.x, state.beta)
         x = state.x
         v = state.v
+        # vNet: (x, force) --> (s, t, q)
         s, t, q = self._call_vnet(step, (x, force))
         logjac = (-eps * s / 2.)  # jacobian factor, also used in exp_s below
         logdet = logjac.sum(1)
