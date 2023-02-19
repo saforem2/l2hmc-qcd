@@ -355,33 +355,6 @@ class Trainer(BaseTrainer):
         summary = summarize_dict(avgs)
 
         # if writer is not None and self.verbose and step is not None:
-        if step is not None:
-            update_summaries(
-                    step=step,
-                    # model=model,
-                    # weights=weights,
-                    metrics=metrics,
-                    prefix=job_type,
-                    optimizer=optimizer,
-                    # job_type=job_type,
-            )
-            # if model is not None and job_type == 'train':
-            #     update_summaries(
-            #         step=step,
-            #         model=self.dynamics,
-            #         prefix='model',
-            #         job_type=job_type,
-            #     )
-            # if job_type == 'train' and log_weights:
-            #     weights = {
-            #         f'{w.name}': w
-            #         for w in self.dynamics.weights
-            #     }
-            #     log_dict(weights, step, prefix='debug-weights')
-
-            if writer is not None:
-                writer.flush()
-
         if self.config.init_wandb or self.config.init_aim:
             if job_type == 'train' and log_weights:
                 self.track_weights(run=run)
@@ -395,6 +368,32 @@ class Trainer(BaseTrainer):
                 arun=arun,
                 # log_weights=log_weights,
             )
+            if step is not None and writer is not None:
+                update_summaries(
+                        step=step,
+                        # model=model,
+                        # weights=weights,
+                        metrics=metrics,
+                        prefix=job_type,
+                        optimizer=optimizer,
+                        # job_type=job_type,
+                )
+                # if model is not None and job_type == 'train':
+                #     update_summaries(
+                #         step=step,
+                #         model=self.dynamics,
+                #         prefix='model',
+                #         job_type=job_type,
+                #     )
+                # if job_type == 'train' and log_weights:
+                #     weights = {
+                #         f'{w.name}': w
+                #         for w in self.dynamics.weights
+                #     }
+                #     log_dict(weights, step, prefix='debug-weights')
+
+                if writer is not None:
+                    writer.flush()
 
         return avgs, summary
 
@@ -765,11 +764,6 @@ class Trainer(BaseTrainer):
                         self.info(summary)
 
                     refresh_view()
-
-                    # if step == 0:
-                    #     table = add_columns(avgs, table)
-                    # else:
-                    #     table.add_row(*[f'{v}' for _, v in avgs.items()])
 
                     if avgs.get('acc', 1.0) <= 1e-5:
                         if stuck_counter < patience:

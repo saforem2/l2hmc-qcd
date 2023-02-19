@@ -1070,10 +1070,7 @@ class Trainer(BaseTrainer):
                     )
 
                     if step % nprint == 0:
-                        if isinstance(ctx, Live):
-                            ctx.console.print(summary)
-                        else:
-                            self.info(summary)
+                        self.info(summary)
 
                     refresh_view()
 
@@ -1421,10 +1418,11 @@ class Trainer(BaseTrainer):
 
                 if should_print(epoch):
                     refresh_view()
-                    if isinstance(ctx, Live):
-                        ctx.console.print(summary)
-                    else:
-                        log.info(summary)
+                    self.console.print(summary)
+                    # if isinstance(ctx, Live):
+                    #     ctx.console.print(summary)
+                    # else:
+                    #     log.info(summary)
                     # if isinstance(ctx, Live):
                     #     ctx.console.clear()
                     #     ctx.console.clear_live()
@@ -1511,7 +1509,7 @@ class Trainer(BaseTrainer):
             x: Optional[Tensor] = None,
             nchains: Optional[int] = None,
     ) -> Tensor:
-        """"""
+        """Thermalize configs"""
         self.dynamics.eval()
         if x is None:
             x = (
