@@ -2,8 +2,6 @@
 
 ![l2hmc-qcd](https://github.com/saforem2/saforem2/blob/main/assets/l2hmc-qcd-small.svg)
 
-<!--<br> <img src="https://github.com/saforem2/saforem2/blob/main/assets/rainbow-line-50.png" style="padding-top:-5%;" />-->
-
 <a href="https://hits.seeyoufarm.com"><img alt="hits" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fsaforem2%2Fl2hmc-qcd&count_bg=%2300CCFF&title_bg=%23555555&icon=&icon_color=%23111111&title=👋&edge_flat=false"></a>    
 <a href="https://github.com/saforem2/l2hmc-qcd/"><img alt="l2hmc-qcd" src="https://img.shields.io/badge/-l2hmc--qcd-252525?style=flat&logo=github&labelColor=gray"></a> <a href="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd"><img alt="codefactor" src="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge"></a>
 <br>
@@ -15,13 +13,7 @@
 
 </div>
 
-<details closed><summary><b>Testing embedded code</b></summary>
-<p>
-https://github.com/saforem2/l2hmc-qcd/blob/79bb0220cba03f1ffdb3a3fd5989fe42110c8f9e/src/l2hmc/main.py#L170-L179
-</p>
-</details>
-
-# Contents
+<details open><summary><b>Contents</b></summary>
 
 - [Overview](#overview)
   * [Papers 📚, Slides 📊, etc.](https://github.com/saforem2/l2hmc-qcd/#training--experimenting)
@@ -35,6 +27,8 @@ https://github.com/saforem2/l2hmc-qcd/blob/79bb0220cba03f1ffdb3a3fd5989fe42110c8
     + [Dynamics / Network](#dynamics---network)
       - [Network Architecture](#network-architecture)
     + [Lattice](#lattice)
+
+</details>
 
 # Overview
 
@@ -83,33 +77,32 @@ Broadly, given an *analytically* described target distribution, π(x), L2HMC pro
 
 ## From Source (recommended)
 
+
+> **Warning**<br>
+> It is recommended to install _inside_ an existing virtual environment<br>
+> (ideally one with `tensorflow, pytorch [horovod,deepspeed]` already installed)
+
+
 1. Clone + navigate into repo
 
-```bash
-gh repo clone saforem2/l2hmc-qcd
-cd l2hmc-qcd
-```
-
-2. Create a virtualenv, activate + install:
-
-```bash
-mkdir venv
-python3 -m venv venv --system-site-packages
-```
+    ```Shell
+    git clone https://github.com/saforem2/l2hmc-qcd
+    cd l2hmc-qcd
+    ```
 
 3. Test install
 
-```bash
-python3 -c 'import l2hmc ; print(l2hmc.__file__)'
-```
+    ```Shell
+    python3 -c 'import l2hmc ; print(l2hmc.__file__)'
+    ```
 
 ## From PyPi
 
 - [`l2hmc`](https://pypi.org/project/l2hmc/) on PyPi:
 
-```bash
-$ python3 -m pip install l2hmc
-```
+    ```Shell
+    python3 -m pip install l2hmc
+    ```
 
 # Training
 
@@ -212,12 +205,6 @@ An illustration of the `leapfrog layer` updating `(x, v) --> (x', v')` can be se
 </div>
 
 
-<div align="center">
-	
-![---](https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png)
-
-</div>
-    
 ## Contact
 
 ***Code author:*** Sam Foreman
@@ -250,4 +237,8 @@ If you use this code or found this work interesting, please cite our work along 
 
 ## Acknowledgement
 
-> This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357. This work describes objective technical results and analysis. Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government.
+
+> **Note**<br>
+> This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357.<br>
+> This work describes objective technical results and analysis.<br>
+> Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government.
