@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 import socket
 import time
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Sequence
 from rich.console import ConsoleRenderable
 # from rich.align import Align
 
@@ -88,14 +88,22 @@ def load_ds_config(fpath: os.PathLike) -> dict:
     return ds_config
 
 
+def box_header(header: str):
+    # header = f'ERA: {era} / {nera}, BETA: {b:.3f}'
+    headerlen = len(header) + 2
+    log.info('┏' + headerlen * '━' + '┓')
+    log.info(f'┃ {header} ┃')
+    log.info('┗' + headerlen * '━' + '┛')
+
+
 class Trainer(BaseTrainer):
     def __init__(
             self,
             cfg: DictConfig | ExperimentConfig,
             build_networks: bool = True,
             ckpt_dir: Optional[os.PathLike] = None,
-            keep: Optional[str | list[str]] = None,
-            skip: Optional[str | list[str]] = None,
+            keep: Optional[str | Sequence[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
     ) -> None:
         super().__init__(cfg=cfg, keep=keep, skip=skip)
         assert self.config.dynamics.group.upper() in ['U1', 'SU3']
@@ -858,7 +866,7 @@ class Trainer(BaseTrainer):
             beta: Optional[float] = None,
             eval_steps: Optional[int] = None,
             x: Optional[Tensor] = None,
-            skip: Optional[str | list[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
             run: Optional[Any] = None,
             job_type: Optional[str] = 'eval',
             nchains: Optional[int] = None,
@@ -946,7 +954,7 @@ class Trainer(BaseTrainer):
             beta: Optional[float] = None,
             eval_steps: Optional[int] = None,
             x: Optional[Tensor] = None,
-            skip: Optional[str | list[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
@@ -1341,7 +1349,12 @@ class Trainer(BaseTrainer):
         stuck_iters = 0
         with ctx:
             if warmup:
+                wt0 = time.perf_counter()
                 x = self.warmup(beta=beta, x=x)
+                self.info(
+                    f'Thermalizing configs @ {beta:.2f} took '
+                    f'{time.perf_counter() - wt0:.4f} s'
+                )
 
             summary = ""
             for epoch in trange(
@@ -1409,23 +1422,21 @@ class Trainer(BaseTrainer):
                             and plots is not None
                     ):
                         if len(self.histories['train'].history.keys()) == 0:
-                            plotter.update_plots(metrics, plots)
+                            plotter.update_plots(
+                                metrics,
+                                plots,
+                                logging_steps=log_freq
+                            )
                         else:
                             plotter.update_plots(
                                 self.histories['train'].history,
                                 plots=plots,
+                                logging_steps=log_freq
                             )
 
                 if should_print(epoch):
                     refresh_view()
-                    self.console.print(summary)
-                    # if isinstance(ctx, Live):
-                    #     ctx.console.print(summary)
-                    # else:
-                    #     log.info(summary)
-                    # if isinstance(ctx, Live):
-                    #     ctx.console.clear()
-                    #     ctx.console.clear_live()
+                    log.info(summary)
 
                 if isinstance(ctx, Live):
                     # ctx.console.clear()
@@ -1444,11 +1455,11 @@ class Trainer(BaseTrainer):
     def _setup_training(
             self,
             x: Optional[Tensor] = None,
-            skip: Optional[str | list[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
             train_dir: Optional[os.PathLike] = None,
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
-            beta: Optional[float | list[float] | dict[str, float]] = None,
+            beta: Optional[float | Sequence[float] | dict[str, float]] = None,
     ) -> dict:
         skip = [skip] if isinstance(skip, str) else skip
         # steps = self.steps if steps is None else steps
@@ -1551,7 +1562,7 @@ class Trainer(BaseTrainer):
     def train(
             self,
             x: Optional[Tensor] = None,
-            skip: Optional[str | list[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
             train_dir: Optional[os.PathLike] = None,
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
@@ -1560,7 +1571,7 @@ class Trainer(BaseTrainer):
             nepoch: Optional[int] = None,
             nprint: Optional[int] = None,
             nlog: Optional[int] = None,
-            beta: Optional[float | list[float] | dict[str, float]] = None,
+            beta: Optional[float | Sequence[float] | dict[str, float]] = None,
             warmup: bool = True,
             make_plots: bool = True
     ) -> dict:
@@ -1606,7 +1617,8 @@ class Trainer(BaseTrainer):
                     esummary = self.histories['train'].era_summary(f'{era-1}')
                     log.info(f'Avgs over last era:\n {esummary}\n')
 
-                self.console.rule(f'ERA: {era} / {nera - 1}, BETA: {b:.3f}', )
+                box_header(f'ERA: {era} / {nera}, BETA: {b:.3f}')
+                # self.console.rule(f'ERA: {era} / {nera - 1}, BETA: {b:.3f}', )
 
             epoch_start = time.time()
             x, edata = self.train_epoch(
@@ -1652,14 +1664,14 @@ class Trainer(BaseTrainer):
     def train_dynamic(
             self,
             x: Optional[Tensor] = None,
-            skip: Optional[str | list[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
             train_dir: Optional[os.PathLike] = None,
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
-            beta: Optional[float | list[float] | dict[str, float]] = None,
+            beta: Optional[float | Sequence[float] | dict[str, float]] = None,
     ) -> dict:
         """Perform training and return dictionary of results."""
         self.dynamics.train()
@@ -1694,7 +1706,8 @@ class Trainer(BaseTrainer):
                     esummary = self.histories['train'].era_summary(f'{era-1}')
                     log.info(f'Avgs over last era:\n {esummary}\n')
 
-                self.console.rule(f'ERA: {era} / {nera}, BETA: {b:.3f}')
+                # self.console.rule(f'ERA: {era} / {nera}, BETA: {b:.3f}')
+                box_header(f'ERA: {era} / {nera}, BETA: {b:.3f}')
 
             epoch_start = time.time()
             x, edata = self.train_epoch(

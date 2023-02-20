@@ -6,7 +6,7 @@ Contains BaseTrainer (ABC) object for training L2HMC dynamics
 from __future__ import absolute_import, annotations, division, print_function
 from abc import ABC, abstractmethod
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 import aim
 from hydra.utils import instantiate
@@ -17,7 +17,7 @@ from rich.table import Table
 
 from l2hmc.common import get_timestamp
 from l2hmc.configs import ExperimentConfig, InputSpec
-import l2hmc.configs as configs
+# import l2hmc.configs as configs
 from l2hmc.utils.history import BaseHistory
 from l2hmc.utils.rich import add_columns, get_console
 from l2hmc.utils.step_timer import StepTimer
@@ -30,8 +30,8 @@ class BaseTrainer(ABC):
     def __init__(
             self,
             cfg: DictConfig | ExperimentConfig,
-            keep: Optional[str | list[str]] = None,
-            skip: Optional[str | list[str]] = None,
+            keep: Optional[str | Sequence[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
     ):
         self._created = get_timestamp()
         if isinstance(cfg, DictConfig):
