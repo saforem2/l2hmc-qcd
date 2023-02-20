@@ -42,6 +42,7 @@ def get_experiment(
     framework = cfg.get('framework', None)
     os.environ['RUNDIR'] = str(os.getcwd())
     if framework in ['tf', 'tensorflow']:
+        cfg.framework = 'tensorflow'
         from l2hmc.utils.dist import setup_tensorflow
         _ = setup_tensorflow(cfg.precision)
         from l2hmc.experiment.tensorflow.experiment import Experiment
@@ -53,6 +54,7 @@ def get_experiment(
         return experiment
 
     elif framework in ['pt', 'pytorch', 'torch']:
+        cfg.framework = 'pytorch'
         from l2hmc.utils.dist import setup_torch
         _ = setup_torch(
             seed=cfg.seed,
@@ -134,9 +136,9 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
     if ex.trainer._is_chief:
         try:
             ex.visualize_model()
-        except Exception as e:
+        except Exception:
             # log.exception(e)
-            log.error(f'Unable to make visuals for model, continuing!')
+            log.error('Unable to make visuals for model, continuing!')
 
     return Path(ex._outdir).as_posix()
 
