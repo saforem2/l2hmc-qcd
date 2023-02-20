@@ -75,30 +75,27 @@ Broadly, given an *analytically* described target distribution, π(x), L2HMC pro
 
 # Installation
 
-## From Source (recommended)
-
-
 > **Warning**<br>
 > It is recommended to install _inside_ an existing virtual environment<br>
 > (ideally one with `tensorflow, pytorch [horovod,deepspeed]` already installed)
 
+- From source (**recommended**):
+   1. Clone + navigate into repo
 
-1. Clone + navigate into repo
+      ```Shell
+      git clone https://github.com/saforem2/l2hmc-qcd
+      cd l2hmc-qcd
+      # for development addons:
+      # python3 -m pip install -e ".[dev]"
+      python3 -m pip install -e .
+      ```
+    2. Test install
 
-    ```Shell
-    git clone https://github.com/saforem2/l2hmc-qcd
-    cd l2hmc-qcd
-    ```
+       ```Shell
+       python3 -c 'import l2hmc ; print(l2hmc.__file__)'
+       ```
 
-3. Test install
-
-    ```Shell
-    python3 -c 'import l2hmc ; print(l2hmc.__file__)'
-    ```
-
-## From PyPi
-
-- [`l2hmc`](https://pypi.org/project/l2hmc/) on PyPi:
+- From [`l2hmc`](https://pypi.org/project/l2hmc/) on PyPi:
 
     ```Shell
     python3 -m pip install l2hmc
