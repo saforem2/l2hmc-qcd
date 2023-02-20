@@ -165,6 +165,10 @@ class BaseExperiment(ABC):
                                           resolve=True,
                                           throw_on_missing=True)
         run.config.update(cfg_dict)
+        env = dict(os.environ)
+        _ = env.pop('LS_COLORS', None)
+        _ = env.pop('LSCOLORS', None)
+        run.config.update({'env': env})
 
         exec = os.environ.get('EXEC', None)
         if exec is not None:
@@ -188,12 +192,17 @@ class BaseExperiment(ABC):
             run.config['machine'] = machine
 
         hostname = socket.gethostbyaddr(socket.gethostname())[0].lower()
+        run.config['hostname'] = hostname
         if 'thetagpu' in hostname:
-            run.config['hostname'] = 'ThetaGPU'
-        elif 'polaris' in hostname:
-            run.config['hostname'] = 'Polaris'
-        else:
-            run.config['hostname'] = hostname
+            run.config['machine'] = 'ThetaGPU'
+        elif 'x3' in hostname:
+            run.config['machine'] = 'Polaris'
+        elif 'x1' in hostname:
+            run.config['machine'] = 'Sunspot'
+        # elif 'polaris' in hostname:
+        #     run.config['hostname'] = 'Polaris'
+        # else:
+        #     run.config['hostname'] = hostname
 
         return run
 
