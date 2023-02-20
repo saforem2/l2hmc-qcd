@@ -51,7 +51,7 @@ def setup_tensorflow(
         tf.keras.mixed_precision.set_global_policy(
             'mixed_float16'
         )
-        # tf.keras.backend.set_floatx('mixed_float16')
+        # tf.keras.backend.set_floatx('float16')
         # mixed_precision.set_global_policy('mixed_float16')
     else:
         tf.keras.backend.set_floatx(precision)
