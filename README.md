@@ -34,7 +34,7 @@
 
 ## Papers 📚, Slides 📊 etc.
 - [📕 Notebooks](./src/l2hmc/notebooks/):
-    - 📙 2D $U(1)$ Model (w/ `fp32` for training)
+    - 📙 2D $U(1)$ Model (w/ `fp16` or `fp32` for training)
     	- [`src/l2hmc/notebooks/l2hmc-2dU1.ipynb`](./src/l2hmc/notebooks/l2hmc-2dU1.ipynb)
     	- [alt link (if Github won't load)](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/l2hmc-2dU1.ipynb)
     - 📒 4D $SU(3)$ Model (w/ `complex128` + `fp64` for training)
