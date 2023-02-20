@@ -10,7 +10,7 @@ import logging
 
 from omegaconf import DictConfig
 
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 from pathlib import Path
 # from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
@@ -41,8 +41,8 @@ class Experiment(BaseExperiment):
             self,
             cfg: DictConfig,
             build_networks: bool = True,
-            keep: Optional[str | list[str]] = None,
-            skip: Optional[str | list[str]] = None,
+            keep: Optional[str | Sequence[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
     ) -> None:
         super().__init__(cfg=cfg)
         assert isinstance(
@@ -173,8 +173,8 @@ class Experiment(BaseExperiment):
     def build_trainer(
             self,
             build_networks: bool = True,
-            keep: Optional[str | list[str]] = None,
-            skip: Optional[str | list[str]] = None,
+            keep: Optional[str | Sequence[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
             ckpt_dir: Optional[os.PathLike] = None,
     ) -> Trainer:
         return Trainer(
@@ -202,13 +202,13 @@ class Experiment(BaseExperiment):
             self,
             nchains: Optional[int] = None,
             x: Optional[tf.Tensor] = None,
-            skip: Optional[str | list[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
             writer: Optional[Any] = None,
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
             nprint: Optional[int] = None,
             nlog: Optional[int] = None,
-            beta: Optional[float | list[float] | dict[str, float]] = None,
+            beta: Optional[float | Sequence[float] | dict[str, float]] = None,
     ) -> dict:
         jobdir = self.get_jobdir(job_type='train')
         writer = None
