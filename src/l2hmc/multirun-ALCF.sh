@@ -186,6 +186,24 @@ fullNode() {
   ${EXEC} "$@"
 }
 
+twoNodes() {
+  NRANKS=2
+  NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
+  NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
+  echo "Running on ${NRANKS} rank(s) \
+    with ${NGPU_PER_RANK} GPU(s) each \
+    for a total of ${NGPUS} GPUs"
+  EXEC="\
+    ${MPI_COMMAND} \
+    ${MPI_DEFAULTS} \
+    -n ${NGPUS} \
+    $(which python3) \
+    ${MAIN} \
+    ${DEFAULTS}"
+  # export EXEC="${EXEC} "$@""
+  ${EXEC} "$@"
+}
+
 
 # ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 # ┃ Use all available GPUs on all available nodes ┃
@@ -214,7 +232,7 @@ testSingleDevice() {
   echo "Testing single device w/ PyTorch"
   singleDevice ${PT_DEFAULTS[@]}
   echo "Testing single device w/ TensorFlow"
-  singleDevice ${TF_DEFAULTS}
+  singleDevice ${TF_DEFAULTS[@]}
 }
 
 test2Devices() {
@@ -249,10 +267,10 @@ testElastic() {
 # ┃ TensorFlow + Horovod ┃
 # ┗━━━━━━━━━━━━━━━━━━━━━━┛
 runTensorFlow() {
-  singleDevice ${TF_DEFAULTS}
-  twoDevices ${TF_DEFAULTS}
-  fullNode ${TF_DEFAULTS}
-  elasticDistributed ${TF_DEFAULTS}
+  singleDevice ${TF_DEFAULTS[@]}
+  twoDevices ${TF_DEFAULTS[@]}
+  fullNode ${TF_DEFAULTS[@]}
+  elasticDistributed ${TF_DEFAULTS[@]}
 }
 
 # ┏━━━━━━━━━━━━━━━━┓
@@ -274,7 +292,6 @@ runPyTorch() {
     done
   done
 }
-
 
 
 if [[ $(hostname) == theta* ]]; then
