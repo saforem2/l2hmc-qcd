@@ -89,13 +89,19 @@ cd l2hmc-qcd
 python3 -m pip install -e .
 ```
 
-<details closed><summary><b>From PyPI</b></summary>
+<details closed>
+<summary>
+<b>
+From <a href="https://pypi.org/project/l2hmc/">
+<code>l2hmc</code> on PyPI</a>
+</b>
+</summary>
 <p>
-- From [`l2hmc`](https://pypi.org/project/l2hmc/) on PyPi:
 
-    ```Shell
-    python3 -m pip install l2hmc
-    ```
+```Shell
+python3 -m pip install l2hmc
+```
+
 </p>
 </details>
 
