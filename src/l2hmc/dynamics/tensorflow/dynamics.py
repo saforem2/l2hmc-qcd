@@ -633,7 +633,7 @@ class Dynamics(Model):
                 # sldb += logdet
                 sldb = sldb + logdet
                 extras = {
-                    'sldf': sldf,
+                    'sldf': tf.zeros_like(sldb),
                     'sldb': sldb,
                     'sldfb': sldf + sldb,
                     'sld': sumlogdet,

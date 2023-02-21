@@ -790,7 +790,7 @@ class Dynamics(nn.Module):
                 # sldb += loget
                 sldb = sldb + logdet
                 extras = {
-                    'sldf': sldf,
+                    'sldf': torch.zeros_like(sldb),
                     'sldb': sldb,
                     'sldfb': sldf + sldb,
                     'sld': sumlogdet,
