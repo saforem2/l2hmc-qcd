@@ -120,17 +120,6 @@ python3 -c 'import l2hmc ; print(l2hmc.__file__)'
 This project uses [`hydra`](https://hydra.cc) for configuration management and
 supports distributed training for both PyTorch and TensorFlow.
 
-
-The main entry point is [`src/l2hmc/main.py`](./src/l2hmc/main.py),
-which contains  the logic for running an end-to-end `Experiment`.
-
-An `Experiment` consists of the following sub-tasks:
-
-1. Training
-2. Evaluation
-3. HMC (for comparison and to measure model improvement)
-
-
 In particular, we support the following combinations of `framework` + `backend` for distributed training:
 
 - TensorFlow (+ Horovod for distributed training)
@@ -138,6 +127,15 @@ In particular, we support the following combinations of `framework` + `backend` 
     - DDP
     - Horovod
     - DeepSpeed
+
+The main entry point is [`src/l2hmc/main.py`](./src/l2hmc/main.py),
+which contains  the logic for running an end-to-end `Experiment`.
+
+An [`Experiment`](./src/l2hmc/experiment/) consists of the following sub-tasks:
+
+1. Training
+2. Evaluation
+3. HMC (for comparison and to measure model improvement)
 
 **All** configuration options can be dynamically overridden via the CLI at runtime, 
 and we can specify our desired `framework` and `backend` combination via:
