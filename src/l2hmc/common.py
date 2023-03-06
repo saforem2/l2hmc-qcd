@@ -683,15 +683,13 @@ def plot_dataset(
         outdir: Optional[os.PathLike] = None,
         title: Optional[str] = None,
         job_type: Optional[str] = None,
+        save_plots: bool = True,
 ) -> None:
     outdir = Path(outdir) if outdir is not None else Path(os.getcwd())
     outdir.mkdir(exist_ok=True, parents=True)
-    # outdir = outdir.joinpath('plots')
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
-    # names = ['viridis_r', 'magma', 'mako']
-    # cmap = np.random.choice(names, replace=True)
-
     set_plot_style()
+
     _ = make_ridgeplots(
         dataset,
         outdir=outdir,
@@ -711,22 +709,24 @@ def plot_dataset(
             outdir=outdir,
             title=title,
             line_labels=False,
-            num_chains=nchains
+            num_chains=nchains,
+            save_plot=save_plots,
         )
-        _ = save_figure(fig=fig, key=key, outdir=outdir)
+        if save_plots:
+            _ = save_figure(fig=fig, key=key, outdir=outdir)
 
 
 def analyze_dataset(
         dataset: xr.Dataset,
         outdir: os.PathLike,
+        save: bool = True,
+        use_hdf5: bool = True,
         nchains: Optional[int] = None,
         title: Optional[str] = None,
         logfreq: Optional[int] = None,
         job_type: Optional[str] = None,
-        save: Optional[bool] = True,
         run: Optional[Any] = None,
         arun: Optional[Any] = None,
-        use_hdf5: Optional[bool] = True,
 ) -> xr.Dataset:
     """Save plot and analyze resultant `xarray.Dataset`."""
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
@@ -809,6 +809,7 @@ def save_and_analyze_data(
         framework: Optional[str] = None,
         summaries: Optional[list[str]] = None,
         tables: Optional[dict[str, Table]] = None,
+        save_data: bool = True,
 ) -> xr.Dataset:
     jstr = f'{job_type}'
     title = (
@@ -820,7 +821,7 @@ def save_and_analyze_data(
     dataset = analyze_dataset(dataset,
                               run=run,
                               arun=arun,
-                              save=True,
+                              save=save_data,
                               outdir=outdir,
                               nchains=nchains,
                               logfreq=logfreq,
