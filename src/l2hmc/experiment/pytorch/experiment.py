@@ -225,6 +225,7 @@ class Experiment(BaseExperiment):
             nprint: Optional[int] = None,
             nlog: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
+            save_data: bool = True,
             # rich: Optional[bool] = None,
     ):
         jobdir = self.get_jobdir(job_type='train')
@@ -246,8 +247,6 @@ class Experiment(BaseExperiment):
                 train_dir=jobdir,
                 skip=skip,
                 beta=beta,
-                nprint=nprint,
-                nlog=nlog
             )
         else:
             output = self.trainer.train(
@@ -282,6 +281,7 @@ class Experiment(BaseExperiment):
             dset = self.save_dataset(
                 # output=output,
                 nchains=nchains,
+                save_data=save_data,
                 job_type='train',
                 outdir=jobdir,
                 tables=output.get('tables', None),

@@ -289,11 +289,13 @@ class BaseExperiment(ABC):
     def save_dataset(
             self,
             job_type: str,
+            save_data: bool = True,
             dset: Optional[xr.Dataset] = None,
             tables: Optional[dict] = None,
             nchains: Optional[int] = None,
             outdir: Optional[os.PathLike] = None,
             therm_frac: Optional[float] = None,
+            logfreq: int = 1,
     ) -> xr.Dataset:
         # assert isinstance(self.trainer, BaseTrainer)
         # if output is None:
@@ -328,17 +330,20 @@ class BaseExperiment(ABC):
         assert isinstance(
             self.config, (configs.ExperimentConfig, ExperimentConfig)
         )
-        logfreq = self.config.steps.log
-        _ = save_and_analyze_data(dset,
-                                  run=self.run,
-                                  arun=self.arun,
-                                  logfreq=logfreq,
-                                  outdir=outdir,
-                                  tables=tables,
-                                  summaries=summaries,
-                                  nchains=nchains,
-                                  job_type=job_type,
-                                  framework=self.config.framework)
+        # logfreq = self.config.steps.log
+        _ = save_and_analyze_data(
+            dset,
+            run=self.run,
+            arun=self.arun,
+            logfreq=logfreq,
+            outdir=outdir,
+            tables=tables,
+            summaries=summaries,
+            nchains=chains_to_plot,
+            job_type=job_type,
+            save_data=save_data,
+            framework=self.config.framework
+        )
         log.info('Done saving and analyzing data.')
         log.info('Creating summaries for WandB, Aim')
         dQint = dset.data_vars.get('dQint', None)
