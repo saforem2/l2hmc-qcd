@@ -351,16 +351,19 @@ class InputLayer(nn.Module):
             xshape: Sequence[int],
             network_config: NetworkConfig,
             activation_fn: Callable[[Tensor], Tensor],
+            vshape: Optional[Sequence[int]] = None,
             conv_config: Optional[ConvolutionConfig] = None,
             input_shapes: Optional[dict[str, Sequence[int] | int]] = None,
     ) -> None:
         super(InputLayer, self).__init__()
         self.xshape = xshape
+        self.vshape = xshape if vshape is None else vshape
         self.net_config = network_config
         self.units = self.net_config.units
         # self._dtype = torch.get_default_dtype()
         self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.xdim = np.cumprod(xshape[1:])[-1]
+        self.xdim = np.cumprod(self.xshape[1:])[-1]
+        self.vdim = np.cumprod(self.vshape[1:])[-1]
         self._with_cuda = torch.cuda.is_available()
 
         if input_shapes is None:
