@@ -14,10 +14,10 @@ defaults:
   - override /annealing_schedule: debug.yaml
   - override /logdir: debug.yaml
 
-debug_mode: True
+debug_mode: true
 
 hydra:
-  verbose: false
+  verbose: ['l2hmc']
   job:
     chdir: true
   # sets level of all command line loggers to 'DEBUG'
