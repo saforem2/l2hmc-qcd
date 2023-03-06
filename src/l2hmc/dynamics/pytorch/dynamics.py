@@ -121,7 +121,6 @@ class Dynamics(nn.Module):
         self.potential_fn = potential_fn
         self.nlf = self.config.nleapfrog
         self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
         if self.config.group == 'U1':
             self.g = U1Phase()
             self.lattice = LatticeU1(self.config.nchains,
@@ -130,7 +129,6 @@ class Dynamics(nn.Module):
             self.g = SU3()
             self.lattice = LatticeSU3(self.config.nchains,
                                       self.config.latvolume)
-
         self.network_factory = network_factory
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         if network_factory is not None:
@@ -138,7 +136,6 @@ class Dynamics(nn.Module):
             self.networks = self._build_networks(network_factory)
             self.xnet = self.networks['xnet']
             self.vnet = self.networks['vnet']
-
             self.register_module('xnet', self.networks['xnet'])
             self.register_module('vnet', self.networks['vnet'])
         else:
@@ -149,7 +146,6 @@ class Dynamics(nn.Module):
                 'xnet': self.xnet,
                 'vnet': self.vnet,
             }
-
         self.masks = self._build_masks()
         self._dtype: torch.dtype = torch.get_default_dtype()
         if self._networks_built:
@@ -157,7 +153,6 @@ class Dynamics(nn.Module):
             self._dtype: torch.dtype = (
                 vnet.input_layer.xlayer.weight.dtype  # type:ignore
             )
-
         self.xeps = nn.ParameterList([
             nn.parameter.Parameter(
                 torch.tensor(
@@ -208,7 +203,6 @@ class Dynamics(nn.Module):
                 }
             else:
                 xnet = self._get_xnet(0, first=True)
-
         return {'xnet': xnet, 'vnet': vnet}
 
     def _build_networks(
@@ -377,7 +371,6 @@ class Dynamics(nn.Module):
             outputs = self.apply_transition_fb(inputs)
         else:
             outputs = self.apply_transition(inputs)
-
         return outputs
 
     def flatten(self, x: Tensor) -> Tensor:
@@ -395,15 +388,12 @@ class Dynamics(nn.Module):
         mr_ = mr_.to(inputs[0].device)
         ma = ma_[:, None]
         mr = mr_[:, None]
-
         xinit = data['init'].x.flatten(1)
         vinit = data['init'].v.flatten(1)
         xprop = data['proposed'].x.flatten(1)
         vprop = data['proposed'].v.flatten(1)
-
         vout = ma * vprop + mr * vinit
         xout = ma * xprop + mr * xinit
-
         state_out = State(x=xout, v=vout, beta=data['init'].beta)
         mc_states = MonteCarloStates(init=data['init'],
                                      proposed=data['proposed'],
@@ -412,7 +402,6 @@ class Dynamics(nn.Module):
             'acc_mask': ma_,
             'mc_states': mc_states,
         })
-
         return xout, data['metrics']
 
     def apply_transition_fb(
@@ -422,10 +411,7 @@ class Dynamics(nn.Module):
         data = self.generate_proposal_fb(inputs)
         ma_, _ = self._get_accept_masks(data['metrics']['acc'])
         ma_ = ma_.to(inputs[0].device)
-        # mr_ = mr_.to(inputs[0].device)
         ma = ma_[:, None]
-        # mr = mr_[:, None]
-
         # NOTE: We construct output states by combining
         #   output = (acc_mask * proposed) + (reject_mask * init)
         v_out = torch.where(
@@ -438,18 +424,8 @@ class Dynamics(nn.Module):
             self.flatten(data['proposed'].x),
             self.flatten(data['init'].x)
         )
-        # v_out = (
-        #     ma * data['proposed'].v.flatten(1)
-        #     + mr * data['init'].v.flatten(1)
-        # )
-        # x_out = (
-        #     ma * data['proposed'].x.flatten(1)
-        #     + mr * data['init'].x.flatten(1)
-        # )
-
         # NOTE: sumlogdet = (accept * logdet) + (reject * 0)
         sumlogdet = ma_ * data['metrics']['sumlogdet']
-
         state_out = State(x=x_out, v=v_out, beta=data['init'].beta)
         mc_states = MonteCarloStates(
             init=data['init'],
@@ -462,7 +438,6 @@ class Dynamics(nn.Module):
             'sumlogdet': sumlogdet,
             'mc_states': mc_states,
         })
-
         return x_out, data['metrics']
 
     def apply_transition(
@@ -474,7 +449,6 @@ class Dynamics(nn.Module):
             data = self.generate_proposal(inputs, forward=True)
         else:
             data = self.generate_proposal(inputs, forward=False)
-
         metrics = data['metrics']
         ma_, mr_ = self._get_accept_masks(metrics['acc'])
         if torch.cuda.is_available():
@@ -482,16 +456,13 @@ class Dynamics(nn.Module):
             mr_ = mr_.cuda()
         ma = ma_[:, None]
         mr = mr_[:, None]
-
         v_out = ma * data['proposed'].v + mr * data['init'].v
         x_out = ma * data['proposed'].x + mr * xinit
         logdet = ma_ * metrics['sumlogdet']  # NOTE: + mr_ * logdet_init = 0
-
         state_out = State(x=x_out, v=v_out, beta=beta)
         mc_states = MonteCarloStates(init=data['init'],
                                      proposed=data['proposed'],
                                      out=state_out)
-
         metrics.update({
             'beta': beta,
             'acc': metrics['acc'],
@@ -499,7 +470,6 @@ class Dynamics(nn.Module):
             'sumlogdet': logdet,
             'mc_states': mc_states,
         })
-
         return x_out, metrics
 
     def apply_transition_both(
@@ -509,16 +479,13 @@ class Dynamics(nn.Module):
         x, beta = inputs
         fwd = self.generate_proposal(inputs, forward=True)
         bwd = self.generate_proposal(inputs, forward=False)
-
         mf_, mb_ = self._get_direction_masks(batch_size=x.shape[0])
         if torch.cuda.is_available():
             mf_ = mf_.cuda()
             mb_ = mb_.cuda()
         mf = mf_[:, None]
         mb = mb_[:, None]
-
         v_init = mf * fwd['init'].v + mb * bwd['init'].v
-
         # -------------------------------------------------------------------
         # NOTE:
         #   To get the output, we combine forward and backward proposals
@@ -530,12 +497,9 @@ class Dynamics(nn.Module):
         # -------------------------------------------------------------------
         xp = mf * fwd['proposed'].x + mb * bwd['proposed'].x
         vp = mf * fwd['proposed'].v + mb * bwd['proposed'].v
-
         mfwd = fwd['metrics']
         mbwd = bwd['metrics']
-
         logdetp = mf_ * mfwd['sumlogdet'] + mb_ * mbwd['sumlogdet']
-
         acc = mf_ * mfwd['acc'] + mb_ * mbwd['acc']
         ma_, mr_ = self._get_accept_masks(acc)
         if torch.cuda.is_available():
@@ -543,7 +507,6 @@ class Dynamics(nn.Module):
             mr_ = mr_.cuda()
         ma = ma_[:, None]
         mr = mr_[:, None]
-
         v_out = ma * vp + mr * v_init
         x_out = ma * xp + mr * x
         logdet = ma_ * logdetp  # NOTE: + mr_ * logdet_init = 0
@@ -560,7 +523,6 @@ class Dynamics(nn.Module):
                 vprop = ma_ * (mf_ * vf + mb_ * vb)
             except RuntimeError:
                 vprop = ma * (mf * vf + mb * vb)
-
             metrics[key] = vprop
 
         metrics.update({
@@ -569,7 +531,6 @@ class Dynamics(nn.Module):
             'sumlogdet': logdet,
             'mc_states': mc_states,
         })
-
         return x_out, metrics
 
     def random_state(self, beta: float) -> State:
@@ -601,7 +562,6 @@ class Dynamics(nn.Module):
             eps=eps,
             nleapfrog=nleapfrog
         )
-
         return {'init': init, 'proposed': proposed, 'metrics': metrics}
 
     def generate_proposal_fb(
@@ -613,7 +573,6 @@ class Dynamics(nn.Module):
         v = self.g.random_momentum(xshape).to(x.device)
         init = State(x=x, v=v, beta=beta)
         proposed, metrics = self.transition_kernel_fb(init)
-
         return {'init': init, 'proposed': proposed, 'metrics': metrics}
 
     def generate_proposal(
@@ -626,7 +585,6 @@ class Dynamics(nn.Module):
         v = self.g.random_momentum(xshape).to(x.device)
         state_init = State(x=x, v=v, beta=beta)
         state_prop, metrics = self.transition_kernel(state_init, forward)
-
         return {'init': state_init, 'proposed': state_prop, 'metrics': metrics}
 
     def get_metrics(
@@ -645,7 +603,6 @@ class Dynamics(nn.Module):
         }
         if extras is not None:
             metrics.update(extras)
-
         if step is not None:
             assert isinstance(self.xeps, nn.ParameterList)
             assert isinstance(self.veps, nn.ParameterList)
@@ -653,7 +610,6 @@ class Dynamics(nn.Module):
                 'xeps': self.xeps[step],
                 'veps': self.veps[step]
             })
-
         return metrics
 
     def update_history(
@@ -666,7 +622,6 @@ class Dynamics(nn.Module):
                 history[key].append(val)
             except KeyError:
                 history[key] = [val]
-
         return history
 
     def leapfrog_hmc(
@@ -701,7 +656,6 @@ class Dynamics(nn.Module):
                 history=history,
             )
         eps = self.config.eps_hmc if eps is None else eps
-
         nlf = (
             self.config.nleapfrog if not self.config.merge_directions
             else 2 * self.config.nleapfrog
@@ -711,7 +665,6 @@ class Dynamics(nn.Module):
             log.warning(f'Using eps = 1 / {nlf} = {eps:.3f}')
         assert nlf <= 2 * self.config.nleapfrog
         nleapfrog = nlf if nleapfrog is None else nleapfrog
-
         for _ in range(nleapfrog):
             state_ = self.leapfrog_hmc(state_, eps=eps)
             if self.config.verbose:
@@ -719,15 +672,12 @@ class Dynamics(nn.Module):
                     self.get_metrics(state_, sumlogdet),
                     history=history,
                 )
-
         acc = self.compute_accept_prob(state, state_, sumlogdet)
         history.update({'acc': acc, 'sumlogdet': sumlogdet})
-
         if self.config.verbose:
             for key, val in history.items():
                 if isinstance(val, list) and isinstance(val[0], Tensor):
                     history[key] = torch.stack(val)
-
         return state_, history
 
     def transition_kernel_fb(
@@ -741,9 +691,7 @@ class Dynamics(nn.Module):
         )
         sldf = torch.zeros_like(sumlogdet)
         sldb = torch.zeros_like(sumlogdet)
-
         state_ = State(x=state.x, v=state.v, beta=state.beta)
-
         history = {}
         if self.config.verbose:
             extras = {
@@ -756,7 +704,6 @@ class Dynamics(nn.Module):
                 self.get_metrics(state_, sumlogdet, step=0, extras=extras),
                 history=history,
             )
-
         # Forward
         for step in range(self.config.nleapfrog):
             state_, logdet = self._forward_lf(step, state_)
@@ -777,11 +724,9 @@ class Dynamics(nn.Module):
                     extras=extras
                 )
                 history = self.update_history(metrics=metrics, history=history)
-
         # Flip momentum
         # m1 = -1.0 * torch.ones_like(state_.v)
         state_ = State(state_.x, (-state_.v), state_.beta)
-
         # Backward
         for step in range(self.config.nleapfrog):
             state_, logdet = self._backward_lf(step, state_)
@@ -803,14 +748,12 @@ class Dynamics(nn.Module):
                     extras=extras,
                 )
                 history = self.update_history(metrics=metrics, history=history)
-
         acc = self.compute_accept_prob(state, state_, sumlogdet)
         history.update({'acc': acc, 'sumlogdet': sumlogdet})
         if self.config.verbose:
             for key, val in history.items():
                 if isinstance(val, list) and isinstance(val[0], Tensor):
                     history[key] = torch.stack(val)
-
         return state_, history
 
     def transition_kernel(
@@ -820,7 +763,6 @@ class Dynamics(nn.Module):
     ) -> tuple[State, dict]:
         """Implements the transition kernel."""
         lf_fn = self._forward_lf if forward else self._backward_lf
-
         # Copy initial state into proposed state
         sinit = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = torch.zeros(state.x.shape[0],
@@ -830,14 +772,12 @@ class Dynamics(nn.Module):
         if self.config.verbose:
             metrics = self.get_metrics(state, sumlogdet)
             history = self.update_history(metrics, history=history)
-
         for step in range(self.config.nleapfrog):
             state, logdet = lf_fn(step, state)
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
                 metrics = self.get_metrics(state, sumlogdet, step=step)
                 history = self.update_history(metrics, history=history)
-
         acc = self.compute_accept_prob(
             state_init=state,
             state_prop=sinit,
@@ -848,7 +788,6 @@ class Dynamics(nn.Module):
             for key, val in history.items():
                 if isinstance(val, list) and isinstance(val[0], Tensor):
                     history[key] = torch.stack(val)
-
         return state, history
 
     def compute_accept_prob(
@@ -862,12 +801,10 @@ class Dynamics(nn.Module):
         if sumlogdet.is_complex():
             log.warning('Complex sumlogdet! Taking norm...?')
             sumlogdet = sumlogdet.norm()
-
         dh = h_init - h_prop + sumlogdet
         prob = torch.exp(
             torch.minimum(dh, torch.zeros_like(dh, device=dh.device))
         ).to(state_init.x.device)
-
         return prob
 
     @staticmethod
@@ -883,7 +820,6 @@ class Dynamics(nn.Module):
         """Returns (forward_mask, backward_mask)."""
         fwd = (torch.rand(batch_size) > 0.5)  # .to(torch.float)
         bwd = torch.ones_like(fwd) - fwd
-
         return fwd, bwd
 
     def _get_mask(self, step: int) -> tuple[Tensor, Tensor]:
@@ -900,7 +836,6 @@ class Dynamics(nn.Module):
             mask = np.zeros((self.xdim,), dtype=np.float32)
             mask[idx] = 1.
             masks.append(torch.from_numpy(mask[None, :]))
-
         return masks
 
     def _get_vnet(self, step: int) -> nn.Module | Callable:
@@ -921,7 +856,6 @@ class Dynamics(nn.Module):
         # xnet = self.networks.get_submodule('xnet')
         if not self._networks_built:
             return self.xnet
-
         if self.config.use_separate_networks:
             xnet = self.xnet.get_submodule(str(step))
             if self.config.use_split_xnets:
@@ -942,7 +876,6 @@ class Dynamics(nn.Module):
             inputs: tuple[Tensor, Tensor],
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Call the momentum update network used to update v.
-
         Args:
             inputs: (x, force) tuple
         Returns:
@@ -952,19 +885,8 @@ class Dynamics(nn.Module):
         if self.config.group == 'SU3':
             x = self.group_to_vec(x)
             force = self.group_to_vec(force)
-            # x = torch.stack([x.real, x.imag], 1)
-            # force = torch.stack([force.real, force.imag], 1)
-
         vnet = self._get_vnet(step)
         assert callable(vnet)
-        # if torch.cuda.is_available():
-        #     x = x.to(self._dtype).to(self.device)
-        #     force = force.to(self._dtype).to(self.device)
-        #     # x, force = x.cuda(), force.cuda()
-        #     # # gdtype = torch.get_autocast_gpu_dtype()
-        #     # x = x.to(gdtype)
-        #     # force = force.to(gdtype)
-
         return vnet((x, force))
 
     def _call_xnet(
@@ -975,7 +897,6 @@ class Dynamics(nn.Module):
     ) -> tuple[Tensor, Tensor, Tensor]:
         """
         Call the position network used to update x.
-
         Args:
             inputs: (m * x, v) tuple, where (m * x) is a masking operation.
         Returns:
@@ -984,28 +905,16 @@ class Dynamics(nn.Module):
         x, v = inputs
         xnet = self._get_xnet(step, first)
         assert callable(xnet)
-
         if self.config.group == 'U1':
             x = self.g.group_to_vec(x)
-
         if self.config.group == 'SU3':
             x = self.unflatten(x)
             x = torch.stack([x.real, x.imag], 1)
             v = torch.stack([v.real, v.imag], 1)
-
-        # if torch.cuda.is_available():
-        #     # x, v = x.cuda(), v.cuda()
-        #     x = x.to(self._dtype).to(self.device)
-        #     v = v.to(self._dtype).to(self.device)
-        #     # gdtype = torch.get_autocast_gpu_dtype()
-        #     # x = x.to(gdtype)
-        #     # v = v.to(gdtype)
-
         return xnet((x, v))
 
     def _forward_lf(self, step: int, state: State) -> tuple[State, Tensor]:
         """Complete update (leapfrog step) in the forward direction.
-
         Explicitly:
             1. Update momentum (v' <-- v)
             2. Update half of position (x' <-- m * x)
@@ -1023,12 +932,10 @@ class Dynamics(nn.Module):
         sumlogdet = sumlogdet + logdet
         state, logdet = self._update_v_fwd(step, state)
         sumlogdet = sumlogdet + logdet
-
         return state, sumlogdet
 
     def _backward_lf(self, step: int, state: State) -> tuple[State, Tensor]:
         """Complete update (leapfrog step) in the backward direction
-
         Explicitly:
             1. Update momentum (v' <-- v)
             2. Update half of position       (x'  <-- (1 - m) * x)
@@ -1040,7 +947,6 @@ class Dynamics(nn.Module):
         m, mb = self._get_mask(step_r)
         m, mb = m.to(self.device), mb.to(self.device)
         sumlogdet = torch.zeros((state.x.shape[0],), device=self.device)
-
         state, logdet = self._update_v_bwd(step_r, state)
         sumlogdet = sumlogdet + logdet
         state, logdet = self._update_x_bwd(step_r, state, mb, first=False)
@@ -1049,7 +955,6 @@ class Dynamics(nn.Module):
         sumlogdet = sumlogdet + logdet
         state, logdet = self._update_v_bwd(step_r, state)
         sumlogdet = sumlogdet + logdet
-
         return state, sumlogdet
 
     def unflatten(self, x: Tensor) -> Tensor:
@@ -1062,28 +967,27 @@ class Dynamics(nn.Module):
     def vec_to_group(self, x: Tensor) -> Tensor:
         """Inverts `group_to_vec` operation."""
         x = self.unflatten(x)
-        # if isinstance(self.g, SU3):
         if self.config.group == 'SU3':
             return self.g.vec_to_group(x)
-
         return torch.complex(x[..., 0], x[..., 1])
 
     def _update_v_fwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the forward direction"""
         assert isinstance(self.veps, nn.ParameterList)
         eps = self.veps[step]
-        force = self.grad_potential(state.x, state.beta)
         # vNet: (x, F) --> (s, t, q)
-        s, t, q = self._call_vnet(step, (state.x, force))
+        x = self.g.compat_proj(self.unflatten(state.x))
+        force = self.grad_potential(x, state.beta)
+        s, t, q = self._call_vnet(step, (x, force))
         logjac = eps * s / 2.  # jacobian factor, also used in exp_s below
         logdet = self.flatten(logjac).sum(1)
         force = force.reshape_as(state.v)
-        exp_s = (logjac.exp_()).reshape_as(state.v)
-        exp_q = (eps * q).exp_().reshape_as(state.v)
+        exp_s = (logjac.exp()).reshape_as(state.v)
+        exp_q = (eps * q).exp().reshape_as(state.v)
         t = t.reshape_as(state.v)
-        vf = exp_s * state.v - 0.5 * eps * (force * exp_q + t)
-
-        return State(state.x, vf, state.beta), logdet.real
+        vf = (exp_s * state.v) - (0.5 * eps * (force * exp_q + t))
+        # v1 = state.v - 0.5 * eps * force1                  # v -= ½ veps * f
+        return State(x, vf, state.beta), logdet.real
 
     def _update_v_bwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the backward direction"""
@@ -1095,14 +999,15 @@ class Dynamics(nn.Module):
         # vNet: (x, force) --> (s, t, q)
         s, t, q = self._call_vnet(step, (x, force))
         logjac = (-eps * s / 2.)  # jacobian factor, also used in exp_s below
-        logdet = logjac.sum(1)
+        logdet = self.flatten(logjac).sum(1)
         v = v.reshape((-1, *self.xshape[1:]))
-        exp_s = logjac.exp_().reshape_as(v)
-        exp_q = (eps * q).exp_().reshape_as(v)
+        exp_s = logjac.exp().reshape_as(v)
+        exp_q = (eps * q).exp().reshape_as(v)
         t = t.reshape_as(v)
         force = force.reshape_as(v)
         vb = exp_s * (v + 0.5 * eps * (force * exp_q + t))
-
+        # if self.config.group == 'SU3':
+        #     vb = self.g.projectTAH(vb)
         return State(state.x, vb, state.beta), logdet.real
 
     def _update_x_fwd(
@@ -1112,50 +1017,42 @@ class Dynamics(nn.Module):
             m: Tensor,
             first: bool,
     ) -> tuple[State, Tensor]:
-        """Single x update in the forward direction"""
-        eps = self.xeps[step]  # .clamp_min_(0.)
+        """Single x update in the forward direction."""
+        eps = self.xeps[step]
+        m = self.unflatten(m)
         mb = (torch.ones_like(m) - m).to(self.device)
-        x = state.x.reshape(state.x.shape[0], -1)
-        v = state.v.reshape_as(x)
-        xm_init = m * x
-        inputs = (xm_init, state.v)
-
-        s, t, q = self._call_xnet(step, inputs, first=first)
-
+        xm_init = m * state.x
+        x = self.flatten(state.x)
+        v = self.flatten(state.v)
+        s, t, q = self._call_xnet(step, (xm_init, state.v), first=first)
         s = eps * s
         q = eps * q
-        exp_s = s.exp_()
-        exp_q = q.exp_()
+        exp_s = s.exp()
+        exp_q = q.exp()
         if self.config.group == 'U1':
             if self.config.use_ncp:
                 halfx = (x / 2.).flatten(1)
                 _x = 2. * (halfx.tan() * exp_s).atan()
-                xp = _x + eps * (v * exp_q + t)
+                xp = self.unflatten(_x + eps * (v * exp_q + t))
                 xf = xm_init + (mb * xp)
                 cterm = (halfx.cos()) ** 2
                 sterm = (exp_s * halfx.sin()) ** 2
                 logdet_ = (exp_s / (cterm + sterm)).log()
-                logdet = (mb * logdet_).sum(dim=1)
+                logdet = (mb.flatten(1) * logdet_).sum(dim=1)
             else:
                 xp = x * exp_s + eps * (v * exp_q + t)
                 xf = xm_init + (mb * xp)
                 logdet = (mb * s).sum(dim=1)
-
         elif self.config.group == 'SU3':
-            x = x.reshape((-1, *self.xshape[1:]))
-            xm_init = xm_init.reshape((-1, *self.xshape[1:]))
-            exp_s = exp_s.reshape_as(x).to(x.dtype)
-            exp_q = exp_q.reshape_as(x).to(x.dtype)
-            t = t.reshape_as(x).to(x.dtype)
-            eps = eps.to(x.dtype)
-            v = v.reshape_as(x)
-            xp = self.g.update_gauge(x, eps * (v * exp_q + t))
-            xf = xm_init + (mb * self.flatten(xp)).reshape_as(xm_init)
-            logdet = (mb * s.to(x.dtype)).sum(axis=1)
-
+            exp_s = exp_s.reshape_as(state.x).to(state.x.dtype)
+            exp_q = exp_q.reshape_as(state.x).to(state.x.dtype)
+            t = t.reshape_as(state.x).to(state.x.dtype)
+            eps = eps.to(state.x.dtype)
+            xp = self.g.update_gauge(state.x, eps * (state.v * exp_q + t))
+            xf = xm_init + (mb * xp)
+            logdet = (mb.flatten(1) * s.to(mb.dtype)).sum(1)
         else:
-            raise ValueError('Unexpected value for `self.g`')
-
+            raise ValueError('Unexpected value for self.config.group')
         xf = self.g.compat_proj(xf)
         return State(x=xf, v=state.v, beta=state.beta), logdet.real
 
@@ -1168,11 +1065,12 @@ class Dynamics(nn.Module):
     ) -> tuple[State, Tensor]:
         """Update the position in the backward direction."""
         assert isinstance(self.xeps, nn.ParameterList)
-        eps = self.xeps[step]  # .clamp_min_(0.)
+        eps = self.xeps[step]
+        m = self.unflatten(m)
         mb = (torch.ones_like(m) - m).to(self.device)
+        xm_init = m * state.x
         x = state.x.reshape((state.x.shape[0], -1))
         v = state.v.reshape_as(x)
-        xm_init = m * x
         inputs = (xm_init, state.v)
         s, t, q = self._call_xnet(step, inputs, first=first)
         s = (-eps) * s
@@ -1185,12 +1083,12 @@ class Dynamics(nn.Module):
                 halfx_scale = exp_s * halfx.tan()
                 x1 = 2. * halfx_scale.atan()
                 x2 = exp_s * eps * (v * exp_q + t)
-                xnew = x1 - x2
+                xnew = self.unflatten(x1 - x2)
                 xb = xm_init + (mb * xnew)
                 cterm = halfx.cos() ** 2
                 sterm = (exp_s * halfx.sin()) ** 2
                 logdet_ = (exp_s / (cterm + sterm)).log()
-                logdet = (mb * logdet_).sum(dim=1)
+                logdet = (mb.flatten(1) * logdet_).sum(dim=1)
             else:
                 xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
                 xb = xm_init + (mb * xnew)
@@ -1204,10 +1102,8 @@ class Dynamics(nn.Module):
                 state.x,
                 -(eps * (state.v * exp_q + t))
             )
-            xb = (
-                xm_init + (mb * self.flatten(xnew))
-            ).reshape((-1, *self.xshape[1:]))
-            logdet = (mb * s.to(mb.dtype)).sum(1)  # .real
+            xb = self.unflatten(xm_init + (mb * xnew))
+            logdet = (mb.flatten(1) * s.to(mb.dtype)).sum(1)
         else:
             raise ValueError('Unexpected value for `self.g`')
 
@@ -1242,7 +1138,6 @@ class Dynamics(nn.Module):
             dim: int = 1,
     ) -> Tensor:
         """Complexify real-valued tensor.
-
         Example:
             >>> x = torch.rand((N, 2, C, H, W))
             >>> xc = complexify(x, dim=1)
@@ -1269,8 +1164,6 @@ class Dynamics(nn.Module):
             xr = xr.transpose(0, dim-1)
             xi = xi.transpose(0, dim-1)
             return torch.complex(xr, xi)
-
         if len(x.shape) == 2:
             return torch.complex(x[:, 0], x[:, 1])
-
         return torch.complex(x[:, 0, ...], x[:, 1, ...])
