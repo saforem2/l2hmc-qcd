@@ -266,9 +266,6 @@ class Steps(BaseConfig):
     print: Optional[int] = None
     extend_last_era: Optional[int] = None
 
-    def to_str(self) -> str:
-        return f'nera-{self.nera}_nepoch-{self.nepoch}'
-
     def __post_init__(self):
         if self.extend_last_era is None:
             self.extend_last_era = 1
@@ -283,6 +280,9 @@ class Steps(BaseConfig):
 
         assert isinstance(self.log, int)
         assert isinstance(self.print, int)
+
+    def to_str(self) -> str:
+        return f'nera-{self.nera}_nepoch-{self.nepoch}'
 
     def update(
             self,
