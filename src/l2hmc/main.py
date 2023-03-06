@@ -11,16 +11,13 @@ import warnings
 import time
 from pathlib import Path
 from mpi4py import MPI
+import json
 
 import hydra
 from typing import Optional
 from omegaconf.dictconfig import DictConfig
 
-import json
-from l2hmc.utils.plot_helpers import set_plot_style
-
 warnings.filterwarnings('ignore')
-set_plot_style()
 
 log = logging.getLogger()
 logging.getLogger('wandb').setLevel(logging.CRITICAL)
@@ -33,6 +30,8 @@ logging.getLogger('graphviz').setLevel(logging.CRITICAL)
 
 comm = MPI.COMM_WORLD
 
+# from l2hmc import logger
+logger = logging.getLogger(__name__)
 
 def get_experiment(
         cfg: DictConfig,
@@ -72,13 +71,14 @@ def get_experiment(
 
 
 def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
+    from l2hmc.utils.plot_helpers import set_plot_style
+    set_plot_style()
     # --- [0.] Setup ------------------------------------------------------
     if overrides is not None:
         from l2hmc.configs import get_config
         cfg.update(get_config(overrides))
 
     ex = get_experiment(cfg)
-
     if ex.trainer._is_chief:
         try:
             from omegaconf import OmegaConf
