@@ -416,6 +416,7 @@ def plot_dataArray(
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
         line_labels: Optional[bool] = False,
+        save_plot: bool = True,
 ) -> tuple:
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
@@ -499,7 +500,7 @@ def plot_dataArray(
             f'{logfreq * int(i)}' for i in xticks
         ])
 
-    if outdir is not None:
+    if outdir is not None and save_plot:
         outfile = Path(outdir).joinpath(f'{key}.svg')
         if outfile.is_file():
             tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
@@ -777,6 +778,7 @@ def plot_dataset(
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
         ext: Optional[str] = 'png',
+        save_plots: bool = True,
 ):
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
@@ -786,6 +788,16 @@ def plot_dataset(
         tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
         outdir = Path(os.getcwd()).joinpath('plots', f'plots-{tstamp}')
         outdir.mkdir(exist_ok=True, parents=True)
+
+    _ = make_ridgeplots(
+        dataset,
+        outdir=outdir,
+        drop_nans=True,
+        drop_zeros=False,
+        num_chains=num_chains,
+        cmap='viridis',
+        save_plot=save_plots,
+    )
 
     for idx, (key, val) in enumerate(dataset.data_vars.items()):
         color = f'C{idx%9}'
@@ -837,6 +849,7 @@ def make_ridgeplots(
         drop_zeros: Optional[bool] = False,
         drop_nans: Optional[bool] = True,
         cmap: Optional[str] = 'viridis_r',
+        save_plot: bool = True,
 ):
     """Make ridgeplots."""
     data = {}
@@ -885,7 +898,7 @@ def make_ridgeplots(
 
                 lfdf = pd.DataFrame(lf_data)
                 lfdf_avg = lfdf.groupby('lf')['avg'].mean()
-                lfdf['lf_avg'] = lfdf['lf'].map(lfdf_avg)
+                lfdf['lf_avg'] = lfdf['lf'].map(lfdf_avg)  # type:ignore
 
                 # Initialize the FacetGrid object
                 ncolors = len(val.leapfrog.values)
@@ -895,8 +908,8 @@ def make_ridgeplots(
                     row='lf',
                     hue='lf_avg',
                     aspect=15,
-                    height=0.25,
-                    palette=pal  # type:ignore
+                    height=0.25,  # type:ignore
+                    palette=pal,   # type:ignore
                 )
                 # avgs = lfdf.groupby('leapfrog')[f'Mean {key}']
 
@@ -943,7 +956,7 @@ def make_ridgeplots(
                 plt.rcParams['axes.labelcolor'] = '#bdbdbd'
                 _ = g.set(xlabel=f'{key}')
                 _ = g.despine(bottom=True, left=True)
-                if outdir is not None:
+                if outdir is not None and save_plot:
                     outdir = Path(outdir)
                     pngdir = outdir.joinpath('pngs')
                     svgdir = outdir.joinpath('svgs')
