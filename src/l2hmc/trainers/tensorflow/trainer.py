@@ -769,7 +769,7 @@ class Trainer(BaseTrainer):
                         if stuck_counter < patience:
                             stuck_counter += 1
                         else:
-                            self.warn('Chains are stuck! Re-drawing x!')
+                            self.warning('Chains are stuck! Re-drawing x!')
                             x = self.lattice.random()
                             stuck_counter = 0
 

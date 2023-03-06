@@ -176,18 +176,18 @@ class Trainer(BaseTrainer):
 
         self._estep = 0
         self._hstep = 0
-        if self.config.dynamics.group == 'U1':
-            self.warning('Using `torch.optim.Adam` optimizer')
-            self._optimizer = torch.optim.Adam(
-                self.dynamics.parameters(),
-                lr=self.config.learning_rate.lr_init
-            )
-        else:
-            self.warning('Using `torch.optim.SGD` optimizer')
-            self._optimizer = torch.optim.SGD(
-                self.dynamics.parameters(),
-                lr=self.config.learning_rate.lr_init,
-            )
+        # if self.config.dynamics.group == 'U1':
+        self.warning('Using `torch.optim.Adam` optimizer')
+        self._optimizer = torch.optim.Adam(
+            self.dynamics.parameters(),
+            lr=self.config.learning_rate.lr_init
+        )
+        # else:
+        #     self.warning('Using `torch.optim.SGD` optimizer')
+        #     self._optimizer = torch.optim.SGD(
+        #         self.dynamics.parameters(),
+        #         lr=self.config.learning_rate.lr_init,
+        #     )
 
         # --------------------------------------------------------------------
         # BACKEND SPECIFIC SETUP
@@ -200,7 +200,10 @@ class Trainer(BaseTrainer):
         if self.config.backend == 'DDP':
             from torch.nn.parallel import DistributedDataParallel as DDP
             self.optimizer = self._optimizer
-            self.dynamics_engine = DDP(self.dynamics)
+            self.dynamics_engine = DDP(
+                self.dynamics,
+                # find_unused_parameters=True
+            )
             self.grad_scaler = GradScaler()
 
         elif self.config.backend.lower() in ['ds', 'deepspeed']:
@@ -781,6 +784,10 @@ class Trainer(BaseTrainer):
             beta = beta.to(self.device)
             # xi, beta = xi.cuda(), beta.cuda()
 
+        xi = self.g.compat_proj(
+            self.dynamics.unflatten(xi.to(self.device))
+        )
+
         xo, metrics = self.dynamics.apply_transition_hmc(
             (xi, beta), eps=eps, nleapfrog=nleapfrog,
         )
@@ -801,7 +808,10 @@ class Trainer(BaseTrainer):
         self.dynamics.eval()
         xinit, beta = inputs
         beta = torch.tensor(beta).to(self.device)
-        xinit = xinit.to(self.device)
+        # xinit = xinit.to(self.device)
+        xinit = self.g.compat_proj(
+            self.dynamics.unflatten(xinit.to(self.device))
+        )
         # with torch.autocast(  # type:ignore
         #         device_type='cuda' if WITH_CUDA else 'cpu',
         #         dtype=torch.float32
@@ -1002,13 +1012,7 @@ class Trainer(BaseTrainer):
             and nlog is not None
             and nprint is not None
         )
-        # self.dynamics.to(self._dtype)
         device_type = 'cuda' if WITH_CUDA else 'cpu'
-        # if self.config.dynamics.group.lower() == 'u1':
-        #     dtype = torch.float32
-        # elif self.config.dynamics.group.lower() == 'su3':
-
-        # self.dynamics.to(dtype)
         if device_type == 'cuda':
             fpctx = torch.autocast(  # type:ignore
                 # dtype=dtype,
@@ -1161,17 +1165,15 @@ class Trainer(BaseTrainer):
         # --------------------------------------------------------------------
         # [1.] Forward call
         xinit.requires_grad_(True)
-
         self.optimizer.zero_grad()
-
         with torch.autocast(  # type:ignore
                 dtype=self._dtype,
                 enabled=(not self._dtype == torch.float64),
                 device_type='cuda' if torch.cuda.is_available() else 'cpu'
         ):
-            if self._gstep == 0:
-                self.warning(f'[TRAINING] x.dtype: {xinit.dtype}')
-                self.warning(f'[TRAINING] x.device: {xinit.device}')
+            if self._gstep == 0 and self._is_chief:
+                log.debug(f'[TRAINING] x.dtype: {xinit.dtype}')
+                log.debug(f'[TRAINING] x.device: {xinit.device}')
 
             if self.dynamics_engine is not None:
                 xout, metrics = self.dynamics_engine((xinit, beta))
@@ -1182,13 +1184,11 @@ class Trainer(BaseTrainer):
             # [2.] Calc loss
             loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
             if (aw := self.config.loss.aux_weight) > 0:
-                yinit = self.g.random(xout.shape).to(self.device)
+                yinit = self.dynamics.unflatten(
+                    self.g.random(xout.shape).to(self.device)
+                )
+                # yinit = self.g.random(xout.shape).to(self.device)
                 yinit.requires_grad_(True)
-                # if WITH_CUDA:
-                #     yinit = yinit.cuda().half()
-                # if self.use_fp16:
-                #     yinit = yinit.half()
-
                 if self.dynamics_engine is not None:
                     _, metrics_ = self.dynamics_engine((yinit, beta))
                 else:
@@ -1207,16 +1207,30 @@ class Trainer(BaseTrainer):
             self.dynamics_engine.backward(loss)  # type:ignore
             self.dynamics_engine.step()  # type:ignore
         else:
+            # scaler.scale(loss).backward()
+            # scaler.unscale_(optimizer)
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+            # scaler.step(optimizer)
+            # scaler.update()
             if self.grad_scaler is not None:
                 self.grad_scaler.scale(loss).backward()  # type:ignore
+                if self.config.learning_rate.clip_norm > 0.0:
+                    self.grad_scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad.clip_grad_norm(
+                        self.dynamics.parameters(),
+                        self.config.learning_rate.clip_norm
+                    )
+                    self.grad_scaler.step(self.optimizer)
+                    self.grad_scaler.update()
+                else:
+                    self.grad_scaler.step(self.optimizer)
+                    self.grad_scaler.update()
                 # if self.config.learning_rate.clip_norm > 0:
                 #     self.grad_scaler.unscale_(self.optimizer)
                 #     torch.nn.utils.clip_grad.clip_grad_norm_(
                 #         self.dynamics.parameters(),
                 #         max_norm=self.clip_norm
                 #     )
-                self.grad_scaler.step(self.optimizer)
-                self.grad_scaler.update()
             else:
                 if self.config.learning_rate.clip_norm > 0.0:
                     torch.nn.utils.clip_grad.clip_grad_norm(
@@ -1294,6 +1308,56 @@ class Trainer(BaseTrainer):
 
         return xout.detach(), record
 
+    def eval_step_detailed(
+            self,
+            job_type: str,
+            x: Optional[Tensor] = None,
+            beta: Optional[float] = None,
+            verbose: bool = True,
+    ) -> tuple[Tensor, dict]:
+        if x is None:
+            x = self.dynamics.lattice.random()
+        if beta is None:
+            beta = self.config.annealing_schedule.beta_init
+
+        # if isinstance(beta, float):
+        #     beta = torch.tensor(beta).to(self.device)
+
+        self.timers[job_type].start()
+        if job_type == 'eval':
+            xout, metrics = self.eval_step((x, beta))
+        elif job_type == 'hmc':
+            xout, metrics = self.hmc_step((x, beta))
+        else:
+            raise ValueError(
+                f'Job type should be eval or hmc, got: {job_type}'
+            )
+
+        dt = self.timers[job_type].stop()
+        record = {
+            'dt': dt,
+            'beta': beta,
+            'loss': metrics.pop('loss', None),
+            'dQsin': metrics.pop('dQsin', None),
+            'dQint': metrics.pop('dQint', None),
+            **metrics,
+        }
+        # record.update(metrics)
+        avgs, summary = self.record_metrics(
+            step=self._gstep,
+            metrics=record,
+            job_type=job_type,
+            # run=run,
+            # arun=arun,
+            # writer=writer,
+            # model=self.dynamics,
+            # optimizer=self.optimizer,
+        )
+        if verbose:
+            log.info(summary)
+
+        return xout, record
+
     def train_epoch(
             self,
             x: Tensor,
@@ -1330,6 +1394,8 @@ class Trainer(BaseTrainer):
 
         log_freq = self.steps.log if nlog is None else nlog
         print_freq = self.steps.print if nprint is None else nprint
+        assert log_freq is not None and isinstance(log_freq, int)
+        assert print_freq is not None and isinstance(print_freq, int)
         # log.info(f'log_freq: {log_freq}')
         # log.info(f'print_freq: {print_freq}')
 
@@ -1616,9 +1682,7 @@ class Trainer(BaseTrainer):
                 if era > 1 and str(era - 1) in self.summaries['train']:
                     esummary = self.histories['train'].era_summary(f'{era-1}')
                     log.info(f'Avgs over last era:\n {esummary}\n')
-
                 box_header(f'ERA: {era} / {nera}, BETA: {b:.3f}')
-                # self.console.rule(f'ERA: {era} / {nera - 1}, BETA: {b:.3f}', )
 
             epoch_start = time.time()
             x, edata = self.train_epoch(
