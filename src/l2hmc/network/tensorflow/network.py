@@ -552,10 +552,13 @@ class LeapfrogLayer(Model):
         if self.net_config.use_batch_norm and self.batch_norm is not None:
             z = self.batch_norm(z, training=training)
 
-        dt = inputs[0].dtype
-        s = tf.cast(tf.scalar_mul(self.nw.s, self.scale(z)), dt)
-        t = tf.cast(tf.scalar_mul(self.nw.t, self.transl(z)), dt)
-        q = tf.cast(tf.scalar_mul(self.nw.q, self.transf(z)), dt)
+        # dt = inputs[0].dtype
+        # s = tf.cast(tf.scalar_mul(self.nw.s, self.scale(z)), dt)
+        # t = tf.cast(tf.scalar_mul(self.nw.t, self.transl(z)), dt)
+        # q = tf.cast(tf.scalar_mul(self.nw.q, self.transf(z)), dt)
+        s = tf.scalar_mul(self.nw.s, self.scale(z))
+        t = tf.scalar_mul(self.nw.t, self.transl(z))
+        q = tf.scalar_mul(self.nw.q, self.transf(z))
         # s = self.nw.s * self.scale(z)
         # t = self.nw.t * self.transl(z)
         # q = self.nw.q * self.transf(z)
