@@ -18,8 +18,6 @@ from omegaconf import DictConfig
 from omegaconf import OmegaConf
 import pandas as pd
 from rich.table import Table
-import tensorflow as tf
-import tensorflow.python.framework.ops as ops
 import torch
 import wandb
 import xarray as xr
@@ -38,27 +36,44 @@ os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 
 log = logging.getLogger(__name__)
 
-TensorLike = Union[tf.Tensor, ops.EagerTensor, torch.Tensor, np.ndarray, list]
+# TensorLike = Union[
+#     tf.Tensor,
+#     ops.EagerTensor,
+#     torch.Tensor,
+#     np.ndarray,
+#     list
+# ]
 ScalarLike = Union[int, float, bool, np.floating]
 
 
-def grab_tensor(x: TensorLike) -> np.ndarray | ScalarLike:
+def grab_tensor(x: Any) -> np.ndarray | ScalarLike:
     if isinstance(x, list):
         if isinstance(x[0], torch.Tensor):
             return grab_tensor(torch.stack(x))
-        if isinstance(x[0], tf.Tensor):
-            return grab_tensor(tf.stack(x))
-    if isinstance(x, np.ndarray):
+        elif isinstance(x[0], np.ndarray):
+            return np.stack(x)
+        else:
+            import tensorflow as tf
+            if isinstance(x[0], tf.Tensor):
+                return grab_tensor(tf.stack(x))
+    elif isinstance(x, np.ndarray):
         return x
-    if isinstance(x, (tf.Tensor, ops.EagerTensor)):
-        assert (
-            hasattr(x, 'numpy')
-            and callable(getattr(x, 'numpy'))
-        )
-        return x.numpy()  # type:ignore
+    else:
+        if (
+                hasattr(x, 'numpy')
+                and callable(getattr(x, 'numpy'))
+        ):
+            assert callable(getattr(x, ''))
+            return x.numpy()
+        # if isinstance(x, (tf.Tensor, ops.EagerTensor)):
+        #     assert (
+        #         hasattr(x, 'numpy')
+        #         and callable(getattr(x, 'numpy'))
+        #     )
+        #     return x.numpy()  # type:ignore
 
-    if isinstance(x, torch.Tensor):
-        return x.detach().cpu().numpy()
+        if isinstance(x, torch.Tensor):
+            return x.detach().cpu().numpy()
 
     raise ValueError
 
@@ -641,12 +656,15 @@ def make_dataset(metrics: dict) -> xr.Dataset:
     for key, val in metrics.items():
         if isinstance(val, list):
             import torch
-            import tensorflow as tf
             if isinstance(val[0], torch.Tensor):
                 val = grab_tensor(torch.stack(val))
-            elif isinstance(val[0], tf.Tensor):
+            # elif isinstance(val[0], tf.Tensor):
+            elif isinstance(val, np.ndarray):
+                val = np.stack(val)
+            else:
                 import tensorflow as tf
-                val = grab_tensor(tf.stack(val))
+                if isinstance(val, tf.Tensor):
+                    val = grab_tensor(tf.stack(val))
 
         assert isinstance(val, np.ndarray)
         assert len(val.shape) in [1, 2, 3]
