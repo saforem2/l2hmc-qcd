@@ -43,8 +43,21 @@ setupThetaGPU() {
 
     # -- Python / Conda setup -------------------------------------------------
     module load conda/2022-07-01 ; conda activate base
-    conda activate \
-      /lus/grand/projects/datascience/foremans/locations/thetaGPU/miniconda3/envs/2022-07-01
+    VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-01"
+    if [[ -f "${VENV_DIR}/bin/activate" ]]; then
+      echo "Found venv at ${VENV_DIR}"
+      source "${VENV_DIR}/bin/activate"
+    else
+      echo "No venv found"
+      mkdir -p "${VENV_DIR}"
+      echo "Making new venv at ${VENV_DIR}"
+      python3 -m venv "${VENV_DIR}" --system-site-packages
+      source "${VENV_DIR}/bin/activate"
+      python3 -m pip install --upgrade pip setuptools wheel
+      python3 -m pip install -e "${ROOT}[dev]"
+    fi
+    # conda activate \
+    #   /lus/grand/projects/datascience/foremans/locations/thetaGPU/miniconda3/envs/2022-07-01
     if [[ -f "${ROOT}/venvs/thetaGPU/2022-07-01-deepspeed/bin/activate" ]]; then
       source ../../venvs/thetaGPU/2022-07-01-deepspeed/bin/activate
     fi
@@ -96,12 +109,16 @@ setupPolaris()  {
     HOSTFILE="${PBS_NODEFILE}"
     # -----------------------------------------------
     module load conda/2022-09-08; conda activate base
-    VENV_DIR="../../venvs/polaris/2022-09-08"
+    VENV_DIR="${ROOT}/venvs/polaris/2022-09-08"
     if [[ -f "${VENV_DIR}/bin/activate" ]]; then
       source "${VENV_DIR}/bin/activate"
     else
       echo "No venv found"
-      # python3 -m pip install -e "${ROOT}[dev]"
+      mkdir -p "${VENV_DIR}"
+      python3 -m venv "${VENV_DIR}" --system-site-packages
+      source "${VENV_DIR}/bin/activate"
+      python3 -m pip install --upgrade pip setuptools wheel
+      python3 -m pip install -e "${ROOT}[dev]"
     fi
     export CFLAGS="-I${CONDA_PREFIX}/include/"
     export LDFLAGS="-L${CONDA_PREFIX}/lib/"
@@ -120,7 +137,6 @@ setupPolaris()  {
     MPI_ELASTIC="\
       -n ${NGPUS} \
       --ppn ${NGPU_PER_RANK}"
-    # MPIEXEC="${MPI_COMMAND} ${MPI_FLAGS} ${MPI_ELASTIC}"
   else
     echo "Unexpected hostname: $(hostname)"
   fi
@@ -184,8 +200,5 @@ setupJob() {
   # CONSTRUCT EXECUTABLE TO BE RAN
   # -------------------------------
   EXEC="${MPI_COMMAND} ${MPI_DEFAULTS} ${MPI_ELASTIC} $(which python3) ${MAIN}"
-
-  # export EXEC="$EXEC $@"
+  export EXEC="$EXEC"
 }
-
-

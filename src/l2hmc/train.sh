@@ -15,23 +15,23 @@ source "${DIR}/setup.sh"
 # ┃ Elastic Training:                              ┃
 # ┃  Use all available GPUs on all available nodes ┃
 # ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-elasticDistributed() {
-  NRANKS=$(wc -l < "${HOSTFILE}")
-  NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
-  NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
-  echo "\
-    Running on ${NRANKS} ranks \
-    with ${NGPU_PER_RANK} GPUs each \
-    for a total of ${NGPUS} GPUs"
-  EXEC="\
-    ${MPI_COMMAND} \
-    ${MPI_DEFAULTS} \
-    ${MPI_ELASTIC} \
-    $(which python3) \
-    ${MAIN}"
-  # export EXEC="${EXEC} "$@""
-  ${EXEC} "$@"
-}
+# elasticDistributed() {
+#   NRANKS=$(wc -l < "${HOSTFILE}")
+#   NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
+#   NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
+#   echo "\
+#     Running on ${NRANKS} ranks \
+#     with ${NGPU_PER_RANK} GPUs each \
+#     for a total of ${NGPUS} GPUs"
+#   EXEC="\
+#     ${MPI_COMMAND} \
+#     ${MPI_DEFAULTS} \
+#     ${MPI_ELASTIC} \
+#     $(which python3) \
+#     ${MAIN}"
+#   export EXEC="${EXEC}"
+#   ${EXEC} "$@"
+# }
 
 
 # ┏━━━━━━━━━━━━━━━━━━━━━━━┓
