@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 import socket
 import time
-from typing import Any, Callable, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence, Union
 from rich.console import ConsoleRenderable
 # from rich.align import Align
 
@@ -38,7 +38,7 @@ import wandb
 import l2hmc.utils.live_plots as plotter
 from l2hmc.common import (
     ScalarLike,
-    TensorLike,
+    # TensorLike,
     get_timestamp,
 )
 from l2hmc.utils.dist import setup_torch_distributed
@@ -67,6 +67,11 @@ log = logging.getLogger(__name__)
 
 Tensor = torch.Tensor
 Module = torch.nn.modules.Module
+TensorLike = Union[
+    Tensor,
+    np.ndarray,
+    Sequence[Any],
+]
 
 WITH_CUDA = torch.cuda.is_available()
 
@@ -275,7 +280,6 @@ class Trainer(BaseTrainer):
             return {}
 
         ds_config = {}
-        # ds_config_path = Path(CONF_DIR).joinpath('ds_config.json')
         assert self.config.ds_config_path is not None
         ds_config = load_ds_config(self.config.ds_config_path)
         self.info(
@@ -1342,7 +1346,6 @@ class Trainer(BaseTrainer):
             'dQint': metrics.pop('dQint', None),
             **metrics,
         }
-        # record.update(metrics)
         avgs, summary = self.record_metrics(
             step=self._gstep,
             metrics=record,
@@ -1682,7 +1685,7 @@ class Trainer(BaseTrainer):
                 if era > 1 and str(era - 1) in self.summaries['train']:
                     esummary = self.histories['train'].era_summary(f'{era-1}')
                     log.info(f'Avgs over last era:\n {esummary}\n')
-                box_header(f'ERA: {era} / {nera}, BETA: {b:.3f}')
+                box_header(f'ERA: {era} / {nera-1}, BETA: {b:.3f}')
 
             epoch_start = time.time()
             x, edata = self.train_epoch(
@@ -1771,7 +1774,7 @@ class Trainer(BaseTrainer):
                     log.info(f'Avgs over last era:\n {esummary}\n')
 
                 # self.console.rule(f'ERA: {era} / {nera}, BETA: {b:.3f}')
-                box_header(f'ERA: {era} / {nera}, BETA: {b:.3f}')
+                box_header(f'ERA: {era} / {nera-1}, BETA: {b:.3f}')
 
             epoch_start = time.time()
             x, edata = self.train_epoch(
