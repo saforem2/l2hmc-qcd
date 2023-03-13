@@ -22,10 +22,8 @@ from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
 from l2hmc.group.su3.pytorch.group import SU3
 from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
 from l2hmc.network.pytorch.network import NetworkFactory, dummy_network
-# from l2hmc.utils.logger import get_pylogger
 
-# log = logging.getLogger(__name__)
-# log = get_pylogger(__name__)
+
 log = logging.getLogger(__name__)
 
 TWO_PI = 2. * PI
