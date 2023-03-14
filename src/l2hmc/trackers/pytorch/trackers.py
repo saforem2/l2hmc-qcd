@@ -138,10 +138,14 @@ def update_summaries(
                 log_item(writer=writer, val=param, step=step, tag=tag)
         # children = nested_children(model)
         # for name, child in children.items():
-        #     log_item(writer=writer, val=child.parameters(), step=step, tag=tag)
+        #     log_item(
+        #         writer=writer,
+        #         val=child.parameters(),
+        #         step=step,
+        #         tag=tag
+        #     )
         # for m in model.register_buffer
         #     if isinstance(m, nn.Linear):
-
 
     if optimizer is not None:
         for group in optimizer.param_groups:
