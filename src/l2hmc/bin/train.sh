@@ -1,15 +1,14 @@
 #!/bin/bash -l
 # ----------------------------------------------------------------------------
 #PBS -k doe
-#PBS -V exports all the environment variables in your environnment to the 
+#PBS -V exports all the environment variables in your environnment to the
 #compute node The rest is an example of how an MPI job might be set up
 # echo Working directory is $PBS_O_WORKDIR
 # cd $PBS_O_WORKDIR
 # ----------------------------------------------------------------------------
 
-DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd -LP)
-# source ./setup.sh with helper functions for getting setup @ ALCF
-source "${DIR}/setup.sh"
+HERE=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd -LP)
+DIR=$(dirname "$HERE")
 
 # ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 # ┃ Elastic Training:                              ┃
@@ -72,17 +71,52 @@ printJobInfo() {
   echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 
-# main() {
-if [[ $(hostname) == theta* ]]; then
-  echo "Setting up ThetaGPU from $(hostname)"
-  setupThetaGPU
-elif [[ $(hostname) == x* ]]; then
-  echo "Setting up Polaris from $(hostname)"
-  setupPolaris
-else
-  echo "Unexpected hostname $(hostname)"
-fi
+setupLogs() {
+  LOGDIR="${DIR}/logs"
+  LOGFILE="${LOGDIR}/${TSTAMP}-${HOST}_ngpu${NGPUS}_ncpu${NCPUS}.log"
+  export LOGDIR="${LOGDIR}"
+  export LOGFILE=$LOGFILE
+  if [ ! -d "${LOGDIR}" ]; then
+    mkdir -p ${LOGDIR}
+  fi
+  # Keep track of latest logfile for easy access
+  echo $LOGFILE >> "${DIR}/logs/latest"
+}
 
-setupJob
-printJobInfo
-${EXEC} "$@" > ${LOGFILE} &
+setupEnv() {
+  # source ./setup.sh with helper functions for getting setup @ ALCF
+  SETUP_FILE="${HERE}/setup.sh"
+  if [[ -f "${SETUP_FILE}" ]]; then
+    echo "source-ing ${SETUP_FILE}"
+    # shellcheck source=./setup.sh
+    source "${SETUP_FILE}"
+  else
+    echo "ERROR: UNABLE TO SOURCE ${SETUP_FILE}"
+  fi
+  if [[ $(hostname) == theta* ]]; then
+    echo "Setting up ThetaGPU from $(hostname)"
+    setupThetaGPU
+  elif [[ $(hostname) == x* ]]; then
+    echo "Setting up Polaris from $(hostname)"
+    setupPolaris
+  else
+    echo "Unexpected hostname $(hostname)"
+  fi
+}
+
+# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+# ┃ SETUP CONDA + MPI ENVIRONMENT @ ALCF ┃
+# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+setup() {
+  setupEnv
+  setupJob
+  setupLogs
+  export NODE_RANK=0
+  export NNODES=$NRANKS
+  export GPUS_PER_NODE=$NGPU_PER_RANK
+  export WORLD_SIZE=$NGPUS
+  printJobInfo | tee -a "${LOGFILE}"
+}
+
+setup
+${EXEC} "$@" > ${LOGFILE} 2>&1 &
