@@ -14,6 +14,29 @@ import json
 import pandas as pd
 
 
+class BaseTimer:
+    def __init__(
+                self,
+                name: str = 'BaseTimer',
+                desc: Optional[str] = None
+    ):
+        self.name = name
+        self.desc = desc
+        self.data: list = []
+        self.iterations: int = 0
+        self.started: float = time.time()
+        self._created: float = time.time()
+
+    def start(self) -> None:
+        self.started = time.time()
+
+    def stop(self) -> float:
+        dt = time.time() - self.started
+        self.data.append(dt)
+        self.iterations += 1
+        return dt
+
+
 class TrainTimer:
     def __init__(self) -> None:
         self.step_timer = StepTimer

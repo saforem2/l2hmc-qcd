@@ -2,8 +2,6 @@
 
 ![l2hmc-qcd](https://github.com/saforem2/saforem2/blob/main/assets/l2hmc-qcd-small.svg)
 
-<!--<br> <img src="https://github.com/saforem2/saforem2/blob/main/assets/rainbow-line-50.png" style="padding-top:-5%;" />-->
-
 <a href="https://hits.seeyoufarm.com"><img alt="hits" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fsaforem2%2Fl2hmc-qcd&count_bg=%2300CCFF&title_bg=%23555555&icon=&icon_color=%23111111&title=👋&edge_flat=false"></a>    
 <a href="https://github.com/saforem2/l2hmc-qcd/"><img alt="l2hmc-qcd" src="https://img.shields.io/badge/-l2hmc--qcd-252525?style=flat&logo=github&labelColor=gray"></a> <a href="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd"><img alt="codefactor" src="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge"></a>
 <br>
@@ -15,30 +13,41 @@
 
 </div>
 
-
-# Contents
+<details open><summary><b>Contents</b></summary>
 
 - [Overview](#overview)
   * [Papers 📚, Slides 📊, etc.](https://github.com/saforem2/l2hmc-qcd/#training--experimenting)
   * [Background](#background)
 - [Installation](#installation)
 - [Training](#training)
+  - [Configuration Management](#configuration-management)
+  - [Running @ ALCF](#running-at-ALCF) 
 - [Details](#details)
-  * [L2HMC for LatticeQCD](#l2hmc-for-latticeqcd)
   * [Organization](#organization)
     + [Dynamics / Network](#dynamics---network)
       - [Network Architecture](#network-architecture)
     + [Lattice](#lattice)
 
+</details>
+
 # Overview
 
-## Papers 📚, Slides 📊, etc.
-- 📘 [Example Notebook](./src/l2hmc/notebooks/experiment.ipynb) ([alternative link](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/experiment.ipynb) if github won't load)
-- [Accelerated Sampling Techniques for Lattice Gauge Theory](https://saforem2.github.io/l2hmc-dwq25/#/) @ [BNL & RBRC: DWQ @ 25](https://indico.bnl.gov/event/13576/) (12/2021)
-- [Training Topological Samplers for Lattice Gauge Theory](https://bit.ly/l2hmc-ect2021) from the [*ML for HEP, on and off the Lattice*](https://indico.ectstar.eu/event/77/) @ $\mathrm{ECT}^{*}$ Trento (09/2021) (+ 📊 [slides](https://www.bit.ly/l2hmc-ect2021))
-- [Deep Learning Hamiltonian Monte Carlo](https://arxiv.org/abs/2105.03418) @ [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) **ICLR 2021**
-	- 📚 : [arXiv:2105.03418](https://arxiv.org/abs/2105.03418)  
-	- 📊 : [poster](https://www.bit.ly/l2hmc_poster)
+## Papers 📚, Slides 📊 etc.
+- [📕 Notebooks](./src/l2hmc/notebooks/):
+    - 📙 2D $U(1)$ Model (w/ `fp16` or `fp32` for training)
+    	- [`src/l2hmc/notebooks/l2hmc-2dU1.ipynb`](./src/l2hmc/notebooks/l2hmc-2dU1.ipynb)
+    	- [alt link (if Github won't load)](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/l2hmc-2dU1.ipynb)
+    - 📒 4D $SU(3)$ Model (w/ `complex128` + `fp64` for training)
+        - PyTorch:
+            - [`src/l2hmc/notebooks/pytorch-SU3d4.ipynb`](./src/l2hmc/notebooks/l2hmc-2dU1.ipynb)
+    	    - [alt link (if github won't load)](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/pytorch-SU3d4.ipynb)
+
+- 📝 Papers:
+    - [Accelerated Sampling Techniques for Lattice Gauge Theory](https://saforem2.github.io/l2hmc-dwq25/#/) @ [BNL & RBRC: DWQ @ 25](https://indico.bnl.gov/event/13576/) (12/2021)
+    - [Training Topological Samplers for Lattice Gauge Theory](https://bit.ly/l2hmc-ect2021) from the [*ML for HEP, on and off the Lattice*](https://indico.ectstar.eu/event/77/) @ $\mathrm{ECT}^{*}$ Trento (09/2021) (+ 📊 [slides](https://www.bit.ly/l2hmc-ect2021))
+    - [Deep Learning Hamiltonian Monte Carlo](https://arxiv.org/abs/2105.03418) @ [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) **ICLR 2021**
+        - 📚 : [arXiv:2105.03418](https://arxiv.org/abs/2105.03418)  
+        - 📊 : [poster](https://www.bit.ly/l2hmc_poster)
 
 
 ## Background
@@ -64,38 +73,110 @@ Broadly, given an *analytically* described target distribution, π(x), L2HMC pro
 - Is able to efficiently mix between energy levels.
 - Is capable of traversing low-density zones to mix between modes (often difficult for generic HMC).
 
-
-
 # Installation
 
-- [`l2hmc`](https://pypi.org/project/l2hmc/) on PyPi:
+> **Warning**<br>
+> It is recommended to install _inside_ an existing virtual environment<br>
+> (ideally one with `tensorflow, pytorch [horovod,deepspeed]` already installed)
 
-```bash
-$ python3 -m pip install l2hmc
+<details open><summary><b>From source (RECOMMENDED)</b></summary>
+
+```Shell
+git clone https://github.com/saforem2/l2hmc-qcd
+cd l2hmc-qcd
+# for development addons:
+# python3 -m pip install -e ".[dev]"
+python3 -m pip install -e .
+```
+
+<details closed>
+<summary>
+<b>
+From <a href="https://pypi.org/project/l2hmc/">
+<code>l2hmc</code> on PyPI</a>
+</b>
+</summary>
+<p>
+
+```Shell
+python3 -m pip install l2hmc
+```
+
+</p>
+</details>
+
+
+Test install:
+
+```Shell
+python3 -c 'import l2hmc ; print(l2hmc.__file__)'
+/path/to/l2hmc-qcd/src/l2hmc/__init__.py
 ```
 
 # Training
 
+## Configuration Management
+
 This project uses [`hydra`](https://hydra.cc) for configuration management and
 supports distributed training for both PyTorch and TensorFlow.
+
+In particular, we support the following combinations of `framework` + `backend` for distributed training:
+
+- TensorFlow (+ Horovod for distributed training)
+- PyTorch +
+    - DDP
+    - Horovod
+    - DeepSpeed
+
+The main entry point is [`src/l2hmc/main.py`](./src/l2hmc/main.py),
+which contains  the logic for running an end-to-end `Experiment`.
+
+An [`Experiment`](./src/l2hmc/experiment/) consists of the following sub-tasks:
+
+1. Training
+2. Evaluation
+3. HMC (for comparison and to measure model improvement)
+
+**All** configuration options can be dynamically overridden via the CLI at runtime, 
+and we can specify our desired `framework` and `backend` combination via:
+
+```Shell
+python3 main.py mode=debug framework=pytorch backend=deepspeed precision=fp16
+```
+
+to run a (non-distributed) Experiment with `pytorch + deepspeed` with `fp16` precision.
 
 The [`l2hmc/conf/config.yaml`](./src/l2hmc/conf/config.yaml) contains a brief
 explanation of each of the various parameter options, and values can be
 overriden either by modifying the `config.yaml` file, or directly through the
 command line, e.g.
 
-```bash
+```Shell
 cd src/l2hmc
 ./train.sh mode=debug framework=pytorch > train.log 2>&1 &
 tail -f train.log $(tail -1 logs/latest)
 ```
 
+Additional information about various configuration options can be found in:
+
+- [`src/l2hmc/configs.py`](./src/l2hmc/configs.py):
+  Contains implementations of the (concrete python objects) that are adjustable for our experiment.
+- [`src/l2hmc/conf/config.yaml`](./src/l2hmc/conf/config.yaml):
+  Starting point with default configuration options for a generic `Experiment`.
+
+
 for more information on how this works I encourage you to read [Hydra's
 Documentation Page](https://hydra.cc).
 
 
+## Running at ALCF
+
+For running with distributed training on ALCF systems, we provide a complete
+[`src/l2hmc/train.sh`](./src/l2hmc/train.sh) 
+script which should run without issues on either Polaris or ThetaGPU @ ALCF.
+
+
 # Details
-## L2HMC for LatticeQCD
 
 **Goal:** Use L2HMC to **efficiently** generate _gauge configurations_ for
 calculating observables in lattice QCD.
@@ -105,7 +186,7 @@ simulations in lattice QCD (specifically, a 2D U(1) lattice gauge theory model)
 can be found in [arXiv:2105.03418](https://arxiv.org/abs/2105.03418).
 
 <div align="center">
- <img src="assets/l2hmc_poster.jpeg" alt="l2hmc-qcd poster" width="66%" />
+ <img src="assets/l2hmc_poster.jpeg" alt="l2hmc-qcd poster" width="90%" />
 </div>
 
 ## Organization
@@ -121,10 +202,6 @@ This generalized leapfrog update takes as input a buffer of lattice
 configurations `x` and generates a proposal configuration `x' = Dynamics(x)` by
 evolving generalized L2HMC dynamics.
 
-<!--The [`GaugeDynamics`](l2hmc-qcd/dynamics/gauge_dynamics.py) is a subclass of `BaseDynamics` containing modifications for the 2D U(1) pure gauge theory.-->
-
-<!--The network is defined in [` l2hmc-qcd/network/functional_net.py`](l2hmc-qcd/network/functional_net.py).-->
-
 
 #### Network Architecture
 
@@ -133,54 +210,8 @@ An illustration of the `leapfrog layer` updating `(x, v) --> (x', v')` can be se
 <div align="center">
  <img src="assets/lflayer.png" alt="leapfrog layer" width=800/>
 </div>
-<!---The network takes as input the position `x`, momentum `v` and and outputs the quantities `sx, tx, qx`, which are then used in the augmented Hamiltonian dynamics to update `x`.--->
-
-<!---Similarly, the network used for updating the momentum variable `v` has an identical architecture, taking as inputs the position `x`, the gradient of the potential, `dUdX`, and the same fictitious time `t`, and outputs the quantities `sv, tv, qv` which are then used to update `v`.--->
-
-<!---**Note:** In the image above, the quantities `x', v''` represent the outputs of a Dense layer followed by a `ReLu` nonlinearity.--->
-
-<!-- ### Lattice -->
-
-<!-- Lattice code can be found in [`lattice/`](./lattice/), specifically: -->
 
 
-<!-- specifically the `GaugeLattice` object that provides the base structure on which our target distribution exists. -->
-
-<!-- Additionally, the `GaugeLattice` object implements a variety of methods for calculating physical observables such as the average plaquette, ɸₚ, and the topological charge Q, -->
-
-<!--### Training
-
-The training loop is implemented in [`l2hmc-qcd/utils/training_utils.py `](l2hmc-qcd/utils/training_utils.py).
-
-To train the sampler on a 2D U(1) gauge model using the parameters specified in [` bin/train_configs.json`](bin/train_configs.json):
-
-```bash
-$ python3 /path/to/l2hmc-qcd/l2hmc-qcd/train.py --json_file=/path/to/l2hmc-qcd/bin/train_configs.json
-```
-
-Or via the [` bin/train.sh `](bin/train.sh) script provided in [` bin/ `](bin/).
-
-## Features
-
-- **Distributed training**
-  (via [`horovod`](https://github.com/horovod/horovod)): If `horovod` is installed, the model can be trained across multiple GPUs (or CPUs) by:
-
-  ```bash
-  #!/bin/bash
-  
-  TRAINER=/path/to/l2hmc-qcd/l2hmc-qcd/train.py
-  JSON_FILE=/path/to/l2hmc-qcd/bin/train_configs.json
-  
-  horovodrun -np ${PROCS} python3 ${TRAINER} --json_file=${JSON_FILE}
-  ```
--->
-
-<div align="center">
-	
-![---](https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png)
-
-</div>
-    
 ## Contact
 
 ***Code author:*** Sam Foreman
@@ -213,4 +244,8 @@ If you use this code or found this work interesting, please cite our work along 
 
 ## Acknowledgement
 
-> This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357. This work describes objective technical results and analysis. Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government.
+
+> **Note**<br>
+> This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357.<br>
+> This work describes objective technical results and analysis.<br>
+> Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government.

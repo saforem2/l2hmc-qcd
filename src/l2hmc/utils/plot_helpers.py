@@ -355,20 +355,27 @@ def plot_combined(
     ax0 = subfigs[0].subplots(1, 1)
     if 'chain' in val.dims:
         val = val.dropna('chain')
-        _ = xplt.imshow(val, 'draw', 'chain', ax=ax0,
-                        robust=True, add_colorbar=True)
+        _ = xplt.imshow(
+            val[:num_chains, :],
+            'draw',
+            'chain',
+            ax=ax0,
+            robust=True,
+            add_colorbar=True
+        )
     # _ = xplt.pcolormesh(val, 'draw', 'chain', ax=ax0,
     #                     robust=True, add_colorbar=True)
     # sns.despine(ax0)
     nchains = min(num_chains, len(val.coords['chain']))
     label = f'{key}_avg'
     # label = r'$\langle$' + f'{key} ' + r'$\rangle$'
-    steps = np.arange(len(val.coords['draw']))
+    # steps = np.arange(len(val.coords['draw']))
+    steps = val.coords['draw']
     chain_axis = val.get_axis_num('chain')
     if chain_axis == 0:
         for idx in range(nchains):
             _ = ax1.plot(
-                steps,
+                val.coords['draw'].values,
                 val.values[idx, :],
                 color=color,
                 lw=LW/2.,
@@ -376,7 +383,7 @@ def plot_combined(
             )
 
     _ = ax1.plot(
-        steps,
+        val.coords['draw'].values,
         val.mean('chain'),
         color=color,
         label=label,
@@ -409,6 +416,7 @@ def plot_dataArray(
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
         line_labels: Optional[bool] = False,
+        save_plot: bool = True,
 ) -> tuple:
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
@@ -422,7 +430,8 @@ def plot_dataArray(
         therm_frac = 0.2
 
     arr = val.values  # shape: [nchains, ndraws]
-    steps = np.arange(len(val.coords['draw']))
+    # steps = np.arange(len(val.coords['draw']))
+    steps = val.coords['draw']
 
     if therm_frac is not None and therm_frac > 0.0:
         drop = int(therm_frac * arr.shape[0])
@@ -491,7 +500,7 @@ def plot_dataArray(
             f'{logfreq * int(i)}' for i in xticks
         ])
 
-    if outdir is not None:
+    if outdir is not None and save_plot:
         outfile = Path(outdir).joinpath(f'{key}.svg')
         if outfile.is_file():
             tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
@@ -769,6 +778,7 @@ def plot_dataset(
         subplots_kwargs: Optional[dict[str, Any]] = None,
         plot_kwargs: Optional[dict[str, Any]] = None,
         ext: Optional[str] = 'png',
+        save_plots: bool = True,
 ):
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
@@ -778,6 +788,16 @@ def plot_dataset(
         tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
         outdir = Path(os.getcwd()).joinpath('plots', f'plots-{tstamp}')
         outdir.mkdir(exist_ok=True, parents=True)
+
+    _ = make_ridgeplots(
+        dataset,
+        outdir=outdir,
+        drop_nans=True,
+        drop_zeros=False,
+        num_chains=num_chains,
+        cmap='viridis',
+        save_plot=save_plots,
+    )
 
     for idx, (key, val) in enumerate(dataset.data_vars.items()):
         color = f'C{idx%9}'
@@ -829,6 +849,7 @@ def make_ridgeplots(
         drop_zeros: Optional[bool] = False,
         drop_nans: Optional[bool] = True,
         cmap: Optional[str] = 'viridis_r',
+        save_plot: bool = True,
 ):
     """Make ridgeplots."""
     data = {}
@@ -852,6 +873,7 @@ def make_ridgeplots(
                 lf_data = {
                     key: [],
                     'lf': [],
+                    'avg': [],
                 }
                 for lf in val.leapfrog.values:
                     # val.shape = (chain, leapfrog, draw)
@@ -869,24 +891,36 @@ def make_ridgeplots(
                         x = x[np.isfinite(x)]
 
                     lf_arr = np.array(len(x) * [f'{lf}'])
+                    avg_arr = np.array(len(x) * [x.mean()])
                     lf_data[key].extend(x)
                     lf_data['lf'].extend(lf_arr)
+                    lf_data['avg'].extend(avg_arr)
 
                 lfdf = pd.DataFrame(lf_data)
-                data[key] = lfdf
+                lfdf_avg = lfdf.groupby('lf')['avg'].mean()
+                lfdf['lf_avg'] = lfdf['lf'].map(lfdf_avg)  # type:ignore
 
                 # Initialize the FacetGrid object
                 ncolors = len(val.leapfrog.values)
                 pal = sns.color_palette(cmap, n_colors=ncolors)
                 g = sns.FacetGrid(
                     lfdf,
-                    row='lf', hue='lf',
-                    aspect=15, height=0.25, palette=pal  # type:ignore
+                    row='lf',
+                    hue='lf_avg',
+                    aspect=15,
+                    height=0.25,  # type:ignore
+                    palette=pal,   # type:ignore
                 )
+                # avgs = lfdf.groupby('leapfrog')[f'Mean {key}']
 
                 # Draw the densities in a few steps
                 _ = g.map(sns.kdeplot, key, cut=1,
+                          bw_adjust=1., clip_on=False,
                           shade=True, alpha=0.7, linewidth=1.25)
+                # _ = sns.histplot()
+                # _ = g.map(sns.histplot, key)
+                #           # rug=False, kde=False, norm_hist=False,
+                #           # shade=True, alpha=0.7, linewidth=1.25)
                 _ = g.map(plt.axhline, y=0, lw=1., alpha=0.9, clip_on=False)
 
                 # Define and use a simple function to
@@ -897,12 +931,22 @@ def make_ridgeplots(
                     _ = ax.set_ylabel('')
                     _ = ax.set_yticks([])
                     _ = ax.set_yticklabels([])
+                    color = ax.lines[-1].get_color()
                     _ = ax.text(
                         0, 0.10, label, fontweight='bold', color=color,
                         ha='left', va='center', transform=ax.transAxes
                     )
 
-                _ = g.map(label, key)
+                # _ = g.map(label, key)
+                for i, ax in enumerate(g.axes.flat):
+                    _ = ax.set_ylabel('')
+                    _ = ax.set_yticks([])
+                    _ = ax.set_yticklabels([])
+                    ax.text(0, 0.10, f'{i}',
+                            fontweight='bold',
+                            ha='left', va='center',
+                            transform=ax.transAxes,
+                            color=ax.lines[-1].get_color())
                 # Set the subplots to overlap
                 _ = g.fig.subplots_adjust(hspace=-0.75)
                 # Remove the axes details that don't play well with overlap
@@ -912,7 +956,7 @@ def make_ridgeplots(
                 plt.rcParams['axes.labelcolor'] = '#bdbdbd'
                 _ = g.set(xlabel=f'{key}')
                 _ = g.despine(bottom=True, left=True)
-                if outdir is not None:
+                if outdir is not None and save_plot:
                     outdir = Path(outdir)
                     pngdir = outdir.joinpath('pngs')
                     svgdir = outdir.joinpath('svgs')

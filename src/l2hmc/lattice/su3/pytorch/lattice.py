@@ -13,21 +13,19 @@ import logging
 import torch
 import l2hmc.group.su3.pytorch.group as g
 from l2hmc.lattice.lattice import Lattice
-# from l2hmc.group.pytorch import group as g
 from l2hmc.configs import Charges
 
 log = logging.getLogger(__name__)
-# from l2hmc.lattice.su3.lattice.
-
-# from typing import Generator
-# from l2hmc.lattice.generators import generate_SU3
 
 Array = np.ndarray
 PI = np.pi
 TWO_PI = 2. * np.pi
 
 Tensor = torch.Tensor
-# Tensor = .types.experimental.Tensor
+
+Site: Tuple[int, int, int, int]                # t, x, y, z
+Link: Tuple[int, int, int, int, int]           # t, x, y, z, dim
+Buffer: Tuple[int, int, int, int, int, int]    # b, t, x, y, z, dim
 
 
 def pbc(tup: tuple[int], shape: tuple[int]) -> list:
@@ -38,18 +36,6 @@ def mat_adj(mat: Array) -> Array:
     return mat.conj().T
 
 
-Site: Tuple[int, int, int, int]                # t, x, y, z
-Link: Tuple[int, int, int, int, int]           # t, x, y, z, dim
-Buffer: Tuple[int, int, int, int, int, int]    # b, t, x, y, z, dim
-
-
-# ---------------------------------------------------------------
-# TODO:
-# - Finish implementation of BaseLatticeSU3
-# - Write tensorflow and torch implementations as subclasses
-#
-# class LatticeSU3(BaseLatticeSU3):
-# ---------------------------------------------------------------
 class LatticeSU3(Lattice):
     """4D Lattice with SU(3) links."""
     dim = 4
@@ -63,12 +49,14 @@ class LatticeSU3(Lattice):
         """4D SU(3) Lattice object for dealing with lattice quantities.
 
         NOTE:
-            `x.shape = [nb, 4, nt, nx, ny, nz, 3, 3]`.
+         - `x.shape = [nb, 4, nt, nx, ny, nz, 3, 3]`
+         - `x.dtype = complex128`
 
         Args:
          - nb (int): Batch dimension, i.e. number of chains to run in parallel
          - shape: Lattice shape, list or tuple of 4 ints
-         - c1: Constant indicating whether or not to use rectangle terms ?
+         - c1 (float): Factor multiplying the rectangular terms' contribution in
+            the DBW2 action
         """
         assert len(shape) == 4  # (nb, nt, nx, dim)
         self.g = g.SU3()
@@ -76,23 +64,6 @@ class LatticeSU3(Lattice):
         self.volume = self.nt * self.nx * self.ny * self.nz
         self.c1 = c1
         super().__init__(group=self.g, nchains=nchains, shape=shape)
-        # self.dim = 4
-        # self.g = g.SU3()
-        # self.c1 = torch.tensor(c1)
-        # self.c1 = torch.tensor(c1)
-        # self.link_shape = self.g._shape
-        # self.nt, self.nx, self.ny, self.nz = shape
-        # self.xshape = (self.dim, *shape, *self.g._shape)
-        # self._shape = (nchains, self.dim, *shape, *self.g._shape)
-        # self.volume = self.nt * self.nx * self.ny * self.nz
-        # self.site_idxs = tuple(
-        #     [self.nt] + [self.nx for _ in range(self.dim - 1)]
-        # )
-        # self.nplaqs = self.nt * self.nx
-        # self._lattice_shape = shape
-        # self.nsites = np.cumprod(shape)[-1]
-        # self.nlinks = self.nsites * self.dim
-        # self.link_idxs = tuple(list(self.site_idxs) + [self.dim])
 
     def random(self) -> Tensor:
         return self.g.random(list(self._shape))
@@ -108,7 +79,10 @@ class LatticeSU3(Lattice):
         return self.g.mul(self.g.exp(p), x)
 
     def coeffs(self, beta: Tensor) -> dict[str, Tensor]:
-        """Coefficients for the plaquette and rectangle terms."""
+        """Coefficients for the plaquette and rectangle terms.
+
+        Reference: https://arxiv.org/pdf/hep-lat/0512017.pdf
+        """
         rect_coeff = beta * self.c1
         plaq_coeff = beta * (torch.tensor(1.0) - torch.tensor(8.0) * self.c1)
 
@@ -128,10 +102,6 @@ class LatticeSU3(Lattice):
         ur = xu.adjoint() @ xvu
         ul = xuv @ yu.adjoint()
         ud = xvu @ yv.adjoint()
-        # uu = self.g.mul(xv, xuv, adjoint_a=True)
-        # ur = self.g.mul(xu, xvu, adjoint_a=True)
-        # ul = self.g.mul(xuv, yu, adjoint_b=True)
-        # ud = self.g.mul(xvu, yv, adjoint_b=True)
         ul_ = ul.roll(-1, dims=u+1)
         ud_ = ud.roll(-1, dims=v+1)
         urul_ = ur @ ul_.adjoint()
@@ -159,11 +129,9 @@ class LatticeSU3(Lattice):
 
     def _plaquette_field(self, x: Tensor, needs_rect: bool = False):
         # y.shape = [nb, d, nt, nx, nx, nx, 3, 3]
-        x = x.view(self._shape)
-        # x = tf.reshape(x, self._shape)
+        x = x.view((x.shape[0], *self._shape[1:]))
         assert isinstance(x, Tensor)
         assert len(x.shape) == 8
-        # assert isinstance(x, Tensor)
         pcount = 0
         rcount = 0
         plaqs = []
@@ -193,15 +161,11 @@ class LatticeSU3(Lattice):
             needs_rect: bool = False
     ) -> tuple[Tensor, Tensor]:
         # y.shape = [nb, d, nt, nx, nx, nx, 3, 3]
-        x = x.view(self._shape)
-        # x = tf.reshape(x, self._shape)
+        x = x.view((x.shape[0], *self._shape[1:]))
         assert isinstance(x, Tensor)
         assert len(x.shape) == 8
-        # assert isinstance(x, Tensor)
         pcount = 0
         rcount = 0
-        # plaqs = tf.TensorArray(x.dtype, size=0, dynamic_size=True)
-        # rects = tf.TensorArray(x.dtype, size=0, dynamic_size=True)
         plaqs = []
         rects = []
         for u in range(1, self.dim):
@@ -212,10 +176,8 @@ class LatticeSU3(Lattice):
                 yvu = self.g.mul(xv, xu.roll(-1, dims=v+1))
                 plaq = self.g.trace(self.g.mul(yuv, yvu, adjoint_b=True))
                 plaqs.append(plaq)
-                # plaqs = plaqs.write(pcount, plaq)
                 pcount += 1
 
-                # plaqs.append(plaq)
                 if needs_rect:
                     yu = xu.roll(-1, dims=v+1)
                     yv = xv.roll(-1, dims=u+1)
@@ -243,22 +205,12 @@ class LatticeSU3(Lattice):
     def _plaquettes(self, x: Tensor) -> Tensor:
         ps, _ = self._wilson_loops(x)
         psum = ps.real.sum(tuple(range(2, len(ps.shape)))).sum(0)
-        # psum = torch.zeros_like(ps[0].real)
-        # # psum = tf.zeros_like(tf.math.real(ps[0]))  # type: ignore
-        # for p in ps:  # NOTE: len(ps) == 6
-        #     psum = psum + p.real.sum(tuple(range(1, len(p.shape))))
 
         # NOTE: return psum / (len(ps) * dim(link) * volume)
         return psum / (6 * 3 * self.volume)
 
     def _plaqs(self, wloops: Tensor) -> Tensor:
-        # psum = tf.zeros_like(tf.math.real(wloops[0]))  # type:ignore
-        # psum = torch.zeros_like(wloops[0].real)
         psum = wloops.real.sum(tuple(range(2, len(wloops.shape)))).sum(0)
-        # p = wloops[0]
-        # psum = p.real.sum(tuple(range(1, len(p.shape))))
-        # for p in wloops[1:]:
-        #     psum = psum + p.real.sum(tuple(range(1, len(p.shape))))
 
         return psum / (6 * 3 * self.volume)
 
@@ -327,7 +279,6 @@ class LatticeSU3(Lattice):
     ) -> Tensor:
         coeffs = self.coeffs(beta)
         ps, rs = wloops
-        # ps, rs = self._wilson_loops(x, needs_rect=(self.c1 != 0))
         # assert isinstance(x, Tensor)
         psum = ps.real.sum(tuple(range(2, len(ps.shape)))).sum(0)
         action = coeffs['plaq'] * psum
@@ -368,11 +319,6 @@ class LatticeSU3(Lattice):
     ) -> dict[str, Tensor]:
         plaqs = self._plaquettes(x)
         q = self.charges(x)
-        # wloops = self.wilson_loops(x)
-        # wloops = wloops.sum(0)
-        # plaqs = self._plaqs(wloops.sum(0))
-        # qsin = self._sin_charges(wloops)
-        # qint = self._int_charges(wloops)
         metrics = {
             'plaqs': plaqs,
             'sinQ': q.sinQ,

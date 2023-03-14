@@ -9,14 +9,14 @@ from abc import ABC, abstractmethod
 
 import torch
 import numpy as np
-import tensorflow as tf
-from typing import Union, Optional
+# import tensorflow as tf
+from typing import Union, Optional, Any, Sequence
 
-tfTensor = tf.Tensor
+# tfTensor = tf.Tensor
 ptTensor = torch.Tensor
 
-DataType = Union[torch.dtype, tf.DType]
-TensorLike = Union[ptTensor, tfTensor, np.ndarray]
+# DataType = Union[torch.dtype, tf.DType]
+# Any = Union[ptTensor, tfTensor, np.ndarray]
 
 
 class Group(ABC):
@@ -24,8 +24,8 @@ class Group(ABC):
     def __init__(
             self,
             dim: int,
-            shape: list[int],
-            dtype: DataType,
+            shape: Sequence[int],
+            dtype: Any,
             name: Optional[str] = None,
     ) -> None:
         self._dim = dim
@@ -35,47 +35,47 @@ class Group(ABC):
             self._name = name
 
     @abstractmethod
-    def exp(self, x: TensorLike) -> TensorLike:
+    def exp(self, x: Any) -> Any:
         pass
 
     @abstractmethod
     def mul(
             self,
-            a: TensorLike,
-            b: TensorLike,
+            a: Any,
+            b: Any,
             adjoint_a: bool = False,
             adjoint_b: bool = False,
-    ) -> TensorLike:
+    ) -> Any:
         pass
 
     @abstractmethod
     def update_gauge(
             self,
-            x: TensorLike,
-            p: TensorLike
-    ) -> TensorLike:
+            x: Any,
+            p: Any
+    ) -> Any:
         pass
 
     @abstractmethod
-    def adjoint(self, x: TensorLike) -> TensorLike:
+    def adjoint(self, x: Any) -> Any:
         pass
 
     @abstractmethod
-    def trace(self, x: TensorLike) -> TensorLike:
+    def trace(self, x: Any) -> Any:
         pass
 
     @abstractmethod
-    def compat_proj(self, x: TensorLike) -> TensorLike:
+    def compat_proj(self, x: Any) -> Any:
         pass
 
     @abstractmethod
-    def random(self, shape: list[int]) -> TensorLike:
+    def random(self, shape: list[int]) -> Any:
         pass
 
     @abstractmethod
-    def random_momentum(self, shape: list[int]) -> TensorLike:
+    def random_momentum(self, shape: list[int]) -> Any:
         pass
 
     @abstractmethod
-    def kinetic_energy(self, p: TensorLike) -> TensorLike:
+    def kinetic_energy(self, p: Any) -> Any:
         pass

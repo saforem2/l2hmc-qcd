@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 import logging
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 import aim
 from hydra.utils import instantiate
@@ -102,22 +102,6 @@ class BaseExperiment(ABC):
     def init_aim(self) -> aim.Run:
         return self._init_aim()
 
-    @abstractmethod
-    def _build(
-            self,
-            init_wandb: bool = True,
-            init_aim: bool = True
-    ) -> dict:
-        pass
-
-    def build(
-            self,
-            init_wandb: bool = True,
-            init_aim: bool = True
-    ) -> dict:
-        return self._build(init_wandb=init_wandb,
-                           init_aim=init_aim)
-
     def _init_aim(self) -> aim.Run:
         from aim import Run  # type:ignore
         # tstamp = get_timestamp()
@@ -168,41 +152,12 @@ class BaseExperiment(ABC):
 
         run_id = generate_id()
         self.update_wandb_config(run_id=run_id)
-        # log.warning(f'os.getcwd(): {os.getcwd()}')
         wandb.tensorboard.patch(root_logdir=os.getcwd())
-        # nlf = self.config.dynamics.nleapfrog
-        # vol = 'x'.join([str(i) for i in self.config.dynamics.latvolume])
-        # be = self.config.backend
-        # ABBREVIATIONS = {
-        #     'ds': 'ds',
-        #     'deepspeed': 'ds',
-        #     'hvd': 'hvd',
-        #     'horovod': 'hvd',
-        #     'ddp': 'ddp',
-        #     'pt': 'pt',
-        #     'pytorch': 'pt',
-        #     'torch': 'pt',
-        #     'tf': 'tf',
-        #     'tensorflow': 'tf',
-        # }
-        # be = ABBREVIATIONS.get(self.config.backend.lower())
-        # fw = ABBREVIATIONS.get(self.config.framework)
-        # wbname = f'{fw}-{be}-{vol}-nlf{nlf}-{run_id[:4]}'
-        # wbname = f'lf{nlf}-{be}-{fw}-{vol}-{run_id[:4]}'
         run = wandb.init(
             dir=os.getcwd(),
             # name=wbname,
             **self.config.wandb.setup,
         )
-        # if self.config.framework in ['pt', 'torch', 'pytorch']:
-        #     assert run is not None and run is wandb.run
-        #     if dynamics is not None:
-        #         run.watch(
-        #             dynamics,
-        #             log='all',
-        #             log_graph=True,
-        #             criterion=criterion,
-        #         )
         assert run is wandb.run and run is not None
         wandb.define_metric('dQint_eval', summary='mean')
         run.log_code(HERE.as_posix())
@@ -210,15 +165,44 @@ class BaseExperiment(ABC):
                                           resolve=True,
                                           throw_on_missing=True)
         run.config.update(cfg_dict)
+        env = dict(os.environ)
+        _ = env.pop('LS_COLORS', None)
+        _ = env.pop('LSCOLORS', None)
+        run.config.update({'env': env})
+
+        exec = os.environ.get('EXEC', None)
+        if exec is not None:
+            run.config['exec'] = exec
+
+        hostfile = os.environ.get(
+            'COBALT_NODEFILE',
+            os.environ.get(
+                'PBS_NODEFILE',
+                None
+            ),
+        )
+        if hostfile is not None:
+            if (hpath := Path(hostfile).resolve()).is_file():
+                with hpath.open('r') as f:
+                    hosts = f.readlines()
+                run.config['hosts'] = hosts
+
+        machine = os.environ.get('MACHINE', None)
+        if machine is not None:
+            run.config['machine'] = machine
+
         hostname = socket.gethostbyaddr(socket.gethostname())[0].lower()
+        run.config['hostname'] = hostname
         if 'thetagpu' in hostname:
-            run.config['hostname'] = 'ThetaGPU'
-        elif 'polaris' in hostname:
-            run.config['hostname'] = 'Polaris'
-        else:
-            run.config['hostname'] = hostname
-        # run.config['hvd_size'] = SIZE
-        # print_config(DictConfig(self.config), resolve=True)
+            run.config['machine'] = 'ThetaGPU'
+        elif 'x3' in hostname:
+            run.config['machine'] = 'Polaris'
+        elif 'x1' in hostname:
+            run.config['machine'] = 'Sunspot'
+        # elif 'polaris' in hostname:
+        #     run.config['hostname'] = 'Polaris'
+        # else:
+        #     run.config['hostname'] = hostname
 
         return run
 
@@ -305,11 +289,13 @@ class BaseExperiment(ABC):
     def save_dataset(
             self,
             job_type: str,
+            save_data: bool = True,
             dset: Optional[xr.Dataset] = None,
             tables: Optional[dict] = None,
             nchains: Optional[int] = None,
             outdir: Optional[os.PathLike] = None,
             therm_frac: Optional[float] = None,
+            logfreq: int = 1,
     ) -> xr.Dataset:
         # assert isinstance(self.trainer, BaseTrainer)
         # if output is None:
@@ -344,17 +330,20 @@ class BaseExperiment(ABC):
         assert isinstance(
             self.config, (configs.ExperimentConfig, ExperimentConfig)
         )
-        logfreq = self.config.steps.log
-        _ = save_and_analyze_data(dset,
-                                  run=self.run,
-                                  arun=self.arun,
-                                  logfreq=logfreq,
-                                  outdir=outdir,
-                                  tables=tables,
-                                  summaries=summaries,
-                                  nchains=nchains,
-                                  job_type=job_type,
-                                  framework=self.config.framework)
+        # logfreq = self.config.steps.log
+        _ = save_and_analyze_data(
+            dset,
+            run=self.run,
+            arun=self.arun,
+            logfreq=logfreq,
+            outdir=outdir,
+            tables=tables,
+            summaries=summaries,
+            nchains=chains_to_plot,
+            job_type=job_type,
+            save_data=save_data,
+            framework=self.config.framework
+        )
         log.info('Done saving and analyzing data.')
         log.info('Creating summaries for WandB, Aim')
         dQint = dset.data_vars.get('dQint', None)

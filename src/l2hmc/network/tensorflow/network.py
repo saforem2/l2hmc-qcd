@@ -4,7 +4,7 @@ tensorflow/network.py
 Tensorflow implementation of the network used to train the L2HMC sampler.
 """
 from __future__ import absolute_import, annotations, division, print_function
-from typing import Optional, Callable
+from typing import Optional, Callable, Sequence
 
 import numpy as np
 import tensorflow as tf
@@ -115,7 +115,7 @@ class ScaledTanh(Layer):
         #     #     dtype=TF_FLOAT
         #     # ),
         # )
-        self.dense = Dense(out_features, use_bias=False)
+        self.dense = Dense(out_features)  # , use_bias=False)
 
     def get_layer_weights(self) -> dict:
         return {
@@ -160,7 +160,7 @@ class ScaledTanh(Layer):
 class ConvStack(Layer):
     def __init__(
             self,
-            xshape: list[int] | tuple[int],
+            xshape: Sequence[int],
             conv_config: ConvolutionConfig,
             activation_fn: str | Callable,
             use_batch_norm: bool = False,
@@ -217,70 +217,44 @@ class ConvStack(Layer):
         # self._layers_dict = {}
         self._layers_names = []
         idx = 0
-        if (nfilters := len(conv_config.filters)) > 0:
-            if (
-                    conv_config.sizes is not None
-                    and nfilters == len(conv_config.sizes)
-            ):
-                for idx, (f, n) in enumerate(
-                        zip(conv_config.filters,
-                            conv_config.sizes)
+        if (filters := getattr(conv_config, 'filters', None)) is not None:
+            if (nfilters := len(filters)) > 0:
+                if (
+                        conv_config.sizes is not None
+                        and nfilters == len(conv_config.sizes)
                 ):
-                    # self._layers_dict[idx] = PeriodicPadding(n - 1)
-                    # self._layers_names.append(f'PeriodicPadding{idx}')
-                    self.conv_layers.append(
-                        PeriodicPadding(n - 1)
-                    )
-                    # self._layers_dict[idx] = Conv2D(
-                    #     filters=f,
-                    #     kernel_size=n,
-                    #     activation=self.activation_fn,
-                    # )
-                    cname = f'Conv2D-{idx}'
-                    self._layers_names.append(cname)
-                    self.conv_layers.append(
-                        Conv2D(
-                            filters=f,
-                            kernel_size=n,
-                            activation=self.activation_fn,
-                            name=cname,
-                        )
-                    )
-                    if (idx + 1) % 2 == 0:
-                        p = (
-                            2 if conv_config.pool is None
-                            else conv_config.pool[idx]
-                        )
-                        # self._layers_dict[idx] = MaxPooling2D(
-                        #     (p, p),
-                        #     name=f'{name}/xPool{idx}'
-                        # )
-                        # self._layers_names.append(f'MaxPooling2D{idx}')
+                    for idx, (f, n) in enumerate(
+                            zip(filters, conv_config.sizes)
+                    ):
                         self.conv_layers.append(
-                            MaxPooling2D((p, p), name=f'{name}/xPool{idx}')
+                            PeriodicPadding(n - 1)
                         )
-
-        # self.conv_layers.append(Flatten())
-        # self._layers_dict[idx + 1] = Flatten()
-        # self._layers_names.append(f'Flatten')
+                        cname = f'Conv2D-{idx}'
+                        self._layers_names.append(cname)
+                        self.conv_layers.append(
+                            Conv2D(
+                                filters=f,
+                                kernel_size=n,
+                                activation=self.activation_fn,
+                                name=cname,
+                            )
+                        )
+                        if (idx + 1) % 2 == 0:
+                            p = (
+                                2 if conv_config.pool is None
+                                else conv_config.pool[idx]
+                            )
+                            self.conv_layers.append(
+                                MaxPooling2D((p, p), name=f'{name}/xPool{idx}')
+                            )
         self.batch_norm = None
         if use_batch_norm:
             self.batch_norm = BatchNormalization(-1)
-            # self._layers_dict[idx + 2] = BatchNormalization(-1)
-            # self._layers_names.append('BatchNorm')
 
         self.output_layer = Dense(
                 self.xdim,
                 activation=self.activation_fn
         )
-        # self.conv_layers.append(
-        #     Dense(self.xdim, activation=self.activation_fn)
-        # )
-        # self._layers_dict[idx + 2] = Dense(
-        #     self.xdim,
-        #     activation=self.activation_fn
-        # )
-        # self._layers_names.append('Dense')
 
     def get_layer_weights(self) -> dict:
         weights = {}
@@ -377,11 +351,11 @@ class ConvStack(Layer):
 class InputLayer(Model):
     def __init__(
             self,
-            xshape: list[int],
+            xshape: Sequence[int],
             network_config: NetworkConfig,
             activation_fn: str | Callable[[Tensor], Tensor],
             conv_config: Optional[ConvolutionConfig] = None,
-            input_shapes: Optional[dict[str, int]] = None,
+            input_shapes: Optional[dict[str, int | Sequence[int]]] = None,
             name: Optional[str] = None,
     ) -> None:
         super(InputLayer, self).__init__(name=name)
@@ -409,7 +383,8 @@ class InputLayer(Model):
 
         self.conv_stack = None
         self.conv_config = conv_config
-        if conv_config is not None and len(conv_config.filters) > 0:
+        filters = getattr(conv_config, 'filters', [])
+        if conv_config is not None and len(filters) > 0:
             self.conv_stack = ConvStack(
                 xshape=xshape,
                 conv_config=conv_config,
@@ -421,9 +396,10 @@ class InputLayer(Model):
 
     def get_weights_dict(self) -> dict:
         weights = {}
+        filters = getattr(self.conv_config, 'filters', [])
         if (
                 self.conv_config is not None
-                and len(self.conv_config.filters) > 0
+                and len(filters) > 0
                 and self.conv_stack is not None
         ):
             if self.conv_stack is not None:
@@ -466,10 +442,10 @@ class InputLayer(Model):
 class LeapfrogLayer(Model):
     def __init__(
             self,
-            xshape: list[int],
+            xshape: Sequence[int],
             network_config: NetworkConfig,
             group: Optional[U1Phase | SU3 | str] = None,
-            input_shapes: Optional[dict[str, int]] = None,
+            input_shapes: Optional[dict[str, int | Sequence[int]]] = None,
             net_weight: Optional[NetWeight] = None,
             conv_config: Optional[ConvolutionConfig] = None,
             name: Optional[str] = None,
@@ -576,25 +552,76 @@ class LeapfrogLayer(Model):
         if self.net_config.use_batch_norm and self.batch_norm is not None:
             z = self.batch_norm(z, training=training)
 
-        dt = inputs[0].dtype
-        s = tf.cast(tf.scalar_mul(self.nw.s, self.scale(z)), dt)
-        t = tf.cast(tf.scalar_mul(self.nw.t, self.transl(z)), dt)
-        q = tf.cast(tf.scalar_mul(self.nw.q, self.transf(z)), dt)
-        assert (
-            isinstance(s, Tensor)
-            and isinstance(t, Tensor)
-            and isinstance(q, Tensor)
-        )
+        # dt = inputs[0].dtype
+        # s = tf.cast(tf.scalar_mul(self.nw.s, self.scale(z)), dt)
+        # t = tf.cast(tf.scalar_mul(self.nw.t, self.transl(z)), dt)
+        # q = tf.cast(tf.scalar_mul(self.nw.q, self.transf(z)), dt)
+        s = tf.scalar_mul(self.nw.s, self.scale(z))
+        t = tf.scalar_mul(self.nw.t, self.transl(z))
+        q = tf.scalar_mul(self.nw.q, self.transf(z))
+        # s = self.nw.s * self.scale(z)
+        # t = self.nw.t * self.transl(z)
+        # q = self.nw.q * self.transf(z)
+        # assert (
+        #     isinstance(s, Tensor)
+        #     and isinstance(t, Tensor)
+        #     and isinstance(q, Tensor)
+        # )
+        # s = self.nw.s * self.scale(z)
+        # t = self.nw.t * self.transl(z)
+        # q = self.nw.q * self.transf(z)
 
         # return (
-        #     tf.cast(self.nw.s * scale, inputs[0].dtype),
-        #     tf.cast(self.nw.t * transl, inputs[0].dtype),
-        #     tf.cast(self.nw.q * transf, inputs[0].dtype)
+        #     tf.cast(tf.multiply(self.nw.s, s), x.dtype),
+        #     tf.cast(tf.multiply(self.nw.t, t), x.dtype),
+        #     tf.cast(tf.multiply(self.nw.q, q), x.dtype)
         # )
-        return s, t, q
+        # return (
+        #     tf.cast(s, x.dtype),
+        #     tf.cast(t, x.dtype),
+        #     tf.cast(q, x.dtype)
+        # )
+        # return (s, t, q)  # type:ignore
+        return (
+            tf.cast(s, TF_FLOAT),
+            tf.cast(t, TF_FLOAT),
+            tf.cast(q, TF_FLOAT)
+        )
 
 
 class NetworkFactory(BaseNetworkFactory):
+    def build_xnet(
+            self,
+            group: SU3 | U1Phase,
+            name: Optional[str] = None,
+    ) -> LeapfrogLayer:
+        xname = 'xnet' if name is None else f'xnet/{name}'
+        return LeapfrogLayer(
+            xshape=self.input_spec.xshape,
+            network_config=self.network_config,
+            group=group,
+            input_shapes=self.input_spec.xnet,
+            net_weight=self.nw.x,
+            conv_config=self.conv_config,
+            name=xname,
+        )
+
+    def build_vnet(
+            self,
+            group: SU3 | U1Phase,
+            name: Optional[str] = None,
+    ) -> LeapfrogLayer:
+        vname = 'vnet' if name is None else f'vnet/{name}'
+        return LeapfrogLayer(
+            xshape=self.input_spec.xshape,
+            network_config=self.network_config,
+            group=group,
+            input_shapes=self.input_spec.vnet,
+            net_weight=self.nw.v,
+            conv_config=self.conv_config,
+            name=vname,
+        )
+
     def build_networks(
             self,
             n: int,
@@ -648,128 +675,3 @@ class NetworkFactory(BaseNetworkFactory):
                 )
 
         return {'xnet': xnet, 'vnet': vnet}
-
-
-# def get_network_configs(
-#         xdim: int,
-#         network_config: NetworkConfig,
-#         # factor: float = 1.,
-#         activation_fn: Optional[str | Callable] = None,
-#         name: Optional[str] = 'network',
-# ) -> dict:
-#     """Returns network configs."""
-#     if isinstance(activation_fn, str):
-#         activation_fn = Activation(activation_fn)
-#         assert callable(activation_fn)
-#         # activation_fn = ACTIVATIONS.get(activation_fn, ACTIVATIONS['relu'])
-
-#     assert callable(activation_fn)
-#     names = {
-#         'x_input': f'{name}_xinput',
-#         'v_input': f'{name}_vinput',
-#         'x_layer': f'{name}_xLayer',
-#         'v_layer': f'{name}_vLayer',
-#         'scale': f'{name}_scaleLayer',
-#         'transf': f'{name}_transformationLayer',
-#         'transl': f'{name}_translationLayer',
-#         's_coeff': f'{name}_scaleCoeff',
-#         'q_coeff': f'{name}_transformationCoeff',
-#     }
-#     coeff_kwargs = {
-#         'trainable': True,
-#         'initial_value': tf.zeros([1, xdim], dtype=TF_FLOAT),
-#         'dtype': TF_FLOAT,
-#     }
-
-#     args = {
-#         'x': {
-#             # 'scale': factor / 2.,
-#             'name': names['x_layer'],
-#             'units': network_config.units[0],
-#             'activation': linear_activation,
-#         },
-#         'v': {
-#             # 'scale': 1. / 2.,
-#             'name': names['v_layer'],
-#             'units': network_config.units[0],
-#             'activation': linear_activation,
-#         },
-#         'scale': {
-#             # 'scale': 0.001 / 2.,
-#             'name': names['scale'],
-#             'units': xdim,
-#             'activation': linear_activation,
-#         },
-#         'transl': {
-#             # 'scale': 0.001 / 2.,
-#             'name': names['transl'],
-#             'units': xdim,
-#             'activation': linear_activation,
-#         },
-#         'transf': {
-#             # 'scale': 0.001 / 2.,
-#             'name': names['transf'],
-#             'units': xdim,
-#             'activation': linear_activation,
-#         },
-#     }
-
-#     return {
-#         'args': args,
-#         'names': names,
-#         'activation': activation_fn,
-#         'coeff_kwargs': coeff_kwargs,
-#     }
-
-
-# def setup(
-#         xdim: int,
-#         network_config: NetworkConfig,
-#         name: Optional[str] = 'network',
-# ) -> dict:
-#     """Setup for building network."""
-#     layer_kwargs = {
-#         'x': {
-#             'units': network_config.units[0],
-#             'name': f'{name}_xLayer',
-#             'activation': linear_activation,
-#         },
-#         'v': {
-#             'units': network_config.units[0],
-#             'name': f'{name}_vLayer',
-#             'activation': linear_activation,
-#         },
-#         'scale': {
-#             'units': xdim,
-#             'name': f'{name}_scaleLayer',
-#             'activation': linear_activation,
-#         },
-#         'transl': {
-#             'units': xdim,
-#             'name': f'{name}_translationLayer',
-#             'activation': linear_activation,
-#         },
-#         'transf': {
-#             'units': xdim,
-#             'name': f'{name}_transformationLayer',
-#             'activation': linear_activation,
-#         },
-#     }
-
-#     coeff_defaults = {
-#         'dtype': TF_FLOAT,
-#         'trainable': True,
-#         'initial_value': tf.zeros([1, xdim], dtype=TF_FLOAT),
-#     }
-#     coeff_kwargs = {
-#         'scale': {
-#             'name': f'{name}_scaleCoeff',
-#             **coeff_defaults,
-#         },
-#         'transf': {
-#             'name': f'{name}_transformationCoeff',
-#             **coeff_defaults,
-#         }
-#     }
-
-#     return {'layer': layer_kwargs, 'coeff': coeff_kwargs}

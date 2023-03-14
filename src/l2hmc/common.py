@@ -18,8 +18,6 @@ from omegaconf import DictConfig
 from omegaconf import OmegaConf
 import pandas as pd
 from rich.table import Table
-import tensorflow as tf
-import tensorflow.python.framework.ops as ops
 import torch
 import wandb
 import xarray as xr
@@ -38,27 +36,44 @@ os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 
 log = logging.getLogger(__name__)
 
-TensorLike = Union[tf.Tensor, ops.EagerTensor, torch.Tensor, np.ndarray, list]
+# TensorLike = Union[
+#     tf.Tensor,
+#     ops.EagerTensor,
+#     torch.Tensor,
+#     np.ndarray,
+#     list
+# ]
 ScalarLike = Union[int, float, bool, np.floating]
 
 
-def grab_tensor(x: TensorLike) -> np.ndarray | ScalarLike:
+def grab_tensor(x: Any) -> np.ndarray | ScalarLike:
     if isinstance(x, list):
         if isinstance(x[0], torch.Tensor):
             return grab_tensor(torch.stack(x))
-        if isinstance(x[0], tf.Tensor):
-            return grab_tensor(tf.stack(x))
-    if isinstance(x, np.ndarray):
+        elif isinstance(x[0], np.ndarray):
+            return np.stack(x)
+        else:
+            import tensorflow as tf
+            if isinstance(x[0], tf.Tensor):
+                return grab_tensor(tf.stack(x))
+    elif isinstance(x, np.ndarray):
         return x
-    if isinstance(x, (tf.Tensor, ops.EagerTensor)):
-        assert (
-            hasattr(x, 'numpy')
-            and callable(getattr(x, 'numpy'))
-        )
-        return x.numpy()  # type:ignore
+    else:
+        if (
+                hasattr(x, 'numpy')
+                and callable(getattr(x, 'numpy'))
+        ):
+            assert callable(getattr(x, ''))
+            return x.numpy()
+        # if isinstance(x, (tf.Tensor, ops.EagerTensor)):
+        #     assert (
+        #         hasattr(x, 'numpy')
+        #         and callable(getattr(x, 'numpy'))
+        #     )
+        #     return x.numpy()  # type:ignore
 
-    if isinstance(x, torch.Tensor):
-        return x.detach().cpu().numpy()
+        if isinstance(x, torch.Tensor):
+            return x.detach().cpu().numpy()
 
     raise ValueError
 
@@ -573,10 +588,17 @@ def save_logs(
             console.print(table)
             html = console.export_html(clear=False)
             text = console.export_text()
-            with open(hfile.as_posix(), 'a') as f:
-                f.write(html)
-            with open(tfile, 'a') as f:
-                f.write(text)
+            try:
+                with open(hfile.as_posix(), 'a') as f:
+                    f.write(html)
+            except Exception as exc:
+                log.exception(exc)
+
+            try:
+                with open(tfile, 'a') as f:
+                    f.write(text)
+            except Exception as exc:
+                log.exception(exc)
 
         df = pd.DataFrame.from_dict(data)
         dfile = Path(logdir).joinpath(f'{job_type}_table.csv')
@@ -585,7 +607,6 @@ def save_logs(
         if run is not None:
             # with open(hfile.as_posix(), 'r') as f:
             #     html = f.read()
-
             # run.log({f'Media/{job_type}': wandb.Html(html)})
             run.log({
                 f'DataFrames/{job_type}': wandb.Table(data=df)
@@ -635,12 +656,15 @@ def make_dataset(metrics: dict) -> xr.Dataset:
     for key, val in metrics.items():
         if isinstance(val, list):
             import torch
-            import tensorflow as tf
             if isinstance(val[0], torch.Tensor):
                 val = grab_tensor(torch.stack(val))
-            elif isinstance(val[0], tf.Tensor):
+            # elif isinstance(val[0], tf.Tensor):
+            elif isinstance(val, np.ndarray):
+                val = np.stack(val)
+            else:
                 import tensorflow as tf
-                val = grab_tensor(tf.stack(val))
+                if isinstance(val, tf.Tensor):
+                    val = grab_tensor(tf.stack(val))
 
         assert isinstance(val, np.ndarray)
         assert len(val.shape) in [1, 2, 3]
@@ -677,22 +701,20 @@ def plot_dataset(
         outdir: Optional[os.PathLike] = None,
         title: Optional[str] = None,
         job_type: Optional[str] = None,
+        save_plots: bool = True,
 ) -> None:
     outdir = Path(outdir) if outdir is not None else Path(os.getcwd())
     outdir.mkdir(exist_ok=True, parents=True)
-    # outdir = outdir.joinpath('plots')
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
-    names = ['viridis_r', 'magma', 'mako']
-    cmap = np.random.choice(names, replace=True)
-
     set_plot_style()
+
     _ = make_ridgeplots(
         dataset,
         outdir=outdir,
         drop_nans=True,
         drop_zeros=False,
         num_chains=nchains,
-        cmap=cmap,
+        cmap='viridis',
     )
     for key, val in dataset.data_vars.items():
         if key == 'x':
@@ -705,22 +727,24 @@ def plot_dataset(
             outdir=outdir,
             title=title,
             line_labels=False,
-            num_chains=nchains
+            num_chains=nchains,
+            save_plot=save_plots,
         )
-        _ = save_figure(fig=fig, key=key, outdir=outdir)
+        if save_plots:
+            _ = save_figure(fig=fig, key=key, outdir=outdir)
 
 
 def analyze_dataset(
         dataset: xr.Dataset,
         outdir: os.PathLike,
+        save: bool = True,
+        use_hdf5: bool = True,
         nchains: Optional[int] = None,
         title: Optional[str] = None,
         logfreq: Optional[int] = None,
         job_type: Optional[str] = None,
-        save: Optional[bool] = True,
         run: Optional[Any] = None,
         arun: Optional[Any] = None,
-        use_hdf5: Optional[bool] = True,
 ) -> xr.Dataset:
     """Save plot and analyze resultant `xarray.Dataset`."""
     job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
@@ -803,6 +827,7 @@ def save_and_analyze_data(
         framework: Optional[str] = None,
         summaries: Optional[list[str]] = None,
         tables: Optional[dict[str, Table]] = None,
+        save_data: bool = True,
 ) -> xr.Dataset:
     jstr = f'{job_type}'
     title = (
@@ -814,7 +839,7 @@ def save_and_analyze_data(
     dataset = analyze_dataset(dataset,
                               run=run,
                               arun=arun,
-                              save=True,
+                              save=save_data,
                               outdir=outdir,
                               nchains=nchains,
                               logfreq=logfreq,

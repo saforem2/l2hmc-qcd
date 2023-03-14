@@ -9,7 +9,7 @@ import logging
 import os
 from pathlib import Path
 import time
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, Union, Sequence
 
 import aim
 from aim import Distribution
@@ -125,13 +125,18 @@ class Trainer(BaseTrainer):
             cfg: DictConfig | ExperimentConfig,
             build_networks: bool = True,
             ckpt_dir: Optional[os.PathLike] = None,
-            keep: Optional[str | list[str]] = None,
-            skip: Optional[str | list[str]] = None,
+            keep: Optional[str | Sequence[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
     ) -> None:
         super().__init__(cfg=cfg, keep=keep, skip=skip)
-        if self.config.compression in [True, 'fp16']:
+        if (
+                (self.config.compression in [True, 'fp16'])
+                or self.config.precision in ['fp16', 'half', 'float16']
+        ):
+            self.use_fp16: bool = True
             self.compression = hvd.Compression.fp16
         else:
+            self.use_fp16: bool = False
             self.compression = hvd.Compression.none
 
         assert isinstance(
@@ -260,7 +265,10 @@ class Trainer(BaseTrainer):
         # TODO: Expand method, re-build LR scheduler, etc
         # TODO: Replace `LearningRateConfig` with `OptimizerConfig`
         # TODO: Optionally, break up in to lrScheduler, OptimizerConfig ?
-        return tf.keras.optimizers.Adam(self.config.learning_rate.lr_init)
+        opt = tf.keras.optimizers.Adam(self.config.learning_rate.lr_init)
+        if self.config.precision in ['fp16', 'half', 'float16']:
+            return tf.keras.mixed_precision.LossScaleOptimizer(opt)
+        return opt
 
     def get_lr(self) -> float:
         return K.get_value(self.optimizer.lr)
@@ -291,7 +299,7 @@ class Trainer(BaseTrainer):
             self,
             manager: CheckpointManager,
     ) -> os.PathLike | None:
-        if not self._is_chief:
+        if not self._is_chief or not self.config.save:
             return
 
         ckpt = manager.save()
@@ -347,33 +355,6 @@ class Trainer(BaseTrainer):
         summary = summarize_dict(avgs)
 
         # if writer is not None and self.verbose and step is not None:
-        if step is not None:
-            update_summaries(
-                    step=step,
-                    # model=model,
-                    # weights=weights,
-                    metrics=metrics,
-                    prefix=job_type,
-                    optimizer=optimizer,
-                    # job_type=job_type,
-            )
-            # if model is not None and job_type == 'train':
-            #     update_summaries(
-            #         step=step,
-            #         model=self.dynamics,
-            #         prefix='model',
-            #         job_type=job_type,
-            #     )
-            # if job_type == 'train' and log_weights:
-            #     weights = {
-            #         f'{w.name}': w
-            #         for w in self.dynamics.weights
-            #     }
-            #     log_dict(weights, step, prefix='debug-weights')
-
-            if writer is not None:
-                writer.flush()
-
         if self.config.init_wandb or self.config.init_aim:
             if job_type == 'train' and log_weights:
                 self.track_weights(run=run)
@@ -387,6 +368,32 @@ class Trainer(BaseTrainer):
                 arun=arun,
                 # log_weights=log_weights,
             )
+            if step is not None and writer is not None:
+                update_summaries(
+                        step=step,
+                        # model=model,
+                        # weights=weights,
+                        metrics=metrics,
+                        prefix=job_type,
+                        optimizer=optimizer,
+                        # job_type=job_type,
+                )
+                # if model is not None and job_type == 'train':
+                #     update_summaries(
+                #         step=step,
+                #         model=self.dynamics,
+                #         prefix='model',
+                #         job_type=job_type,
+                #     )
+                # if job_type == 'train' and log_weights:
+                #     weights = {
+                #         f'{w.name}': w
+                #         for w in self.dynamics.weights
+                #     }
+                #     log_dict(weights, step, prefix='debug-weights')
+
+                if writer is not None:
+                    writer.flush()
 
         return avgs, summary
 
@@ -404,7 +411,7 @@ class Trainer(BaseTrainer):
 
         if run is not None:
             weights = {
-                rename(k): v
+                rename(k): tf.cast(v, TF_FLOAT)
                 for k, v in self.dynamics.get_all_weights().items()
             }
             run.log(weights, commit=False)
@@ -540,7 +547,7 @@ class Trainer(BaseTrainer):
             beta: Optional[Tensor | float] = None,
             eval_steps: Optional[int] = None,
             x: Optional[Tensor] = None,
-            skip: Optional[str | list[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
             run: Optional[Any] = None,
             writer: Optional[Any] = None,
             job_type: Optional[str] = 'eval',
@@ -635,7 +642,7 @@ class Trainer(BaseTrainer):
             beta: Optional[Tensor | float] = None,
             eval_steps: Optional[int] = None,
             x: Optional[Tensor] = None,
-            skip: Optional[str | list[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
@@ -758,16 +765,11 @@ class Trainer(BaseTrainer):
 
                     refresh_view()
 
-                    # if step == 0:
-                    #     table = add_columns(avgs, table)
-                    # else:
-                    #     table.add_row(*[f'{v}' for _, v in avgs.items()])
-
                     if avgs.get('acc', 1.0) <= 1e-5:
                         if stuck_counter < patience:
                             stuck_counter += 1
                         else:
-                            self.console.log('Chains are stuck! Re-drawing x!')
+                            self.warning('Chains are stuck! Re-drawing x!')
                             x = self.lattice.random()
                             stuck_counter = 0
 
@@ -792,7 +794,7 @@ class Trainer(BaseTrainer):
                                 logging_steps=nlog,
                             )
                         else:
-                            _ = plotter.update_plots(
+                            plotter.update_plots(
                                 history=self.histories[job_type].history,
                                 plots=plots,
                                 logging_steps=nlog,
@@ -833,6 +835,7 @@ class Trainer(BaseTrainer):
         """
         xinit, beta = inputs
         aw = self.config.loss.aux_weight
+        scaled_loss = None
         with tf.GradientTape() as tape:
             tape.watch(xinit)
             xout, metrics = self.dynamics(  # type:ignore
@@ -855,12 +858,25 @@ class Trainer(BaseTrainer):
                 loss += aw * aux_loss
                 # loss = (loss + aux_loss) / (1. + self.aux_weight)
 
-        # tape = hvd.DistributedGradientTape(
-        #     tape,
-        #     compression=self.compression
-        # )
-        tape = hvd.DistributedGradientTape(tape)
-        grads = tape.gradient(loss, self.dynamics.trainable_variables)
+            if self.use_fp16:
+                scaled_loss = self.optimizer.get_scaled_loss(loss)
+
+        tape = hvd.DistributedGradientTape(
+            tape,
+            # compression=self.compression
+        )
+        # tape = hvd.DistributedGradientTape(tape)
+        if scaled_loss is not None:
+            scaled_grads = tape.gradient(
+                scaled_loss,
+                self.dynamics.trainable_variables
+            )
+            grads = self.optimizer.get_unscaled_gradients(
+                scaled_grads,
+            )
+        else:
+            grads = tape.gradient(loss, self.dynamics.trainable_variables)
+
         if self.clip_norm > 0.0:
             grads = [
                 tf.clip_by_norm(grad, clip_norm=self.clip_norm)
@@ -991,8 +1007,14 @@ class Trainer(BaseTrainer):
 
         with ctx:
             if warmup:
+                wt0 = time.perf_counter()
                 x = self.warmup(beta=beta, x=x)
+                self.info(
+                    f'Thermalizing configs @ {beta:.2f} took '
+                    f'{time.perf_counter() - wt0:.4f} s'
+                )
 
+            summary = ""
             for epoch in trange(
                     nepoch,
                     dynamic_ncols=True,
@@ -1005,7 +1027,8 @@ class Trainer(BaseTrainer):
                 self._gstep += 1
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
-                if (should_print(epoch) or should_log(epoch)):
+                # if (should_print(epoch) or should_log(epoch)):
+                if should_log(epoch):
                     record = {
                         'era': era,
                         'epoch': epoch,
@@ -1030,18 +1053,11 @@ class Trainer(BaseTrainer):
                     rows[self._gstep] = avgs
                     summaries.append(summary)
 
-                    if (
-                            should_print(epoch)
-                            # and not isinstance(ctx, Live)
-                    ):
-                        self.info(summary)
-
                     table = self.update_table(
                         table=table,
                         step=epoch,
                         avgs=avgs
                     )
-
                     if avgs.get('acc', 1.0) < 1e-5:
                         self.reset_optimizer()
                         self.warning('Chains are stuck! Re-drawing x !')
@@ -1061,6 +1077,10 @@ class Trainer(BaseTrainer):
                                 plots=plots,
                             )
 
+                if should_print(epoch):
+                    refresh_view()
+                    log.info(summary)
+
                 if isinstance(ctx, Live):
                     ctx.console.clear()
                     ctx.console.clear_live()
@@ -1077,12 +1097,12 @@ class Trainer(BaseTrainer):
     def _setup_training(
             self,
             x: Optional[Tensor] = None,
-            skip: Optional[str | list[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
             train_dir: Optional[os.PathLike] = None,
             writer: Optional[Any] = None,
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
-            beta: Optional[float | list[float] | dict[str, float]] = None,
+            beta: Optional[float | Sequence[float] | dict[str, float]] = None,
     ) -> dict:
         skip = [skip] if isinstance(skip, str) else skip
 
@@ -1153,15 +1173,13 @@ class Trainer(BaseTrainer):
             tol: float = 1e-5,
             x: Optional[Tensor] = None
     ) -> Tensor:
-        # state = self.dynamics.random_state(beta)
         if x is None:
             x = self.dynamics.lattice.random()
         if not isinstance(beta, Tensor):
             beta = tf.constant(beta, dtype=TF_FLOAT)
-        # btensor = tf.cast(beta, dtype=TF_FLOAT)
         pexact = plaq_exact(beta)
         for step in range(nsteps):
-            x, metrics = self.dynamics((x, beta))
+            x, metrics = self.dynamics((x, beta))  # type:ignore
             plaqs = metrics.get('plaqs', None)
             assert (
                 x is not None
@@ -1181,7 +1199,7 @@ class Trainer(BaseTrainer):
     def train(
             self,
             x: Optional[Tensor] = None,
-            skip: Optional[str | list[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
             train_dir: Optional[os.PathLike] = None,
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
@@ -1190,9 +1208,9 @@ class Trainer(BaseTrainer):
             nepoch: Optional[int] = None,
             nprint: Optional[int] = None,
             nlog: Optional[int] = None,
-            beta: Optional[float | list[float] | dict[str, float]] = None,
+            beta: Optional[float | Sequence[float] | dict[str, float]] = None,
             warmup: bool = True,
-            # restore: bool = True,
+            make_plots: bool = True,
     ) -> dict:
         """Perform training and return dictionary of results."""
         # _, _ = self.call_dynamics(
@@ -1223,6 +1241,10 @@ class Trainer(BaseTrainer):
         assert nera is not None
         assert train_dir is not None
 
+        plots = None
+        if is_interactive() and make_plots:
+            plots = plotter.init_plots()
+
         for era in range(nera):
             b = tf.constant(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
@@ -1249,6 +1271,7 @@ class Trainer(BaseTrainer):
                 nlog=nlog,
                 nprint=nprint,
                 warmup=warmup,
+                plots=plots
             )
 
             self.rows['train'][str(era)] = edata['rows']
@@ -1267,7 +1290,8 @@ class Trainer(BaseTrainer):
 
             if self._is_chief:
                 st0 = time.time()
-                self.save_ckpt(manager)
+                if self.config.save:
+                    self.save_ckpt(manager)
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
                 log.info(f'Checkpoint saved to: {self.ckpt_dir}')
                 log.info(f'Era {era} took: {time.time() - epoch_start:<5g}s')
@@ -1283,14 +1307,14 @@ class Trainer(BaseTrainer):
     def train_dynamic(
             self,
             x: Optional[Tensor] = None,
-            skip: Optional[str | list[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
             train_dir: Optional[os.PathLike] = None,
             run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
-            beta: Optional[float | list[float] | dict[str, float]] = None,
+            beta: Optional[float | Sequence[float] | dict[str, float]] = None,
     ) -> dict:
         """Perform training and return dictionary of results."""
         setup = self._setup_training(
@@ -1355,7 +1379,8 @@ class Trainer(BaseTrainer):
                     b += (b / 10.)
 
             if (era + 1) == self.steps.nera or (era + 1) % 5 == 0:
-                _ = self.save_ckpt(manager)
+                if self.config.save:
+                    _ = self.save_ckpt(manager)
 
             if self._is_chief:
                 log.info(f'Saving took: {time.time() - st0:<5g}s')

@@ -10,9 +10,9 @@ import logging
 
 from omegaconf import DictConfig
 
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 from pathlib import Path
-from l2hmc.dynamics.tensorflow.dynamics import Dynamics
+# from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.lattice.su3.tensorflow.lattice import LatticeSU3
 from l2hmc.lattice.u1.tensorflow.lattice import LatticeU1
 
@@ -41,8 +41,8 @@ class Experiment(BaseExperiment):
             self,
             cfg: DictConfig,
             build_networks: bool = True,
-            keep: Optional[str | list[str]] = None,
-            skip: Optional[str | list[str]] = None,
+            keep: Optional[str | Sequence[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
     ) -> None:
         super().__init__(cfg=cfg)
         assert isinstance(
@@ -173,8 +173,8 @@ class Experiment(BaseExperiment):
     def build_trainer(
             self,
             build_networks: bool = True,
-            keep: Optional[str | list[str]] = None,
-            skip: Optional[str | list[str]] = None,
+            keep: Optional[str | Sequence[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
             ckpt_dir: Optional[os.PathLike] = None,
     ) -> Trainer:
         return Trainer(
@@ -198,83 +198,18 @@ class Experiment(BaseExperiment):
             Path(outdir).as_posix()
         )
 
-    def build(
-            self,
-            init_wandb: Optional[bool] = None,
-            init_aim: Optional[bool] = None
-    ):
-        return self._build(
-            init_wandb=init_wandb,
-            init_aim=init_aim
-        )
-
-    def _build(
-            self,
-            init_wandb: Optional[bool] = None,
-            init_aim: Optional[bool] = None,
-            keep: Optional[str | list[str]] = None,
-            skip: Optional[str | list[str]] = None,
-    ):
-        if self._is_built:
-            assert self.trainer is not None
-            return {
-                'trainer': self.trainer,
-                'run': getattr(self, 'run', None),
-                'arun': getattr(self, 'arun', None),
-            }
-
-        self.trainer = self.build_trainer(
-            keep=keep,
-            skip=skip,
-        )
-
-        run = None
-        arun = None
-        local_rank = hvd.local_rank()
-        rank = hvd.rank()
-        if RANK == 0 and init_wandb:
-            log.warning(f'Initializing WandB from {rank}:{local_rank}')
-            run = self.init_wandb()
-        if RANK == 0 and init_aim:
-            log.warning(f'Initializing Aim from {rank}:{local_rank}')
-            arun = self.init_aim()
-            # assert arun is not None and arun is aim.Run
-            ndevices = hvd.size()
-            gpus = tf.config.experimental.list_physical_devices('GPU')
-            if gpus:
-                arun['ngpus'] = ndevices
-            else:
-                arun['ncpus'] = ndevices
-
-        self.run = run
-        self.arun = arun
-        assert isinstance(self.trainer, Trainer)
-        assert callable(self.trainer.loss_fn)
-        assert isinstance(self.trainer, Trainer)
-        assert isinstance(self.trainer.dynamics, Dynamics)
-        assert isinstance(self.trainer.lattice, (LatticeU1, LatticeSU3))
-        self._is_built = True
-        return {
-            'lattice': self.trainer.lattice,
-            'loss_fn': self.trainer.loss_fn,
-            'dynamics': self.trainer.dynamics,
-            'optimizer': self.trainer.optimizer,
-            'trainer': self.trainer,
-            'run': self.run,
-            'arun': self.arun,
-        }
-
     def train(
             self,
             nchains: Optional[int] = None,
             x: Optional[tf.Tensor] = None,
-            skip: Optional[str | list[str]] = None,
+            skip: Optional[str | Sequence[str]] = None,
             writer: Optional[Any] = None,
             nera: Optional[int] = None,
             nepoch: Optional[int] = None,
             nprint: Optional[int] = None,
             nlog: Optional[int] = None,
-            beta: Optional[float | list[float] | dict[str, float]] = None,
+            beta: Optional[float | Sequence[float] | dict[str, float]] = None,
+            save_data: bool = True,
     ) -> dict:
         jobdir = self.get_jobdir(job_type='train')
         writer = None
@@ -294,8 +229,6 @@ class Experiment(BaseExperiment):
                 train_dir=jobdir,
                 skip=skip,
                 beta=beta,
-                # nprint=nprint,
-                # nlog=nlog,
             )
         else:
             output = self.trainer.train(
@@ -315,6 +248,7 @@ class Experiment(BaseExperiment):
         if self.trainer._is_chief:
             output['dataset'] = self.save_dataset(
                 # output=output,
+                save_data=save_data,
                 nchains=nchains,
                 job_type='train',
                 outdir=jobdir,

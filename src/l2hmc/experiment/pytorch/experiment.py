@@ -6,13 +6,15 @@ Experiment base class.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
+# import os
 from os import PathLike
 from pathlib import Path
 from typing import Any, Optional
 
-import horovod.torch as hvd
+# import horovod.torch as hvd
 from hydra.utils import instantiate
 from omegaconf import DictConfig
+import time
 import torch
 from torch.utils.tensorboard.writer import SummaryWriter
 
@@ -27,16 +29,9 @@ from l2hmc.trainers.pytorch.trainer import Trainer
 from l2hmc.utils.dist import setup_torch_distributed
 from l2hmc.utils.rich import get_console
 
-# log = logging.getLogger(__name__)
-# log = get_pylogger(__name__)
 log = logging.getLogger(__name__)
 
-# LOCAL_RANK = os.environ.get('OMPI_COMM_WORLD_LOCAL_RANK', '0')
-
 Tensor = torch.Tensor
-# SIZE = hvd.size()
-# RANK = hvd.rank()
-# LOCAL_RANK = hvd.local_rank()
 
 
 class Experiment(BaseExperiment):
@@ -51,25 +46,12 @@ class Experiment(BaseExperiment):
         if not isinstance(self.config, ExperimentConfig):
             self.config = instantiate(cfg)
         assert isinstance(self.config, ExperimentConfig)
-        # assert isinstance(
-        #     self.config,
-        #     (ExperimentConfig,
-        #      configs.ExperimentConfig)
-        # )
         self.ckpt_dir = self.config.get_checkpoint_dir()
-        self.trainer: Trainer = self.build_trainer(
-            keep=keep,
-            skip=skip,
-            build_networks=build_networks,
-            ckpt_dir=self.ckpt_dir,
-        )
         dsetup = setup_torch_distributed(self.config.backend)
         self._size = dsetup['size']
         self._rank = dsetup['rank']
         self._local_rank = dsetup['local_rank']
 
-        # self._rank = hvd.rank()
-        # self._local_rank = hvd.local_rank()
         run = None
         arun = None
         if self._rank == 0 and self.config.init_wandb:
@@ -79,14 +61,19 @@ class Experiment(BaseExperiment):
             )
             run = super()._init_wandb()
             assert run is wandb.run
-            run.watch(
-                # self.trainer.dynamics,
-                self.trainer.dynamics.networks,
-                log='all',
-                log_graph=True,
-                criterion=self.trainer.loss_fn,
-            )
+            # run.watch(
+            #     self.trainer.dynamics.networks,
+            #     log='all',
+            #     log_graph=True,
+            #     criterion=self.trainer.loss_fn,
+            # )
             run.config['SIZE'] = self._size
+            # env = os.environ
+            # _ = env.pop('LS_COLORS', None)
+            # run.config['environment'] = env
+            # ds_config = getattr(self.trainer, 'ds_config', None)
+            # if ds_config is not None:
+            #     run.config.update(ds_config)
 
         if self._rank == 0 and self.config.init_aim:
             log.warning(
@@ -100,6 +87,23 @@ class Experiment(BaseExperiment):
                 else:
                     arun['ncpus'] = self._size
 
+        self.trainer: Trainer = self.build_trainer(
+            keep=keep,
+            skip=skip,
+            build_networks=build_networks,
+            ckpt_dir=self.ckpt_dir,
+        )
+        if run is not None:
+            run.watch(
+                self.trainer.dynamics.networks,
+                log='all',
+                log_graph=True,
+                criterion=self.trainer.loss_fn,
+            )
+            ds_config = getattr(self.trainer, 'ds_config', None)
+            if ds_config is not None:
+                run.config['deepspeed_config'] = ds_config
+
         self.run = run
         self.arun = arun
         self._is_built = True
@@ -107,9 +111,6 @@ class Experiment(BaseExperiment):
         assert isinstance(self.trainer, Trainer)
         assert isinstance(self.trainer.dynamics, (ptDynamics, Dynamics))
         assert isinstance(self.trainer.lattice, (LatticeU1, LatticeSU3))
-        # if not isinstance(self.cfg, ExperimentConfig):
-        #     self.cfg = hydra.utils.instantiate(cfg)
-        #     assert isinstance(self.config, ExperimentConfig)
 
     def set_net_weights(self, net_weights: NetWeights):
         from l2hmc.network.pytorch.network import LeapfrogLayer
@@ -139,16 +140,14 @@ class Experiment(BaseExperiment):
 
         outdir = Path(self._outdir).joinpath('network_diagrams')
         outdir.mkdir(exist_ok=True, parents=True)
-        # fpxnet = outdir.joinpath('xnet.png')
-        # fpvnet = outdir.joinpath('vnet.png')
         vnet = self.trainer.dynamics._get_vnet(0)
         xnet = self.trainer.dynamics._get_xnet(0, first=True)
 
         with torch.autocast(  # type:ignore
-            dtype=torch.float32,
+            # dtype=torch.float32,
             device_type='cuda' if torch.cuda.is_available() else 'cpu'
         ):
-            force = self.trainer.dynamics.grad_potential(x, state.beta)
+            force = self.trainer.dynamics.grad_potential(x, beta)
             sv, tv, qv = self.trainer.dynamics._call_vnet(0, (x, force))
             xm = self.trainer.dynamics.unflatten(
                 m * self.trainer.dynamics.flatten(x)
@@ -180,62 +179,16 @@ class Experiment(BaseExperiment):
                     params=dict(net.named_parameters()),
                     show_attrs=True,
                     show_saved=True
-                ).save(f'{key}-{kk}.gv')
-                # ).render(
-                #     f'{key}-{k}.png',
-                #     # outdir.joinpath(f'{key}net{k}.gv').as_posix(),
-                #     # format='png'
-                # )
-        # sx0, tx0, qx0 = 0.0, 0.0, 0.0
-        # sv, tv, qv = 0.0, 0.0, 0.0
-        # # for step in range(self.config.dynamics.nleapfrog):
-        # sx0, tx0, qx0 = self.trainer.dynamics._call_xnet(
-        #     0, inputs=(x, v), first=True
-        # )
-        # sv, tv, qv = self.trainer.dynamics._call_vnet(
-        #     0, inputs=(x, v),
-        # )
-        # xparams = dict(
-        #     self.trainer.dynamics.xnet.named_parameters()
-        # )
-        # vparams = dict(
-        #     self.trainer.dynamics.vnet.named_parameters()
-        # )
-        # outdir = Path(self._outdir).joinpath('network_diagrams')
-        # outdir.mkdir(exist_ok=True, parents=True)
-        # make_dot(sx0, params=xparams).render(
-        #     outdir.joinpath('scale-xnet-0').as_posix(), format='png'
-        # )
-        # make_dot(tx0, params=xparams).render(
-        #     outdir.joinpath('transl-xnet-0').as_posix(), format='png'
-        # )
-        # make_dot(qx0, params=xparams).render(
-        #     outdir.joinpath('transf-xnet-0').as_posix(), format='png'
-        # )
-        # make_dot(sv, params=vparams).render(
-        #     outdir.joinpath('scale-vnet-0').as_posix(), format='png'
-        # )
-        # make_dot(tv, params=vparams).render(
-        #     outdir.joinpath('transl-vnet-0').as_posix(), format='png'
-        # )
-        # make_dot(qv, params=vparams).render(
-        #     outdir.joinpath('transf-vnet-0').as_posix(), format='png'
-        # )
+                ).save(
+                    outdir.joinpath(f'{key}-{kk}.gv').as_posix()
+                )
 
     def update_wandb_config(
             self,
             run_id: Optional[str] = None,
     ) -> None:
         device = 'gpu' if torch.cuda.is_available() else 'cpu'
-        # size = 'DDP' if torch.cuda.device_count() > 1 else 'local'
         self._update_wandb_config(device=device, run_id=run_id)
-
-    def build_accelerator(self, **kwargs):
-        assert self.config.framework == 'pytorch'
-        from accelerate import Accelerator
-        # return Accelerator(**asdict(self.config.accelerator))
-        # return Accelerator(log_with=['all'])
-        return Accelerator(**kwargs)
 
     def build_trainer(
             self,
@@ -260,101 +213,6 @@ class Experiment(BaseExperiment):
 
     def get_summary_writer(self):
         return SummaryWriter(self._outdir)
-        # if job_type is None:
-        #     return SummaryWriter(self._outdir)
-        # # sdir = super()._get_summary_dir(job_type=job_type)
-        # # sdir = os.getcwd()
-        # return SummaryWriter(job_type)
-
-    def build(
-            self,
-            init_wandb: bool = True,
-            init_aim: bool = True,
-    ):
-        return self._build(
-            init_wandb=init_wandb,
-            init_aim=init_aim,
-        )
-
-    def _build(
-            self,
-            init_wandb: bool = True,
-            init_aim: bool = True,
-            keep: Optional[str | list[str]] = None,
-            skip: Optional[str | list[str]] = None,
-    ):
-        if self._is_built:
-            # assert self.accelerator is not None
-            # assert self.lattice is not None
-            assert self.trainer is not None
-            # assert self.dynamics is not None
-            # assert self.optimizer is not None
-            # assert self.loss_fn is not None
-            return {
-                # 'lattice': self.lattice,
-                # 'loss_fn': self.loss_fn,
-                # 'dynamics': self.dynamics,
-                # 'optimizer': self.optimizer,
-                'trainer': self.trainer,
-                'run': getattr(self, 'run', None),
-                'arun': getattr(self, 'arun', None),
-            }
-
-        rank = hvd.rank()
-        local_rank = hvd.local_rank()
-        self.trainer = self.build_trainer(
-            keep=keep,
-            skip=skip,
-        )
-        run = None
-        arun = None
-        if self._rank == 0:
-            if init_wandb:
-                import wandb
-                log.warning(f'Initialize WandB from {rank}:{local_rank}')
-                run = self.init_wandb()
-                assert run is wandb.run
-                # run.watch(
-                #     self.trainer.dynamics,
-                #     log="all"
-                # )
-                run.config['SIZE'] = self._size
-            if init_aim:
-                log.warning(f'Initializing Aim from {rank}:{local_rank}')
-                arun = self.init_aim()
-                if arun is not None:
-                    if torch.cuda.is_available():
-                        arun['ngpus'] = self._size
-                    else:
-                        arun['ncpus'] = self._size
-
-        self.run = run
-        self.arun = arun
-        self._is_built = True
-        assert callable(self.trainer.loss_fn)
-        assert isinstance(self.trainer, Trainer)
-        assert isinstance(self.trainer.dynamics, Dynamics)
-        assert isinstance(self.trainer.lattice, (LatticeU1, LatticeSU3))
-        return {
-            'lattice': self.trainer.lattice,
-            'loss_fn': self.trainer.loss_fn,
-            'dynamics': self.trainer.dynamics,
-            'optimizer': self.trainer.optimizer,
-            'trainer': self.trainer,
-            'run': self.run,
-            'arun': self.arun,
-        }
-
-    def _assert_is_built(self):
-        # assert self.accelerator is not None
-        assert self.trainer is not None
-        assert isinstance(self.trainer, Trainer)
-        assert self._is_built
-        # assert self.lattice is not None
-        # assert self.trainer is not None
-        # assert self.dynamics is not None
-        # assert self.optimizer is not None
-        # assert self.loss_fn is not None
 
     def train(
             self,
@@ -367,20 +225,17 @@ class Experiment(BaseExperiment):
             nprint: Optional[int] = None,
             nlog: Optional[int] = None,
             beta: Optional[float | list[float] | dict[str, float]] = None,
+            save_data: bool = True,
             # rich: Optional[bool] = None,
     ):
-        # nchains = 16 if nchains is None else nchains
         jobdir = self.get_jobdir(job_type='train')
         writer = None
         if self._rank == 0:
             writer = self.get_summary_writer()
 
-        # logfile = jobdir.joinpath(f'train-{RANK}.log')
-        # with open(logfile.as_posix(), 'wt') as logfile:
-        # console = Console(log_path=False, file=logfile)
         console = get_console(record=True)
-        # console = Console(log_path=False, record=True, width=210)
         self.trainer.set_console(console)
+        tstart = time.time()
         if self.config.annealing_schedule.dynamic:
             output = self.trainer.train_dynamic(
                 x=x,
@@ -392,8 +247,6 @@ class Experiment(BaseExperiment):
                 train_dir=jobdir,
                 skip=skip,
                 beta=beta,
-                # nprint=nprint,
-                # nlog=nlog
             )
         else:
             output = self.trainer.train(
@@ -409,6 +262,10 @@ class Experiment(BaseExperiment):
                 nprint=nprint,
                 nlog=nlog
             )
+        # if self.trainer._is_chief and self.run is not None:
+        #     self.run.log({
+        #         f'Timers/training_total': time.time() - tstart
+        #     })
         # if self.trainer._is_chief:
         #     summaryfile = jobdir.joinpath('summaries.txt')
         #     with open(summaryfile.as_posix(), 'w') as f:
@@ -418,11 +275,13 @@ class Experiment(BaseExperiment):
         # htmlfile = jobdir.joinpath(f'{fname}.html')
         # console.save_text(txtfile.as_posix(), clear=False)
         # console.save_html(htmlfile.as_posix())
+        log.info(f'Training took: {time.time() - tstart:.4f}')
 
         if self.trainer._is_chief:
             dset = self.save_dataset(
                 # output=output,
                 nchains=nchains,
+                save_data=save_data,
                 job_type='train',
                 outdir=jobdir,
                 tables=output.get('tables', None),

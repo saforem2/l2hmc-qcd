@@ -20,11 +20,6 @@ from hydra.core.config_store import ConfigStore
 import numpy as np
 from omegaconf import DictConfig
 
-# from l2hmc.utils.logger import get_pylogger
-
-
-# logger = get_pylogger(__name__)
-# log = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
 
 
@@ -47,6 +42,10 @@ OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 # -- namedtuple objects -------------------------------------------------------
 State = namedtuple('State', ['x', 'v', 'beta'])
 MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
+
+FP16_SYNONYMS = ['float16', 'fp16', '16', 'half']
+FP32_SYNONYMS = ['float32', 'fp32', '32', 'single']
+FP64_SYNONYMS = ['float64', 'fp64', '64', 'double']
 
 SYNONYMS = {
     'pytorch': [
@@ -88,9 +87,6 @@ def flatten_dict(d: dict, sep: str = '/', pre='') -> dict:
 def add_to_outdirs_file(outdir: os.PathLike):
     with open(OUTDIRS_FILE, 'a') as f:
         f.write(Path(outdir).resolve.as_posix() + '\n')
-        # f.writelines([
-        #     Path(outdir).resolve.as_posix()
-        # ])
 
 
 def get_jobdir(cfg: DictConfig, job_type: str) -> Path:
@@ -172,7 +168,7 @@ class wandbSetup(BaseConfig):
     group: Optional[str] = None
     save_code: Optional[bool] = True
     sync_tensorboard: Optional[bool] = True
-    tags: Optional[list[str]] = None
+    tags: Optional[Sequence[str]] = None
     mode: Optional[str] = 'online'
     resume: Optional[str] = 'allow'
     entity: Optional[str] = 'l2hmc-qcd'
@@ -270,9 +266,6 @@ class Steps(BaseConfig):
     print: Optional[int] = None
     extend_last_era: Optional[int] = None
 
-    def to_str(self) -> str:
-        return f'nera-{self.nera}_nepoch-{self.nepoch}'
-
     def __post_init__(self):
         if self.extend_last_era is None:
             self.extend_last_era = 1
@@ -288,6 +281,9 @@ class Steps(BaseConfig):
         assert isinstance(self.log, int)
         assert isinstance(self.print, int)
 
+    def to_str(self) -> str:
+        return f'nera-{self.nera}_nepoch-{self.nepoch}'
+
     def update(
             self,
             nera: Optional[int] = None,
@@ -297,7 +293,6 @@ class Steps(BaseConfig):
             print: Optional[int] = None,
             extend_last_era: Optional[int] = None,
     ) -> Steps:
-        # logger.warning('Updating Steps!')
         return Steps(
             nera=(self.nera if nera is None else nera),
             nepoch=(self.nepoch if nepoch is None else nepoch),
@@ -361,7 +356,6 @@ class NetworkConfig(BaseConfig):
     activation_fn: str
     dropout_prob: float
     use_batch_norm: bool = True
-    # conv_config: Optional[ConvolutionConfig] = None
 
     def to_str(self):
         ustr = '-'.join([str(int(i)) for i in self.units])
@@ -525,7 +519,6 @@ class FlopsProfiler:
 #     flops_profiler:
 
 
-
 @dataclass
 class OptimizerConfig:
     type: str
@@ -561,7 +554,6 @@ class ZeroOptimization:
 
 @dataclass
 class ExperimentConfig(BaseConfig):
-    seed: int
     wandb: Any
     steps: Steps
     framework: str
@@ -575,6 +567,7 @@ class ExperimentConfig(BaseConfig):
     # ----- Optional (w/ defaults) ------------
     # conv: Optional[ConvolutionConfig] = None
     restore: bool = True
+    save: bool = True
     c1: float = 0.0
     port: str = '2345'
     compile: bool = True
@@ -589,6 +582,7 @@ class ExperimentConfig(BaseConfig):
     backend: str = 'hvd'
     # ds_config: dict = field(default_factory=dict)
     # ----- Optional (w/o defaults) -----------
+    seed: Optional[int] = None
     ds_config_path: Optional[Any] = None
     name: Optional[str] = None
     name: Optional[str] = None
@@ -597,12 +591,25 @@ class ExperimentConfig(BaseConfig):
     compression: Optional[str] = None
 
     def __post_init__(self):
+        if self.seed is None:
+            import numpy as np
+            self.seed = np.random.randint(0)
+            logger.warning(
+                f'No seed specified, using random seed: {self.seed}'
+            )
         self.ds_config = {}
         self.xdim = self.dynamics.xdim
         self.xshape = self.dynamics.xshape
         if self.ds_config_path is None:
             fpath = Path(CONF_DIR).joinpath('ds_config.json')
             self.ds_config_path = fpath.resolve().as_posix()
+
+        if self.precision in FP16_SYNONYMS:
+            self.precision = 'fp16'
+        elif self.precision in FP32_SYNONYMS:
+            self.precision = 'float32'
+        elif self.precision in FP64_SYNONYMS:
+            self.precision = 'float64'
 
         # self.ds_config = {}
         # if self.ds_config_path is not None:
@@ -635,12 +642,6 @@ class ExperimentConfig(BaseConfig):
             raise ValueError(
                 f'Unexpected value for framework: {self.framework}'
             )
-        # if self.framework == 'pytorch':
-        #     if self.backend is None:
-        #         self.backend = 'DDP'
-        #         logger.warning(
-        #             f'Backend not specified, using DDP with {self.framework}'
-        #         )
 
         if self.debug_mode:
             self.compile = False

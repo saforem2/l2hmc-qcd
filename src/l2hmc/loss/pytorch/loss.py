@@ -53,24 +53,12 @@ class LatticeLoss:
             acc: Tensor,
             use_mixed_loss: Optional[bool] = None,
     ) -> Tensor:
-        dw = w2 - w1
-        dwloops = 2. * (torch.ones_like(w1) - dw.cos())
-        if isinstance(self.g, U1Phase):
-            ploss = acc * dwloops.sum((1, 2))
-        elif isinstance(self.g, SU3):
-            ploss = acc * dwloops.sum((tuple(range(2, len(w1.shape)))))
-        else:
-            raise ValueError(f'Unexpected value for `self.g`: {self.g}')
-
-        # dwloops = 2. * (1. - torch.cos(w2 - w1))
-        use_mixed = (
-            self.config.use_mixed_loss
-            if use_mixed_loss is None else use_mixed_loss
-        )
-        if use_mixed:
+        p1 = w1.real.sum(list(range(2, len(w1.shape))))
+        p2 = w2.real.sum(list(range(2, len(w2.shape))))
+        ploss = acc * (p2 - p1) ** 2
+        if use_mixed_loss:
             ploss += 1e-4
             return self.mixed_loss(ploss, self.plaq_weight).mean()
-
         return (-ploss / self.plaq_weight).mean()
 
     def _charge_loss(

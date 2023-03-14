@@ -11,22 +11,16 @@ import warnings
 import time
 from pathlib import Path
 from mpi4py import MPI
+import json
 
 import hydra
 from typing import Optional
 from omegaconf.dictconfig import DictConfig
 
-import json
-from l2hmc.configs import ExperimentConfig
-from l2hmc.utils.rich import print_config
-# from l2hmc.utils.logger import get_pylogger
-from l2hmc.utils.plot_helpers import set_plot_style
-
 warnings.filterwarnings('ignore')
-set_plot_style()
 
 log = logging.getLogger()
-logging.getLogger('wandb').setLevel(logging.ERROR)
+logging.getLogger('wandb').setLevel(logging.CRITICAL)
 logging.getLogger('aim').setLevel(logging.ERROR)
 logging.getLogger('filelock').setLevel(logging.CRITICAL)
 logging.getLogger('matplotlib').setLevel(logging.CRITICAL)
@@ -36,6 +30,8 @@ logging.getLogger('graphviz').setLevel(logging.CRITICAL)
 
 comm = MPI.COMM_WORLD
 
+# from l2hmc import logger
+logger = logging.getLogger(__name__)
 
 def get_experiment(
         cfg: DictConfig,
@@ -45,6 +41,7 @@ def get_experiment(
     framework = cfg.get('framework', None)
     os.environ['RUNDIR'] = str(os.getcwd())
     if framework in ['tf', 'tensorflow']:
+        cfg.framework = 'tensorflow'
         from l2hmc.utils.dist import setup_tensorflow
         _ = setup_tensorflow(cfg.precision)
         from l2hmc.experiment.tensorflow.experiment import Experiment
@@ -56,6 +53,7 @@ def get_experiment(
         return experiment
 
     elif framework in ['pt', 'pytorch', 'torch']:
+        cfg.framework = 'pytorch'
         from l2hmc.utils.dist import setup_torch
         _ = setup_torch(
             seed=cfg.seed,
@@ -73,29 +71,24 @@ def get_experiment(
 
 
 def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
+    from l2hmc.utils.plot_helpers import set_plot_style
+    set_plot_style()
     # --- [0.] Setup ------------------------------------------------------
     if overrides is not None:
         from l2hmc.configs import get_config
         cfg.update(get_config(overrides))
 
     ex = get_experiment(cfg)
-    # assert isinstance(ex.config, ExperimentConfig)
-
     if ex.trainer._is_chief:
-        # from rich import print
-        # log.info(ex.cfg)
         try:
             from omegaconf import OmegaConf
             from rich import print_json
-            # print_json(ex.config.to_json())
             conf = OmegaConf.structured(ex.config)
             cdict = OmegaConf.to_container(conf)
             print_json(json.dumps(cdict))
         except Exception as e:
             log.exception(e)
             log.warning('Continuing!')
-        # print(ex.config)
-        # print_config(ex.cfg, resolve=True)
 
     should_train: bool = (
         ex.config.steps.nera > 0
@@ -140,10 +133,12 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
                 ex.run.log({'model_improvement': improvement})
         log.critical(f'Model improvement: {improvement:.8f}')
 
-    try:
-        ex.visualize_model()
-    except Exception as e:
-        log.exception(e)
+    if ex.trainer._is_chief:
+        try:
+            ex.visualize_model()
+        except Exception:
+            # log.exception(e)
+            log.error('Unable to make visuals for model, continuing!')
 
     return Path(ex._outdir).as_posix()
 
@@ -181,7 +176,7 @@ if __name__ == '__main__':
     start = time.time()
     outdir = main()
     end = time.time()
+    log.info(f'Run completed in: {end - start:4.4f} s')
     if outdir is not None:
-        log.info(f'Run completed in: {end - start:4.4f} s')
         log.info(f'Run located in: {outdir}')
     sys.exit(0)
