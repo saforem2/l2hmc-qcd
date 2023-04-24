@@ -35,6 +35,7 @@ dependencies = [
   "wandb",
   "arviz",
   "hydra-colorlog",
+  "ipympl",
   "matplotx",
   "aim",
   "tqdm",
