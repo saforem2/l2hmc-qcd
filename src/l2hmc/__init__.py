@@ -1,10 +1,17 @@
 """
-l2hmc/__init__.py 
+l2hmc/__init__.py
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
 
+# import os
+from typing import Optional
+from mpi4py import MPI
+import tqdm
+# from pathlib import Path
+
 # from colorlog import ColoredFormatter
+
 
 # # formatter = ColoredFormatter(
 # # 	"%(log_color)s%(levelname)-8s%(reset)s %(message_log_color)s%(message)s",
@@ -63,3 +70,85 @@ import logging
 
 # logger.addHandler(shell_handler)
 # logger.addHandler(file_handler)
+
+# from tqdm.contrib import DummyTqdmFile
+
+
+class DummyTqdmFile(object):
+    """ Dummy file-like that will write to tqdm
+    https://github.com/tqdm/tqdm/issues/313
+    """
+    file = None
+
+    def __init__(self, file):
+        self.file = file
+
+    def write(self, x):
+        # Avoid print() second call (useless \n)
+        # if len(x.rstrip()) > 0:
+        tqdm.tqdm.write(x, file=self.file, end='\n')
+
+    def flush(self):
+        return getattr(self.file, "flush", lambda: None)()
+
+
+def get_rich_logger(
+        name: Optional[str] = None,
+        level: str = 'INFO'
+) -> logging.Logger:
+    from rich.logging import RichHandler
+    # log: logging.Logger = get_logger(name=name, level=level)
+    log = logging.getLogger(name)
+    log.handlers = []
+    from l2hmc.utils.rich import get_console
+    console = get_console(
+        markup=True,
+    )
+    handler = RichHandler(
+        level,
+        rich_tracebacks=True,
+        console=console,
+        show_path=False,
+        enable_link_path=False
+    )
+    log.handlers = [handler]
+    log.setLevel(level)
+    return log
+
+
+def get_logger(
+        name: Optional[str] = None,
+        level: str = 'INFO',
+) -> logging.Logger:
+    rank = int(MPI.COMM_WORLD.Get_rank())
+    # logging.basicConfig(stream=DummyTqdmFile(sys.stderr))
+    log = logging.getLogger(name)
+    log.handlers = []
+    if rank != 0:
+        log.setLevel('CRITICAL')
+    else:
+        # from rich.console import Console
+        from rich.logging import RichHandler
+        from l2hmc.utils.rich import get_console
+        # console = Console(
+        #     log_path=False,
+        #     width=int(os.environ.get('COLUMNS', 255)),
+        #     markup=True,
+        # )
+        console = get_console(markup=True)
+        # log.propagate = True
+        # log.handlers = []
+        log.addHandler(
+            RichHandler(
+                level=level,
+                console=console,
+                show_path=True,
+                enable_link_path=False,
+                markup=True
+            )
+        )
+        log.setLevel(level)
+    return log
+
+
+# log = get_logger(__name__, level='INFO')
