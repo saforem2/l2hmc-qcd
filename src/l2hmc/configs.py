@@ -19,6 +19,7 @@ from typing import Any, Counter, Dict, List, Optional, Sequence
 from hydra.core.config_store import ConfigStore
 import numpy as np
 from omegaconf import DictConfig
+import l2hmc.utils.dist as udist
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,12 @@ FP16_SYNONYMS = ['float16', 'fp16', '16', 'half']
 FP32_SYNONYMS = ['float32', 'fp32', '32', 'single']
 FP64_SYNONYMS = ['float64', 'fp64', '64', 'double']
 
+ENV_FILTERS = [
+    'PS1',
+    'LSCOLORS',
+    'LS_COLORS',
+]
+
 SYNONYMS = {
     'pytorch': [
         'p'
@@ -74,6 +81,10 @@ SYNONYMS = {
         'deepspeed',
     ]
 }
+
+
+def dict_to_list_of_overrides(d: dict):
+    return [f'{k}={v}' for k, v in flatten_dict(d, sep='.').items()]
 
 
 def flatten_dict(d: dict, sep: str = '/', pre='') -> dict:
@@ -161,6 +172,45 @@ class LatticeMetrics:
             'p4x4': self.p4x4
         }
 
+
+@dataclass
+class EnvConfig:
+    # machine: str
+    # rank: int
+    # local_rank: int
+    # world_size: int
+    # nhosts: int
+    # hostname: str
+    # addr: str
+
+    def __post_init__(self):
+        import socket
+        self.hostname = socket.gethostname()
+        dist_env = udist.query_environment()
+        self.rank = dist_env['rank']
+        self.local_rank = dist_env['local_rank']
+        self.world_size = dist_env['world_size']
+        self.addr = socket.gethostbyaddr(self.hostname)[0]
+        if self.addr.startswith('x3'):
+            self.machine = 'Polaris'
+            self.nodefile = os.environ.get('PBS_NODEFILE', None)
+        elif self.addr.startswith('x1'):
+            self.machine = 'Sunspot'
+            self.nodefile = os.environ.get('PBS_NODEFILE', None)
+        elif self.addr.startswith('thetagpu'):
+            self.machine = 'ThetaGPU'
+            self.nodefile = os.environ.get('COBALT_NODEFILE', None)
+        else:
+            self.machine = self.addr
+            self.nodefile = None
+        self.env = {
+            k: v for k, v in dict(os.environ).items()
+            if (
+                k not in ENV_FILTERS
+                and not k.startswith('_ModuleTable')
+                and not k.startswith('BASH_FUNC_')
+            )
+        }
 
 @dataclass
 class wandbSetup(BaseConfig):
@@ -440,13 +490,15 @@ class DynamicsConfig(BaseConfig):
 class LossConfig(BaseConfig):
     use_mixed_loss: bool = False
     charge_weight: float = 0.01
-    plaq_weight: float = 0.
+    rmse_weight: float = 0.0
+    plaq_weight: float = 0.0
     aux_weight: float = 0.0
 
     def to_str(self) -> str:
         return '_'.join([
             f'qw-{self.charge_weight:2.1f}',
             f'pw-{self.plaq_weight:2.1f}',
+            f'rw-{self.rmse_weight:2.1f}',
             f'aw-{self.aux_weight:2.1f}',
             f'mixed-{self.use_mixed_loss}',
         ])
@@ -597,6 +649,7 @@ class ExperimentConfig(BaseConfig):
             logger.warning(
                 f'No seed specified, using random seed: {self.seed}'
             )
+        self.env = EnvConfig()
         self.ds_config = {}
         self.xdim = self.dynamics.xdim
         self.xshape = self.dynamics.xshape
