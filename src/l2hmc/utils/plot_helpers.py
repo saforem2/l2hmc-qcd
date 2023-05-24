@@ -17,10 +17,13 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import xarray as xr
+# import torch
+# import tensorflow as tf
 
 from l2hmc.utils.rich import is_interactive
 # from l2hmc.utils.logger import get_pylogger
-import logging
+# import logging
+from l2hmc import get_logger
 try:
     import matplotx
     MATPLOTX = True
@@ -35,7 +38,8 @@ warnings.filterwarnings('ignore')
 
 
 # log = get_pylogger(__name__)
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 xplt = xr.plot  # type: ignore
 
@@ -63,23 +67,42 @@ def set_plot_style(**kwargs):
     plt.rcParams.update({
         'image.cmap': 'viridis',
         'savefig.transparent': True,
-        'text.color': '#666666',
-        'xtick.color': '#66666604',
-        'ytick.color': '#66666604',
-        'ytick.labelcolor': '#666666',
-        'xtick.labelcolor': '#666666',
-        'axes.edgecolor': '#66666600',
-        'axes.labelcolor': '#666666',
-        'grid.linestyle': ':',
-        'grid.alpha': 0.4,
-        'grid.color': '#353535',
+        # 'text.color': '#666666',
+        # 'xtick.color': '#66666604',
+        # 'ytick.color': '#66666604',
+        # 'ytick.labelcolor': '#666666',
+        # 'xtick.labelcolor': '#666666',
+        # 'axes.edgecolor': '#66666600',
+        # 'axes.labelcolor': '#666666',
+        # 'grid.linestyle': ':',
+        # 'grid.alpha': 0.4,
+        # 'grid.color': '#353535',
         'path.simplify': True,
         'savefig.bbox': 'tight',
         'legend.labelcolor': '#666666',
         # 'axes.labelcolor': (189, 189, 189, 1.0),
         # 'grid.color': (0.434, 0.434, 0.434, 0.2),  # #66666602
-        'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
-        'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
+        # 'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
+        # 'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
+        'axes.facecolor': 'none',
+        'figure.facecolor': 'none',
+        'savefig.facecolor': 'none',
+        'savefig.format': 'svg',
+        'axes.edgecolor': 'none',
+        'axes.grid': True,
+        'axes.labelcolor': '#666',
+        'axes.titlecolor': '#666',
+        'grid.color': '#666',
+        'text.color': '#666',
+        'grid.linestyle': '--',
+        'grid.linewidth': 0.5,
+        'grid.alpha': 0.4,
+        'xtick.color': 'none',
+        'ytick.color': 'none',
+        'xtick.labelcolor': '#666',
+        'legend.edgecolor': 'none',
+        'ytick.labelcolor': '#666',
+        'savefig.transparent': True,
     })
     plt.rcParams['axes.prop_cycle'] = plt.cycler(
         'color',
@@ -122,6 +145,7 @@ def savefig(fig: plt.Figure, outfile: os.PathLike):
 
 def subplots(**kwargs) -> tuple[plt.Figure, plt.Axes]:
     fig, ax = plt.subplots(**kwargs)
+    assert isinstance(fig, plt.Figure)
     assert isinstance(ax, plt.Axes)
     return fig, ax
 
@@ -199,6 +223,24 @@ def measure_improvement(
     return improvement
 
 
+def plot_arr(
+        metric: list,
+        name: Optional[str] = None,
+) -> FigAxes:
+    assert len(metric) > 0
+    y = np.stack(metric)
+    if isinstance(metric[0], (int, float, bool, np.floating)):
+        return plot_scalar(y, ylabel=name)
+    element_shape = metric[0].shape
+    if len(element_shape) == 2:
+        # y = grab_tensor(torch.stack(metric))
+        return plot_leapfrogs(y, ylabel=name)
+    if len(element_shape) == 1:
+        # y = grab_tensor(torch.stack(metric))
+        return plot_chains(y, ylabel=name)
+    raise ValueError
+
+
 def plot_scalar(
         y: np.ndarray,
         x: Optional[np.ndarray] = None,
@@ -255,13 +297,22 @@ def plot_chains(
     else:
         fig, ax = fig_axes
 
-    label = f'{label}, avg: {y.mean():4.3g}'
+    if label is not None:
+        label = f'{label}, avg: {y.mean():4.3g}'
+
     _ = kwargs.pop('color', None)
     color = f'C{np.random.randint(8)}'
-    _ = ax.plot(x, y.mean(-1), label=label, color=color, lw=2.0, **kwargs)
-
+    _ = ax.plot(x, y.mean(-1), label=label, color=color, lw=1.5, **kwargs)
     for idx in range(nchains):
-        _ = ax.plot(x, y[:, idx], lw=1.0, color=color, alpha=0.7, **kwargs)
+        _ = ax.plot(
+            x,
+            y[:, idx],
+            # ls='--',
+            lw=0.6,
+            color=color,
+            alpha=0.6,
+            **kwargs
+        )
 
     if xlabel is not None:
         _ = ax.set_xlabel(xlabel)
@@ -274,7 +325,8 @@ def plot_chains(
 
     if outfile is not None:
         savefig(fig, outfile)
-
+    xlim = ax.get_xlim()
+    _ = ax.set_xlim(xlim[0], xlim[1] + 1)
     return fig, ax
 
 
@@ -348,7 +400,7 @@ def plot_combined(
         color = plot_kwargs.get('color', f'C{np.random.randint(5)}')
 
     (ax1, ax2) = subfigs[1].subplots(1, 2, sharey=True, gridspec_kw=gs_kw)
-    ax1.grid(alpha=0.4)
+    ax1.grid(alpha=0.2)
     ax2.grid(False)
     sns.kdeplot(y=val.values.flatten(), ax=ax2, color=color, shade=True)
     axes = (ax1, ax2)
@@ -370,7 +422,7 @@ def plot_combined(
     label = f'{key}_avg'
     # label = r'$\langle$' + f'{key} ' + r'$\rangle$'
     # steps = np.arange(len(val.coords['draw']))
-    steps = val.coords['draw']
+    # steps = val.coords['draw']
     chain_axis = val.get_axis_num('chain')
     if chain_axis == 0:
         for idx in range(nchains):
@@ -391,7 +443,6 @@ def plot_combined(
     )
     if key is not None and 'eps' in key:
         _ = ax0.set_ylabel('leapfrog')
-
     _ = ax2.set_xticks([])
     _ = ax2.set_xticklabels([])
     # sns.despine(ax=ax0, top=True, right=True, left=True, bottom=True)
@@ -401,7 +452,6 @@ def plot_combined(
     _ = ax1.set_xlabel('draw')
     _ = sns.despine(subfigs[0])
     _ = plt.autoscale(enable=True, axis=ax0)
-
     return (fig, axes)
 
 
@@ -425,19 +475,15 @@ def plot_dataArray(
     figsize = subplots_kwargs.get('figsize', set_size())
     subplots_kwargs.update({'figsize': figsize})
     subfigs = None
-
     if key == 'dt':
         therm_frac = 0.2
-
     arr = val.values  # shape: [nchains, ndraws]
     # steps = np.arange(len(val.coords['draw']))
     steps = val.coords['draw']
-
     if therm_frac is not None and therm_frac > 0.0:
         drop = int(therm_frac * arr.shape[0])
         arr = arr[drop:]
         steps = steps[drop:]
-
     if len(arr.shape) == 2:
         fig, axes = plot_combined(val, key=key,
                                   num_chains=num_chains,
@@ -468,7 +514,6 @@ def plot_dataArray(
             axes = ax
         else:
             raise ValueError('Unexpected shape encountered')
-
         ax = plt.gca()
         assert isinstance(ax, plt.Axes)
         _ = ax.set_ylabel(key)
@@ -476,7 +521,6 @@ def plot_dataArray(
         # matplotx.line_labels()
         if line_labels:
             matplotx.line_labels()
-
         # if num_chains > 0 and len(arr.shape) > 1:
         #     lw = LW / 2.
         #     #for idx in range(min(num_chains, arr.shape[1])):
@@ -487,19 +531,15 @@ def plot_dataArray(
         #         # where arr[:, idx].shape = [ndraws, 1]
         #         ax.plot(steps, val
         #                 alpha=0.5, lw=lw/2., **plot_kwargs)
-
     if title is not None:
         fig = plt.gcf()
         _ = fig.suptitle(title)
-
     if logfreq is not None:
         ax = plt.gca()
-        assert isinstance(ax, plt.Axes)
         xticks = ax.get_xticks()
         _ = ax.set_xticklabels([
             f'{logfreq * int(i)}' for i in xticks
         ])
-
     if outdir is not None and save_plot:
         outfile = Path(outdir).joinpath(f'{key}.svg')
         if outfile.is_file():
@@ -512,7 +552,6 @@ def plot_dataArray(
             _ = plt.savefig(svgfile, dpi=400, bbox_inches='tight')
             # plt.savefig(Path(outdir).joinpath(f'{key}.svg'),
             #             dpi=400, bbox_inches='tight')
-
     return (fig, subfigs, axes)
 
 
@@ -529,7 +568,6 @@ def plot_array(
     arr = np.array(val)
     if num_chains is None:
         num_chains = 10
-
     # arr.shape = [ndraws, nleapfrog, nchains]
     if len(arr.shape) == 3:
         ndraws, nlf, _ = arr.shape
@@ -537,16 +575,13 @@ def plot_array(
         cmap = plt.get_cmap('viridis')
         colors = {lf: cmap(lf / nlf) for lf in lfarr}
         yarr = arr.transpose((1, 0, 2))  # shape: [nleapfrog, ndraws, nchains]
-
         for idx, ylf in enumerate(yarr):
             y = ylf.mean(-1)  # average over chains, shape = [ndraws]
             x = np.arange(len(y))
             _ = ax.plot(x, y, label=f'{idx}', color=colors[idx], **kwargs)
-
         x = np.arange(ndraws)
         _ = ax.plot(x, yarr.mean((0, 1)), **kwargs)
         # arr = arr.mean()
-
     # arr.shape = [ndraws, nchains]
     elif len(arr.shape) == 2:
         # ndraws, nchains = arr.shape
@@ -557,23 +592,17 @@ def plot_array(
         y = arr.mean(-1)
         x = np.arange(len(y))
         _ = ax.plot(x, y, label=key, **kwargs)
-
     elif len(arr.shape) == 1:
         y = arr
         x = np.arange(y.shape[0])
         _ = ax.plot(x, y, label=key, **kwargs)
-
     else:
         raise ValueError(f'Unexpected shape encountered: {arr.shape}')
-
     if xlabel is not None:
         _ = ax.set_xlabel(xlabel)
-
     if title is not None:
         _ = ax.set_title(title)
-
     _ = ax.legend(loc='best')
-
     if outdir is not None:
         outfile = Path(outdir).joinpath(f'{key}.svg')
         if outfile.is_file():
@@ -584,7 +613,6 @@ def plot_array(
             svgfile = Path(outdir).joinpath(f'{key}-{tstamp}.svg')
             _ = plt.savefig(pngfile, dpi=400, bbox_inches='tight')
             _ = plt.savefig(svgfile, dpi=400, bbox_inches='tight')
-
     return fig, ax
 
 
@@ -599,10 +627,8 @@ def set_size(
         width_pt = 426.79135
     elif width == 'beamer':
         width_pt = 307.28987
-
     fraction = 1.0 if fraction is None else fraction
     subplots = (1, 1) if subplots is None else subplots
-
     # Width of figure (in pts)
     fig_width_pt = width_pt * fraction
     # Convert from pt to inches
@@ -927,7 +953,7 @@ def make_ridgeplots(
                 # label the plot in axes coords:
                 def label(_, color, label):  # type:ignore #noqa
                     ax = plt.gca()
-                    assert isinstance(ax, plt.Axes)
+                    # assert isinstance(ax, plt.Axes)
                     _ = ax.set_ylabel('')
                     _ = ax.set_yticks([])
                     _ = ax.set_yticklabels([])
