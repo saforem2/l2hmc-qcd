@@ -15,7 +15,9 @@ import l2hmc.group.su3.pytorch.group as g
 from l2hmc.lattice.lattice import Lattice
 from l2hmc.configs import Charges
 
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
+from l2hmc import get_logger
+log = get_logger(__name__)
 
 Array = np.ndarray
 PI = np.pi
