@@ -8,9 +8,9 @@ from __future__ import absolute_import, division, print_function, annotations
 from abc import ABC, abstractmethod
 
 import torch
-import numpy as np
+# import numpy as np
 # import tensorflow as tf
-from typing import Union, Optional, Any, Sequence
+from typing import Optional, Any, Sequence
 
 # tfTensor = tf.Tensor
 ptTensor = torch.Tensor
