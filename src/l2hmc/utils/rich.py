@@ -52,6 +52,7 @@ STYLES = {
     'error': Style(color='#FF5252', bold=True),
     'logging.level.info': Style(color='#29B6F6'),
     'logging.level.WARNING': Style(color='#FD971F'),
+    'logging.level.warning': Style(color='#FD971F'),
     'logging.level.ERROR': Style(color='#FF5252'),
     'yellow': Style(color='#FFFF00'),
     "time": Style(color="#505050"),
@@ -89,7 +90,7 @@ def is_interactive() -> bool:
 
 
 def get_width():
-    width = os.environ.get('COLUMNS', os.environ.get('WIDTH', None))
+    width = os.environ.get('COLUMNS', os.environ.get('WIDTH', 255))
     if width is not None:
         return int(width)
 
@@ -403,10 +404,11 @@ def printarr(*arrs, float_width=6):
         if a is None:
             return '[None]'
         name = default_name
-        for k, v in frame.f_locals.items():
-            if v is a:
-                name = k
-                break
+        if frame_ is not None:
+            for k, v in frame_.f_locals.items():
+                if v is a:
+                    name = k
+                    break
         return name
 
     def dtype_str(a):
@@ -446,7 +448,7 @@ def printarr(*arrs, float_width=6):
     def minmaxmean_str(a):
         if a is None:
             return ('N/A', 'N/A', 'N/A')
-        if isinstance(a, int) or isinstance(a, float): 
+        if isinstance(a, int) or isinstance(a, float):
             return (format_float(a), format_float(a), format_float(a))
 
         # compute min/max/mean. if anything goes wrong, just print 'N/A'
@@ -489,18 +491,20 @@ def printarr(*arrs, float_width=6):
 
         # for each property, compute its length
         maxlen = {}
-        for p in props: maxlen[p] = 0
+        for p in props:
+            maxlen[p] = 0
         for sp in str_props:
             for p in props:
                 maxlen[p] = max(maxlen[p], len(sp[p]))
 
-        # if any property got all empty strings, don't bother printing it, remove if from the list
+        # if any property got all empty strings,
+        # don't bother printing it, remove if from the list
         props = [p for p in props if maxlen[p] > 0]
 
         # print a header
         header_str = ""
         for p in props:
-            prefix =  "" if p == 'name' else " | "
+            prefix = "" if p == 'name' else " | "
             fmt_key = ">" if p == 'name' else "<"
             header_str += f"{prefix}{p:{fmt_key}{maxlen[p]}}"
         print(header_str)
@@ -508,11 +512,10 @@ def printarr(*arrs, float_width=6):
         # now print the acual arrays
         for strp in str_props:
             for p in props:
-                prefix =  "" if p == 'name' else " | "
+                prefix = "" if p == 'name' else " | "
                 fmt_key = ">" if p == 'name' else "<"
                 print(f"{prefix}{strp[p]:{fmt_key}{maxlen[p]}}", end='')
             print("")
 
     finally:
         del frame
-
