@@ -14,11 +14,11 @@ import matplotx
 import numpy as np
 import seaborn as sns
 import tensorflow as tf
-# from tensorflow.python.framework.ops import EagerTensor
 import torch
 import xarray as xr
-from l2hmc.common import grab_tensor
 
+from l2hmc import get_logger
+from l2hmc.common import grab_tensor
 from l2hmc.configs import MonteCarloStates, Steps
 import l2hmc.utils.plot_helpers as hplt
 
@@ -31,7 +31,9 @@ TF_FLOAT = tf.dtypes.as_dtype(tf.keras.backend.floatx())
 Scalar = Union[float, int, np.floating, bool]
 # Scalar = TF_FLOAT | PT_FLOAT | np.floating | int | bool
 
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
+
+log = get_logger(__name__)
 
 xplt = xr.plot  # type:ignore
 LW = plt.rcParams.get('axes.linewidth', 1.75)
@@ -62,6 +64,17 @@ class StateHistory:
         self.out['x'].append(mc_states.out.x.numpy())
         self.out['v'].append(mc_states.out.v.numpy())
 
+
+class History:
+    def __init__(self, keys: Optional[list[str]] = None) -> None:
+        self.history = {}
+
+    def update(self, metrics: dict):
+        for key, val in metrics.items():
+            try:
+                self.history[key].append(val)
+            except KeyError:
+                self.history[key] = [val]
 
 class BaseHistory:
     def __init__(self, steps: Optional[Steps] = None):
