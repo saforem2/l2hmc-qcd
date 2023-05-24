@@ -26,7 +26,9 @@ from l2hmc.utils.step_timer import StepTimer
 # import l2hmc.utils.plot_helpers as hplt
 
 # log = get_pylogger(__name__)
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
+from l2hmc import get_logger
+log = get_logger(__name__)
 
 
 # def get_logger(rank: int) -> logging.Logger:
@@ -336,6 +338,7 @@ class BaseExperiment(ABC):
             run=self.run,
             arun=self.arun,
             logfreq=logfreq,
+            rank=self.config.env.rank,
             outdir=outdir,
             tables=tables,
             summaries=summaries,
