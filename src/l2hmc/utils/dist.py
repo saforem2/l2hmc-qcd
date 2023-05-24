@@ -11,9 +11,11 @@ from typing import Optional, Callable
 from mpi4py import MPI
 
 # from l2hmc.utils.logger import get_pylogger
-import logging
-
-log = logging.getLogger(__name__)
+from l2hmc import get_logger
+log = get_logger(__name__)
+# import logging
+#
+# log = logging.getLogger(__name__)
 
 
 BACKENDS = [
@@ -96,11 +98,11 @@ def setup_tensorflow(
             print(e)
 
     RANK = hvd.rank()
-    SIZE = hvd.size()
+    WORLD_SIZE = hvd.size()
     LOCAL_RANK = hvd.local_rank()
     # LOCAL_SIZE = hvd.local_size()
     os.environ['RANK'] = str(RANK)
-    os.environ['WORLD_SIZE'] = str(SIZE)
+    os.environ['WORLD_SIZE'] = str(WORLD_SIZE)
     os.environ['LOCAL_RANK'] = str(LOCAL_RANK)
 
     log.warning(f'Using: {TF_FLOAT} precision')
@@ -112,7 +114,13 @@ def setup_tensorflow(
 
 def init_deepspeed():
     import deepspeed
-    deepspeed.init_distributed()
+    try:
+        deepspeed.init_distributed(dist_backend='nccl')
+    except Exception:
+        try:
+            deepspeed.init_distributed(dist_backend='mpi')
+        except RuntimeError:
+            deepspeed.init_distributed(dist_backend='gloo')
 
 
 def init_process_group(
@@ -174,13 +182,13 @@ def query_environment() -> dict[str, int]:
     lr = os.environ.get('LOCAL_RANK', None)
     if ws is not None and r is not None and lr is not None:
         return {
-            'size': int(ws),
+            'world_size': int(ws),
             'rank': int(r),
             'local_rank': int(lr)
         }
 
     return {
-        'size': int(get_size()),
+        'world_size': int(get_size()),
         'rank': int(get_rank()),
         'local_rank': int(get_local_rank()),
     }
@@ -215,8 +223,7 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
         os.environ['MASTER_PORT'] = port
     else:
         os.environ['MASTER_PORT'] = eport
-        if rank == 0:
-            log.info(f'Caught MASTER_PORT:{eport} from environment!')
+        log.info(f'Caught MASTER_PORT:{eport} from environment!')
 
     init_process_group(
         rank=rank,
@@ -224,7 +231,7 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
         backend='nccl' if torch.cuda.is_available() else 'gloo'
     )
 
-    return {'size': size, 'rank': rank, 'local_rank': local_rank}
+    return {'world_size': size, 'rank': rank, 'local_rank': local_rank}
 
 
 def setup_torch_distributed(
@@ -249,7 +256,7 @@ def setup_torch_distributed(
 
     if be in ['ddp', 'DDP']:
         dsetup = setup_torch_DDP(port)
-        size = dsetup['size']
+        size = dsetup['world_size']
         rank = dsetup['rank']
         local_rank = dsetup['local_rank']
 
@@ -286,8 +293,8 @@ def setup_torch_distributed(
 def setup_torch(
         seed: int,
         backend: str = 'horovod',
-        precision: str = 'float32',
         port: str = '2345',
+        precision: Optional[str] = None,
 ) -> int:
     import torch
     from l2hmc.common import seed_everything
@@ -321,7 +328,8 @@ def setup_torch(
         torch.set_num_threads(int(nthreads))
 
     # if precision == 'float64':
-    torch.set_default_dtype(dtypes.get(precision, torch.float32))
+    if precision is not None:
+        torch.set_default_dtype(dtypes.get(precision, torch.float32))
 
     if torch.cuda.is_available():
         torch.cuda.set_device(local_rank)
