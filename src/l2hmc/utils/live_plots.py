@@ -4,22 +4,25 @@ l2hmc/utils/live_plots.py
 Methods for plotting data.
 """
 from __future__ import absolute_import, annotations, division, print_function
+from dataclasses import dataclass
 import logging
 from typing import Optional, Sequence
-from dataclasses import dataclass
 from typing import Any, Union
 
 from IPython.display import DisplayHandle, display
 import matplotlib.pyplot as plt
 import matplotlib.style as mplstyle
 import numpy as np
-from l2hmc.utils.rich import is_interactive
+
+from l2hmc import get_logger
 from l2hmc.utils.plot_helpers import set_plot_style
+from l2hmc.utils.rich import is_interactive
 
 _ = mplstyle.use('fast')
 
 
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 mplog = logging.getLogger('matplotlib')
 mplog.setLevel('CRITICAL')
@@ -182,6 +185,8 @@ def init_live_plot(
         xlabel: Optional[str] = None,
         ylabel: Optional[str] = None,
         title: Optional[str] = None,
+        # ls: Optional[str] = None,
+        # marker: Optional[str] = None,
         **kwargs
 ):
     color = kwargs.pop('color', '#0096FF')
