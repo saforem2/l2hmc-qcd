@@ -56,7 +56,7 @@ defaults:
   # - optional local: default.yaml
   #
   - override hydra/hydra_logging: colorlog
-  - override hydra/job_logging: colorlog
+  - override hydra/job_logging: custom
   # - override hydra/launcher: joblib
 
   # https://hydra.cc/docs/tutorials/basic/running_your_app/logging/
@@ -64,6 +64,6 @@ defaults:
   # verbose: [src.train, src.utils]
 
 hydra:
-  verbose: false
+  verbose: l2hmc
   job:
     chdir: true
