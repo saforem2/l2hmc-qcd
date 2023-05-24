@@ -45,7 +45,9 @@ import l2hmc.utils.live_plots as plotter
 from tqdm.auto import trange
 
 # log = get_pylogger(__name__)
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
+from l2hmc import get_logger
+log = get_logger(__name__)
 
 Tensor = tf.Tensor
 Array = np.ndarray

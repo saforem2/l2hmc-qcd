@@ -6,7 +6,7 @@ Implements methods for training L2HMC sampler.
 from __future__ import absolute_import, annotations, division, print_function
 from collections import defaultdict
 from contextlib import nullcontext
-import logging
+# import logging
 import os
 
 import deepspeed
@@ -35,6 +35,7 @@ import wandb
 
 # from l2hmc.utils.logger import get_pylogger
 
+from l2hmc import get_logger
 import l2hmc.utils.live_plots as plotter
 from l2hmc.common import (
     ScalarLike,
@@ -63,7 +64,8 @@ from l2hmc.utils.step_timer import StepTimer
 # else:
 from tqdm.auto import trange
 
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 Tensor = torch.Tensor
 Module = torch.nn.modules.Module
@@ -209,7 +211,8 @@ class Trainer(BaseTrainer):
                 self.dynamics,
                 # find_unused_parameters=True
             )
-            self.grad_scaler = GradScaler()
+            if self.config.dynamics.group.lower() != 'su3':
+                self.grad_scaler = GradScaler()
 
         elif self.config.backend.lower() in ['ds', 'deepspeed']:
             self._setup_deepspeed()
@@ -221,11 +224,36 @@ class Trainer(BaseTrainer):
         else:
             self.optimizer = self._optimizer
 
+        if torch.cuda.is_available():
+            self.autocast_context_train = torch.autocast(  # type:ignore
+                # dtype=dtype,
+                device_type=self.device,
+                enabled=(self.device != 'cpu'),
+            )
+        # if self.device == 'cpu' or self._dtype == torch.float64:
+        else:
+            self.autocast_context_train = nullcontext()
+            # enable_autocast = False
+            self.warning('Disabling autocast!')
+            self.warning(f'Trainer.device: {self.device}')
+            self.warning(f'Trainer.dtype: {self._dtype}')
+
         assert (
             isinstance(self.dynamics, Dynamics)
             and isinstance(self.dynamics, nn.Module)
             and str(self.config.dynamics.group).upper() in ['U1', 'SU3']
         )
+
+    def count_parameters(self, model: Optional[nn.Module] = None) -> int:
+        """Count the total number of parameters in `model`."""
+        model = self.dynamics if model is None else model
+        num_params = sum(
+            p.numel() for p in model.parameters() if p.requires_grad
+        )
+        log.info(f'num_params in model: {num_params}')
+        if self.config.init_wandb and wandb.run is not None:
+            wandb.run.config['NUM_PARAMS'] = num_params
+        return num_params
 
     def _setup_deepspeed(self) -> None:
         # TODO: Move ds_config_path to `conf/config.yaml` to be overridable
@@ -491,8 +519,8 @@ class Trainer(BaseTrainer):
         ckpt_file = self.ckpt_dir.joinpath(
             f'ckpt-{era}-{epoch}-{step}-{tstamp}.tar'
         )
-        assert isinstance(self.dynamics.xeps, nn.ParameterList)
-        assert isinstance(self.dynamics.veps, nn.ParameterList)
+        # assert isinstance(self.dynamics.xeps, nn.ParameterList)
+        # assert isinstance(self.dynamics.veps, nn.ParameterList)
         xeps = [e.detach().cpu().numpy() for e in self.dynamics.xeps]
         veps = [e.detach().cpu().numpy() for e in self.dynamics.veps]
         ckpt = {
@@ -791,7 +819,6 @@ class Trainer(BaseTrainer):
         xi = self.g.compat_proj(
             self.dynamics.unflatten(xi.to(self.device))
         )
-
         xo, metrics = self.dynamics.apply_transition_hmc(
             (xi, beta), eps=eps, nleapfrog=nleapfrog,
         )
@@ -812,26 +839,16 @@ class Trainer(BaseTrainer):
         self.dynamics.eval()
         xinit, beta = inputs
         beta = torch.tensor(beta).to(self.device)
-        # xinit = xinit.to(self.device)
         xinit = self.g.compat_proj(
             self.dynamics.unflatten(xinit.to(self.device))
         )
-        # with torch.autocast(  # type:ignore
-        #         device_type='cuda' if WITH_CUDA else 'cpu',
-        #         dtype=torch.float32
-        # ):
         xout, metrics = self.dynamics((xinit, beta))
-
         xprop = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
         if self.config.dynamics.verbose:
             lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
             metrics.update(lmetrics)
-
-        metrics.update({
-            'loss': loss.item(),
-        })
-        self.dynamics.train()
+        metrics.update({'loss': loss.item()})
         return xout.detach(), metrics
 
     def get_context_manager(
@@ -1089,7 +1106,6 @@ class Trainer(BaseTrainer):
                         self.info(summary)
 
                     refresh_view()
-
                     if avgs.get('acc', 1.0) < 1e-5:
                         if stuck_counter < patience:
                             stuck_counter += 1
@@ -1139,7 +1155,122 @@ class Trainer(BaseTrainer):
             'tables': tables,
         }
 
+    def calc_loss(
+            self,
+            xinit: torch.Tensor,
+            xprop: torch.Tensor,
+            acc: torch.Tensor,
+    ) -> torch.Tensor:
+        with self.autocast_context_train:
+            loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=acc)
+        return loss
+
+    def forward_step(
+            self,
+            x: torch.Tensor,
+            beta: torch.Tensor,
+    ) -> tuple[torch.Tensor, dict]:
+        x = self.g.compat_proj(x.reshape(self.xshape))
+        x.requires_grad_(True)
+        self.optimizer.zero_grad()
+        with self.autocast_context_train:
+            if self._gstep == 0 and self._is_chief:
+                log.debug(f'[TRAINING] x.dtype: {x.dtype}')
+                log.debug(f'[TRAINING] x.device: {x.device}')
+            if self.dynamics_engine is not None:
+                xout, metrics = self.dynamics_engine((x, beta))
+            else:
+                xout, metrics = self.dynamics((x, beta))
+        return xout, metrics
+
+    def backward_step(
+            self,
+            loss: torch.Tensor
+    ) -> torch.Tensor:
+        """Backpropagate gradients."""
+        if (
+                self.config.backend.lower() in ['ds', 'deepspeed']
+                and self.dynamics_engine is not None
+        ):
+            self.dynamics_engine.backward(loss)  # type:ignore
+            self.dynamics_engine.step()  # type:ignore
+        else:
+            if self.grad_scaler is not None:
+                self.grad_scaler.scale(loss).backward()  # type:ignore
+                if self.config.learning_rate.clip_norm > 0.0:
+                    self.grad_scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad.clip_grad_norm(
+                        self.dynamics.parameters(),
+                        self.config.learning_rate.clip_norm
+                    )
+                    self.grad_scaler.step(self.optimizer)
+                    self.grad_scaler.update()
+                else:
+                    self.grad_scaler.step(self.optimizer)
+                    self.grad_scaler.update()
+            else:
+                if self.config.learning_rate.clip_norm > 0.0:
+                    torch.nn.utils.clip_grad.clip_grad_norm(
+                        self.dynamics.parameters(),
+                        max_norm=self.clip_norm
+                    )
+                loss.backward()
+                self.optimizer.step()
+        return loss
+
     def train_step(
+            self,
+            inputs: tuple[Tensor, Tensor | float],
+    ) -> tuple[Tensor, dict]:
+        """Logic for performing a single training step"""
+        xinit, beta = inputs
+        xinit = self.g.compat_proj(xinit.reshape(self.xshape))
+        beta = torch.tensor(beta) if isinstance(beta, float) else beta
+        if WITH_CUDA:
+            if self.config.dynamics.group == 'U1':
+                # Send to GPU with specified (real) precision
+                xinit = xinit.to(self.device)  # .to(self._dtype)
+                beta = beta.to(self.device)  # .to(self._dtype)
+                # xinit, beta = xinit.cuda(), beta.cuda()
+        if self.use_fp16:
+            xinit = xinit.half()
+            beta = beta.half()
+        # ====================================================================
+        # -----------------------  Train step  -------------------------------
+        # ====================================================================
+        # 1. Call model on inputs to generate:
+        #      a. PROPOSAL config `xprop`   (before MH acc / rej)
+        #      b. OUTPUT config `xout`      (after MH acc / rej)
+        # 2. Calc loss using `xinit`, `xprop` and `acc` (acceptance rate)
+        # 3. Backpropagate gradients and update network weights
+        # --------------------------------------------------------------------
+        xout, metrics = self.forward_step(x=xinit, beta=beta)
+        xprop = metrics.pop('mc_states').proposed.x
+        loss = self.calc_loss(xinit=xinit, xprop=xprop, acc=metrics['acc'])
+        if (aw := self.config.loss.aux_weight) > 0:
+            yinit = self.dynamics.unflatten(
+                self.g.random(xout.shape).to(self.device)
+            )
+            _, metrics_ = self.forward_step(x=yinit, beta=beta)
+            yprop = metrics_.pop('mc_states').proposed.x
+            aux_loss = self.calc_loss(
+                xinit=yinit,
+                xprop=yprop,
+                acc=metrics_['acc']
+            )
+            loss += aw * aux_loss
+        loss = self.backward_step(loss)
+        if isinstance(loss, Tensor):
+            loss = loss.item()
+        metrics['loss'] = loss
+        if self.config.dynamics.verbose:
+            with torch.no_grad():
+                lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
+                metrics.update(lmetrics)
+
+        return xout.detach(), metrics
+
+    def train_step_old(
             self,
             inputs: tuple[Tensor, Tensor | float],
     ) -> tuple[Tensor, dict]:
@@ -1323,10 +1454,6 @@ class Trainer(BaseTrainer):
             x = self.dynamics.lattice.random()
         if beta is None:
             beta = self.config.annealing_schedule.beta_init
-
-        # if isinstance(beta, float):
-        #     beta = torch.tensor(beta).to(self.device)
-
         self.timers[job_type].start()
         if job_type == 'eval':
             xout, metrics = self.eval_step((x, beta))
@@ -1336,7 +1463,6 @@ class Trainer(BaseTrainer):
             raise ValueError(
                 f'Job type should be eval or hmc, got: {job_type}'
             )
-
         dt = self.timers[job_type].stop()
         record = {
             'dt': dt,
@@ -1350,11 +1476,6 @@ class Trainer(BaseTrainer):
             step=self._gstep,
             metrics=record,
             job_type=job_type,
-            # run=run,
-            # arun=arun,
-            # writer=writer,
-            # model=self.dynamics,
-            # optimizer=self.optimizer,
         )
         if verbose:
             log.info(summary)
@@ -1426,13 +1547,16 @@ class Trainer(BaseTrainer):
                 )
 
             summary = ""
-            for epoch in trange(
+            bar = trange(
                     nepoch,
                     dynamic_ncols=True,
                     disable=(not self._is_chief),
                     desc='Training',
-                    leave=True
-            ):
+                    leave=True,
+                    position=0,
+            )
+            # bar.set_postfix_str('\n')
+            for epoch in bar:
                 self.timers['train'].start()
                 x, metrics = self.train_step((x, beta))  # type:ignore
                 self._gstep += 1
@@ -1506,6 +1630,7 @@ class Trainer(BaseTrainer):
                 if should_print(epoch):
                     refresh_view()
                     log.info(summary)
+                    # bar.write(summary)
 
                 if isinstance(ctx, Live):
                     # ctx.console.clear()

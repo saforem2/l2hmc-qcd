@@ -23,7 +23,9 @@ from l2hmc.utils.rich import add_columns, get_console
 from l2hmc.utils.step_timer import StepTimer
 
 
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
+from l2hmc import get_logger
+log = get_logger(__name__)
 
 
 class BaseTrainer(ABC):
