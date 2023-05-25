@@ -66,15 +66,13 @@ class StepTimer:
         elapsed = np.sum(self.data)
         num_evals = evals_per_step * len(self.data)
         eval_rate = num_evals / elapsed
-        output = {
+        return {
             'eval_rate': eval_rate,
             'elapsed': elapsed,
             'num_evals': num_evals,
             'num_steps': len(self.data),
             'evals_per_step': evals_per_step,
         }
-
-        return output
 
     def write_eval_rate(
             self,

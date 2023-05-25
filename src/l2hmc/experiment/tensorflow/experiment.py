@@ -189,8 +189,7 @@ class Experiment(BaseExperiment):
         return super()._init_wandb()
 
     def init_aim(self):
-        run = super()._init_aim()
-        return run
+        return super()._init_aim()
 
     def get_summary_writer(self, outdir: Optional[os.PathLike] = None):
         outdir = self._outdir if outdir is None else outdir
@@ -272,7 +271,7 @@ class Experiment(BaseExperiment):
             nprint: Optional[int] = None,
     ) -> dict:
         """Evaluate model."""
-        assert job_type in ['eval', 'hmc']
+        assert job_type in {'eval', 'hmc'}
         if not self.trainer._is_chief:
             return {}
 

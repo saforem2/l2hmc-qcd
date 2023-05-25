@@ -150,13 +150,11 @@ def norm2(
 ) -> Tensor:
     """No reduction if axis is empty"""
     # n = torch.real(torch.multiply(x.conj(), x))
-    if x.dtype == torch.complex64 or x.dtype == torch.complex128:
+    if x.dtype in [torch.complex64, torch.complex128]:
         x = x.abs()
     n = x.square()
     if exclude is None:
-        if len(axis) == 0:
-            return n
-        return n.sum(tuple(axis))
+        return n if len(axis) == 0 else n.sum(tuple(axis))
     return n.sum([i for i in range(len(n.shape)) if i not in exclude])
 
 

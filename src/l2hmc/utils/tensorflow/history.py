@@ -20,17 +20,16 @@ class History(BaseHistory):
             avg = None
             if isinstance(val, (float, int)):
                 avg = val
+            elif isinstance(val, dict):
+                for k, v in val.items():
+                    key = f'{key}/{k}'
+                    try:
+                        avg = self._update(key=key, val=v)
+                    # TODO: Figure out how to deal with exception
+                    except tf.errors.InvalidArgumentError:
+                        continue
             else:
-                if isinstance(val, dict):
-                    for k, v in val.items():
-                        key = f'{key}/{k}'
-                        try:
-                            avg = self._update(key=key, val=v)
-                        # TODO: Figure out how to deal with exception
-                        except tf.errors.InvalidArgumentError:
-                            continue
-                else:
-                    avg = self._update(key=key, val=val)
+                avg = self._update(key=key, val=val)
 
             if avg is not None:
                 avgs[key] = avg

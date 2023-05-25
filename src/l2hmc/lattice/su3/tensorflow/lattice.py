@@ -143,8 +143,7 @@ class LatticeSU3(Lattice):
         xv = x[:, v]  # type:ignore
         xuv = self.g.mul(xu, tf.roll(xv, shift=-1, axis=u+1))
         xvu = self.g.mul(xv, tf.roll(xu, shift=-1, axis=v+1))
-        plaq = self.g.trace(self.g.mul(xuv, xvu, adjoint_b=True))
-        return plaq
+        return self.g.trace(self.g.mul(xuv, xvu, adjoint_b=True))
 
     def _wilson_loops(
             self,
@@ -367,27 +366,27 @@ class LatticeSU3(Lattice):
         if beta is not None:
             # s = self.action(x, beta)
             s, dsdx = self.action_with_grad(x, beta)
-            metrics.update({
+            metrics |= {
                 'action': s,
                 'dsdx': dsdx,
-            })
+            }
             if xinit is not None:
                 # action_ = self.action(xinit, beta)
                 s_, dsdx_ = self.action_with_grad(xinit, beta)
-                metrics.update({
+                metrics |= {
                     'daction': tf.abs(tf.subtract(s, s_)),
-                    'dsdx': tf.abs(tf.subtract(dsdx, dsdx_))
-                })
+                    'dsdx': tf.abs(tf.subtract(dsdx, dsdx_)),
+                }
 
         if xinit is not None:
             wloops_ = self.wilson_loops(xinit)
             plaqs_ = self.plaqs(wloops=wloops_)
             q_ = self._charges(wloops=wloops_)
-            metrics.update({
+            metrics |= {
                 'dplaqs': tf.abs(plaqs, plaqs_),
                 'dQint': tf.abs(q.intQ - q_.intQ),
                 'dQsin': tf.abs(q.sinQ - q_.sinQ),
-            })
+            }
 
         if beta is not None:
             s = self.action(x, beta)

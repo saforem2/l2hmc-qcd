@@ -222,7 +222,7 @@ class BaseExperiment(ABC):
             'eval': Path(outdir).joinpath('eval'),
             'hmc': Path(outdir).joinpath('hmc')
         }
-        for _, val in jobdirs.items():
+        for val in jobdirs.values():
             val.mkdir(exist_ok=True, parents=True)
 
         return outdir, jobdirs

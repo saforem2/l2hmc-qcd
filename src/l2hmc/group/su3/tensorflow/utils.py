@@ -74,10 +74,7 @@ d777 = 0.57735026918962576451
 def norm2(x: Tensor, axis=[-2, -1]) -> Tensor:
     """No reduction if axis is empty"""
     n = tf.math.real(tf.math.multiply(tf.math.conj(x), x))
-    if len(axis) == 0:
-        return n
-
-    return tf.math.reduce_sum(n, axis=axis)
+    return n if len(axis) == 0 else tf.math.reduce_sum(n, axis=axis)
 
 
 def norm2_new(
@@ -92,9 +89,7 @@ def norm2_new(
         x = tf.abs(x)
     n = tf.math.square(x)
     if exclude is None:
-        if len(axis) == 0:
-            return n
-        return tf.math.reduce_sum(n, axis=axis)
+        return n if len(axis) == 0 else tf.math.reduce_sum(n, axis=axis)
     return tf.math.reduce_sum(
         n,
         axis=[i for i in range(len(n.shape)) if i not in exclude]
@@ -230,21 +225,15 @@ def projectSU(x: Tensor) -> Tensor:
         TF_FLOAT
     )
     p = const * at2
-    # p = (1.0 / (-nc)) * tf.math.atan2(tf.math.imag(d), tf.math.real(d))
-    # y = m * tf.cast(
-    y = tf.math.multiply(m, tf.cast(
-        tf.reshape(
-            tf.complex(
-                tf.math.cos(p),
-                tf.math.sin(p)
+    return tf.math.multiply(
+        m,
+        tf.cast(
+            tf.reshape(
+                tf.complex(tf.math.cos(p), tf.math.sin(p)), p.shape + [1, 1]
             ),
-            p.shape + [1, 1]
+            m.dtype,
         ),
-        m.dtype
-    ))
-
-    # return tf.cast(y, TF_COMPLEX)
-    return y
+    )
 
 
 def projectTAH(x: Tensor) -> Tensor:
@@ -795,13 +784,9 @@ def SU3JacobianTF(
         t.watch(v)
         Z = f(tf.linalg.expm(vec_to_su3(v)) @ x)
         # Z = f(tf.linalg.matmul(exp(vec_to_su3(v)),x))
-        if is_SU3:
-            z = Z @ tf.linalg.adjoint(tf.stop_gradient(Z))
-            # z = tf.linalg.matmul(Z,tf.stop_gradient(Z),adjoint_b=True)
-        else:
-            z = Z
+        z = Z @ tf.linalg.adjoint(tf.stop_gradient(Z)) if is_SU3 else Z
         z = su3_to_vec(z)
-        # z = su3vec(z)
+            # z = su3vec(z)
     tj = t.jacobian(z, v, experimental_use_pfor=False)
     return Z, tj
 
@@ -830,14 +815,13 @@ def SU3JacobianTFMat(f, x, is_SU3=True):
     with tf.GradientTape(watch_accessed_variables=False, persistent=True) as t:
         t.watch(x)
         Z = f(x)
-        if is_SU3:
-            z = tf.linalg.matmul(
-                Z, tf.stop_gradient(Z), adjoint_b=True
-            )
-        else:
-            z = Z
+        z = (
+            tf.linalg.matmul(Z, tf.stop_gradient(Z), adjoint_b=True)
+            if is_SU3
+            else Z
+        )
         z = tf.cast(su3_to_vec(z), TF_COMPLEX)
-        # z = tf.cast(su3vec(z), tf.complex128)
+            # z = tf.cast(su3vec(z), tf.complex128)
     jzx = t.jacobian(z, x, experimental_use_pfor=False)
     tj = tf.math.real(
         tf.einsum(

@@ -210,12 +210,11 @@ class Dynamics(nn.Module):
         """Build networks."""
         split = self.config.use_split_xnets
         n = self.nlf if self.config.use_separate_networks else 1
-        networks = network_factory.build_networks(
+        return network_factory.build_networks(
             n,
             split,
             group=self.g,
         )
-        return networks
 
     @torch.no_grad()
     def init_weights(
@@ -245,35 +244,34 @@ class Dynamics(nn.Module):
                             nn.init.constant_(m.bias, bias)
                     if constant is not None:
                         nn.init.constant_(m.weight, constant)
+                    elif method == 'uniform':
+                        a = 0.0 if min is None else min
+                        b = 1.0 if max is None else max
+                        nn.init.uniform_(m.weight, a=a, b=b)
+                    elif method == 'normal':
+                        mean = 0.0 if mean is None else mean
+                        std = 1.0 if std is None else std
+                        nn.init.normal_(m.weight, mean=mean, std=std)
+                    elif method == 'xavier_uniform':
+                        nn.init.xavier_uniform_(m.weight)
+                    elif method == 'kaiming_uniform':
+                        nn.init.kaiming_uniform_(m.weight)
+                    elif method == 'xavier_normal':
+                        nn.init.xavier_normal_(m.weight)
+                    elif method == 'kaiming_normal':
+                        nn.init.kaiming_normal_(m.weight)
                     else:
-                        if method == 'uniform':
-                            a = 0.0 if min is None else min
-                            b = 1.0 if max is None else max
-                            nn.init.uniform_(m.weight, a=a, b=b)
-                        elif method == 'normal':
-                            mean = 0.0 if mean is None else mean
-                            std = 1.0 if std is None else std
-                            nn.init.normal_(m.weight, mean=mean, std=std)
-                        elif method == 'xavier_uniform':
+                        try:
+                            method = getattr(nn.init, method)
+                            if method is not None and callable(method):
+                                method(m.weight)
+                        except NameError:
+                            log.warning('. '.join([
+                                'Unable to initialize weights',
+                                f' with {method}',
+                                'Falling back to default: xavier_uniform_'
+                            ]))
                             nn.init.xavier_uniform_(m.weight)
-                        elif method == 'kaiming_uniform':
-                            nn.init.kaiming_uniform_(m.weight)
-                        elif method == 'xavier_normal':
-                            nn.init.xavier_normal_(m.weight)
-                        elif method == 'kaiming_normal':
-                            nn.init.kaiming_normal_(m.weight)
-                        else:
-                            try:
-                                method = getattr(nn.init, method)
-                                if method is not None and callable(method):
-                                    method(m.weight)
-                            except NameError:
-                                log.warning('. '.join([
-                                    'Unable to initialize weights',
-                                    f' with {method}',
-                                    'Falling back to default: xavier_uniform_'
-                                ]))
-                                nn.init.xavier_uniform_(m.weight)
 
     def save(self, outdir: os.PathLike) -> None:
         netdir = Path(outdir).joinpath('networks')
@@ -365,11 +363,11 @@ class Dynamics(nn.Module):
         x, beta = inputs
         x = x.to(self._device)  # .to(self._dtype)
         beta = beta.to(self._device)  # .to(self._dtype)
-        if self.config.merge_directions:
-            outputs = self.apply_transition_fb(inputs)
-        else:
-            outputs = self.apply_transition(inputs)
-        return outputs
+        return (
+            self.apply_transition_fb(inputs)
+            if self.config.merge_directions
+            else self.apply_transition(inputs)
+        )
 
     def flatten(self, x: Tensor) -> Tensor:
         return x.reshape(x.shape[0], -1)
@@ -523,12 +521,12 @@ class Dynamics(nn.Module):
                 vprop = ma * (mf * vf + mb * vb)
             metrics[key] = vprop
 
-        metrics.update({
+        metrics |= {
             'acc': acc,
             'acc_mask': ma_,
             'sumlogdet': logdet,
             'mc_states': mc_states,
-        })
+        }
         return x_out, metrics
 
     def random_state(self, beta: float) -> State:
@@ -600,7 +598,7 @@ class Dynamics(nn.Module):
             'logdet': logdet,
         }
         if extras is not None:
-            metrics.update(extras)
+            metrics |= extras
         if step is not None:
             assert isinstance(self.xeps, nn.ParameterList)
             assert isinstance(self.veps, nn.ParameterList)
@@ -800,10 +798,9 @@ class Dynamics(nn.Module):
             log.warning('Complex sumlogdet! Taking norm...?')
             sumlogdet = sumlogdet.norm()
         dh = h_init - h_prop + sumlogdet
-        prob = torch.exp(
+        return torch.exp(
             torch.minimum(dh, torch.zeros_like(dh, device=dh.device))
         ).to(state_init.x.device)
-        return prob
 
     @staticmethod
     def _get_accept_masks(px: Tensor) -> tuple[Tensor, Tensor]:
@@ -857,9 +854,7 @@ class Dynamics(nn.Module):
         if self.config.use_separate_networks:
             xnet = self.xnet.get_submodule(str(step))
             if self.config.use_split_xnets:
-                if first:
-                    return xnet.get_submodule('first')
-                return xnet.get_submodule('second')
+                return xnet.get_submodule('first') if first else xnet.get_submodule('second')
             return xnet
         return self.xnet
 

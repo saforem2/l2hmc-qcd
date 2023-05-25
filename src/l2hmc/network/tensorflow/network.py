@@ -260,26 +260,23 @@ class ConvStack(Layer):
         weights = {}
         # for idx, layer in self.conv_layers:
         for name, layer in zip(self._layers_names, self.conv_layers):
-            lweights = getattr(layer, 'weights', [])
-            if len(lweights) > 0:
-                weights.update({
-                    f'{name}/weight': lweights
-                })
+            if lweights := getattr(layer, 'weights', []):
+                weights[f'{name}/weight'] = lweights
         w, b = self.output_layer.weights
         if self.batch_norm is not None:
             assert isinstance(self.batch_norm, tf.keras.layers.BatchNorm)
             g, b, m, s = self.batch_norm.weights
             pre = 'batch_norm'
-            weights.update({
+            weights |= {
                 f'{pre}/gamma': g,
                 f'{pre}/beta': b,
                 f'{pre}/moving_avg': m,
                 f'{pre}/moving_std': s,
-            })
-        weights.update({
+            }
+        weights |= {
             'DenseOutput.weight': w,
             'DenseOutput.bias': b,
-        })
+        }
 
         return weights
 
@@ -384,7 +381,7 @@ class InputLayer(Model):
         self.conv_stack = None
         self.conv_config = conv_config
         filters = getattr(conv_config, 'filters', [])
-        if conv_config is not None and len(filters) > 0:
+        if conv_config is not None and filters:
             self.conv_stack = ConvStack(
                 xshape=xshape,
                 conv_config=conv_config,
@@ -398,15 +395,12 @@ class InputLayer(Model):
         weights = {}
         filters = getattr(self.conv_config, 'filters', [])
         if (
-                self.conv_config is not None
-                and len(filters) > 0
-                and self.conv_stack is not None
+            self.conv_config is not None
+            and filters
+            and self.conv_stack is not None
         ):
-            if self.conv_stack is not None:
-                wd = self.conv_stack.get_weights_dict()
-                weights.update({
-                    f'{self.name}/ConvStack': wd,
-                })
+            wd = self.conv_stack.get_weights_dict()
+            weights[f'{self.name}/ConvStack'] = wd
         # if self.conv_stack is not None:
         #     weights.update({
         #         f'{self.name}.ConvStack': self.conv_stack.get_weights_dict()
@@ -414,12 +408,12 @@ class InputLayer(Model):
 
         xw, xb = self.xlayer.weights
         vw, vb = self.vlayer.weights
-        weights.update({
+        weights |= {
             f'{self.name}/xlayer/w': xw,
             f'{self.name}/xlayer/b': xb,
             f'{self.name}/vlayer/w': vw,
             f'{self.name}/vlayer/b': vb,
-        })
+        }
 
         return weights
 
@@ -498,28 +492,20 @@ class LeapfrogLayer(Model):
             self.batch_norm = BatchNormalization(-1, name=f'{name}_batchnorm')
 
     def get_layer_weights(self) -> dict:
-        weights = {}
-        # iweights = self.input_layer.get_weights_dict()
-        weights.update({
-            'input_layer': self.input_layer.get_weights_dict()
-        })
+        weights = {'input_layer': self.input_layer.get_weights_dict()}
         for idx, layer in enumerate(self.hidden_layers):
             w, b = layer.weights
-            weights.update({})
+            weights |= {}
             weights[f'hidden_layers.{idx}.weight'] = w
             weights[f'hidden_layers.{idx}.bias'] = b
 
-        weights.update({
-            'scale': self.scale.get_weights_dict()
-        })
+        weights['scale'] = self.scale.get_weights_dict()
         tw, tb = self.transl.weights
         weights.update({
             'transl.weight': tw,
             'transl.bias': tb,
         })
-        weights.update({
-            'transf': self.transf.get_weights_dict()
-        })
+        weights['transf'] = self.transf.get_weights_dict()
 
         return weights
 

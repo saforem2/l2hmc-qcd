@@ -117,13 +117,12 @@ class BaseLatticeSU3:
                     ud = self.g.mul(yvu, yv, adjoint_b=True)
                     ul_ = np.roll(ul, shift=-1, axis=u+1)
                     ud_ = np.roll(ud, shift=-1, axis=v+1)
-                    rects.append(
-                        self.g.trace(self.g.mul(ur, ul_, adjoint_b=True))
+                    rects.extend(
+                        (
+                            self.g.trace(self.g.mul(ur, ul_, adjoint_b=True)),
+                            self.g.trace(self.g.mul(uu, ud_, adjoint_b=True)),
+                        )
                     )
-                    rects.append(
-                        self.g.trace(self.g.mul(uu, ud_, adjoint_b=True))
-                    )
-
         return plaqs, rects
 
     def _plaquettes(self, x: Array) -> Array:

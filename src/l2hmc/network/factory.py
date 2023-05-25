@@ -41,7 +41,7 @@ class BaseNetworkFactory(ABC):
             # 'network_config': asdict(self.network_config),
         }
         if conv_config is not None:
-            self.config.update({'conv_config': asdict(self.conv_config)})
+            self.config['conv_config'] = asdict(self.conv_config)
 
     def get_build_configs(self):
         return {

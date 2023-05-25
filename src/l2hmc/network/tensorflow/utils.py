@@ -14,10 +14,7 @@ Layer = tf.keras.layers.Layer
 def zero_weights(model: tf.keras.Model):
     for layer in model.layers:
         weights = layer.get_weights()
-        zeros = []
-        for w in weights:
-            zeros.append(np.zeros_like(w))
-
+        zeros = [np.zeros_like(w) for w in weights]
         layer.set_weights(zeros)
 
     return model
@@ -29,9 +26,7 @@ def periodic_padding(x: Tensor, padding: int = 1) -> Tensor:
     partial_x = tf.concat([upper_pad, x, lower_pad], axis=0)
     left_pad = partial_x[:, -padding:]
     right_pad = partial_x[:, :padding]
-    x_padded = tf.concat([left_pad, partial_x, right_pad], axis=1)
-
-    return x_padded
+    return tf.concat([left_pad, partial_x, right_pad], axis=1)
 
 
 # pylint:disable=unused-argument

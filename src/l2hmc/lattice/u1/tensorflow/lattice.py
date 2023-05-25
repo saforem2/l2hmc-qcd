@@ -31,8 +31,7 @@ def plaq_exact(beta: float | Tensor) -> Tensor:
     """Computes the expected value of the avg. plaquette for 2D U(1)."""
     if isinstance(beta, float):
         beta = tf.constant(beta, dtype=TF_FLOAT)
-    pexact = tf.constant(tf.math.bessel_i1(beta) / tf.math.bessel_i0(beta))
-    return pexact
+    return tf.constant(tf.math.bessel_i1(beta) / tf.math.bessel_i0(beta))
 
 
 def project_angle(x):
@@ -106,15 +105,13 @@ class LatticeU1(Lattice):
 
     def grad_action(self, x: Tensor, beta: Tensor) -> Tensor:
         """Compute the gradient of the potential function."""
-        if tf.executing_eagerly():
-            with tf.GradientTape() as tape:
-                tape.watch(x)
-                pe = self.action(x, beta)
-            grad = tape.gradient(pe, x)
-        else:
-            grad = tf.gradients(self.action(x, beta), [x])[0]
+        if not tf.executing_eagerly():
+            return tf.gradients(self.action(x, beta), [x])[0]
 
-        return grad
+        with tf.GradientTape() as tape:
+            tape.watch(x)
+            pe = self.action(x, beta)
+        return tape.gradient(pe, x)
 
     def calc_metrics(
             self,
@@ -133,25 +130,25 @@ class LatticeU1(Lattice):
 
         if beta is not None:
             pexact = plaq_exact(beta) * tf.ones_like(plaqs)
-            metrics.update({
-               'plaqs_err': pexact - plaqs,
-               'action': self.action(x, beta),
-            })
+            metrics |= {
+                'plaqs_err': pexact - plaqs,
+                'action': self.action(x, beta),
+            }
 
         if xinit is not None:
             wloops_ = self.wilson_loops(xinit)
             plaqs_ = self.plaqs(wloops=wloops_)
             charges_ = self.charges(wloops=wloops_)
-            metrics.update({
+            metrics |= {
                 'dplaqs': tf.abs(tf.subtract(plaqs, plaqs_)),
                 'dQint': tf.abs(charges.intQ - charges_.intQ),
                 'dQsin': tf.abs(charges.sinQ - charges_.sinQ),
-            })
-            # if beta is not None:
-            #     action_ = self.action(xinit, beta)
-            #     metrics.update({
-            #         'daction': tf.abs(metrics['action'] - action_),
-            #     })
+            }
+                # if beta is not None:
+                #     action_ = self.action(xinit, beta)
+                #     metrics.update({
+                #         'daction': tf.abs(metrics['action'] - action_),
+                #     })
 
         return metrics
 

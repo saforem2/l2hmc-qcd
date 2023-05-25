@@ -87,7 +87,6 @@ def plot_models(dynamics: Dynamics, logdir: os.PathLike):
             )
         except Exception:
             log.warning('Unable to plot dynamics networks, continuing!')
-            pass
 
 
 def reset_optimizer(optimizer: Optimizer):
@@ -302,8 +301,7 @@ class Trainer(BaseTrainer):
         if not self._is_chief or not self.config.save:
             return
 
-        ckpt = manager.save()
-        return ckpt
+        return manager.save()
 
     def should_log(self, epoch):
         return (
@@ -331,14 +329,14 @@ class Trainer(BaseTrainer):
             log_weights: bool = True,
     ):
         # record = {} if record is None else record
-        assert job_type in ['train', 'eval', 'hmc']
+        assert job_type in {'train', 'eval', 'hmc'}
         if step is None:
             timer = self.timers.get(job_type, None)
             if isinstance(timer, StepTimer):
                 step = timer.iterations
 
         if step is not None:
-            metrics.update({f'{job_type[0]}step': step})
+            metrics[f'{job_type[0]}step'] = step
 
         if job_type == 'train' and step is not None:
             metrics['lr'] = K.get_value(self.optimizer.lr)
@@ -346,11 +344,11 @@ class Trainer(BaseTrainer):
         if job_type == 'eval':
             _ = metrics.pop('eps', None)
 
-        if job_type in ['hmc']:
+        if job_type in {'hmc'}:
             _ = metrics.pop('xeps', None)
             _ = metrics.pop('veps', None)
 
-        metrics.update(self.metrics_to_numpy(metrics))
+        metrics |= self.metrics_to_numpy(metrics)
         avgs = self.histories[job_type].update(metrics)
         summary = summarize_dict(avgs)
 
@@ -524,13 +522,12 @@ class Trainer(BaseTrainer):
         return xout, metrics
 
     def get_context_manager(self, table: Table) -> Live | nullcontext:
-        make_live = (
+        if make_live := (
             self._is_chief
-            and self.size == 1       # not worth the trouble when distributed
+            and self.size == 1  # not worth the trouble when distributed
             and not is_interactive()  # AND not in a jupyter / ipython kernel
-            and int(get_width()) > 120    # make sure wide enough to fit table
-        )
-        if make_live:
+            and int(get_width()) > 120  # make sure wide enough to fit table
+        ):
             return Live(
                 table,
                 # screen=True,
@@ -1241,10 +1238,7 @@ class Trainer(BaseTrainer):
         assert nera is not None
         assert train_dir is not None
 
-        plots = None
-        if is_interactive() and make_plots:
-            plots = plotter.init_plots()
-
+        plots = plotter.init_plots() if is_interactive() and make_plots else None
         for era in range(nera):
             b = tf.constant(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
@@ -1437,11 +1431,7 @@ class Trainer(BaseTrainer):
                 step = step.item()  # type:ignore
 
         for key, val in metrics.items():
-            if prefix is not None:
-                name = f'{prefix}/{key}'
-            else:
-                name = f'{key}'
-
+            name = f'{prefix}/{key}' if prefix is not None else f'{key}'
             akws = {
                 'step': step,
                 'name': name,
@@ -1461,8 +1451,6 @@ class Trainer(BaseTrainer):
                         prefix=f'{name}/{k}',
                     )
             elif isinstance(val, (Tensor, ops.EagerTensor, np.ndarray)):
-                if isinstance(val, ops.EagerTensor):
-                    val = val.numpy()
                 # check to see if we should track as Distribution
                 if is_dist(val):
                     dist = Distribution(val)

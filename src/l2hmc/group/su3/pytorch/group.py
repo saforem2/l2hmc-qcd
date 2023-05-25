@@ -60,13 +60,9 @@ class SU3(Group):
             adjoint_a: bool = False,
             adjoint_b: bool = False,
     ) -> Tensor:
-        if adjoint_a and adjoint_b:
-            return a.adjoint() @ b.adjoint()
         if adjoint_a:
-            return a.adjoint() @ b
-        if adjoint_b:
-            return a @ b.adjoint()
-        return a @ b
+            return a.adjoint() @ b.adjoint() if adjoint_b else a.adjoint() @ b
+        return a @ b.adjoint() if adjoint_b else a @ b
 
     def adjoint(self, x: Tensor) -> Tensor:
         return x.adjoint()
@@ -217,9 +213,7 @@ class SU3(Group):
             x = x.abs()
         n = x.square()
         if exclude is None:
-            if len(axis) == 0:
-                return n
-            return n.sum(*axis)
+            return n if len(axis) == 0 else n.sum(*axis)
         return n.sum([
             i for i in range(len(n.shape)) if i not in exclude
         ])

@@ -655,11 +655,10 @@ class ExperimentConfig(BaseConfig):
         fname = self.ds_config_path if fpath is None else fpath
         assert fname is not None
         cpath = Path(fname)
-        ds_config = {}
         if cpath.is_file():
             pass
 
-        return ds_config
+        return {}
 
     def set_ds_config(self, ds_config: dict) -> None:
         self.ds_config = ds_config
@@ -804,22 +803,18 @@ class Annealear:
 
         if drop is not None:
             if isinstance(drop, int):
-                # If passed as an int, we should interpret as num to drop
-                if drop > 1:
-                    y = y[drop:]
-                    if x is not None:
-                        x = x[drop:]
-                else:
+                if drop <= 1:
                     raise ValueError('Expected `drop` to be an int > 1')
+                y = y[drop:]
+                if x is not None:
+                    x = x[drop:]
             elif isinstance(drop, float):
-                # If passed as a float, we should interpret as a percentage
-                if drop < 1.:
-                    frac = drop * len(y)
-                    y = y[frac:]
-                    if x is not None:
-                        x = x[frac:]
-                else:
+                if drop >= 1.0:
                     raise ValueError('Expected `drop` to be a float < 1.')
+                frac = drop * len(y)
+                y = y[frac:]
+                if x is not None:
+                    x = x[frac:]
             else:
                 raise ValueError(
                     'Expected drop to be one of `int` or `float`.'
@@ -867,20 +862,19 @@ class Annealear:
         if new_best < self._prev_best or avg_slope < 0:
             # Loss has improved from previous best, return new_beta (increase)
             return new_beta
-        else:
-            # Loss has NOT improved from previous best
-            current_beta_count = Counter(self.betas).get(current_beta)
-            if (
-                    current_beta_count is not None
-                    and isinstance(current_beta_count, int)
-                    and current_beta_count > self.patience
-            ):
-                # If we've exhausted our patience
-                # at the current_beta, return prev_beta (decrease)
-                return prev_beta
+        # Loss has NOT improved from previous best
+        current_beta_count = Counter(self.betas).get(current_beta)
+        if (
+                current_beta_count is not None
+                and isinstance(current_beta_count, int)
+                and current_beta_count > self.patience
+        ):
+            # If we've exhausted our patience
+            # at the current_beta, return prev_beta (decrease)
+            return prev_beta
 
-            # If we're still being patient, return current_beta (no change)
-            return current_beta
+        # If we're still being patient, return current_beta (no change)
+        return current_beta
 
 
 def get_config(overrides: Optional[list[str]] = None):

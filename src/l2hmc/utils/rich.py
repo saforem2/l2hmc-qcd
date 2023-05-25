@@ -69,15 +69,9 @@ def get_console(*args, **kwargs) -> Console:
     from rich.theme import Theme
     theme = Theme(STYLES)
 
-    console = Console(
-        force_jupyter=interactive,
-        log_path=False,
-        theme=theme,
-        *args,
-        **kwargs
+    return Console(
+        force_jupyter=interactive, log_path=False, theme=theme, *args, **kwargs
     )
-
-    return console
 
 
 def is_interactive() -> bool:
@@ -191,7 +185,7 @@ def add_columns(
     skip: Optional[str | list[str]] = None,
     keep: Optional[str | list[str]] = None,
 ) -> Table:
-    for key in avgs.keys():
+    for key in avgs:
         if skip is not None and key in skip:
             continue
         if keep is not None and key not in keep:
@@ -414,18 +408,14 @@ def printarr(*arrs, float_width=6):
             return 'None'
         if isinstance(a, int):
             return 'int'
-        if isinstance(a, float):
-            return 'float'
-        return str(a.dtype)
+        return 'float' if isinstance(a, float) else str(a.dtype)
 
     def shape_str(a):
         if a is None:
             return 'N/A'
         if isinstance(a, int):
             return 'scalar'
-        if isinstance(a, float):
-            return 'scalar'
-        return str(list(a.shape))
+        return 'scalar' if isinstance(a, float) else str(list(a.shape))
 
     def type_str(a):
         # TODO this is is weird... what's the better way?
@@ -446,7 +436,7 @@ def printarr(*arrs, float_width=6):
     def minmaxmean_str(a):
         if a is None:
             return ('N/A', 'N/A', 'N/A')
-        if isinstance(a, int) or isinstance(a, float): 
+        if isinstance(a, (int, float)): 
             return (format_float(a), format_float(a), format_float(a))
 
         # compute min/max/mean. if anything goes wrong, just print 'N/A'

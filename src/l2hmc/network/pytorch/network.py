@@ -45,16 +45,13 @@ ACTIVATION_FNS = {
 
 def nested_children(m: nn.Module) -> dict[str, nn.Module]:
     children = dict(m.named_children())
-    if len(list(children.keys())) == 0:
+    if not list(children.keys()):
         return {m._get_name(): m}
 
-    output = {}
-    for name, child in children.items():
-        if isinstance(child, nn.Module):
-            output[name] = nested_children(child)
-        else:
-            output[name] = child
-    return output
+    return {
+        name: nested_children(child) if isinstance(child, nn.Module) else child
+        for name, child in children.items()
+    }
 
 
 def flatten(x: torch.Tensor) -> torch.Tensor:

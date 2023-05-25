@@ -39,7 +39,7 @@ def get_experiment(
         skip: Optional[str | list[str]] = None,
 ):
     framework = cfg.get('framework', None)
-    os.environ['RUNDIR'] = str(os.getcwd())
+    os.environ['RUNDIR'] = os.getcwd()
     if framework in ['tf', 'tensorflow']:
         cfg.framework = 'tensorflow'
         from l2hmc.utils.dist import setup_tensorflow
@@ -151,8 +151,7 @@ def build_experiment(overrides: Optional[str | list[str]] = None):
         overrides = [overrides]
 
     cfg = get_config(overrides)
-    exp = get_experiment(cfg=cfg)
-    return exp
+    return get_experiment(cfg=cfg)
 
 
 @hydra.main(version_base=None, config_path='./conf', config_name='config')
@@ -161,8 +160,8 @@ def main(cfg: DictConfig):
     fw = cfg.get('framework', None)
     be = cfg.get('backend', None)
     if (
-            str(fw).lower() in ['pt', 'torch', 'pytorch']
-            and str(be).lower() == 'ddp'
+        str(fw).lower() in {'pt', 'torch', 'pytorch'}
+        and str(be).lower() == 'ddp'
     ):
         from l2hmc.utils.dist import cleanup
         cleanup()

@@ -92,10 +92,7 @@ class BaseHistory:
         if isinstance(metric, (Scalar, np.ndarray)):
             return metric
 
-        if (
-            isinstance(metric, tf.Tensor)
-            or isinstance(metric, torch.Tensor)
-        ):
+        if isinstance(metric, (tf.Tensor, torch.Tensor)):
             return grab_tensor(metric)
 
         if isinstance(metric, list):

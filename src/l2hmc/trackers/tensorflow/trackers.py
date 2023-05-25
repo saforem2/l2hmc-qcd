@@ -35,9 +35,7 @@ def log_step(tag: str, step: int) -> None:
 
 def check_tag(tag: str) -> str:
     tags = tag.split('/')
-    if len(tags) > 2 and (tags[0] == tags[1]):
-        return '/'.join(tags[1:])
-    return tag
+    return '/'.join(tags[1:]) if len(tags) > 2 and (tags[0] == tags[1]) else tag
 
 
 def log_item(
@@ -149,8 +147,7 @@ def log_model_weights1(
         step=step,
         prefix=f'{prefix}/trainable_vars'
     )
-    layers = getattr(model, 'layers', [])
-    if len(layers) > 0:
+    if layers := getattr(model, 'layers', []):
         for layer in model.layers:
             weights = layer.get_weights()
             log_list(
@@ -183,10 +180,7 @@ def log_model_weights(
     #         for w in weights
     #     }
     if sep is not None:
-        wdict.update({
-            k.replace('/', sep): v
-            for k, v in wdict.items()
-        })
+        wdict |= {k.replace('/', sep): v for k, v in wdict.items()}
 
     log_dict(wdict, step, prefix=prefix)
 
@@ -242,7 +236,7 @@ def update_summaries1(
         log_dict(metrics, step, prefix=job_type)
 
     if weights is not None:
-        log.info(f'Caught weights!')
+        log.info('Caught weights!')
         if isinstance(weights, dict):
             log_dict(weights, step=step, prefix=prefix)
 

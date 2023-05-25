@@ -207,8 +207,6 @@ class Lattice(ABC):
             assert x2 is not None
             wloops2 = self.wilson_loops(x2)
 
-        pass
-
     @abstractmethod
     def charge_loss(
             self,

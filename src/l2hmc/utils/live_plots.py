@@ -93,10 +93,7 @@ def update_plot(
         return
 
     if isinstance(y, list):
-        if isinstance(y[0], np.ndarray):
-            yarr: np.ndarray = np.stack(y)
-        else:
-            yarr: np.ndarray = np.array(y)
+        yarr: np.ndarray = np.stack(y) if isinstance(y[0], np.ndarray) else np.array(y)
     else:
         yarr = y
 

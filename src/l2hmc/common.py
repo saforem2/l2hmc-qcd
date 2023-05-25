@@ -89,9 +89,7 @@ def clear_cuda_cache():
 def get_timestamp(fstr=None):
     """Get formatted timestamp."""
     now = datetime.datetime.now()
-    if fstr is None:
-        return now.strftime('%Y-%m-%d-%H%M%S')
-    return now.strftime(fstr)
+    return now.strftime('%Y-%m-%d-%H%M%S') if fstr is None else now.strftime(fstr)
 
 
 def seed_everything(seed: int):
@@ -137,14 +135,22 @@ def check_diff(x, y, name: Optional[str] = None):
         if name is not None:
             dstr.append(f"'{name}''")
 
-        dstr.append(f'  min(diff): {np.min(diff)}')
-        dstr.append(f'  max(diff): {np.max(diff)}')
-        dstr.append(f'  sum(diff): {np.sum(diff)}')
-        dstr.append(f'  sum(diff ** 2): {np.sum(diff ** 2)}')
+        dstr.extend(
+            (
+                f'  min(diff): {np.min(diff)}',
+                f'  max(diff): {np.max(diff)}',
+                f'  sum(diff): {np.sum(diff)}',
+                f'  sum(diff ** 2): {np.sum(diff**2)}',
+            )
+        )
         if len(diff.shape) > 1:
-            dstr.append(f'  mean(diff): {np.mean(diff)}')
-            dstr.append(f'  std(diff): {np.std(diff)}')
-            dstr.append(f'  np.allclose: {np.allclose(x, y)}')
+            dstr.extend(
+                (
+                    f'  mean(diff): {np.mean(diff)}',
+                    f'  std(diff): {np.std(diff)}',
+                    f'  np.allclose: {np.allclose(x, y)}',
+                )
+            )
         log.info('\n'.join(dstr))
 
 
@@ -283,7 +289,7 @@ def load_job_data(
         logdir: os.PathLike,
         jobtype: str
 ) -> xr.Dataset:
-    assert jobtype in ['train', 'eval', 'hmc']
+    assert jobtype in {'train', 'eval', 'hmc'}
     fpath = Path(logdir).joinpath(
         f'{jobtype}',
         'data',
@@ -297,7 +303,7 @@ def load_time_data(
         logdir: os.PathLike,
         jobtype: str
 ) -> pd.DataFrame:
-    assert jobtype in ['train', 'eval', 'hmc']
+    assert jobtype in {'train', 'eval', 'hmc'}
     fpaths = Path(logdir).rglob(f'step-timer-{jobtype}')
     data = {}
     for idx, fpath in enumerate(fpaths):
@@ -311,9 +317,9 @@ def _load_from_dir(
         logdir: os.PathLike,
         to_load: str,
 ) -> xr.Dataset | pd.DataFrame:
-    if to_load in ['train', 'eval', 'hmc']:
+    if to_load in {'train', 'eval', 'hmc'}:
         return load_job_data(logdir=logdir, jobtype=to_load)
-    if to_load in ['time', 'timing']:
+    if to_load in {'time', 'timing'}:
         return load_time_data(logdir, jobtype=to_load)
     raise ValueError('Unexpected argument for `to_load`')
 
@@ -561,11 +567,7 @@ def save_logs(
         run: Optional[Any] = None
 ) -> None:
     job_type = 'job' if job_type is None else job_type
-    if logdir is None:
-        logdir = Path(os.getcwd()).joinpath('logs')
-    else:
-        logdir = Path(logdir)
-
+    logdir = Path(os.getcwd()).joinpath('logs') if logdir is None else Path(logdir)
     table_dir = logdir.joinpath('tables')
     tdir = table_dir.joinpath('txt')
     hdir = table_dir.joinpath('html')
@@ -580,11 +582,7 @@ def save_logs(
     console = get_console(record=True, width=200)
     if tables is not None:
         for idx, table in tables.items():
-            if idx == 0:
-                data = table_to_dict(table)
-            else:
-                data = table_to_dict(table, data)
-
+            data = table_to_dict(table) if idx == 0 else table_to_dict(table, data)
             console.print(table)
             html = console.export_html(clear=False)
             text = console.export_text()
@@ -667,7 +665,7 @@ def make_dataset(metrics: dict) -> xr.Dataset:
                     val = grab_tensor(tf.stack(val))
 
         assert isinstance(val, np.ndarray)
-        assert len(val.shape) in [1, 2, 3]
+        assert len(val.shape) in {1, 2, 3}
         dims = ()
         coords = ()
         if len(val.shape) == 1:
@@ -887,7 +885,4 @@ def avg_diff(
             x = x[n:]
 
     dy = np.subtract(y[1:], y[:-1]).mean()
-    if x is None:
-        return dy
-
-    return dy / np.subtract(x[1:], x[:-1]).mean()
+    return dy if x is None else dy / np.subtract(x[1:], x[:-1]).mean()

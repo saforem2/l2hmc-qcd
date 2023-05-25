@@ -146,13 +146,10 @@ class LatticeSU3(Lattice):
                 # plaqs.append(plaq)
                 if needs_rect:
                     urul_, uuud_ = self._rectangles(x, u, v)
-                    rects.append(urul_)
-                    rects.append(uuud_)
+                    rects.extend((urul_, uuud_))
                     rcount += 1
                 else:
-                    rects.append(torch.zeros_like(plaq))
-                    rects.append(torch.zeros_like(plaq))
-
+                    rects.extend((torch.zeros_like(plaq), torch.zeros_like(plaq)))
         return plaqs, rects
 
     def _wilson_loops(
@@ -193,13 +190,10 @@ class LatticeSU3(Lattice):
                     tr_uuud_ = (
                         self.g.trace(self.g.mul(uu, ud_, adjoint_b=True))
                     )
-                    rects.append(tr_urul_)
-                    rects.append(tr_uuud_)
+                    rects.extend((tr_urul_, tr_uuud_))
                     rcount += 1
                 else:
-                    rects.append(torch.zeros_like(plaq))
-                    rects.append(torch.zeros_like(plaq))
-
+                    rects.extend((torch.zeros_like(plaq), torch.zeros_like(plaq)))
         return torch.stack(plaqs), torch.stack(rects)
 
     def _plaquettes(self, x: Tensor) -> Tensor:
@@ -328,27 +322,27 @@ class LatticeSU3(Lattice):
         if beta is not None:
             # s = self.action(x, beta)
             s, dsdx = self.action_with_grad(x, beta)
-            metrics.update({
+            metrics |= {
                 'action': s,
                 'dsdx': dsdx,
-            })
+            }
             if xinit is not None:
                 # action_ = self.action(xinit, beta)
                 s_, dsdx_ = self.action_with_grad(xinit, beta)
-                metrics.update({
+                metrics |= {
                     'daction': (s - s_).abs(),
-                    'dsdx': (dsdx - dsdx_).abs()
-                })
+                    'dsdx': (dsdx - dsdx_).abs(),
+                }
 
         if xinit is not None:
             wloops_ = self.wilson_loops(xinit)
             plaqs_ = self.plaqs(wloops=wloops_)
             q_ = self._charges(wloops=wloops_)
-            metrics.update({
+            metrics |= {
                 'dplaqs': (plaqs - plaqs_).abs(),
                 'dQint': (q.intQ - q_.intQ).abs(),
                 'dQsin': (q.sinQ - q_.sinQ).abs(),
-            })
+            }
 
         return metrics
 
@@ -361,7 +355,6 @@ class LatticeSU3(Lattice):
             wloops2: Optional[Tensor] = None
     ):
         log.error('TODO')
-        pass
 
     def charge_loss(
             self,
@@ -372,7 +365,6 @@ class LatticeSU3(Lattice):
             wloops2: Optional[Tensor] = None
     ):
         log.error('TODO')
-        pass
 
 
 if __name__ == '__main__':

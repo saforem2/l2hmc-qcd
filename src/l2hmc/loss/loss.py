@@ -40,7 +40,7 @@ class BaseLoss:
     ) -> dict:
         """Calculate metrics in addition to the Loss."""
         metrics = {}
-        metrics.update(self.metrics_fn(xin))
+        metrics |= self.metrics_fn(xin)
 
         if xout is not None:
             metrics_out = self.metrics_fn(xout)
