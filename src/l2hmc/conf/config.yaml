@@ -14,7 +14,7 @@ restore: true           # try restoring weights from previous checkpoint
 save: true              # Save model w/ checkpoints for restoring later?
 init_wandb: true        # Use WandB for experiment / metric tracking
 compression: false      # Compression for Horovod
-nchains:  null          # Number of chains to use when evaluating model
+nchains: null          # Number of chains to use when evaluating model
 ds_config_path: null
 # optional num_threads: 8
 # optional outdir: outputs/${now:%Y-%m-%d_%H-%M-%S}

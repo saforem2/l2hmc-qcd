@@ -140,11 +140,14 @@ def get_logger(
         # log.handlers = []
         log.addHandler(
             RichHandler(
+                omit_repeated_times=False,
                 level=level,
                 console=console,
                 show_path=True,
                 enable_link_path=False,
-                markup=True
+                # tracebacks_width=120,
+                markup=True,
+                # keywords=['loss=', 'dt=', 'Saving']
             )
         )
         log.setLevel(level)

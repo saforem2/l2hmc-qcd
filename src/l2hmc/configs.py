@@ -6,7 +6,7 @@ Implements various configuration objects
 from __future__ import absolute_import, annotations, division, print_function
 import json
 import rich.repr
-import logging
+# import logging
 import os
 
 from abc import ABC, abstractmethod
@@ -21,7 +21,10 @@ import numpy as np
 from omegaconf import DictConfig
 import l2hmc.utils.dist as udist
 
-logger = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)
+from l2hmc import get_logger
+
+logger = get_logger(__name__)
 
 
 # -- Configure useful Paths -----------------------
@@ -211,6 +214,7 @@ class EnvConfig:
                 and not k.startswith('BASH_FUNC_')
             )
         }
+
 
 @dataclass
 class wandbSetup(BaseConfig):
@@ -654,7 +658,7 @@ class ExperimentConfig(BaseConfig):
         self.xdim = self.dynamics.xdim
         self.xshape = self.dynamics.xshape
         if self.ds_config_path is None:
-            fpath = Path(CONF_DIR).joinpath('ds_config.json')
+            fpath = Path(CONF_DIR).joinpath('ds_config.yaml')
             self.ds_config_path = fpath.resolve().as_posix()
 
         if self.precision in FP16_SYNONYMS:
@@ -704,7 +708,7 @@ class ExperimentConfig(BaseConfig):
             nepoch=self.steps.nepoch,
         )
 
-    def load_ds_config(self, fpath: Optional[os.PathLike]) -> dict:
+    def load_ds_config1(self, fpath: Optional[os.PathLike]) -> dict:
         fname = self.ds_config_path if fpath is None else fpath
         assert fname is not None
         cpath = Path(fname)
@@ -713,6 +717,24 @@ class ExperimentConfig(BaseConfig):
             pass
 
         return ds_config
+
+    def load_ds_config(self, fpath: Optional[os.PathLike] = None) -> dict:
+        fname = self.ds_config_path if fpath is None else fpath
+        assert fname is not None
+        ds_config_path = Path(fname)
+        logger.info(
+            f'Loading DeepSpeed Config from: {ds_config_path.as_posix()}'
+        )
+        if ds_config_path.suffix == '.json':
+            with ds_config_path.open('r') as f:
+                ds_config = json.load(f)
+            return ds_config
+        if ds_config_path.suffix == '.yaml':
+            import yaml
+            with ds_config_path.open('r') as stream:
+                ds_config = dict(yaml.safe_load(stream))
+            return ds_config
+        raise TypeError('Unexpected FileType')
 
     def set_ds_config(self, ds_config: dict) -> None:
         self.ds_config = ds_config
