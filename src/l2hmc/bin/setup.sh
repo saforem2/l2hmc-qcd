@@ -21,6 +21,12 @@ thetaGPU220701() {
     /lus/grand/projects/datascience/foremans/locations/thetaGPU/miniconda3/envs/2022-07-01
 }
 
+thetaGPU230426() {
+  module load conda/2023-01-11
+  conda activate base
+  conda activate /lus/grand/projects/datascience/foremans/locations/thetaGPU/miniconda3/envs/2023-04-26
+}
+
 venvSetup() {
   VENV_DIR="$1"
   if [[ -f "${VENV_DIR}/bin/activate" ]]; then
@@ -46,8 +52,9 @@ setupThetaGPU() {
     HOSTFILE="${COBALT_NODEFILE}"
     export NVME_PATH="/raid/scratch/"
     # module load conda/2022-07-01 ; conda activate base
-    thetaGPU220701
-    VENV_DIR="${ROOT}/venvs/thetaGPU/2022-07-01-deepspeed"
+    # thetaGPU220701
+    thetaGPU230426
+    VENV_DIR="${ROOT}/venvs/thetaGPU/2023-04-26"
     venvSetup "$VENV_DIR"
     # -- MPI / Comms Setup ----------------------------------
     NRANKS=$(wc -l < "${HOSTFILE}")
@@ -115,6 +122,8 @@ setupJob() {
   export CFLAGS="-I${CONDA_PREFIX}/include/"
   export LDFLAGS="-L${CONDA_PREFIX}/lib/"
   export WANDB_CACHE_DIR="${ROOT}/.cache/wandb"
+  export TORCH_EXTENSIONS_DIR="${ROOT}/.cache/torch_extensions"
+  mkdir -p "${ROOT}/.cache/{wandb,torch_extensions}"
   # export KMP_SETTINGS=TRUE
   # export OMPI_MCA_opal_cuda_support=TRUE
   # export KMP_AFFINITY='granularity=fine,verbose,compact,1,0'
