@@ -5,7 +5,7 @@ Contains implementation of History object for tracking / aggregating metrics.
 """
 from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass
-import logging
+# import logging
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -41,8 +41,10 @@ LW = plt.rcParams.get('axes.linewidth', 1.75)
 
 def format_pair(k: str, v: ScalarLike) -> str:
     if isinstance(v, (int, bool, np.integer)):
-        return f'{k}={v:<3}'
-    return f'{k}={v:<3.4f}'
+        # return f'{k}={v:<3}'
+        return f'{k}={v}'
+    # return f'{k}={v:<3.4f}'
+    return f'{k}={v:<.3f}'
 
 
 def summarize_dict(d: dict) -> str:
@@ -75,6 +77,7 @@ class History:
                 self.history[key].append(val)
             except KeyError:
                 self.history[key] = [val]
+
 
 class BaseHistory:
     def __init__(self, steps: Optional[Steps] = None):
