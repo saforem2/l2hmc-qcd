@@ -23,6 +23,8 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
+  "tools",
+  "caffe2",
   "bokeh",
   "mpi4py",
   "h5py",
@@ -45,10 +47,13 @@ dynamic = ["version"]
 
 [project.optional-dependencies]
 dev = [
+  "pudb",
   "nodejs",
   "pynvim",
   "neovim",
-  "pyright",
+  "ruff",
+  "ruff-lsp",
+  "pyproject-flake8",
   "ipython",
   "ptipython",
 ]
