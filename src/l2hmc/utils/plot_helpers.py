@@ -49,6 +49,8 @@ plt.rcParams['svg.fonttype'] = 'none'
 
 FigAxes = Tuple[plt.Figure, plt.Axes]
 
+PLOTS_LOG = Path(os.getcwd()).joinpath('plots.txt')
+
 COLORS = {
     'blue':     '#2196F3',
     'red':      '#EF5350',
@@ -102,7 +104,7 @@ def set_plot_style(**kwargs):
         'xtick.labelcolor': '#666',
         'legend.edgecolor': 'none',
         'ytick.labelcolor': '#666',
-        'savefig.transparent': True,
+        # 'savefig.transparent': True,
     })
     plt.rcParams['axes.prop_cycle'] = plt.cycler(
         'color',
@@ -133,6 +135,8 @@ def save_figure(fig: plt.Figure, fname: str, outdir: os.PathLike):
     svgfile = Path(outdir).joinpath(f'{fname}.svg')
     _ = fig.savefig(pngfile, dpi=400, bbox_inches='tight')
     _ = fig.savefig(svgfile, dpi=400, bbox_inches='tight')
+    with PLOTS_LOG.open('a') as f:
+        f.write(f'{fname}: {svgfile.as_posix()}\n')
 
 
 def savefig(fig: plt.Figure, outfile: os.PathLike):
@@ -140,6 +144,8 @@ def savefig(fig: plt.Figure, outfile: os.PathLike):
     parent = fout.parent
     parent.mkdir(exist_ok=True, parents=True)
     log.info(f'Saving figure to: {fout.as_posix()}')
+    with PLOTS_LOG.open('a') as f:
+        f.write(f'{fout.as_posix()}\n')
     _ = fig.savefig(fout.as_posix(), dpi=400, bbox_inches='tight')
 
 
@@ -992,11 +998,11 @@ def make_ridgeplots(
                     svgdir.mkdir(exist_ok=True, parents=True)
                     pngdir.mkdir(exist_ok=True, parents=True)
 
-                    log.warning(f'Saving figure to: {fsvg.as_posix()}')
+                    log.info(f'Saving figure to: {fsvg.as_posix()}')
                     _ = plt.savefig(fsvg.as_posix(), bbox_inches='tight')
                     _ = plt.savefig(fpng.as_posix(), bbox_inches='tight')
 
-                log.info(
+                log.debug(
                     f'Ridgeplot for {key} took {time.time() - tstart:.3f}s'
                 )
 
