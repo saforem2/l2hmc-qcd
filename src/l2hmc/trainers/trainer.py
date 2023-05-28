@@ -61,7 +61,6 @@ class BaseTrainer(ABC):
         self.optimizer = None
         self.lr_schedule = None
         self.steps = self.config.steps
-        self.console = get_console(record=False)
         self.xshape = self.config.dynamics.xshape
         self.keep = [keep] if isinstance(keep, str) else keep
         self.skip = [skip] if isinstance(skip, str) else skip
@@ -102,7 +101,6 @@ class BaseTrainer(ABC):
         # self.optimizer = self.build_optimizer()
         # self.lr_schedule = self.build_lr_schedule()
         # self.schedule = self.build_annealing_schedule()
-        # self.console = get_console(record=False)
         # self.xshape = self.config.dynamics.xshape
         self.keep = [keep] if isinstance(keep, str) else keep
         self.skip = [skip] if isinstance(skip, str) else skip
@@ -128,9 +126,6 @@ class BaseTrainer(ABC):
     @abstractmethod
     def info(self, s: str) -> None:
         pass
-
-    def set_console(self, console: Console) -> None:
-        self.console = console
 
     @abstractmethod
     def draw_x(self):
