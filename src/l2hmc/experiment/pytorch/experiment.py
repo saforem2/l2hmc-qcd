@@ -283,8 +283,8 @@ class Experiment(BaseExperiment):
         if self._rank == 0:
             writer = self.get_summary_writer()
 
-        console = get_console(record=True)
-        self.trainer.set_console(console)
+        # console = get_console(record=True)
+        # self.trainer.set_console(console)
         tstart = time.time()
         if self.config.annealing_schedule.dynamic:
             output = self.trainer.train_dynamic(
@@ -364,7 +364,7 @@ class Experiment(BaseExperiment):
         jobdir = self.get_jobdir(job_type)
         writer = self.get_summary_writer()
         console = get_console(record=True)
-        self.trainer.set_console(console)
+        # self.trainer.set_console(console)
         output = self.trainer.eval(
             beta=beta,
             x=x,
