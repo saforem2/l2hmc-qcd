@@ -9,13 +9,14 @@ from math import pi
 import os
 import re
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 from typing import Tuple
 import logging
 # from copy import deepcopy
 
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.framework.ops import IndexedSlices
 
 from l2hmc import configs as cfgs
 from l2hmc.network.tensorflow.network import dummy_network, NetworkFactory
@@ -240,7 +241,7 @@ class Dynamics(Model):
         return self.apply_transition(inputs, training=training)
 
     @staticmethod
-    def flatten(x: Tensor) -> Tensor:
+    def flatten(x: Tensor | IndexedSlices | Any ) -> Tensor:
         return tf.reshape(x, (x.shape[0], -1))
 
     def random_state(self, beta: float = 1.) -> State:
@@ -513,14 +514,16 @@ class Dynamics(Model):
     def leapfrog_hmc(
             self,
             state: State,
-            eps: float,
+            eps: float | tf.Tensor,
     ) -> State:
         """Perform standard HMC leapfrog update."""
         x = tf.reshape(state.x, state.v.shape)
         force = self.grad_potential(x, state.beta)        # f = dU / dx
         eps = tf.constant(eps, dtype=force.dtype)
-        halfeps = tf.constant(tf.scalar_mul(0.5, eps), dtype=force.dtype)
+        # halfeps = tf.cast(tf.scalar_mul(0.5, eps), dtype=force.dtype)
+        # halfeps = tf.scalar_mul(0.5, eps)
         # halfeps = tf.constant(eps / 2.0, dtype=force.dtype)
+        halfeps = 0.5 * eps  # type:ignore
         v = state.v - halfeps * force
         x = self.g.update_gauge(x, eps * v)
         force = self.grad_potential(x, state.beta)       # calc force, again
@@ -622,8 +625,7 @@ class Dynamics(Model):
                 history = self.update_history(metrics=metrics, history=history)
 
         # Flip momentum
-        vneg = tf.constant(tf.negative(state_.v))
-        state_ = State(state_.x, vneg, state_.beta)
+        state_ = State(state_.x, tf.negative(state_.v), state_.beta)  # noqa
         # Backward
         for step in range(self.config.nleapfrog):
             state_, logdet = self._backward_lf(step, state_, training)
@@ -989,6 +991,30 @@ class Dynamics(Model):
         xrT, xiT = tf.transpose(x)
         return tf.complex(tf.transpose(xrT), tf.transpose(xiT))
 
+    def _update_v_bwd(
+            self,
+            step: int,
+            state: State,
+            training: bool = True,
+    ) -> tuple[State, Tensor]:
+        """Update the momentum in the backward direction."""
+        eps = self.veps[step]
+        force = self.grad_potential(state.x, state.beta)
+        x = state.x
+        v = state.v
+        # vNet: (x, force) --> (s, t, q)
+        s, t, q = self._call_vnet(step, (x, force), training=training)
+        # eps = tf.cast(self.veps[step], s.dtype)
+        logjac = (-eps * s / 2.)
+        logdet = tf.reduce_sum(logjac, axis=1)
+        v = tf.cast(tf.reshape(v, (-1, *self.xshape[1:])), s.dtype)
+        exp_s = tf.reshape(tf.exp(logjac), v.shape)
+        exp_q = tf.reshape(tf.exp(eps * q), v.shape)
+        t = tf.reshape(t, v.shape)
+        force = tf.cast(tf.reshape(force, v.shape), s.dtype)
+        vb = exp_s * (v + 0.5 * eps * (force * exp_q + t))
+        return State(state.x, vb, state.beta), logdet
+
     def _update_v_fwd(
             self,
             step: int,
@@ -996,11 +1022,11 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         """Update the momentum in the forward direction."""
-        # eps = self.veps[step]
+        eps = self.veps[step]
         force = self.grad_potential(state.x, state.beta)
         # vNet: (x, F) --> (s, t, q)
         s, t, q = self._call_vnet(step, (state.x, force), training=training)
-        eps = tf.constant(self.veps[step], dtype=s.dtype)
+        # eps = tf.constant(self.veps[step], dtype=s.dtype)
         logjac = eps * s / 2.  # jacobian factor, also used in exp_s below
         logdet = tf.reduce_sum(self.flatten(logjac), axis=1)
         force = tf.cast(tf.reshape(force, state.v.shape), s.dtype)
@@ -1009,6 +1035,16 @@ class Dynamics(Model):
         t = tf.reshape(t, state.v.shape)
         v = tf.cast(state.v, exp_s.dtype)
         vf = exp_s * v - 0.5 * eps * (force * exp_q + t)
+        return State(state.x, vf, state.beta), logdet
+
+    def _update_v_fwd1(
+            self,
+            step: int,
+            state: State,
+            training: bool = True,
+    ) -> tuple[State, Tensor]:
+        """Update the momentum in the forward direction."""
+        # eps = self.veps[step]
         # force = tf.cast(tf.reshape(force, state.v.shape), state.v.dtype)
         # exp_s = tf.cast(
         #     tf.reshape(tf.exp(logjac), state.v.shape),
@@ -1026,10 +1062,24 @@ class Dynamics(Model):
         #     tf.multiply(exp_s, state.v)
         #     - halfeps * (tf.multiply(force, exp_q) + t)
         # )
+        force = self.grad_potential(state.x, state.beta)
+        # vNet: (x, F) --> (s, t, q)
+        s, t, q = self._call_vnet(step, (state.x, force), training=training)
+        eps = tf.cast(self.veps[step], s.dtype)
+        halfeps = tf.scalar_mul(0.5, eps)
+        assert eps is not None and isinstance(eps, tf.Tensor)
+        logjac = tf.scalar_mul(halfeps, s)
+        logdet = tf.reduce_sum(self.flatten(logjac), axis=1)
+        force = tf.cast(tf.reshape(force, state.v.shape), s.dtype)
+        exp_s = tf.reshape(tf.exp(logjac), state.v.shape)
+        exp_q = tf.reshape(tf.exp(tf.scalar_mul(eps, q)), state.v.shape)
+        t = tf.reshape(t, state.v.shape)
+        v = tf.cast(state.v, exp_s.dtype)
+        vf = exp_s * v - tf.scalar_mul(halfeps, (force * exp_q + t))
 
         return State(state.x, vf, state.beta), logdet
 
-    def _update_v_bwd(
+    def _update_v_bwd1(
             self,
             step: int,
             state: State,
@@ -1042,15 +1092,18 @@ class Dynamics(Model):
         v = state.v
         # vNet: (x, force) --> (s, t, q)
         s, t, q = self._call_vnet(step, (x, force), training=training)
-        eps = tf.constant(self.veps[step], s.dtype)
-        logjac = (-eps * s / 2.)
+        eps = tf.cast(self.veps[step], s.dtype)
+        assert eps is not None and isinstance(eps, tf.Tensor)
+        halfeps = tf.scalar_mul(0.5, eps)
+        logjac = tf.scalar_mul(tf.negative(halfeps), s)
+        # logjac = (-eps * s / 2.)
         logdet = tf.reduce_sum(logjac, axis=1)
         v = tf.cast(tf.reshape(v, (-1, *self.xshape[1:])), s.dtype)
         exp_s = tf.reshape(tf.exp(logjac), v.shape)
-        exp_q = tf.reshape(tf.exp(eps * q), v.shape)
+        exp_q = tf.reshape(tf.scalar_mul(eps, q), v.shape)
         t = tf.reshape(t, v.shape)
         force = tf.cast(tf.reshape(force, v.shape), s.dtype)
-        vb = exp_s * (v + 0.5 * eps * (force * exp_q + t))
+        vb = exp_s * tf.math.add(v, tf.scalar_mul(halfeps, (force * exp_q + t)))
         # exp_s = tf.cast(tf.reshape(tf.exp(logjac), v.shape), v.dtype)
         # exp_q = tf.cast(tf.reshape(tf.exp(eps * q), v.shape), v.dtype)
         # t = tf.cast(tf.reshape(t, v.shape), v.dtype)
