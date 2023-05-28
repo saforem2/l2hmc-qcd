@@ -65,16 +65,25 @@ STYLES = {
 }
 
 
-def get_console(*args, **kwargs) -> Console:
+def get_console(**kwargs) -> Console:
     interactive = is_interactive()
     from rich.theme import Theme
     theme = Theme(STYLES)
-
+    width = int(
+        max(
+            [
+                os.get_terminal_size()[0],
+                shutil.get_terminal_size()[0],
+            ]
+        )
+    )
+    if width <= 100:
+        width = 255
     console = Console(
         force_jupyter=interactive,
         log_path=False,
         theme=theme,
-        *args,
+        width=int(width),
         **kwargs
     )
 
