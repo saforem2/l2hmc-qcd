@@ -115,6 +115,7 @@ setup() {
   export NNODES=$NRANKS
   export GPUS_PER_NODE=$NGPU_PER_RANK
   export WORLD_SIZE=$NGPUS
+  # export LC_ALL=$(locale -a | grep UTF-8)
   printJobInfo | tee -a "${LOGFILE}"
 }
 
