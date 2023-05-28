@@ -592,7 +592,7 @@ class Dynamics(Model):
             extras = {
                 'sldf': sldf,
                 'sldb': sldb,
-                'sldfb': sldf + sldb,
+                # 'sldfb': sldf + sldb,
                 'sld': sumlogdet,
             }
             history = self.update_history(
@@ -610,7 +610,7 @@ class Dynamics(Model):
                 extras = {
                     'sldf': sldf,
                     'sldb': sldb,
-                    'sldfb': sldf + sldb,
+                    # 'sldfb': sldf + sldb,
                     'sld': sumlogdet,
                 }
                 metrics = self.get_metrics(
@@ -622,8 +622,8 @@ class Dynamics(Model):
                 history = self.update_history(metrics=metrics, history=history)
 
         # Flip momentum
-        state_ = State(state_.x, (-state_.v), state_.beta)
-
+        vneg = tf.constant(tf.negative(state_.v))
+        state_ = State(state_.x, vneg, state_.beta)
         # Backward
         for step in range(self.config.nleapfrog):
             state_, logdet = self._backward_lf(step, state_, training)
@@ -635,7 +635,7 @@ class Dynamics(Model):
                 extras = {
                     'sldf': tf.zeros_like(sldb),
                     'sldb': sldb,
-                    'sldfb': sldf + sldb,
+                    # 'sldfb': sldf + sldb,
                     'sld': sumlogdet,
                 }
                 # Reverse step count to correctly order metrics
@@ -996,11 +996,11 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         """Update the momentum in the forward direction."""
-        eps = self.veps[step]
+        # eps = self.veps[step]
         force = self.grad_potential(state.x, state.beta)
         # vNet: (x, F) --> (s, t, q)
         s, t, q = self._call_vnet(step, (state.x, force), training=training)
-        eps = tf.cast(eps, s.dtype)
+        eps = tf.constant(self.veps[step], dtype=s.dtype)
         logjac = eps * s / 2.  # jacobian factor, also used in exp_s below
         logdet = tf.reduce_sum(self.flatten(logjac), axis=1)
         force = tf.cast(tf.reshape(force, state.v.shape), s.dtype)
@@ -1036,13 +1036,13 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         """Update the momentum in the backward direction."""
-        eps = self.veps[step]
+        # eps = self.veps[step]
         force = self.grad_potential(state.x, state.beta)
         x = state.x
         v = state.v
         # vNet: (x, force) --> (s, t, q)
         s, t, q = self._call_vnet(step, (x, force), training=training)
-        eps = tf.cast(eps, s.dtype)
+        eps = tf.constant(self.veps[step], s.dtype)
         logjac = (-eps * s / 2.)
         logdet = tf.reduce_sum(logjac, axis=1)
         v = tf.cast(tf.reshape(v, (-1, *self.xshape[1:])), s.dtype)

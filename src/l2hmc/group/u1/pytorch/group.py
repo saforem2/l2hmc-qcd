@@ -46,7 +46,7 @@ def eyeOf(x: torch.Tensor) -> torch.Tensor:
 
 
 class U1Phase(Group):
-    def __init__(self):
+    def __init__(self) -> None:
         dim = 2
         shape = [1]
         dtype = PT_FLOAT
@@ -67,14 +67,23 @@ class U1Phase(Group):
         assert x.shape[-1] == 2
         return torch.atan2(x[..., -1], x[..., -2])
 
+    @staticmethod
+    def group_to_vec(x: Tensor) -> Tensor:
+        # exp(i φ) --> [cos φ, sin φ]
+        return torch.cat([x.cos(), x.sin()], dim=1)
+
+    @staticmethod
+    def vec_to_group(x: Tensor) -> Tensor:
+        # return torch.complex(x.cos(), x.sin())
+        if x.is_complex():
+            return torch.atan2(x.imag, x.real)
+
+        return torch.atan2(x[..., -1], x[..., -2])
+
     def exp(self, x: Tensor) -> Tensor:
         return torch.complex(x.cos(), x.sin())
 
-    def update_gauge(
-            self,
-            x: Tensor,
-            p: Tensor,
-    ):
+    def update_gauge(self, x: Tensor, p: Tensor) -> Tensor:
         return x + p
 
     def mul(
@@ -109,25 +118,13 @@ class U1Phase(Group):
     def floormod(self, x: Tensor | float, y: Tensor | float) -> Tensor:
         return (x - torch.floor_divide(x, y) * y)
 
-    @staticmethod
-    def group_to_vec(x: Tensor) -> Tensor:
-        return torch.cat([x.cos(), x.sin()], dim=1)
-
-    @staticmethod
-    def vec_to_group(x: Tensor):
-        # return torch.complex(x.cos(), x.sin())
-        if x.is_complex():
-            return torch.atan2(x.imag, x.real)
-
-        return torch.atan2(x[..., -1], x[..., -2])
-
     def compat_proj(self, x: Tensor) -> Tensor:
         return ((x + PI) % TWO_PI) - PI
 
     def projectTAH(
         self,
         x: Tensor
-    ):
+    ) -> Tensor:
         """Returns
         r = (1/2) * (x - x.H) - j Im[ Tr(x) ] / Nc
         """

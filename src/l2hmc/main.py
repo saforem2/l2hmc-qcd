@@ -19,7 +19,9 @@ from omegaconf.dictconfig import DictConfig
 
 warnings.filterwarnings('ignore')
 
-log = logging.getLogger()
+from l2hmc import get_logger
+log = get_logger(__name__)
+# log = logging.getLogger()
 logging.getLogger('wandb').setLevel(logging.CRITICAL)
 logging.getLogger('aim').setLevel(logging.ERROR)
 logging.getLogger('filelock').setLevel(logging.CRITICAL)
@@ -32,6 +34,7 @@ comm = MPI.COMM_WORLD
 
 # from l2hmc import logger
 logger = logging.getLogger(__name__)
+
 
 def get_experiment(
         cfg: DictConfig,
@@ -57,8 +60,8 @@ def get_experiment(
         from l2hmc.utils.dist import setup_torch
         _ = setup_torch(
             seed=cfg.seed,
-            precision=cfg.precision,
-            backend=cfg.get('backend', 'horovod'),
+            # precision=cfg.precision,
+            backend=cfg.get('backend', 'DDP'),
             port=cfg.get('port', '2345')
         )
         from l2hmc.experiment.pytorch.experiment import Experiment

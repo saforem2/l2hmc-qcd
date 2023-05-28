@@ -5,7 +5,7 @@ Contains methods intended to be shared across frameworks.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import datetime
-import logging
+# import logging
 import os
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -22,6 +22,7 @@ import torch
 import wandb
 import xarray as xr
 
+from l2hmc import get_logger
 from l2hmc.configs import AnnealingSchedule, Steps
 from l2hmc.configs import OUTPUTS_DIR
 from l2hmc.configs import State
@@ -34,7 +35,8 @@ from l2hmc.utils.rich import get_console, is_interactive
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 # TensorLike = Union[
 #     tf.Tensor,
@@ -47,6 +49,8 @@ ScalarLike = Union[int, float, bool, np.floating]
 
 
 def grab_tensor(x: Any) -> np.ndarray | ScalarLike:
+    if isinstance(x, (int, float, bool, np.floating)):
+        return x
     if isinstance(x, list):
         if isinstance(x[0], torch.Tensor):
             return grab_tensor(torch.stack(x))
@@ -58,24 +62,57 @@ def grab_tensor(x: Any) -> np.ndarray | ScalarLike:
                 return grab_tensor(tf.stack(x))
     elif isinstance(x, np.ndarray):
         return x
-    else:
-        if (
-                hasattr(x, 'numpy')
-                and callable(getattr(x, 'numpy'))
-        ):
-            assert callable(getattr(x, ''))
-            return x.numpy()
-        # if isinstance(x, (tf.Tensor, ops.EagerTensor)):
-        #     assert (
-        #         hasattr(x, 'numpy')
-        #         and callable(getattr(x, 'numpy'))
-        #     )
-        #     return x.numpy()  # type:ignore
-
-        if isinstance(x, torch.Tensor):
-            return x.detach().cpu().numpy()
-
+    elif isinstance(x, torch.Tensor):
+        return x.detach().cpu().numpy()
+    elif callable(getattr(x, 'numpy', None)):
+        assert callable(getattr(x, 'numpy'))
+        return x.numpy()
+    # elif (hasattr(x, 'numpy') and callable(getattr(x, 'numpy'))):
+    # else:
+    #     # if isinstance(x, torch.Tensor):
+    #     #     return x.detach().cpu().numpy()
+    #     if (
+    #             hasattr(x, 'numpy')
+    #             and callable(getattr(x, 'numpy'))
+    #     ):
+    #         assert callable(getattr(x, ''))
+    #         return x.numpy()
+    #     # if isinstance(x, (tf.Tensor, ops.EagerTensor)):
+    #     #     assert (
+    #     #         hasattr(x, 'numpy')
+    #     #         and callable(getattr(x, 'numpy'))
+    #     #     )
+    #     #     return x.numpy()  # type:ignore
+    #
     raise ValueError
+
+
+def dict_to_str(d: dict, grab: Optional[bool] = None) -> str:
+    if grab:
+        return '\n'.join(
+            [
+                (
+                    f'{k}: '
+                    f'{getattr(v, "shape", None)} '
+                    f'{getattr(v, "dtype", None)} '
+                    f'\n{grab_tensor(v)}'
+                )
+                for k, v in d.items()
+            ]
+        )
+    return '\n'.join([f'{k}: {v}' for k, v in d.items()])
+
+
+def print_dict(
+        d: dict,
+        grab: Optional[bool] = None,
+        ret: Optional[bool] = None
+) -> str | None:
+    dstr = dict_to_str(d, grab=grab)
+    log.info(dstr)
+    if ret:
+        return dstr
+    return None
 
 
 def clear_cuda_cache():
@@ -152,12 +189,13 @@ def update_dict(
         dnew: dict,
         dold: Optional[dict] = None,
 ) -> tuple[list[str], dict]:
+    import torch
+    import tensorflow as tf
     dold = {} if dold is None else dold
     mstr = []
     for key, val in dnew.items():
         if isinstance(val, (torch.Tensor, tf.Tensor)):
             val = grab_tensor(val)
-
         if isinstance(val, list):
             if isinstance(val[0], torch.Tensor):
                 val = grab_tensor(torch.stack(val))
@@ -558,7 +596,8 @@ def save_logs(
         summaries: Optional[list[str]] = None,
         job_type: Optional[str] = None,
         logdir: Optional[os.PathLike] = None,
-        run: Optional[Any] = None
+        run: Optional[Any] = None,
+        rank: Optional[int] = None,
 ) -> None:
     job_type = 'job' if job_type is None else job_type
     if logdir is None:
@@ -577,7 +616,7 @@ def save_logs(
     tfile.parent.mkdir(exist_ok=True, parents=True)
 
     data = {}
-    console = get_console(record=True, width=200)
+    console = get_console(record=True)
     if tables is not None:
         for idx, table in tables.items():
             if idx == 0:
@@ -636,14 +675,12 @@ def save_figure(
         # run: Optional[Any] = None,
         # arun: Optional[Any] = None,
 ):
-    if fig is None:
-        fig = plt.gcf()
-
+    # if fig is None:
+    #     fig = plt.gcf()
     pngdir = Path(outdir).joinpath('pngs')
     svgdir = Path(outdir).joinpath('svgs')
     pngdir.mkdir(parents=True, exist_ok=True)
     svgdir.mkdir(parents=True, exist_ok=True)
-
     svgfile = svgdir.joinpath(f'{key}.svg')
     pngfile = pngdir.joinpath(f'{key}.png')
     fig.savefig(svgfile.as_posix(), transparent=True, bbox_inches='tight')
@@ -824,6 +861,7 @@ def save_and_analyze_data(
         run: Optional[Any] = None,
         arun: Optional[Any] = None,
         job_type: Optional[str] = None,
+        rank: Optional[int] = None,
         framework: Optional[str] = None,
         summaries: Optional[list[str]] = None,
         tables: Optional[dict[str, Table]] = None,
@@ -851,6 +889,7 @@ def save_and_analyze_data(
         edir.mkdir(exist_ok=True, parents=True)
         log.info(f'Saving {job_type} logs to: {edir.as_posix()}')
         save_logs(run=run,
+                  rank=rank,
                   logdir=edir,
                   job_type=job_type,
                   tables=tables,

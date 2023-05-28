@@ -1,8 +1,10 @@
 {
+  "gradient_accumulation_steps": 1,
   "dump_state": false,
   "prescale_gradients": false,
   "wall_clock_breakdown": false,
   "zero_allow_untested_optimizer": true,
+  "optimizer": "Adam",
   "flops_profiler": {
     "enabled": false,
     "profile_step": 1,
@@ -11,13 +13,8 @@
     "detailed": false,
     "output_file": null
   },
-  "optimizer": {
-    "type": "AdamW"
-  },
   "fp16": {
     "enabled": true,
-    "auto_cast": true,
-    "fp16_master_weights_and_grads": false,
     "min_loss_scale": 0
   },
   "bf16": {
@@ -40,7 +37,7 @@
     }
   },
   "zero_optimization": {
-    "stage": 2,
+    "stage": 0,
     "allgather_partitions": true,
     "reduce_scatter": true,
     "allgather_bucket_size": 5e8,
@@ -53,13 +50,7 @@
     },
     "offload_optimizer": {
       "device": "cpu",
-      "nvme_path": "/raid/scratch/",
-      "pin_memory": false,
-      "buffer_count": 4,
-      "fast_init": true
+      "pin_memory": true
     }
-  },
-  "amp": {
-    "enabled": false
   }
 }

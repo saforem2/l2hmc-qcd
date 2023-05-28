@@ -3,7 +3,7 @@
 hydra:
   run:
     dir: "outputs/debug/runs/${framework}\
-      /${now:%Y-%m-%d}/${now:%H-%M-%S}"
+      /${now:%Y}/${now:%m}/${now:%d}/${now:%Y-m-%d}-%m-%d-%H%M%S}"
   sweep:
     dir: "outputs/debug/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}"
     subdir: ${hydra.job.override_dirname}

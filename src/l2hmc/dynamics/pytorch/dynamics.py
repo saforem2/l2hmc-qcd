@@ -5,7 +5,7 @@ Pytorch implementation of Dynamics object for training L2HMC sampler.
 """
 from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass
-import logging
+# import logging
 from math import pi as PI
 import os
 from pathlib import Path
@@ -16,6 +16,7 @@ import numpy as np
 import torch
 from torch import nn
 
+from l2hmc import get_logger
 import l2hmc.configs as cfgs
 from l2hmc.group.u1.pytorch.group import U1Phase
 from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
@@ -24,7 +25,8 @@ from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
 from l2hmc.network.pytorch.network import NetworkFactory, dummy_network
 
 
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 TWO_PI = 2. * PI
 
@@ -151,26 +153,40 @@ class Dynamics(nn.Module):
             self._dtype: torch.dtype = (
                 vnet.input_layer.xlayer.weight.dtype  # type:ignore
             )
-        self.xeps = nn.ParameterList([
-            nn.parameter.Parameter(
-                torch.tensor(
-                    self.config.eps,
-                ),  # .to(self._dtype).to(self._device),  # .clamp(min=0.0),
-                requires_grad=(not self.config.eps_fixed)
-            )
-            for _ in range(self.config.nleapfrog)
-        ])
-        self.veps = nn.ParameterList([
-            nn.parameter.Parameter(
-                torch.tensor(
-                    self.config.eps,
-                ),  # .clamp(min=0.0),
-                requires_grad=(not self.config.eps_fixed),
-            )
-            for _ in range(self.config.nleapfrog)
-        ])
-        assert isinstance(self.xeps, nn.ParameterList)
-        assert isinstance(self.veps, nn.ParameterList)
+        rg = (not self.config.eps_fixed)
+        # logxeps = nn.ParameterList(
+        self.xeps = nn.ParameterList(
+            [
+                nn.parameter.Parameter(
+                    # torch.log(
+                    torch.tensor(self.config.eps, requires_grad=rg),
+                    # ),
+                    requires_grad=rg,
+                )
+                for _ in range(self.config.nleapfrog)
+            ]
+        )
+        self.veps = nn.ParameterList(
+            [
+                nn.parameter.Parameter(
+                    # torch.log(
+                    torch.tensor(self.config.eps, requires_grad=rg),
+                    # ),
+                    requires_grad=rg,
+                )
+                for _ in range(self.config.nleapfrog)
+            ]
+        )
+        # self.xeps = logxeps.exp_()
+        # self.veps = logveps.exp_()
+        # self.xeps = torch.stack([
+        #     eps for _ in range(self.config.nleapfrog)
+        # ])
+        # self.veps = torch.stack([
+        #     eps for _ in range(self.config.nleapfrog)
+        # ])
+        # assert isinstance(self.xeps, nn.ParameterList)
+        # assert isinstance(self.veps, nn.ParameterList)
         if torch.cuda.is_available():
             self.xeps = self.xeps.cuda()
             self.veps = self.veps.cuda()
@@ -220,67 +236,144 @@ class Dynamics(nn.Module):
     @torch.no_grad()
     def init_weights(
             self,
+            *,
             method='xavier_uniform',
             rval: Optional[float] = None,
             constant: Optional[float] = None,
-            bias: Optional[float] = None,
+            bias: Optional[bool] = None,
             min: Optional[float] = None,
             max: Optional[float] = None,
             mean: Optional[float] = None,
             std: Optional[float] = None,
+            # fn: Optional[Callable] = None,
     ):
+        def log_init(idx: int, s: str) -> None:
+            if idx == 0:
+                log.info(s)
         # for p in self.parameters():
         #     if p.dim() > 1:
         #         nn.init.xavier_uniform_(p)
-        for m in self.modules():
+        for idx, m in enumerate(self.modules()):
+            # if hasattr(m, 'weight'):
+            # if isinstance(m, nn.Module):
             if isinstance(m, nn.Linear):
-                if method in ['zero', 'zeros']:
-                    nn.init.zeros_(m.weight)
-                    nn.init.zeros_(m.bias)
-                else:
+                # if bias is not None:
+                #     if isinstance(bias, float):
+                #         log_init(
+                #             idx=idx,
+                #             s=f'initializing bias with: {bias:.4f}'
+                #         )
+                #         nn.init.constant_(m.bias, bias)
+                #     else:
+                #         log_init(
+                #             idx=idx,
+                #             s='Initializing bias-es with weights!'
+                #         )
+                #         SET_BIAS = True
+                # else:
+                #     SET_BIAS = False
+                if method is None:
                     if rval is not None:
-                        nn.init.uniform_(m.weight, a=-rval, b=rval)
-                    if bias is not None:
-                        if m.bias is not None:
-                            nn.init.constant_(m.bias, bias)
+                        log_init(
+                            idx=idx,
+                            s=('Initializing weights from '
+                               f'~ U[-{rval:.2f}, {rval:.2f}]')
+                        )
+                        nn.init.uniform(m.weight, a=-rval, b=rval)
+                        if bias and m.bias is not None:
+                            nn.init.uniform(m.bias, a=-rval, b=rval)
                     if constant is not None:
+                        log_init(
+                            idx=idx,
+                            s=f'Initializing weights with const = {constant}'
+                        )
                         nn.init.constant_(m.weight, constant)
-                    else:
-                        if method == 'uniform':
-                            a = 0.0 if min is None else min
-                            b = 1.0 if max is None else max
-                            nn.init.uniform_(m.weight, a=a, b=b)
-                        elif method == 'normal':
-                            mean = 0.0 if mean is None else mean
-                            std = 1.0 if std is None else std
-                            nn.init.normal_(m.weight, mean=mean, std=std)
-                        elif method == 'xavier_uniform':
-                            nn.init.xavier_uniform_(m.weight)
-                        elif method == 'kaiming_uniform':
-                            nn.init.kaiming_uniform_(m.weight)
-                        elif method == 'xavier_normal':
-                            nn.init.xavier_normal_(m.weight)
-                        elif method == 'kaiming_normal':
-                            nn.init.kaiming_normal_(m.weight)
-                        else:
-                            try:
-                                method = getattr(nn.init, method)
-                                if method is not None and callable(method):
-                                    method(m.weight)
-                            except NameError:
-                                log.warning('. '.join([
-                                    'Unable to initialize weights',
-                                    f' with {method}',
-                                    'Falling back to default: xavier_uniform_'
-                                ]))
-                                nn.init.xavier_uniform_(m.weight)
+                        # if bias is not None:
+                        if bias and m.bias is not None:
+                            log_init(
+                                idx=idx,
+                                s=f'Initializing weights with bias: {bias}'
+                            )
+                            if m.bias is not None:
+                                nn.init.constant_(m.bias, bias)
+                elif method in ['zero', 'zeros']:
+                    log_init(
+                        idx=idx,
+                        s='Iniitializing weights with 0 s'
+                    )
+                    nn.init.zeros_(m.weight)
+                    # if bias:
+                    if bias and m.bias is not None:
+                        nn.init.zeros_(m.bias)
+                elif method == 'uniform':
+                    a = 0.0 if min is None else min
+                    b = 1.0 if max is None else max
+                    log_init(idx=idx, s=f'Initializing weights ~ U[{a}, {b}]')
+                    nn.init.uniform_(m.weight, a=a, b=b)
+                    # if bias:
+                    if bias and m.bias is not None:
+                        nn.init.uniform_(m.bias, a=a, b=b)
+                elif method == 'normal':
+                    mean = 0.0 if mean is None else mean
+                    std = 1.0 if std is None else std
+                    log_init(
+                        idx=idx,
+                        s=(f'Initializing weights '
+                            f'~ N[{mean:.2f}; {std:.2f}]')
+                    )
+                    nn.init.normal_(m.weight, mean=mean, std=std)
+                    # if bias:
+                    if bias and m.bias is not None:
+                        nn.init.normal_(m.bias, mean=mean, std=std)
+                elif method == 'xavier_uniform':
+                    log_init(idx=idx, s=f'Initializing weights with: {method}')
+                    nn.init.xavier_uniform_(m.weight)
+                    # if bias:
+                    if bias and m.bias is not None:
+                        nn.init.xavier_uniform_(m.bias)
+                elif method == 'kaiming_uniform':
+                    log_init(idx=idx, s=f'Initializing weights with: {method}')
+                    nn.init.kaiming_uniform_(m.weight)
+                    # if bias:
+                    if bias and m.bias is not None:
+                        nn.init.kaiming_uniform_(m.bias)
+                elif method == 'xavier_normal':
+                    log_init(idx=idx, s=f'Initializing weights with: {method}')
+                    nn.init.xavier_normal_(m.weight)
+                    # if bias:
+                    if bias and m.bias is not None:
+                        nn.init.xavier_normal_(m.bias)
+                elif method == 'kaiming_normal':
+                    log_init(idx=idx, s=f'Initializing weights with: {method}')
+                    nn.init.kaiming_normal_(m.weight)
+                    # if bias:
+                    if bias and m.bias is not None:
+                        nn.init.kaiming_normal_(m.bias)
+                else:
+                    try:
+                        method = getattr(nn.init, method)
+                        if method is not None and callable(method):
+                            method(m.weight)
+                            # if bias:
+                            if bias and m.bias is not None:
+                                method(m.bias)
+                    except NameError:
+                        log.warning('. '.join([
+                            'Unable to initialize weights',
+                            f' with {method}',
+                            'Falling back to default: xavier_uniform_'
+                        ]))
+                        nn.init.xavier_uniform_(m.weight)
+                        # if bias:
+                        if bias and m.bias is not None:
+                            nn.init.xavier_uniform_(m.bias)
 
     def save(self, outdir: os.PathLike) -> None:
         netdir = Path(outdir).joinpath('networks')
         outfile = netdir.joinpath('dynamics.pt')
         netdir.mkdir(exist_ok=True, parents=True)
-        assert isinstance(self.xeps, nn.ParameterList)
-        assert isinstance(self.veps, nn.ParameterList)
+        # assert isinstance(self.xeps, nn.ParameterList)
+        # assert isinstance(self.veps, nn.ParameterList)
         self.save_eps(outdir=netdir)
         torch.save(self.state_dict(), outfile.as_posix())
 
@@ -288,8 +381,8 @@ class Dynamics(nn.Module):
         netdir = Path(outdir).joinpath('networks')
         fxeps = netdir.joinpath('xeps.npy')
         fveps = netdir.joinpath('veps.npy')
-        assert isinstance(self.xeps, nn.ParameterList)
-        assert isinstance(self.veps, nn.ParameterList)
+        # assert isinstance(self.xeps, nn.ParameterList)
+        # assert isinstance(self.veps, nn.ParameterList)
         xeps = np.array([
             i.detach().cpu().numpy() for i in self.xeps
         ])
@@ -407,24 +500,32 @@ class Dynamics(nn.Module):
             inputs: tuple[Tensor, Tensor]
     ) -> tuple[Tensor, dict]:
         data = self.generate_proposal_fb(inputs)
-        ma_, _ = self._get_accept_masks(data['metrics']['acc'])
+        ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
         ma_ = ma_.to(inputs[0].device)
+        mr_ = mr_.to(inputs[0].device)
         ma = ma_[:, None]
+        mr = mr_[:, None]
         # NOTE: We construct output states by combining
         #   output = (acc_mask * proposed) + (reject_mask * init)
-        v_out = torch.where(
-            ma.to(torch.bool),
-            self.flatten(data['proposed'].v),
-            self.flatten(data['init'].v)
-        )
-        x_out = torch.where(
-            ma.to(torch.bool),
-            self.flatten(data['proposed'].x),
-            self.flatten(data['init'].x)
-        )
+        # v_out = torch.where(
+        #     ma.to(torch.bool),
+        #     self.flatten(data['proposed'].v),
+        #     self.flatten(data['init'].v)
+        # )
+        xinit = data['init'].x.flatten(1)
+        vinit = data['init'].v.flatten(1)
+        xprop = data['proposed'].x.flatten(1)
+        vprop = data['proposed'].v.flatten(1)
+        vout = ma * vprop + mr * vinit
+        xout = ma * xprop + mr * xinit
+        # x_out = torch.where(
+        #     ma.to(torch.bool),
+        #     self.flatten(data['proposed'].x),
+        #     self.flatten(data['init'].x)
+        # )
         # NOTE: sumlogdet = (accept * logdet) + (reject * 0)
         sumlogdet = ma_ * data['metrics']['sumlogdet']
-        state_out = State(x=x_out, v=v_out, beta=data['init'].beta)
+        state_out = State(x=xout, v=vout, beta=data['init'].beta)
         mc_states = MonteCarloStates(
             init=data['init'],
             proposed=data['proposed'],
@@ -436,7 +537,7 @@ class Dynamics(nn.Module):
             'sumlogdet': sumlogdet,
             'mc_states': mc_states,
         })
-        return x_out, data['metrics']
+        return xout, data['metrics']
 
     def apply_transition(
             self,
@@ -602,8 +703,6 @@ class Dynamics(nn.Module):
         if extras is not None:
             metrics.update(extras)
         if step is not None:
-            assert isinstance(self.xeps, nn.ParameterList)
-            assert isinstance(self.veps, nn.ParameterList)
             metrics.update({
                 'xeps': self.xeps[step],
                 'veps': self.veps[step]
@@ -684,7 +783,6 @@ class Dynamics(nn.Module):
     ) -> tuple[State, dict]:
         sumlogdet = torch.zeros(
             (state.x.shape[0],),
-            # dtype=state.x.dtype,
             device=state.x.device,
         )
         sldf = torch.zeros_like(sumlogdet)
@@ -695,7 +793,7 @@ class Dynamics(nn.Module):
             extras = {
                 'sldf': sldf,
                 'sldb': sldb,
-                'sldfb': sldf + sldb,
+                # 'sldfb': sldf + sldb,
                 'sld': sumlogdet,
             }
             history = self.update_history(
@@ -712,7 +810,7 @@ class Dynamics(nn.Module):
                 extras = {
                     'sldf': sldf,
                     'sldb': sldb,
-                    'sldfb': sldf + sldb,
+                    # 'sldfb': sldf + sldb,
                     'sld': sumlogdet,
                 }
                 metrics = self.get_metrics(
@@ -735,7 +833,7 @@ class Dynamics(nn.Module):
                 extras = {
                     'sldf': torch.zeros_like(sldb),
                     'sldb': sldb,
-                    'sldfb': sldf + sldb,
+                    # 'sldfb': sldf + sldb,
                     'sld': sumlogdet,
                 }
                 # Reverse step count to correctly order metrics at each step
@@ -971,7 +1069,7 @@ class Dynamics(nn.Module):
 
     def _update_v_fwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the forward direction"""
-        assert isinstance(self.veps, nn.ParameterList)
+        # assert isinstance(self.veps, nn.ParameterList)
         eps = self.veps[step]
         # vNet: (x, F) --> (s, t, q)
         x = self.g.compat_proj(self.unflatten(state.x))
@@ -989,7 +1087,7 @@ class Dynamics(nn.Module):
 
     def _update_v_bwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the backward direction"""
-        assert isinstance(self.veps, nn.ParameterList)
+        # assert isinstance(self.veps, nn.ParameterList)
         eps = self.veps[step]  # .clamp_min_(0.)
         force = self.grad_potential(state.x, state.beta)
         x = state.x
@@ -1062,7 +1160,7 @@ class Dynamics(nn.Module):
             first: bool,
     ) -> tuple[State, Tensor]:
         """Update the position in the backward direction."""
-        assert isinstance(self.xeps, nn.ParameterList)
+        # assert isinstance(self.xeps, nn.ParameterList)
         eps = self.xeps[step]
         m = self.unflatten(m)
         mb = (torch.ones_like(m) - m).to(self.device)

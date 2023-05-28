@@ -5,7 +5,7 @@ Implements ptExperiment, a pytorch-specific subclass of the
 Experiment base class.
 """
 from __future__ import absolute_import, annotations, division, print_function
-import logging
+# import logging
 # import os
 from os import PathLike
 from pathlib import Path
@@ -18,6 +18,7 @@ import time
 import torch
 from torch.utils.tensorboard.writer import SummaryWriter
 
+from l2hmc import get_logger
 from l2hmc.configs import NetWeights
 from l2hmc.configs import ExperimentConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics as ptDynamics
@@ -28,10 +29,59 @@ from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
 from l2hmc.trainers.pytorch.trainer import Trainer
 from l2hmc.utils.dist import setup_torch_distributed
 from l2hmc.utils.rich import get_console
+from l2hmc.common import print_dict
 
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
+log = get_logger(__name__)
+
 
 Tensor = torch.Tensor
+
+
+def evaluate(
+        nsteps: int,
+        exp: Experiment,
+        beta: float,
+        nlog: int = 1,
+        nprint: int = 1,
+        job_type: str = 'eval',
+        eps: Optional[float] = None,
+        nleapfrog: Optional[int] = None,
+        x: Optional[torch.Tensor] = None,
+        grab: Optional[bool] = None,
+) -> tuple[torch.Tensor, dict]:
+    from tqdm import trange
+    history = {}
+    if x is None:
+        state = exp.trainer.dynamics.random_state(beta)
+        x = state.x
+    assert x is not None
+    log.info(f'Running {nsteps} steps of {job_type} at beta={beta:.4f}')
+    if job_type.lower == 'hmc':
+        log.info(f'Using nleapfrog={nleapfrog} steps w/ eps={eps:.4f}')
+    for step in trange(nsteps):
+        log.info(f'STEP: {step}')
+        if job_type.lower() == 'eval':
+            x, metrics = exp.trainer.eval_step((x, beta))
+        elif job_type.lower() == 'hmc':
+            x, metrics = exp.trainer.hmc_step(
+                (x, beta),
+                eps=eps,
+                nleapfrog=nleapfrog,
+            )
+        else:
+            raise ValueError(
+                'Expected `job_type` to be one of [`eval`, `hmc`]'
+            )
+        if (step > 0 and step % nprint == 0):
+            print_dict(metrics, grab=grab)
+        if (step > 0 and step % nlog == 0):
+            for key, val in metrics.items():
+                try:
+                    history[key].append(val)
+                except KeyError:
+                    history[key] = [val]
+    return x, history
 
 
 class Experiment(BaseExperiment):
@@ -233,8 +283,8 @@ class Experiment(BaseExperiment):
         if self._rank == 0:
             writer = self.get_summary_writer()
 
-        console = get_console(record=True)
-        self.trainer.set_console(console)
+        # console = get_console(record=True)
+        # self.trainer.set_console(console)
         tstart = time.time()
         if self.config.annealing_schedule.dynamic:
             output = self.trainer.train_dynamic(
@@ -303,6 +353,7 @@ class Experiment(BaseExperiment):
             nleapfrog: Optional[int] = None,
             eval_steps: Optional[int] = None,
             nprint: Optional[int] = None,
+            x: Optional[torch.Tensor] = None,
     ) -> dict | None:
         """Evaluate model."""
         # if RANK != 0:
@@ -313,9 +364,10 @@ class Experiment(BaseExperiment):
         jobdir = self.get_jobdir(job_type)
         writer = self.get_summary_writer()
         console = get_console(record=True)
-        self.trainer.set_console(console)
+        # self.trainer.set_console(console)
         output = self.trainer.eval(
             beta=beta,
+            x=x,
             run=self.run,
             arun=self.arun,
             writer=writer,
@@ -326,7 +378,6 @@ class Experiment(BaseExperiment):
             eval_steps=eval_steps,
             nprint=nprint,
         )
-
         output['dataset'] = self.save_dataset(
             # output=output,
             job_type=job_type,

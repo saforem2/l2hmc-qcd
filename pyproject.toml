@@ -35,6 +35,7 @@ dependencies = [
   "wandb",
   "arviz",
   "hydra-colorlog",
+  "ipympl",
   "matplotx",
   "aim",
   "tqdm",
@@ -44,10 +45,13 @@ dynamic = ["version"]
 
 [project.optional-dependencies]
 dev = [
+  "pudb",
   "nodejs",
   "pynvim",
   "neovim",
-  "pyright",
+  "ruff",
+  "ruff-lsp",
+  "pyproject-flake8",
   "ipython",
   "ptipython",
 ]

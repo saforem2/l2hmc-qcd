@@ -5,7 +5,7 @@ Contains implementation of History object for tracking / aggregating metrics.
 """
 from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass
-import logging
+# import logging
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -14,11 +14,11 @@ import matplotx
 import numpy as np
 import seaborn as sns
 import tensorflow as tf
-# from tensorflow.python.framework.ops import EagerTensor
 import torch
 import xarray as xr
-from l2hmc.common import grab_tensor
 
+from l2hmc import get_logger
+from l2hmc.common import grab_tensor
 from l2hmc.configs import MonteCarloStates, Steps
 import l2hmc.utils.plot_helpers as hplt
 
@@ -31,7 +31,9 @@ TF_FLOAT = tf.dtypes.as_dtype(tf.keras.backend.floatx())
 Scalar = Union[float, int, np.floating, bool]
 # Scalar = TF_FLOAT | PT_FLOAT | np.floating | int | bool
 
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
+
+log = get_logger(__name__)
 
 xplt = xr.plot  # type:ignore
 LW = plt.rcParams.get('axes.linewidth', 1.75)
@@ -39,8 +41,10 @@ LW = plt.rcParams.get('axes.linewidth', 1.75)
 
 def format_pair(k: str, v: ScalarLike) -> str:
     if isinstance(v, (int, bool, np.integer)):
-        return f'{k}={v:<3}'
-    return f'{k}={v:<3.4f}'
+        # return f'{k}={v:<3}'
+        return f'{k}={v}'
+    # return f'{k}={v:<3.4f}'
+    return f'{k}={v:<.3f}'
 
 
 def summarize_dict(d: dict) -> str:
@@ -61,6 +65,18 @@ class StateHistory:
         self.proposed['v'].append(mc_states.proposed.v.numpy())
         self.out['x'].append(mc_states.out.x.numpy())
         self.out['v'].append(mc_states.out.v.numpy())
+
+
+class History:
+    def __init__(self, keys: Optional[list[str]] = None) -> None:
+        self.history = {}
+
+    def update(self, metrics: dict):
+        for key, val in metrics.items():
+            try:
+                self.history[key].append(val)
+            except KeyError:
+                self.history[key] = [val]
 
 
 class BaseHistory:

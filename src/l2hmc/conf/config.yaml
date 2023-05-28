@@ -14,7 +14,7 @@ restore: true           # try restoring weights from previous checkpoint
 save: true              # Save model w/ checkpoints for restoring later?
 init_wandb: true        # Use WandB for experiment / metric tracking
 compression: false      # Compression for Horovod
-nchains:  null          # Number of chains to use when evaluating model
+nchains: null          # Number of chains to use when evaluating model
 ds_config_path: null
 # optional num_threads: 8
 # optional outdir: outputs/${now:%Y-%m-%d_%H-%M-%S}
@@ -22,7 +22,7 @@ ds_config_path: null
 
 # ----------------------------------------------------------------------------
 # pretty print config at the start of the run using Rich library
-print_config: false
+print_config: true
 # ----------------------------------------------------------------------------
 # disable python warnings if they annoy you
 ignore_warnings: true
@@ -56,7 +56,7 @@ defaults:
   # - optional local: default.yaml
   #
   - override hydra/hydra_logging: colorlog
-  - override hydra/job_logging: colorlog
+  - override hydra/job_logging: custom
   # - override hydra/launcher: joblib
 
   # https://hydra.cc/docs/tutorials/basic/running_your_app/logging/
@@ -64,6 +64,6 @@ defaults:
   # verbose: [src.train, src.utils]
 
 hydra:
-  verbose: false
+  verbose: l2hmc
   job:
     chdir: true

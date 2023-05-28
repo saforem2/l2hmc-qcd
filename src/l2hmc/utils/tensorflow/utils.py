@@ -3,18 +3,16 @@ tensorflow.py
 
 Contains various utilities for use with TensorFlow
 """
-from __future__ import absolute_import, division, print_function, annotations
-import logging
+from __future__ import absolute_import, annotations, division, print_function
 import os
 from pathlib import Path
-from omegaconf import DictConfig
 from typing import Any, Optional
 
 from omegaconf import DictConfig
 import tensorflow as tf
 
+from l2hmc import get_logger
 from l2hmc.common import analyze_dataset, save_logs
-# from l2hmc.experiment import Experiment
 from l2hmc.configs import get_jobdir
 from l2hmc.trainers.tensorflow.trainer import Trainer
 from l2hmc.utils.rich import is_interactive
@@ -23,7 +21,8 @@ from l2hmc.utils.rich import is_interactive
 TensorLike = tf.types.experimental.TensorLike
 
 
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def get_summary_writer(cfg: DictConfig, job_type: str):

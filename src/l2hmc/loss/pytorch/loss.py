@@ -28,10 +28,18 @@ class LatticeLoss:
         self.config = loss_config
         # self.xshape = self.lattice._shape
         self.xshape = self.lattice.xshape
-        self.plaq_weight = torch.tensor(self.config.plaq_weight,
-                                        dtype=torch.float)
-        self.charge_weight = torch.tensor(self.config.charge_weight,
-                                          dtype=torch.float)
+        self.plaq_weight = torch.tensor(
+            self.config.plaq_weight,
+            dtype=torch.float
+        )
+        self.charge_weight = torch.tensor(
+            self.config.charge_weight,
+            dtype=torch.float
+        )
+        self.rmse_weight = torch.tensor(
+            self.config.rmse_weight,
+            dtype=torch.float
+        )
         if isinstance(self.lattice, LatticeU1):
             self.g = U1Phase()
         elif isinstance(self.lattice, LatticeSU3):
@@ -117,6 +125,26 @@ class LatticeLoss:
             use_mixed_loss=use_mixed_loss
         )
 
+    def rmse_loss(
+            self,
+            x_init: Tensor,
+            x_prop: Tensor,
+            acc: Tensor,
+            use_mixed_loss: Optional[bool] = None
+    ) -> Tensor:
+        dx = (
+            x_init.flatten(1) - x_prop.flatten(1)
+        ).abs().sum(-1)
+        rmse_loss = (acc * dx)
+        use_mixed = (
+            self.config.use_mixed_loss
+            if use_mixed_loss is None else use_mixed_loss
+        )
+        if use_mixed:
+            rmse_loss += 1e-4
+            return self.mixed_loss(rmse_loss, self.rmse_weight).mean()
+        return (-rmse_loss / self.rmse_weight).mean()
+
     def charge_loss(
             self,
             x_init: Tensor,
@@ -165,6 +193,10 @@ class LatticeLoss:
         wl_init = self.lattice.wilson_loops(x=x_init)
         wl_prop = self.lattice.wilson_loops(x=x_prop)
 
+        rmse_loss = torch.tensor(0.).to(x_init.real.dtype).to(x_init.device)
+        if self.rmse_weight > 0:
+            rmse_loss = self.rmse_loss(x_init=x_init, x_prop=x_prop, acc=acc)
+
         plaq_loss = torch.tensor(0.).to(x_init.real.dtype).to(x_init.device)
         if self.plaq_weight > 0:
             plaq_loss = self._plaq_loss(w1=wl_init, w2=wl_prop, acc=acc)
@@ -173,4 +205,4 @@ class LatticeLoss:
         if self.charge_weight > 0:
             charge_loss = self._charge_loss(w1=wl_init, w2=wl_prop, acc=acc)
 
-        return plaq_loss + charge_loss
+        return plaq_loss + charge_loss + rmse_loss

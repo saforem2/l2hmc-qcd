@@ -6,7 +6,7 @@ Implements various configuration objects
 from __future__ import absolute_import, annotations, division, print_function
 import json
 import rich.repr
-import logging
+# import logging
 import os
 
 from abc import ABC, abstractmethod
@@ -19,8 +19,12 @@ from typing import Any, Counter, Dict, List, Optional, Sequence
 from hydra.core.config_store import ConfigStore
 import numpy as np
 from omegaconf import DictConfig
+import l2hmc.utils.dist as udist
 
-logger = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)
+from l2hmc import get_logger
+
+logger = get_logger(__name__)
 
 
 # -- Configure useful Paths -----------------------
@@ -46,6 +50,12 @@ MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
 FP16_SYNONYMS = ['float16', 'fp16', '16', 'half']
 FP32_SYNONYMS = ['float32', 'fp32', '32', 'single']
 FP64_SYNONYMS = ['float64', 'fp64', '64', 'double']
+
+ENV_FILTERS = [
+    'PS1',
+    'LSCOLORS',
+    'LS_COLORS',
+]
 
 SYNONYMS = {
     'pytorch': [
@@ -74,6 +84,10 @@ SYNONYMS = {
         'deepspeed',
     ]
 }
+
+
+def dict_to_list_of_overrides(d: dict):
+    return [f'{k}={v}' for k, v in flatten_dict(d, sep='.').items()]
 
 
 def flatten_dict(d: dict, sep: str = '/', pre='') -> dict:
@@ -159,6 +173,46 @@ class LatticeMetrics:
             'sinQ': self.charges.sinQ,
             'intQ': self.charges.intQ,
             'p4x4': self.p4x4
+        }
+
+
+@dataclass
+class EnvConfig:
+    # machine: str
+    # rank: int
+    # local_rank: int
+    # world_size: int
+    # nhosts: int
+    # hostname: str
+    # addr: str
+
+    def __post_init__(self):
+        import socket
+        self.hostname = socket.gethostname()
+        dist_env = udist.query_environment()
+        self.rank = dist_env['rank']
+        self.local_rank = dist_env['local_rank']
+        self.world_size = dist_env['world_size']
+        self.addr = socket.gethostbyaddr(self.hostname)[0]
+        if self.addr.startswith('x3'):
+            self.machine = 'Polaris'
+            self.nodefile = os.environ.get('PBS_NODEFILE', None)
+        elif self.addr.startswith('x1'):
+            self.machine = 'Sunspot'
+            self.nodefile = os.environ.get('PBS_NODEFILE', None)
+        elif self.addr.startswith('thetagpu'):
+            self.machine = 'ThetaGPU'
+            self.nodefile = os.environ.get('COBALT_NODEFILE', None)
+        else:
+            self.machine = self.addr
+            self.nodefile = None
+        self.env = {
+            k: v for k, v in dict(os.environ).items()
+            if (
+                k not in ENV_FILTERS
+                and not k.startswith('_ModuleTable')
+                and not k.startswith('BASH_FUNC_')
+            )
         }
 
 
@@ -440,13 +494,15 @@ class DynamicsConfig(BaseConfig):
 class LossConfig(BaseConfig):
     use_mixed_loss: bool = False
     charge_weight: float = 0.01
-    plaq_weight: float = 0.
+    rmse_weight: float = 0.0
+    plaq_weight: float = 0.0
     aux_weight: float = 0.0
 
     def to_str(self) -> str:
         return '_'.join([
             f'qw-{self.charge_weight:2.1f}',
             f'pw-{self.plaq_weight:2.1f}',
+            f'rw-{self.rmse_weight:2.1f}',
             f'aw-{self.aux_weight:2.1f}',
             f'mixed-{self.use_mixed_loss}',
         ])
@@ -597,11 +653,12 @@ class ExperimentConfig(BaseConfig):
             logger.warning(
                 f'No seed specified, using random seed: {self.seed}'
             )
+        self.env = EnvConfig()
         self.ds_config = {}
         self.xdim = self.dynamics.xdim
         self.xshape = self.dynamics.xshape
         if self.ds_config_path is None:
-            fpath = Path(CONF_DIR).joinpath('ds_config.json')
+            fpath = Path(CONF_DIR).joinpath('ds_config.yaml')
             self.ds_config_path = fpath.resolve().as_posix()
 
         if self.precision in FP16_SYNONYMS:
@@ -651,7 +708,7 @@ class ExperimentConfig(BaseConfig):
             nepoch=self.steps.nepoch,
         )
 
-    def load_ds_config(self, fpath: Optional[os.PathLike]) -> dict:
+    def load_ds_config1(self, fpath: Optional[os.PathLike]) -> dict:
         fname = self.ds_config_path if fpath is None else fpath
         assert fname is not None
         cpath = Path(fname)
@@ -660,6 +717,24 @@ class ExperimentConfig(BaseConfig):
             pass
 
         return ds_config
+
+    def load_ds_config(self, fpath: Optional[os.PathLike] = None) -> dict:
+        fname = self.ds_config_path if fpath is None else fpath
+        assert fname is not None
+        ds_config_path = Path(fname)
+        logger.info(
+            f'Loading DeepSpeed Config from: {ds_config_path.as_posix()}'
+        )
+        if ds_config_path.suffix == '.json':
+            with ds_config_path.open('r') as f:
+                ds_config = json.load(f)
+            return ds_config
+        if ds_config_path.suffix == '.yaml':
+            import yaml
+            with ds_config_path.open('r') as stream:
+                ds_config = dict(yaml.safe_load(stream))
+            return ds_config
+        raise TypeError('Unexpected FileType')
 
     def set_ds_config(self, ds_config: dict) -> None:
         self.ds_config = ds_config

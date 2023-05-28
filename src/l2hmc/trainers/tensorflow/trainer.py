@@ -5,7 +5,7 @@ Implements methods for training L2HMC sampler
 """
 from __future__ import absolute_import, annotations, division, print_function
 from contextlib import nullcontext
-import logging
+# import logging
 import os
 from pathlib import Path
 import time
@@ -45,7 +45,9 @@ import l2hmc.utils.live_plots as plotter
 from tqdm.auto import trange
 
 # log = get_pylogger(__name__)
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
+from l2hmc import get_logger
+log = get_logger(__name__)
 
 Tensor = tf.Tensor
 Array = np.ndarray
@@ -536,7 +538,6 @@ class Trainer(BaseTrainer):
                 # screen=True,
                 # transient=True,
                 auto_refresh=False,
-                console=self.console,
                 vertical_overflow='visible'
             )
 
@@ -598,7 +599,11 @@ class Trainer(BaseTrainer):
         if writer is not None:
             writer.set_as_default()
 
-        table = Table(row_styles=['dim', 'none'], box=box.HORIZONTALS)
+        table = Table(
+            row_styles=['dim', 'none'],
+            # box=box.HORIZONTALS,
+            expand=True,
+        )
         eval_steps = self.steps.test if eval_steps is None else eval_steps
         assert isinstance(eval_steps, int)
         nprint = (
@@ -1255,7 +1260,8 @@ class Trainer(BaseTrainer):
                     esummary = self.histories['train'].era_summary(f'{era-1}')
                     log.info(f'Avgs over last era:\n {esummary}\n')
 
-                self.console.rule(f'ERA: {era} / {nera}, BETA: {b:.3f}')
+                # self.console.rule(f'ERA: {era} / {nera}, BETA: {b:.3f}')
+                log.info(f'ERA: {era} / {nera}, BETA: {b:.3f}')
 
             # x = self.warmup(b)
             epoch_start = time.time()
@@ -1350,7 +1356,8 @@ class Trainer(BaseTrainer):
                     esummary = self.histories['train'].era_summary(f'{era-1}')
                     log.info(f'Avgs over last era:\n {esummary}\n')
 
-                self.console.rule(f'ERA: {era} / {nera - 1}, BETA: {b:.3f}')
+                # self.console.rule(f'ERA: {era} / {nera - 1}, BETA: {b:.3f}')
+                log.info(f'ERA: {era} / {nera}, BETA: {b:.3f}')
 
             epoch_start = time.time()
             x, edata = self.train_epoch(
