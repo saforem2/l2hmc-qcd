@@ -7,9 +7,7 @@ gradient_accumulation_steps: 1
 optimizer:
   type: OneBitAdam
   params:
-    lr: 4e-4
-    cuda_aware: true
-    comm_backend_name: nccl
+    lr: 0.0004
 # flops_profiler:
 #   enabled: false
 #   profile_step: 1

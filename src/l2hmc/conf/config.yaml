@@ -22,7 +22,7 @@ ds_config_path: null
 
 # ----------------------------------------------------------------------------
 # pretty print config at the start of the run using Rich library
-print_config: false
+print_config: true
 # ----------------------------------------------------------------------------
 # disable python warnings if they annoy you
 ignore_warnings: true
