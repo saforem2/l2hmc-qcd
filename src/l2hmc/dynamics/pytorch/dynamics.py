@@ -793,7 +793,7 @@ class Dynamics(nn.Module):
             extras = {
                 'sldf': sldf,
                 'sldb': sldb,
-                'sldfb': sldf + sldb,
+                # 'sldfb': sldf + sldb,
                 'sld': sumlogdet,
             }
             history = self.update_history(
@@ -810,7 +810,7 @@ class Dynamics(nn.Module):
                 extras = {
                     'sldf': sldf,
                     'sldb': sldb,
-                    'sldfb': sldf + sldb,
+                    # 'sldfb': sldf + sldb,
                     'sld': sumlogdet,
                 }
                 metrics = self.get_metrics(
@@ -833,7 +833,7 @@ class Dynamics(nn.Module):
                 extras = {
                     'sldf': torch.zeros_like(sldb),
                     'sldb': sldb,
-                    'sldfb': sldf + sldb,
+                    # 'sldfb': sldf + sldb,
                     'sld': sumlogdet,
                 }
                 # Reverse step count to correctly order metrics at each step
