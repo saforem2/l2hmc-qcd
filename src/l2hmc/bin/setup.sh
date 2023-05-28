@@ -89,8 +89,11 @@ setupPolaris()  {
     export IBV_FORK_SAFE=1
     export NVME_PATH="/local/scratch/"
     # -----------------------------------------------
-    module load conda/2022-09-08; conda activate base
-    VENV_DIR="${ROOT}/venvs/polaris/2022-09-08"
+    # module load conda/2022-09-08; conda activate base
+    # VENV_DIR="${ROOT}/venvs/polaris/2022-09-08"
+    module load conda/2023-01-10-unstable
+    conda activate base
+    VENV_DIR="${ROOT}/venvs/polaris/2023-01-10"
     venvSetup $VENV_DIR
     # -----------------------------------------------
     NRANKS=$(wc -l < "${HOSTFILE}")
