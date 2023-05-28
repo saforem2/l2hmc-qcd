@@ -72,6 +72,9 @@ import tqdm
 # logger.addHandler(file_handler)
 
 # from tqdm.contrib import DummyTqdmFile
+import os
+
+os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 
 class DummyTqdmFile(object):
@@ -119,22 +122,22 @@ def get_rich_logger(
 def get_logger(
         name: Optional[str] = None,
         level: str = 'INFO',
+        rank_zero_only: bool = True,
+        rich_stdout: bool = True,
 ) -> logging.Logger:
     rank = int(MPI.COMM_WORLD.Get_rank())
     # logging.basicConfig(stream=DummyTqdmFile(sys.stderr))
     log = logging.getLogger(name)
     log.handlers = []
-    if rank != 0:
-        log.setLevel('CRITICAL')
-    else:
-        # from rich.console import Console
-        from rich.logging import RichHandler
-        from l2hmc.utils.rich import get_console
-        # console = Console(
-        #     log_path=False,
-        #     width=int(os.environ.get('COLUMNS', 255)),
-        #     markup=True,
-        # )
+    from rich.logging import RichHandler
+    from l2hmc.utils.rich import get_console
+    # format = "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
+    if rank_zero_only:
+        if rank != 0:
+            log.setLevel('CRITICAL')
+        else:
+            log.setLevel(level)
+    if rank == 0:
         console = get_console(markup=True)
         # log.propagate = True
         # log.handlers = []
