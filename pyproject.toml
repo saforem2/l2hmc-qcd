@@ -23,8 +23,6 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "tools",
-  "caffe2",
   "bokeh",
   "mpi4py",
   "h5py",
