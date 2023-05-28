@@ -1,9 +1,16 @@
+# -*- coding: utf-8 -*-
 """
 main.py
 
 Contains entry point for training Dynamics.
 """
-from __future__ import absolute_import, annotations, division, print_function
+from __future__ import (
+    absolute_import,
+    annotations,
+    division,
+    print_function,
+    unicode_literals
+)
 import logging
 import os
 import sys
@@ -16,10 +23,11 @@ import json
 import hydra
 from typing import Optional
 from omegaconf.dictconfig import DictConfig
+from l2hmc import get_logger
 
+# sys.setdefaultencoding('utf8')
 warnings.filterwarnings('ignore')
 
-from l2hmc import get_logger
 log = get_logger(__name__)
 # log = logging.getLogger()
 logging.getLogger('wandb').setLevel(logging.CRITICAL)
