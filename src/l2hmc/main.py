@@ -13,8 +13,8 @@ from __future__ import (
 )
 import logging
 import os
+
 import sys
-import warnings
 import time
 from pathlib import Path
 from mpi4py import MPI
@@ -26,22 +26,23 @@ from omegaconf.dictconfig import DictConfig
 from l2hmc import get_logger
 
 # sys.setdefaultencoding('utf8')
-warnings.filterwarnings('ignore')
 
-log = get_logger(__name__)
-# log = logging.getLogger()
-logging.getLogger('wandb').setLevel(logging.CRITICAL)
-logging.getLogger('aim').setLevel(logging.ERROR)
-logging.getLogger('filelock').setLevel(logging.CRITICAL)
-logging.getLogger('matplotlib').setLevel(logging.CRITICAL)
-logging.getLogger('PIL.PngImagePlugin').setLevel(logging.CRITICAL)
-logging.getLogger('graphviz._tools').setLevel(logging.CRITICAL)
-logging.getLogger('graphviz').setLevel(logging.CRITICAL)
-
+# os.environ['WANDB_SILENT'] = '1'
 comm = MPI.COMM_WORLD
 
 # from l2hmc import logger
-logger = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)
+# log = get_logger(__name__)
+# log = logging.getLogger()
+_ = get_logger('wandb').setLevel(logging.CRITICAL)
+_ = get_logger('aim').setLevel(logging.CRITICAL)
+_ = get_logger('filelock').setLevel(logging.CRITICAL)
+_ = get_logger('matplotlib').setLevel(logging.CRITICAL)
+_ = get_logger('PIL.PngImagePlugin').setLevel(logging.CRITICAL)
+_ = get_logger('graphviz._tools').setLevel(logging.CRITICAL)
+_ = get_logger('graphviz').setLevel(logging.CRITICAL)
+
+log = get_logger(__name__)
 
 
 def get_experiment(
@@ -182,8 +183,10 @@ def main(cfg: DictConfig):
 
 
 if __name__ == '__main__':
+    import warnings
+    warnings.filterwarnings('ignore')
     import wandb
-    wandb.require(experiment='service')
+    # wandb.require(experiment='service')
     start = time.time()
     outdir = main()
     end = time.time()
