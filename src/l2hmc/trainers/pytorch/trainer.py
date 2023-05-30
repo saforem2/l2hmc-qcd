@@ -6,7 +6,6 @@ Implements methods for training L2HMC sampler.
 from __future__ import absolute_import, annotations, division, print_function
 from collections import defaultdict
 from contextlib import nullcontext
-import logging
 import os
 
 import deepspeed
@@ -62,7 +61,7 @@ from l2hmc.utils.step_timer import StepTimer
 # if is_interactive():
 #     from tqdm.rich import trange
 # else:
-from tqdm.auto import trange
+# from tqdm.auto import trange
 
 # log = logging.getLogger(__name__)
 log = get_logger(__name__)
@@ -263,7 +262,7 @@ class Trainer(BaseTrainer):
         engine, optimizer, *_ = deepspeed.initialize(
             model=self.dynamics,
             config=self.ds_config,
-            model_parameters=self.dynamics.parameters()  # noqa
+            model_parameters=self.dynamics.parameters()  # type:ignore
             # model_parameters=filter(
             #     lambda p: p.requires_grad,
             #     self.dynamics.parameters(),
@@ -671,20 +670,25 @@ class Trainer(BaseTrainer):
         metrics.update(self.metrics_to_numpy(metrics))
         avgs = self.histories[job_type].update(metrics)
         summary = summarize_dict(avgs)
-
         if (
                 step is not None
                 and writer is not None
         ):
             assert step is not None
-            update_summaries(step=step,
-                             model=model,
-                             writer=writer,
-                             metrics=metrics,
-                             prefix=job_type,
-                             optimizer=optimizer)
+            update_summaries(
+                step=step,
+                model=model,
+                writer=writer,
+                metrics=metrics,
+                prefix=job_type,
+                optimizer=optimizer,
+                use_tb=self.config.use_tb,
+                use_wandb=(
+                    self.config.use_wandb
+                    and self.config.init_wandb
+                )
+            )
             writer.flush()
-
         if self.config.init_aim or self.config.init_wandb:
             self.track_metrics(
                 record=metrics,

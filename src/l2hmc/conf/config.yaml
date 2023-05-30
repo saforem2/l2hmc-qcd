@@ -9,10 +9,12 @@ precision: 'float32'    # Default floating point precision
 width: 200              # Setting controlling terminal width for printing
 seed: 9992              # Seed for random number
 compile: true           # Compile network in tensorflow? (True by default)
-init_aim: true          # Use aim for experiment / metric tracking
 restore: true           # try restoring weights from previous checkpoint
 save: true              # Save model w/ checkpoints for restoring later?
+init_aim: true          # Use aim for experiment / metric tracking
 init_wandb: true        # Use WandB for experiment / metric tracking
+use_wandb: true
+use_tb: false
 compression: false      # Compression for Horovod
 nchains: null          # Number of chains to use when evaluating model
 ds_config_path: null

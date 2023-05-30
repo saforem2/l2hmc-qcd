@@ -162,19 +162,23 @@ def update_summaries(
         optimizer: Optional[torch.optim.Optimizer] = None,
         prefix: Optional[str] = None,
         with_grads: bool = True,
+        use_tb: bool = True,
+        use_wandb: bool = True,
 ) -> None:
     if metrics is not None:
         log_dict(writer=writer, d=metrics, step=step, prefix=prefix)
     assert isinstance(step, int) if step is not None else None
     if model is not None:
-        log_params_and_grads(model=model, step=step, with_grads=with_grads)
-        params = {
-            f'model/{k}': (
-                grab_tensor(v) if v.requires_grad else None
-            )
-            for k, v in model.named_parameters()
-        }
-        log_dict(writer=writer, d=params, step=step)
+        if use_wandb:
+            log_params_and_grads(model=model, step=step, with_grads=with_grads)
+        if use_tb:
+            params = {
+                f'model/{k}': (
+                    grab_tensor(v) if v.requires_grad else None
+                )
+                for k, v in model.named_parameters()
+            }
+            log_dict(writer=writer, d=params, step=step)
     # if model is not None:
     #     for name, param in model.named_parameters():
     #         if param.requires_grad:

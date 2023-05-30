@@ -630,6 +630,8 @@ class ExperimentConfig(BaseConfig):
     profile: bool = False
     init_aim: bool = True
     init_wandb: bool = True
+    use_wandb: bool = True
+    use_tb: bool = False
     debug_mode: bool = False
     default_mode: bool = True
     print_config: bool = True
