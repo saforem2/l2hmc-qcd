@@ -129,6 +129,8 @@ def log_params_and_grads(
         step: Optional[int] = None,
         with_grads: bool = True,
 ) -> None:
+    if wandb.run is None:
+        return
     params = {
         f'params/{k}': (
             torch.nan_to_num(v)
