@@ -143,7 +143,11 @@ def savefig(fig: plt.Figure, outfile: os.PathLike):
     fout = Path(outfile)
     parent = fout.parent
     parent.mkdir(exist_ok=True, parents=True)
-    log.info(f'Saving figure to: {fout.as_posix()}')
+    relpath = fout.relative_to(os.getcwd())
+    log.info(
+        'Saving figure to: '
+        fr'[link={fout.as_posix()}]{relpath}[\link]'
+    )
     with PLOTS_LOG.open('a') as f:
         f.write(f'{fout.as_posix()}\n')
     _ = fig.savefig(fout.as_posix(), dpi=400, bbox_inches='tight')
