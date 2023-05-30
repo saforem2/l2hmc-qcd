@@ -8,18 +8,15 @@ setup:
     sync_tensorboard: true
     mode: online
     resume: allow
-    magic: true
     entity: l2hmc-qcd
     project: l2hmc-qcd-debug
     settings:
         start_method: thread
-    # config_exclude_keys:
+    # # config_exclude_keys:
     #   - _target_
     tags:
-      - "beta_init=${annealing_schedule.beta_init}"
-      - "beta_final=${annealing_schedule.beta_final}"
-
+        - "beta_init=${annealing_schedule.beta_init}"
+        - "beta_final=${annealing_schedule.beta_final}"
 # watch:
 #   log: all
 #   # log_freq: 100
-
