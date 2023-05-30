@@ -51,6 +51,11 @@ def summarize_dict(d: dict) -> str:
     return ' '.join([format_pair(k, v) for k, v in d.items()])
 
 
+# def subsample_dict(d: dict) -> dict:
+#     for key, val in d.items():
+#         pass
+
+
 @dataclass
 class StateHistory:
     def __post_init__(self):
@@ -69,6 +74,7 @@ class StateHistory:
 
 class History:
     def __init__(self, keys: Optional[list[str]] = None) -> None:
+        self.keys = [] if keys is None else keys
         self.history = {}
 
     def update(self, metrics: dict):
@@ -445,7 +451,13 @@ class BaseHistory:
             x: Union[list, np.ndarray],
             therm_frac: Optional[float] = 0.0,
     ) -> xr.DataArray:
-        arr = np.array(x).real
+        try:
+            arr = np.array(x).real
+        except ValueError:
+            arr = np.array(x)
+            log.info(f'len(x): {len(x)}')
+            log.info(f'x[0].shape: {x[0].shape}')
+            log.info(f'arr.shape: {arr.shape}')
         if therm_frac is not None and therm_frac > 0:
             drop = int(therm_frac * arr.shape[0])
             arr = arr[drop:]
