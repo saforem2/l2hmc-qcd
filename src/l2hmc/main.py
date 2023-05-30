@@ -144,6 +144,12 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
             if ex.run is not None and ex.run is wandb.run:
                 ex.run.log({'model_improvement': improvement})
         log.critical(f'Model improvement: {improvement:.8f}')
+        if wandb.run is not None:
+            log.critical(f':folder: {wandb.run.dir}')
+            log.critical(
+                ':rocket: wandb run: '
+                f'[link={wandb.run.url}]{wandb.run.name}[/]'
+            )
 
     if ex.trainer._is_chief:
         try:
