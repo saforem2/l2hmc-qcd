@@ -48,7 +48,9 @@ log = get_logger(__name__)
 ScalarLike = Union[int, float, bool, np.floating]
 
 
-def grab_tensor(x: Any) -> np.ndarray | ScalarLike:
+def grab_tensor(x: Any) -> np.ndarray | ScalarLike | None:
+    if x is None:
+        return None
     if isinstance(x, (int, float, bool, np.floating)):
         return x
     if isinstance(x, list):
@@ -67,23 +69,6 @@ def grab_tensor(x: Any) -> np.ndarray | ScalarLike:
     elif callable(getattr(x, 'numpy', None)):
         assert callable(getattr(x, 'numpy'))
         return x.numpy()
-    # elif (hasattr(x, 'numpy') and callable(getattr(x, 'numpy'))):
-    # else:
-    #     # if isinstance(x, torch.Tensor):
-    #     #     return x.detach().cpu().numpy()
-    #     if (
-    #             hasattr(x, 'numpy')
-    #             and callable(getattr(x, 'numpy'))
-    #     ):
-    #         assert callable(getattr(x, ''))
-    #         return x.numpy()
-    #     # if isinstance(x, (tf.Tensor, ops.EagerTensor)):
-    #     #     assert (
-    #     #         hasattr(x, 'numpy')
-    #     #         and callable(getattr(x, 'numpy'))
-    #     #     )
-    #     #     return x.numpy()  # type:ignore
-    #
     raise ValueError
 
 
@@ -140,7 +125,7 @@ def seed_everything(seed: int):
     torch.cuda.manual_seed(seed)
 
 
-def check_diff(x, y, name: Optional[str] = None):
+def check_diff(x: Any, y: Any, name: Optional[str] = None) -> np.ndarray:
     if isinstance(x, State):
         xd = {'x': x.x, 'v': x.v, 'beta': x.beta}
         yd = {'x': y.x, 'v': y.v, 'beta': y.beta}
@@ -627,6 +612,7 @@ def save_logs(
             console.print(table)
             html = console.export_html(clear=False)
             text = console.export_text()
+            from rich.markup import escape
             try:
                 with open(hfile.as_posix(), 'a') as f:
                     f.write(html)
@@ -635,7 +621,7 @@ def save_logs(
 
             try:
                 with open(tfile, 'a') as f:
-                    f.write(text)
+                    f.write(escape(text))
             except Exception as exc:
                 log.exception(exc)
 
