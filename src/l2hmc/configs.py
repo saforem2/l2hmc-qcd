@@ -55,6 +55,12 @@ ENV_FILTERS = [
     'PS1',
     'LSCOLORS',
     'LS_COLORS',
+    '_ModuleTable_Sz_'
+    '_ModuleTable003_'
+    '_ModuleTable001_'
+    '_ModuleTable002_o'
+    '_LMFILES_',
+    '__LMOD_REF_COUNT__LMFILES_'
 ]
 
 SYNONYMS = {
@@ -649,6 +655,7 @@ class ExperimentConfig(BaseConfig):
     compression: Optional[str] = None
 
     def __post_init__(self):
+        self.env_config = EnvConfig()
         if self.seed is None:
             import numpy as np
             self.seed = np.random.randint(0)
