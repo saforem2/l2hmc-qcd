@@ -1,28 +1,25 @@
 """
 l2hmc/trackers/pytorch/trackers.py
-Contains various utilities for tracking / logging metrics in TensorBoard
+Contains various utilities for tracking / logging metrics in TensorBoard / W&B
 """
 from __future__ import absolute_import, annotations, division, print_function
-import logging
 from typing import Optional, Union
 
 import numpy as np
 import torch
+from torch import nn
 from torch.utils.tensorboard.writer import SummaryWriter
+import wandb
+from l2hmc import get_logger
 
-# from l2hmc.network.pytorch.network import nested_children
-# from l2hmc.utils.logger import get_pylogger
-# from l2hmc.common import grab_tensor
-
-# from l2hmc.common import grab_tensor
+from l2hmc.common import grab_tensor
 
 Tensor = torch.Tensor
 Array = np.ndarray
 Scalar = Union[float, int, bool, np.floating]
 ArrayLike = Union[Tensor, Array, Scalar]
 
-# log = get_pylogger(__name__)
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def log_dict(
@@ -41,6 +38,17 @@ def log_dict(
             log_item(writer=writer, val=val, step=step, tag=pre)
 
 
+def log_dict_wandb(
+        d: dict,
+        step: Optional[int] = None,
+        prefix: Optional[str] = None
+) -> None:
+    """Create WandB summaries for all items in `d`."""
+    if prefix is not None and step is not None:
+        d |= {'iter': step}
+    wandb.log({prefix: d}) if prefix is not None else wandb.log(d)
+
+
 def log_list(
         writer: SummaryWriter,
         x: list,
@@ -49,10 +57,6 @@ def log_list(
 ) -> None:
     """Create TensorBoard summaries for all entries in `x`."""
     for t in x:
-        # if isinstance(t, Tensor):
-        #     # t = grab_tensor(t)
-        #     t = t.detach().numpy()
-
         name = getattr(t, 'name', getattr(t, '__name__', None))
         tag = name if prefix is None else f'{prefix}/{name}'
         assert tag is not None
@@ -120,6 +124,36 @@ def log_item(
         log.warning(f'{tag}.type: {type(val)}')
 
 
+def log_params_and_grads(
+        model: nn.Module,
+        step: Optional[int] = None,
+        with_grads: bool = True,
+) -> None:
+    params = {
+        f'params/{k}': (
+            torch.nan_to_num(v)
+            if v is not None
+            else None
+        )
+        for k, v in model.named_parameters()
+    }
+    grads = {}
+    if with_grads:
+        grads = {
+            f'grads/{k}.grad': (
+                torch.nan_to_num(v.grad)
+                if v.grad is not None
+                else None
+            )
+            for k, v in model.named_parameters()
+        }
+    if step is not None:
+        params |= {'iter': step}
+        grads |= {'iter': step}
+    wandb.log(params, commit=False)
+    wandb.log(grads)
+
+
 def update_summaries(
         writer: SummaryWriter,
         step: Optional[int] = None,
@@ -127,29 +161,28 @@ def update_summaries(
         model: Optional[torch.nn.Module] = None,
         optimizer: Optional[torch.optim.Optimizer] = None,
         prefix: Optional[str] = None,
+        with_grads: bool = True,
 ) -> None:
     if metrics is not None:
         log_dict(writer=writer, d=metrics, step=step, prefix=prefix)
     assert isinstance(step, int) if step is not None else None
     if model is not None:
-        for name, param in model.named_parameters():
-            if param.requires_grad:
-                tag = f'model/{name}'
-                log_item(writer=writer, val=param, step=step, tag=tag)
-        # children = nested_children(model)
-        # for name, child in children.items():
-        #     log_item(
-        #         writer=writer,
-        #         val=child.parameters(),
-        #         step=step,
-        #         tag=tag
-        #     )
-        # for m in model.register_buffer
-        #     if isinstance(m, nn.Linear):
-
-    if optimizer is not None:
-        for group in optimizer.param_groups:
-            for p in group['params']:
-                if p.grad is not None:
-                    tag = f'optimizer/{getattr(p, "name", str(p))}'
-                    log_item(writer=writer, val=p.detach(), step=step, tag=tag)
+        log_params_and_grads(model=model, step=step, with_grads=with_grads)
+        params = {
+            f'model/{k}': (
+                grab_tensor(v) if v.requires_grad else None
+            )
+            for k, v in model.named_parameters()
+        }
+        log_dict(writer=writer, d=params, step=step)
+    # if model is not None:
+    #     for name, param in model.named_parameters():
+    #         if param.requires_grad:
+    #             tag = f'model/{name}'
+    #             log_item(writer=writer, val=param, step=step, tag=tag)
+    # if optimizer is not None:
+    #     for group in optimizer.param_groups:
+    #         for p in group['params']:
+    #             if p.grad is not None:
+    #                 tag = f'optimizer/{getattr(p, "name", str(p))}'
+    #                 log_item(writer=writer, val=p.detach(), step=step, tag=tag)
