@@ -151,7 +151,6 @@ class BaseExperiment(ABC):
             raise ValueError('WandB already initialized!')
 
         from wandb.util import generate_id
-
         run_id = generate_id()
         self.update_wandb_config(run_id=run_id)
         wandb.tensorboard.patch(root_logdir=os.getcwd())
@@ -160,6 +159,13 @@ class BaseExperiment(ABC):
             # name=wbname,
             **self.config.wandb.setup,
         )
+        assert run is not None and run is wandb.run
+        log.warn(80 * '-')
+        log.warn(fr':sparkle: [bold red]wandb.run.name: {run.name}[/]')
+        log.warn(
+            fr':rocket: [bold red]wandb.run: [link={run.url}]{run.url}[/link][/]'
+        )
+        log.warn(80 * '-')
         assert run is wandb.run and run is not None
         wandb.define_metric('dQint_eval', summary='mean')
         run.log_code(HERE.as_posix())
