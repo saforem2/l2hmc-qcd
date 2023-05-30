@@ -311,7 +311,10 @@ fi
 # testElastic
 runPyTorch
 runTensorFlow
-
+#
+# wait ;
+#
+#
 # for IDX in $(seq 1 5); do
 # # IDX=0
 #   IDXTSTAMP=$(date "+%Y-%m-%d-%H%M%S")

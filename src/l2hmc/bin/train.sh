@@ -120,4 +120,6 @@ setup() {
 }
 
 setup
-${EXEC} "$@" > ${LOGFILE} 2>&1 &
+${EXEC} "$@" > "${LOGFILE}" 2>&1 &
+
+# wait ;
