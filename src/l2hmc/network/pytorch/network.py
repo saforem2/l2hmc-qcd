@@ -60,7 +60,8 @@ def nested_children(m: nn.Module) -> dict[str, nn.Module]:
 
 
 def flatten(x: torch.Tensor) -> torch.Tensor:
-    return x.reshape(x.shape[0], -1)
+    # return x.reshape(x.shape[0], -1)
+    return x.view(x.shape[0], -1)
 
 
 def xy_repr(x: torch.Tensor) -> torch.Tensor:
