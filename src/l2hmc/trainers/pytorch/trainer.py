@@ -15,6 +15,7 @@ import socket
 import time
 from typing import Any, Callable, Optional, Sequence
 from rich.console import ConsoleRenderable
+from rich.panel import Panel
 # from rich.align import Align
 
 from torch.cuda.amp.grad_scaler import GradScaler
@@ -153,6 +154,22 @@ class Trainer(BaseTrainer):
         self.dynamics: Dynamics = self.build_dynamics(
             build_networks=build_networks,
         )
+        minlogfreq = int(self.config.steps.nepoch // 20)
+        logfreq = (
+            minlogfreq if self.config.steps.log is None
+            else self.config.steps.log
+        )
+        log.warning(f'logging with freq {logfreq} for wandb.watch')
+        if self.rank == 0 and wandb.run is not None:
+            wandb.watch(
+                (
+                    self.dynamics.networks,
+                    self.dynamics.xeps,
+                    self.dynamics.veps
+                ),
+                log='all',
+                log_freq=logfreq
+            )
         self.ckpt_dir: Path = (
             Path(CHECKPOINTS_DIR).joinpath('checkpoints')
             if ckpt_dir is None
@@ -1015,6 +1032,7 @@ class Trainer(BaseTrainer):
         eps = setup['eps']
         beta = setup['beta']
         table = setup['table']
+        panel = Panel(table)
         nleapfrog = setup['nleapfrog']
         eval_steps = setup['eval_steps']
         assert x is not None and beta is not None
@@ -1045,7 +1063,7 @@ class Trainer(BaseTrainer):
                     return self.hmc_step(z, eps=eps, nleapfrog=nleapfrog)
                 return self.eval_step(z)
 
-        ctx = self.get_context_manager(table)
+        ctx = self.get_context_manager(panel)
 
         def refresh_view():
             if isinstance(ctx, Live):
