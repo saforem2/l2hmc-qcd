@@ -150,10 +150,17 @@ def log_params_and_grads(
             for k, v in model.named_parameters()
         }
     if step is not None:
-        params |= {'iter': step}
-        grads |= {'iter': step}
+        step_ = torch.tensor(step)
+        params |= {'iter': step_}
+        grads |= {'iter': step_}
     wandb.log(params, commit=False)
-    wandb.log(grads)
+    try:
+        wandb.log(grads)
+    except Exception:
+        log.error(
+            'Failed to `wandb.log(grads)` '
+        )
+        pass
 
 
 def update_summaries(
