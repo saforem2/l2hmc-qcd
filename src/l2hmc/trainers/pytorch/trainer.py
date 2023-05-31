@@ -154,22 +154,11 @@ class Trainer(BaseTrainer):
         self.dynamics: Dynamics = self.build_dynamics(
             build_networks=build_networks,
         )
-        minlogfreq = int(self.config.steps.nepoch // 20)
-        logfreq = (
-            minlogfreq if self.config.steps.log is None
-            else self.config.steps.log
-        )
-        log.warning(f'logging with freq {logfreq} for wandb.watch')
-        if self.rank == 0 and wandb.run is not None:
-            wandb.watch(
-                (
-                    self.dynamics.networks,
-                    self.dynamics.xeps,
-                    self.dynamics.veps
-                ),
-                log='all',
-                log_freq=logfreq
-            )
+        # minlogfreq = int(self.config.steps.nepoch // 20)
+        # logfreq = (
+        #     minlogfreq if self.config.steps.log is None
+        #     else self.config.steps.log
+        # )
         self.ckpt_dir: Path = (
             Path(CHECKPOINTS_DIR).joinpath('checkpoints')
             if ckpt_dir is None
@@ -179,7 +168,6 @@ class Trainer(BaseTrainer):
         # if self.use_fp16:
         #     self.dynamics = self.dynamics.to(torch.half)
         #     # self.warning(f'Dynamics.dtype: {self.dynamics.dtype}')
-
         # --------------------------------------------------------
         # NOTE:
         #   - If we want to try and resume training,
@@ -238,17 +226,26 @@ class Trainer(BaseTrainer):
                 # find_unused_parameters=True
             )
             self.grad_scaler = GradScaler()
-
         elif self.config.backend.lower() in ['ds', 'deepspeed']:
             self._setup_deepspeed()
-
         elif self.config.backend.lower() in ['hvd', 'horovod']:
             # self.grad_scaler = GradScaler()
             self._setup_horovod()
-
         else:
             self.optimizer = self._optimizer
-
+        logfreq = self.config.steps.log
+        log.warning(f'logging with freq {logfreq} for wandb.watch')
+        # if self.rank == 0 and wandb.run is not None:
+        if self._is_chief and self.config.use_wandb and wandb.run is not None:
+            wandb.watch(
+                (
+                    self.dynamics.networks,
+                    self.dynamics.xeps,
+                    self.dynamics.veps
+                ),
+                log='all',
+                log_freq=logfreq
+            )
         assert (
             isinstance(self.dynamics, Dynamics)
             and isinstance(self.dynamics, nn.Module)

@@ -325,8 +325,8 @@ class Steps(BaseConfig):
     nera: int
     nepoch: int
     test: int
-    log: Optional[int] = None
-    print: Optional[int] = None
+    log: int = 100
+    print: int = 200
     extend_last_era: Optional[int] = None
 
     def __post_init__(self):
