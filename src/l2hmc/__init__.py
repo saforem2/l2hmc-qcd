@@ -8,7 +8,9 @@ from typing import Optional
 import warnings
 
 from mpi4py import MPI
-from rich.logging import RichHandler
+# from rich.logging import RichHandler
+# from l2hmc.utils.enrich import EnRichHandler
+from enrich.logging import RichHandler
 import tqdm
 
 warnings.filterwarnings('ignore')
@@ -18,6 +20,7 @@ warnings.filterwarnings('ignore')
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 RANK = int(MPI.COMM_WORLD.Get_rank())
+WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
 
 
 class DummyTqdmFile(object):
@@ -48,6 +51,7 @@ def get_rich_logger(
     from l2hmc.utils.rich import get_console
     console = get_console(
         markup=True,
+        redirect=(WORLD_SIZE > 1),
     )
     handler = RichHandler(
         level,
@@ -103,7 +107,7 @@ def get_logger(
     # logging.basicConfig(stream=DummyTqdmFile(sys.stderr))
     log = logging.getLogger(name)
     # log.handlers = []
-    from rich.logging import RichHandler
+    # from rich.logging import RichHandler
     from l2hmc.utils.rich import get_console
     # format = "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
     if rank_zero_only:
@@ -112,7 +116,15 @@ def get_logger(
         else:
             log.setLevel(level)
     if RANK == 0:
-        console = get_console(markup=True, **kwargs)
+        # from pathlib import Path
+        # outdir = Path(os.getcwd()).resolve().absolute()
+        # outfile = outdir.joinpath('console.log').as_posix()
+        console = get_console(
+            markup=True,  # (WORLD_SIZE == 1),
+            redirect=(WORLD_SIZE > 1),
+            # file=outfile,
+            **kwargs
+        )
         # log.propagate = True
         # log.handlers = []
         log.addHandler(
@@ -120,58 +132,61 @@ def get_logger(
                 omit_repeated_times=False,
                 level=level,
                 console=console,
+                show_time=True,
+                show_level=True,
                 show_path=True,
-                enable_link_path=False,
                 # tracebacks_width=120,
-                markup=True,
+                markup=(WORLD_SIZE == 1),
+                enable_link_path=(WORLD_SIZE == 1),
                 # keywords=['loss=', 'dt=', 'Saving']
             )
         )
         log.setLevel(level)
     return log
 
-def get_logger_old(
-        name: Optional[str] = None,
-        level: str = 'INFO',
-        rank_zero_only: bool = True,
-        rich_stdout: bool = True,
-) -> logging.Logger:
-    # logging.basicConfig(stream=DummyTqdmFile(sys.stderr))
-    import logging
-    # logging.basicConfig(
-    #     format="[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
-    # )
-    log = logging.getLogger(name)
-    log.handlers = []
-    from rich.logging import RichHandler
-    from l2hmc.utils.rich import get_console
-    if rank_zero_only:
-        if rank != 0:
-            log.setLevel('CRITICAL')
-        else:
-            log.setLevel(level)
-    if rank == 0:
-        console = get_console(markup=True)
-        # log.propagate = True
-        # log.handlers = []
-        # formatter = logging.Formatter(
-        #     "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
-        # )
-        rh = RichHandler(
-            log_time_format='[%Y-%m-%d][%X]',
-            omit_repeated_times=False,
-            level=level,
-            console=console,
-            show_path=False,
-            # show_time=False,
-            # show_level=False,
-            enable_link_path=False,
-            markup=True,
-        )
-        # rh.formatter = None
-        # rh.formatter = formatter
-        # rh.setFormatter(formatter)
-        rh.setLevel(level)
-        log.addHandler(rh)
-        log.setLevel(level)
-    return log
+# def get_logger_old(
+#         name: Optional[str] = None,
+#         level: str = 'INFO',
+#         rank_zero_only: bool = True,
+#         rich_stdout: bool = True,
+# ) -> logging.Logger:
+#     # logging.basicConfig(stream=DummyTqdmFile(sys.stderr))
+#     import logging
+#     # logging.basicConfig(
+#     #     format="[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
+#     # )
+#     log = logging.getLogger(name)
+#     log.handlers = []
+#     # from rich.logging import RichHandler
+#     from l2hmc.utils.rich import RichHandler
+#     from l2hmc.utils.rich import get_console
+#     if rank_zero_only:
+#         if rank != 0:
+#             log.setLevel('CRITICAL')
+#         else:
+#             log.setLevel(level)
+#     if rank == 0:
+#         console = get_console(markup=True)
+#         # log.propagate = True
+#         # log.handlers = []
+#         # formatter = logging.Formatter(
+#         #     "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
+#         # )
+#         rh = RichHandler(
+#             # log_time_format='[%Y-%m-%d][%X]',
+#             omit_repeated_times=False,
+#             level=level,
+#             console=console,
+#             show_path=False,
+#             # show_time=False,
+#             # show_level=False,
+#             enable_link_path=False,
+#             markup=True,
+#         )
+#         # rh.formatter = None
+#         # rh.formatter = formatter
+#         # rh.setFormatter(formatter)
+#         rh.setLevel(level)
+#         log.addHandler(rh)
+#         log.setLevel(level)
+#     return log
