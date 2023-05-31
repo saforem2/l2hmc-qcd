@@ -213,8 +213,6 @@ class Trainer(BaseTrainer):
         # --------------------------------------------------------------------
         # BACKEND SPECIFIC SETUP
         # ----------------------
-        # NOTE: DeepSpeed automatically handles gradient scaling when training
-        # with mixed precision.
         self.ds_config = {}
         self.grad_scaler = None  # Needed for Horovod, DDP
         self.dynamics_engine = None
@@ -226,6 +224,8 @@ class Trainer(BaseTrainer):
                 # find_unused_parameters=True
             )
             self.grad_scaler = GradScaler()
+        # NOTE: DeepSpeed automatically handles gradient scaling when training
+        # with mixed precision.
         elif self.config.backend.lower() in ['ds', 'deepspeed']:
             self._setup_deepspeed()
         elif self.config.backend.lower() in ['hvd', 'horovod']:
@@ -273,15 +273,23 @@ class Trainer(BaseTrainer):
             self.dynamics = self.dynamics.to(torch.half)
         if self._is_chief:
             print_json(json.dumps(self.ds_config, indent=4))
-        engine, optimizer, *_ = deepspeed.initialize(
-            model=self.dynamics,
-            config=self.ds_config,
-            model_parameters=self.dynamics.parameters()  # type:ignore
-            # model_parameters=filter(
-            #     lambda p: p.requires_grad,
-            #     self.dynamics.parameters(),
-            # ),
-        )
+        if 'optimizer' in self.ds_config.items():
+            engine, optimizer, *_ = deepspeed.initialize(
+                model=self.dynamics,
+                config=self.ds_config,
+                model_parameters=self.dynamics.parameters()  # type:ignore
+                # model_parameters=filter(
+                #     lambda p: p.requires_grad,
+                #     self.dynamics.parameters(),
+                # ),
+            )
+        else:
+            optimizer = self._optimizer
+            engine, *_ = deepspeed.initialize(
+                model=self.dynamics,
+                config=self.ds_config,
+                model_parameters=self.dynamics.parameters()  # type:ignore
+            )
         assert engine is not None
         assert optimizer is not None
         self.dynamics_engine = engine
@@ -680,7 +688,10 @@ class Trainer(BaseTrainer):
 
         if job_type == 'eval' and 'eps' in metrics:
             _ = metrics.pop('eps', None)
-
+        metrics |= {
+            'xeps': torch.tensor(self.dynamics.xeps),
+            'veps': torch.tensor(self.dynamics.veps)
+        }
         metrics.update(self.metrics_to_numpy(metrics))
         avgs = self.histories[job_type].update(metrics)
         summary = summarize_dict(avgs)

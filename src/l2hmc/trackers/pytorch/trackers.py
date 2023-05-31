@@ -175,7 +175,12 @@ def update_summaries(
         use_wandb: bool = True,
 ) -> None:
     if metrics is not None:
-        log_dict(writer=writer, d=metrics, step=step, prefix=prefix)
+        if use_tb:
+            log_dict(writer=writer, d=metrics, step=step, prefix=prefix)
+        if use_wandb:
+            # pfix = f'{prefix}-wb' if prefix is not None else 'metrics-wb'
+            metrics = {f'{prefix}-wb/{k}': v for k, v in metrics.items()}
+            log_dict_wandb(metrics, step)
     assert isinstance(step, int) if step is not None else None
     if model is not None:
         if use_wandb:
