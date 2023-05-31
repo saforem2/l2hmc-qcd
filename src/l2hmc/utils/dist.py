@@ -158,7 +158,7 @@ def get_rank() -> int:
     return int(MPI.COMM_WORLD.Get_rank())
 
 
-def get_size() -> int:
+def get_world_size() -> int:
     return int(MPI.COMM_WORLD.Get_size())
 
 
@@ -188,7 +188,7 @@ def query_environment() -> dict[str, int]:
         }
 
     return {
-        'world_size': int(get_size()),
+        'world_size': int(get_world_size()),
         'rank': int(get_rank()),
         'local_rank': int(get_local_rank()),
     }
@@ -208,7 +208,7 @@ def setup_torch_DDP(port: str = '2345') -> dict[str, int]:
     #         '0',
     #     )
     # ))
-    size = int(get_size())
+    size = int(get_world_size())
     rank = int(get_rank())
     local_rank = int(get_local_rank())
     os.environ['LOCAL_RANK'] = str(local_rank)
@@ -262,7 +262,7 @@ def setup_torch_distributed(
 
     elif be in ['deepspeed', 'ds']:
         init_deepspeed()
-        size = get_size()
+        size = get_world_size()
         rank = get_rank()
         local_rank = get_local_rank()
 
@@ -313,7 +313,7 @@ def setup_torch(
     rank = dsetup['rank']
     size = dsetup['size']
     local_rank = dsetup['local_rank']
-    # size = int(get_size())
+    # size = int(get_world_size())
     # rank = int(get_rank())
     # local_rank = int(get_local_rank())
     os.environ['LOCAL_RANK'] = str(local_rank)
