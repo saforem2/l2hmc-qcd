@@ -145,19 +145,18 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
                 ex.run.log({'model_improvement': improvement})
         log.critical(f'Model improvement: {improvement:.8f}')
         if wandb.run is not None:
-            log.critical(f':folder: {wandb.run.dir}')
             log.critical(
                 ':rocket: wandb run: '
-                f'[link={wandb.run.url}]{wandb.run.name}[/]'
+                f'[link={wandb.run.url}]{wandb.run.name}[/link]'
             )
-
+            log.critical(f'📂/: {wandb.run.dir}')
     if ex.trainer._is_chief:
         try:
             ex.visualize_model()
         except Exception:
             # log.exception(e)
             log.error('Unable to make visuals for model, continuing!')
-
+        log.critical(f"experiment dir: {Path(ex._outdir).as_posix()}")
     return Path(ex._outdir).as_posix()
 
 
@@ -167,7 +166,6 @@ def build_experiment(overrides: Optional[str | list[str]] = None):
     from l2hmc.configs import get_config
     if isinstance(overrides, str):
         overrides = [overrides]
-
     cfg = get_config(overrides)
     exp = get_experiment(cfg=cfg)
     return exp
@@ -184,7 +182,6 @@ def main(cfg: DictConfig):
     ):
         from l2hmc.utils.dist import cleanup
         cleanup()
-
     return output
 
 
