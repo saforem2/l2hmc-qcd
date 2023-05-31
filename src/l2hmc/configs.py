@@ -58,7 +58,10 @@ ENV_FILTERS = [
     '_ModuleTable_Sz_'
     '_ModuleTable003_'
     '_ModuleTable001_'
-    '_ModuleTable002_o'
+    '_ModuleTable002_',
+    '_ModuleTable003_',
+    '_ModuleTable004_',
+    'BASH_FUNC__conda_activate%%',
     '_LMFILES_',
     '__LMOD_REF_COUNT__LMFILES_'
 ]
