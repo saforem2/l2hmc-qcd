@@ -4,10 +4,14 @@ gradient_accumulation_steps: 1
 # prescale_gradients: false
 # wall_clock_breakdown: false
 # zero_allow_untested_optimizer: true
+# optimizer:
+#   type: OneBitAdam
+#   params:
+#     lr: 0.0004
 optimizer:
-  type: OneBitAdam
+  type: AdamW
   params:
-    lr: 0.0004
+    lr: 0.001
 # flops_profiler:
 #   enabled: false
 #   profile_step: 1
