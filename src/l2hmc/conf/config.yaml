@@ -2,8 +2,8 @@
 _target_: l2hmc.configs.ExperimentConfig
 #
 # ----------------------------------------------------------------------------
-framework: ???          # ML framework to use: one of 'pytorch', 'tensorflow'
-backend: 'horovod'      # Backend to use for distributed training
+framework: pytorch      # ML framework to use: one of 'pytorch', 'tensorflow'
+backend: 'DDP'          # Backend to use for distributed training
 profile: false          # Flag for profiling in pytorch
 precision: 'float32'    # Default floating point precision
 width: 200              # Setting controlling terminal width for printing
@@ -14,7 +14,7 @@ save: true              # Save model w/ checkpoints for restoring later?
 init_aim: true          # Use aim for experiment / metric tracking
 init_wandb: true        # Use WandB for experiment / metric tracking
 use_wandb: true
-use_tb: false
+use_tb: true
 compression: false      # Compression for Horovod
 nchains: null          # Number of chains to use when evaluating model
 ds_config_path: null
