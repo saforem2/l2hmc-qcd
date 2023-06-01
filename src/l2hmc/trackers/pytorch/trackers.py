@@ -26,16 +26,28 @@ def log_dict(
         writer: SummaryWriter,
         d: dict,
         step: Optional[int] = None,
-        prefix: Optional[str] = None
+        prefix: Optional[str] = None,
+        nchains: Optional[int] = None
 ) -> None:
     """Create TensorBoard summaries for all items in `d`."""
     for key, val in d.items():
-
         pre = key if prefix is None else f'{prefix}/{key}'
         if isinstance(val, dict):
-            log_dict(writer=writer, d=val, step=step, prefix=pre)
+            log_dict(
+                writer=writer,
+                d=val,
+                step=step,
+                prefix=pre,
+                nchains=nchains
+            )
         else:
-            log_item(writer=writer, val=val, step=step, tag=pre)
+            log_item(
+                writer=writer,
+                val=val,
+                step=step,
+                tag=pre,
+                nchains=nchains
+            )
 
 
 def log_dict_wandb(
@@ -45,7 +57,7 @@ def log_dict_wandb(
 ) -> None:
     """Create WandB summaries for all items in `d`."""
     if prefix is not None and step is not None:
-        d |= {'iter': step}
+        d |= {f'{prefix}/iter': step}
     wandb.log({prefix: d}) if prefix is not None else wandb.log(d)
 
 
@@ -54,13 +66,14 @@ def log_list(
         x: list,
         prefix: str,
         step: Optional[int] = None,
+        nchains: Optional[int] = None
 ) -> None:
     """Create TensorBoard summaries for all entries in `x`."""
     for t in x:
         name = getattr(t, 'name', getattr(t, '__name__', None))
         tag = name if prefix is None else f'{prefix}/{name}'
         assert tag is not None
-        log_item(writer=writer, val=t, step=step, tag=tag)
+        log_item(writer=writer, val=t, step=step, tag=tag, nchains=nchains)
 
 
 def log_step(
@@ -84,12 +97,14 @@ def log_item(
         val: float | int | bool | list | np.ndarray | torch.Tensor,
         writer: SummaryWriter,
         step: Optional[int] = None,
+        nchains: Optional[int] = None
 ) -> None:
     if step is not None:
         log_step(tag, step, writer)
-
     tag = check_tag(tag)
     if isinstance(val, (Tensor, Array)):
+        if nchains is not None and len(val.shape) > 0:
+            val = val[:nchains]
         if (
                 (isinstance(val, Tensor) and torch.is_complex(val))
                 or (isinstance(val, Array) and np.iscomplexobj(val))
@@ -98,66 +113,84 @@ def log_item(
             log_item(tag=f'{tag}.imag', val=val.imag, writer=writer, step=step)
         elif len(val.shape) > 0:
             writer.add_scalar(f'{tag}/avg', val.mean(), global_step=step)
+            val = (
+                val[:nchains] if len(val.shape) > 0
+                and nchains is not None else val
+            )
             if len(val.shape) > 0:
-                try:
-                    writer.add_histogram(
-                        tag=tag,
-                        values=val,
-                        global_step=step
-                    )
-                except ValueError:
-                    log.error(f'Error adding histogram for: {tag}')
+                if nchains is not None:
+                    val = val[:nchains]
+            try:
+                writer.add_histogram(tag=tag, values=val, global_step=step)
+            except ValueError:
+                log.error(f'Error adding histogram for: {tag}')
         else:
             writer.add_scalar(tag, val, global_step=step)
-
     elif isinstance(val, list):
         log_list(writer=writer, x=val, step=step, prefix=tag)
-
     elif (
             isinstance(val, (float, int, bool, np.floating))
             or len(val.shape) == 0
     ):
         writer.add_scalar(tag=tag, scalar_value=val, global_step=step)
-
     else:
         log.warning(f'Unexpected type encountered for: {tag}')
         log.warning(f'{tag}.type: {type(val)}')
+
+
+def as_tensor(
+        x: torch.Tensor | list | None,
+        grab: bool = False,
+        nchains: Optional[int] = None,
+) -> torch.Tensor | None | np.ndarray | Scalar:
+    if x is None:
+        return x
+    if nchains is not None:
+        try:
+            x = x[:nchains]
+        except Exception:
+            pass
+    if isinstance(x, torch.Tensor):
+        x = torch.nan_to_num(x)
+    if isinstance(x, list):
+        x = torch.stack(x)
+    if grab:
+        return grab_tensor(x)
+    return x
 
 
 def log_params_and_grads(
         model: nn.Module,
         step: Optional[int] = None,
         with_grads: bool = True,
+        nchains: Optional[int] = None,
 ) -> None:
     if wandb.run is None:
         return
     params = {
         f'params/{k}': (
-            torch.nan_to_num(v)
-            if v is not None
-            else None
+            as_tensor(v, nchains=nchains)
+            # torch.nan_to_num(v)
+            # if v is not None
+            # else None
         )
         for k, v in model.named_parameters()
     }
     grads = {}
     if with_grads:
         grads = {
-            f'grads/{k}.grad': (
-                torch.nan_to_num(v.grad)
-                if v.grad is not None
-                else None
-            )
+            f'grads/{k}.grad': as_tensor(v.grad, nchains=nchains)
             for k, v in model.named_parameters()
         }
     if step is not None:
         step_ = torch.tensor(step)
-        params |= {'iter': step_}
-        grads |= {'iter': step_}
+        params |= {'params/iter': step_}
+        grads |= {'grads/iter': step_}
     wandb.log(params, commit=False)
     try:
         wandb.log(grads)
     except Exception:
-        log.error(
+        log.critical(
             'Failed to `wandb.log(grads)` '
         )
         pass
@@ -168,31 +201,44 @@ def update_summaries(
         step: Optional[int] = None,
         metrics: Optional[dict[str, ArrayLike]] = None,
         model: Optional[torch.nn.Module] = None,
-        optimizer: Optional[torch.optim.Optimizer] = None,
         prefix: Optional[str] = None,
         with_grads: bool = True,
         use_tb: bool = True,
         use_wandb: bool = True,
+        nchains: int = 8,
+        optimizer: Optional[torch.optim.Optimizer] = None,
 ) -> None:
     if metrics is not None:
         if use_tb:
-            log_dict(writer=writer, d=metrics, step=step, prefix=prefix)
+            log_dict(
+                writer=writer,
+                d=metrics,
+                step=step,
+                prefix=prefix,
+                nchains=nchains
+            )
         if use_wandb:
             # pfix = f'{prefix}-wb' if prefix is not None else 'metrics-wb'
-            metrics = {f'{prefix}-wb/{k}': v for k, v in metrics.items()}
+            metrics = {f'{prefix}.wb/{k}': v for k, v in metrics.items()}
             log_dict_wandb(metrics, step)
     assert isinstance(step, int) if step is not None else None
     if model is not None:
         if use_wandb:
-            log_params_and_grads(model=model, step=step, with_grads=with_grads)
+            log_params_and_grads(
+                model=model,
+                step=step,
+                with_grads=with_grads,
+                nchains=nchains
+            )
         if use_tb:
             params = {
                 f'model/{k}': (
-                    grab_tensor(v) if v.requires_grad else None
+                    as_tensor(v, grab=True, nchains=nchains)
+                    if v.requires_grad else None
                 )
                 for k, v in model.named_parameters()
             }
-            log_dict(writer=writer, d=params, step=step)
+            log_dict(writer=writer, d=params, step=step, nchains=nchains)
     # if model is not None:
     #     for name, param in model.named_parameters():
     #         if param.requires_grad:
