@@ -748,12 +748,15 @@ class Trainer(BaseTrainer):
                 }
             }
 
-        if run is not None:
+        # if run is not None:
+        if wandb.run is not None and self.config.init_wandb:
             try:
-                run.log({f'wandb/{job_type}': record}, commit=False)
-                run.log({f'avgs/wandb.{job_type}': avgs})
+                wandb.run.log({f'{job_type}.metrics': record}, commit=False)
+                wandb.run.log({f'{job_type}.avgs': avgs})
+                # wandb.run.log({f'wandb/{job_type}': record}, commit=False)
+                # wandb.run.log({f'avgs/wandb.{job_type}': avgs})
                 if dQdict is not None:
-                    run.log(dQdict, commit=False)
+                    wandb.run.log(dQdict, commit=False)
             except ValueError:
                 self.warning('Unable to track record with WandB, skipping!')
         if arun is not None:
