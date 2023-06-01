@@ -196,4 +196,6 @@ if __name__ == '__main__':
     log.info(f'Run completed in: {end - start:4.4f} s')
     if outdir is not None:
         log.info(f'Run located in: {outdir}')
-    sys.exit(0)
+    if wandb.run is not None:
+        wandb.finish(0)
+    # sys.exit(0)
