@@ -13,6 +13,7 @@ import wandb
 from l2hmc import get_logger
 
 from l2hmc.common import grab_tensor
+from l2hmc.utils.history import StopWatch
 
 Tensor = torch.Tensor
 Array = np.ndarray
@@ -29,7 +30,7 @@ def log_dict(
         prefix: Optional[str] = None,
         nchains: Optional[int] = None
 ) -> None:
-    """Create TensorBoard summaries for all items in `d`."""
+    """Create TensorBoard summaries for all items in `d`"""
     for key, val in d.items():
         pre = key if prefix is None else f'{prefix}/{key}'
         if isinstance(val, dict):
@@ -53,12 +54,18 @@ def log_dict(
 def log_dict_wandb(
         d: dict,
         step: Optional[int] = None,
-        prefix: Optional[str] = None
+        prefix: Optional[str] = None,
+        commit: bool = True,
 ) -> None:
-    """Create WandB summaries for all items in `d`."""
+    """Create WandB summaries for all items in `d`"""
     if prefix is not None and step is not None:
         d |= {f'{prefix}/iter': step}
-    wandb.log({prefix: d}) if prefix is not None else wandb.log(d)
+    wandb.log(
+        d if prefix is None else {
+            f'{prefix}/{k}': v for k, v in d.items()
+        },
+        commit=commit
+    )
 
 
 def log_list(
@@ -68,7 +75,7 @@ def log_list(
         step: Optional[int] = None,
         nchains: Optional[int] = None
 ) -> None:
-    """Create TensorBoard summaries for all entries in `x`."""
+    """Create TensorBoard summaries for all entries in `x`"""
     for t in x:
         name = getattr(t, 'name', getattr(t, '__name__', None))
         tag = name if prefix is None else f'{prefix}/{name}'
@@ -109,8 +116,8 @@ def log_item(
                 (isinstance(val, Tensor) and torch.is_complex(val))
                 or (isinstance(val, Array) and np.iscomplexobj(val))
         ):
-            log_item(tag=f'{tag}.real', val=val.real, writer=writer, step=step)
-            log_item(tag=f'{tag}.imag', val=val.imag, writer=writer, step=step)
+            log_item(tag=f'{tag}/real', val=val.real, writer=writer, step=step)
+            log_item(tag=f'{tag}/imag', val=val.imag, writer=writer, step=step)
         elif len(val.shape) > 0:
             writer.add_scalar(f'{tag}/avg', val.mean(), global_step=step)
             val = (
@@ -179,7 +186,7 @@ def log_params_and_grads(
     grads = {}
     if with_grads:
         grads = {
-            f'grads/{k}.grad': as_tensor(v.grad, nchains=nchains)
+            f'grads/{k}/grad': as_tensor(v.grad, nchains=nchains)
             for k, v in model.named_parameters()
         }
     if step is not None:
@@ -201,7 +208,7 @@ def update_summaries(
         step: Optional[int] = None,
         metrics: Optional[dict[str, ArrayLike]] = None,
         model: Optional[torch.nn.Module] = None,
-        prefix: Optional[str] = None,
+        prefix: str = '',
         with_grads: bool = True,
         use_tb: bool = True,
         use_wandb: bool = True,
@@ -210,43 +217,60 @@ def update_summaries(
 ) -> None:
     if metrics is not None:
         if use_tb:
-            log_dict(
-                writer=writer,
-                d=metrics,
-                step=step,
-                prefix=prefix,
-                nchains=nchains
-            )
+            with StopWatch(
+                    iter=step,
+                    wbtag=f'tblogdict/{prefix}',
+                    msg=f"`log_dict(prefix={prefix}, nchains={nchains})`",
+                    prefix='TrackingTimers/',
+                    log_output=False,
+            ):
+                log_dict(
+                    writer=writer,
+                    d=metrics,
+                    step=step,
+                    prefix=prefix,
+                    nchains=nchains
+                )
         if use_wandb:
             # pfix = f'{prefix}-wb' if prefix is not None else 'metrics-wb'
-            metrics = {f'{prefix}.wb/{k}': v for k, v in metrics.items()}
-            log_dict_wandb(metrics, step)
+            with StopWatch(
+                    iter=step,
+                    wbtag=f'wblogdict/{prefix}',
+                    msg=f"`log_dict_wandb(prefix={prefix})`",
+                    prefix='TrackingTimers/',
+                    log_output=False,
+            ):
+                metrics = {f'{prefix}/wb/{k}': v for k, v in metrics.items()}
+                log_dict_wandb(metrics, step)
     assert isinstance(step, int) if step is not None else None
     if model is not None:
         if use_wandb:
-            log_params_and_grads(
-                model=model,
-                step=step,
-                with_grads=with_grads,
-                nchains=nchains
-            )
-        if use_tb:
-            params = {
-                f'model/{k}': (
-                    as_tensor(v, grab=True, nchains=nchains)
-                    if v.requires_grad else None
+            with StopWatch(
+                    iter=step,
+                    wbtag=f"wblogwng/{prefix}",
+                    msg="`log_params_and_grads()`",
+                    prefix='TrackingTimers/',
+                    log_output=False,
+            ):
+                log_params_and_grads(
+                    model=model,
+                    step=step,
+                    with_grads=with_grads,
+                    nchains=nchains
                 )
-                for k, v in model.named_parameters()
-            }
-            log_dict(writer=writer, d=params, step=step, nchains=nchains)
-    # if model is not None:
-    #     for name, param in model.named_parameters():
-    #         if param.requires_grad:
-    #             tag = f'model/{name}'
-    #             log_item(writer=writer, val=param, step=step, tag=tag)
-    # if optimizer is not None:
-    #     for group in optimizer.param_groups:
-    #         for p in group['params']:
-    #             if p.grad is not None:
-    #                 tag = f'optimizer/{getattr(p, "name", str(p))}'
-    #                 log_item(writer=writer, val=p.detach(), step=step, tag=tag)
+        if use_tb:
+            with StopWatch(
+                    iter=step,
+                    msg='`log_dict(grads)`',
+                    prefix='TrackingTimers/',
+                    wbtag=f"wblogwng/{prefix}",
+                    log_output=False,
+            ):
+                params = {
+                    f'model/{k}': (
+                        as_tensor(v, grab=True, nchains=nchains)
+                        if v.requires_grad else None
+                    )
+                    for k, v in model.named_parameters()
+                }
+                log_dict(writer=writer, d=params, step=step, nchains=nchains)
