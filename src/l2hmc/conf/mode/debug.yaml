@@ -17,7 +17,7 @@ defaults:
 debug_mode: true
 
 hydra:
-  verbose: ['l2hmc']
+  verbose: ['l2hmc', 'plot_helpers', 'trainer', 'experiment', 'main']
   job:
     chdir: true
   # sets level of all command line loggers to 'DEBUG'
@@ -34,4 +34,4 @@ hydra:
   #   subdir: ${hydra.job.num}
 
 # disable rich config printing, since it will be already printed by hydra when `verbose: True`
-print_config: False
+print_config: true
