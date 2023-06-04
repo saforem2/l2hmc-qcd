@@ -50,7 +50,6 @@ def evaluate(
         x: Optional[torch.Tensor] = None,
         grab: Optional[bool] = None,
 ) -> tuple[torch.Tensor, dict]:
-    from tqdm import trange
     history = {}
     if x is None:
         state = exp.trainer.dynamics.random_state(beta)
@@ -59,7 +58,7 @@ def evaluate(
     log.info(f'Running {nsteps} steps of {job_type} at beta={beta:.4f}')
     if job_type.lower == 'hmc':
         log.info(f'Using nleapfrog={nleapfrog} steps w/ eps={eps:.4f}')
-    for step in trange(nsteps):
+    for step in range(nsteps):
         log.info(f'STEP: {step}')
         if job_type.lower() == 'eval':
             x, metrics = exp.trainer.eval_step((x, beta))
