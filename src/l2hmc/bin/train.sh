@@ -10,6 +10,15 @@
 HERE=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd -LP)
 DIR=$(dirname "$HERE")
 
+#┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+#┃ Make sure we're not already running; if so, exit here ┃
+#┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+PIDS=$(ps aux | grep -E 'mpi.+main.+py' | grep -v grep | awk '{print $2}')
+if [ -n "${PIDS}" ]; then
+  echo "Already running! Exiting!"
+  exit 1
+fi
+
 # ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 # ┃ Elastic Training:                              ┃
 # ┃  Use all available GPUs on all available nodes ┃
