@@ -40,6 +40,7 @@ dependencies = [
   "aim",
   "tqdm",
   "torchviz",
+  "git+https://github.com/saforem2/enrich",
 ]
 dynamic = ["version"]
 
