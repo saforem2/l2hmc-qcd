@@ -14,7 +14,6 @@ from __future__ import (
 import logging
 import os
 
-import sys
 import time
 from pathlib import Path
 from mpi4py import MPI
@@ -41,6 +40,7 @@ _ = get_logger('matplotlib').setLevel(logging.CRITICAL)
 _ = get_logger('PIL.PngImagePlugin').setLevel(logging.CRITICAL)
 _ = get_logger('graphviz._tools').setLevel(logging.CRITICAL)
 _ = get_logger('graphviz').setLevel(logging.CRITICAL)
+_ = get_logger('deepspeed').setLevel(logging.INFO)
 
 log = get_logger(__name__)
 
@@ -89,7 +89,6 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
     if overrides is not None:
         from l2hmc.configs import get_config
         cfg.update(get_config(overrides))
-
     ex = get_experiment(cfg)
     if ex.trainer._is_chief:
         try:
@@ -101,21 +100,17 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
         except Exception as e:
             log.exception(e)
             log.warning('Continuing!')
-
     should_train: bool = (
         ex.config.steps.nera > 0
         and ex.config.steps.nepoch > 0
     )
-
     nchains_eval = max(2, int(ex.config.dynamics.xshape[0] // 4))
-
     # TODO -----------------------------------------------------------------
     # - [ ] Add logic for running distributed inference + HMC
     #     - [ ] If we're training across N devices (CPU, GPU, TPU),
     #           we would like to run an indepdent evaluation + HMC process
     #           on each of them, average the model improvement over these
     # ----------------------------------------------------------------------
-
     # --- [1.] Train model -------------------------------------------------
     if should_train:
         tstart = time.time()
@@ -127,7 +122,6 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
             estart = time.time()
             _ = ex.evaluate(job_type='eval', nchains=nchains_eval)
             log.info(f'Evaluation took: {time.time() - estart:.5f}s')
-
     # --- [3.] Run generic HMC for comparison ------------------------------
     if ex.trainer._is_chief and ex.config.steps.test > 0:
         log.info('Running generic HMC for comparison')
@@ -145,10 +139,8 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
                 ex.run.log({'model_improvement': improvement})
         log.critical(f'Model improvement: {improvement:.8f}')
         if wandb.run is not None:
-            log.critical(
-                ':rocket: wandb run: '
-                f'[link={wandb.run.url}]{wandb.run.name}[/link]'
-            )
+            log.critical(f'🚀 {wandb.run}')
+            log.critical(f'🔗 {wandb.run.url}')
             log.critical(f'📂/: {wandb.run.dir}')
     if ex.trainer._is_chief:
         try:
