@@ -142,24 +142,24 @@ class Experiment(BaseExperiment):
             build_networks=build_networks,
             ckpt_dir=self.ckpt_dir,
         )
-        if run is not None:
-            import wandb
-            logfreq = self.config.steps.log
-            assert logfreq is not None
-            wandb.watch(
-                (
-                    self.trainer.dynamics.networks,
-                    self.trainer.dynamics.xeps,
-                    self.trainer.dynamics.veps,
-                ),
-                log='all',
-                log_graph=True,
-                log_freq=logfreq,
-                # criterion=self.trainer.loss_fn,
-            )
-            ds_config = getattr(self.trainer, 'ds_config', None)
-            if ds_config is not None:
-                run.config['deepspeed_config'] = ds_config
+        # if run is not None:
+        #     import wandb
+        #     logfreq = self.config.steps.log
+        #     assert logfreq is not None
+        #     wandb.watch(
+        #         (
+        #             self.trainer.dynamics.networks,
+        #             self.trainer.dynamics.xeps,
+        #             self.trainer.dynamics.veps,
+        #         ),
+        #         log='all',
+        #         log_graph=True,
+        #         log_freq=logfreq,
+        #         # criterion=self.trainer.loss_fn,
+        #     )
+        #     ds_config = getattr(self.trainer, 'ds_config', None)
+        #     if ds_config is not None:
+        #         run.config['deepspeed_config'] = ds_config
 
         self.run = run
         self.arun = arun
