@@ -707,8 +707,9 @@ class Trainer(BaseTrainer):
             assert step is not None
             update_summaries(
                 step=step,
-                model=model,
+                # model=model,
                 writer=writer,
+                # with_grads=True,
                 metrics=metrics,
                 prefix=job_type,
                 optimizer=optimizer,
