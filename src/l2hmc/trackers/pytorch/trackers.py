@@ -272,12 +272,13 @@ def update_summaries(
                     )
                     for k, v in model.named_parameters()
                 }
-                grads = {
-                    f'grads-wb/{k}': (
-                        as_tensor(v.grad, grab=True, nchains=nchains)
-                        if v.requires_grad else None
-                    )
-                    for k, v in model.named_parameters()
-                }
                 log_dict(writer=writer, d=params, step=step, nchains=nchains)
-                log_dict(writer=writer, d=grads, step=step, nchains=nchains)
+                if with_grads:
+                    grads = {
+                        f'grads-wb/{k}': (
+                            as_tensor(v.grad, grab=True, nchains=nchains)
+                            if v.requires_grad else None
+                        )
+                        for k, v in model.named_parameters()
+                    }
+                    log_dict(writer=writer, d=grads, step=step, nchains=nchains)
