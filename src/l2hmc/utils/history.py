@@ -4,9 +4,10 @@ history.py
 Contains implementation of History object for tracking / aggregating metrics.
 """
 from __future__ import absolute_import, annotations, division, print_function
+from contextlib import ContextDecorator, contextmanager
 from dataclasses import dataclass
-# import logging
 from pathlib import Path
+import time
 from typing import Any, Optional, Union
 
 import matplotlib.pyplot as plt
@@ -15,6 +16,7 @@ import numpy as np
 import seaborn as sns
 import tensorflow as tf
 import torch
+import wandb
 import xarray as xr
 
 from l2hmc import get_logger
@@ -54,6 +56,57 @@ def summarize_dict(d: dict) -> str:
 # def subsample_dict(d: dict) -> dict:
 #     for key, val in d.items():
 #         pass
+
+# def timeit(func):
+#     @functools.wraps(func)
+#     def time_closure(*args, **kwargs):
+#         start = time.perf_counter()
+#         result = func(*args, **kwargs)
+#         end = time.perf_counter() - start
+#         log.info(f')
+
+
+class StopWatch(ContextDecorator):
+    def __init__(
+            self,
+            msg: str,
+            wbtag: Optional[str] = None,
+            iter: Optional[int] = None,
+            commit: Optional[bool] = False,
+            prefix: str = 'StopWatch/',
+            log_output: bool = True,
+    ) -> None:
+        self.msg = msg
+        self.data = {}
+        self.iter = iter if iter is not None else None
+        self.prefix = prefix
+        self.wbtag = wbtag if wbtag is not None else None
+        self.log_output = log_output
+        self.commit = commit
+        if wbtag is not None:
+            self.data = {
+                f'{self.wbtag}/dt': None,
+            }
+            if iter is not None:
+                self.data |= {
+                    f'{self.wbtag}/iter': self.iter,
+                }
+
+    def __enter__(self):
+        self.time = time.perf_counter()
+        return self
+
+    def __exit__(self, t, v, traceback):
+        dt = time.perf_counter() - self.time
+        # if self.wbtag is not None and wandb.run is not None:
+        if len(self.data) > 0 and wandb.run is not None:
+            self.data |= {f'{self.wbtag}/dt': dt}
+            wandb.run.log({self.prefix: self.data}, commit=self.commit)
+        if self.log_output:
+            log.info(
+                f"{self.msg} took "
+                f"{dt:.3f} seconds"
+            )
 
 
 @dataclass
