@@ -235,7 +235,11 @@ def update_summaries(
                     prefix='TrackingTimers/',
                     log_output=False,
             ):
-                metrics = {f'{prefix}/wb/{k}': v for k, v in metrics.items()}
+                metrics = (
+                    {f'{prefix}/wb/{k}': v for k, v in metrics.items()}
+                    if use_tb else
+                    {f'{prefix}/{k}': v for k,  v in metrics.items()}
+                )
                 log_dict_wandb(metrics, step)
     assert isinstance(step, int) if step is not None else None
     if model is not None:

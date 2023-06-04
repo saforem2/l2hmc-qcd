@@ -752,27 +752,28 @@ class Trainer(BaseTrainer):
 
         # if run is not None:
         if wandb.run is not None and self.config.init_wandb:
-            with StopWatch(
-                    msg=f"`wandb.log({job_type}.metrics)`",
-                    wbtag=f'wblog/{job_type}',
-                    iter=step,
-                    prefix='TrackingTimers/',
-                    log_output=False,
-            ):
-                record = {
-                    f'{job_type}/metrics/{k}': v for k, v in record.items()
-                }
-                record |= {
-                    f'{job_type}/metrics/{k}/avg': v for k, v in avgs.items()
-                }
-                try:
-                    wandb.run.log(record, commit=False)
-                    if dQdict is not None:
-                        wandb.run.log(dQdict)
-                except ValueError:
-                    self.warning(
-                        'Unable to track record with WandB, skipping!'
-                    )
+            wandb.run.log(dQdict)  # , commit=False)
+            # with StopWatch(
+            #         msg=f"`wandb.log({job_type}.metrics)`",
+            #         wbtag=f'wblog/{job_type}',
+            #         iter=step,
+            #         prefix='TrackingTimers/',
+            #         log_output=False,
+            # ):
+            #     record = {
+            #         f'{job_type}/metrics/{k}': v for k, v in record.items()
+            #     }
+            #     record |= {
+            #         f'{job_type}/metrics/{k}/avg': v for k, v in avgs.items()
+            #     }
+            #     try:
+            #         wandb.run.log(record, commit=False)
+            #         if dQdict is not None:
+            #             wandb.run.log(dQdict)
+            #     except ValueError:
+            #         self.warning(
+            #             'Unable to track record with WandB, skipping!'
+            #         )
             # try:
             #     wandb.run.log({f'{job_type}.metrics': record}, commit=False)
             #     wandb.run.log({f'{job_type}.avgs': avgs})
