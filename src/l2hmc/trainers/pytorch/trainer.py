@@ -6,43 +6,34 @@ Implements methods for training L2HMC sampler.
 from __future__ import absolute_import, annotations, division, print_function
 from collections import defaultdict
 from contextlib import nullcontext
-import os
-
-import deepspeed
 import json
+import os
 from pathlib import Path
 import socket
 import time
 from typing import Any, Callable, Optional, Sequence
-from rich.console import ConsoleRenderable
-from rich.panel import Panel
-# from rich.align import Align
 
-from torch.cuda.amp.grad_scaler import GradScaler
 import aim
 from aim import Distribution
+import deepspeed
+from enrich.logging import RichHandler as EnRichHandler
+from hydra.utils import instantiate
 import numpy as np
 from omegaconf import DictConfig
-from hydra.utils import instantiate
 from rich import box, print_json
+from rich.console import ConsoleRenderable
 from rich.live import Live
+from rich.logging import RichHandler as RichHandler
+from rich.panel import Panel
 from rich.table import Table
 import torch
 from torch import nn
+from torch.cuda.amp.grad_scaler import GradScaler
 from torch.optim.lr_scheduler import LambdaLR
 import wandb
-# from transformers.deepspeed import HfDeepSpeedConfig
 
-# from l2hmc.utils.logger import get_pylogger
-
-import l2hmc.utils.live_plots as plotter
 from l2hmc import get_logger
-from l2hmc.common import (
-    ScalarLike,
-    # TensorLike,
-    get_timestamp,
-)
-from l2hmc.utils.dist import setup_torch_distributed
+from l2hmc.common import ScalarLike, get_timestamp
 from l2hmc.configs import CHECKPOINTS_DIR, ExperimentConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.group.su3.pytorch.group import SU3
@@ -53,8 +44,11 @@ from l2hmc.loss.pytorch.loss import LatticeLoss
 from l2hmc.network.pytorch.network import NetworkFactory
 from l2hmc.trackers.pytorch.trackers import update_summaries
 from l2hmc.trainers.trainer import BaseTrainer
-from l2hmc.utils.history import summarize_dict
+from l2hmc.utils.dist import setup_torch_distributed
+from l2hmc.utils.history import StopWatch, summarize_dict
+import l2hmc.utils.live_plots as plotter
 from l2hmc.utils.rich import get_width, is_interactive
+from l2hmc.utils.rich import get_console
 from l2hmc.utils.step_timer import StepTimer
 # WIDTH = int(os.environ.get('COLUMNS', 150))
 
@@ -66,6 +60,14 @@ from l2hmc.utils.step_timer import StepTimer
 
 # log = logging.getLogger(__name__)
 log = get_logger(__name__)
+lh = log.handlers if len(log.handlers) > 0 else []
+
+console = get_console()
+for h in lh:
+    if isinstance(h, (RichHandler, EnRichHandler)):
+        console = h.console
+
+
 
 Tensor = torch.Tensor
 Module = torch.nn.modules.Module
@@ -750,15 +752,34 @@ class Trainer(BaseTrainer):
 
         # if run is not None:
         if wandb.run is not None and self.config.init_wandb:
-            try:
-                wandb.run.log({f'{job_type}.metrics': record}, commit=False)
-                wandb.run.log({f'{job_type}.avgs': avgs})
-                # wandb.run.log({f'wandb/{job_type}': record}, commit=False)
-                # wandb.run.log({f'avgs/wandb.{job_type}': avgs})
-                if dQdict is not None:
-                    wandb.run.log(dQdict, commit=False)
-            except ValueError:
-                self.warning('Unable to track record with WandB, skipping!')
+            with StopWatch(
+                    msg=f"`wandb.log({job_type}.metrics)`",
+                    wbtag=f'wblog/{job_type}',
+                    iter=step,
+                    prefix='TrackingTimers/',
+                    log_output=False,
+            ):
+                record = {
+                    f'{job_type}/metrics/{k}': v for k, v in record.items()
+                }
+                record |= {
+                    f'{job_type}/metrics/{k}/avg': v for k, v in avgs.items()
+                }
+                try:
+                    wandb.run.log(record, commit=False)
+                    if dQdict is not None:
+                        wandb.run.log(dQdict)
+                except ValueError:
+                    self.warning(
+                        'Unable to track record with WandB, skipping!'
+                    )
+            # try:
+            #     wandb.run.log({f'{job_type}.metrics': record}, commit=False)
+            #     wandb.run.log({f'{job_type}.avgs': avgs})
+            #     # wandb.run.log({f'wandb/{job_type}': record}, commit=False)
+            #     # wandb.run.log({f'avgs/wandb.{job_type}': avgs})
+            #     if dQdict is not None:
+            #         wandb.run.log(dQdict, commit=False)
         if arun is not None:
             kwargs = {
                 'step': step,
@@ -788,8 +809,7 @@ class Trainer(BaseTrainer):
             xout, metrics = self.dynamics((xinit, beta))
         xout = self.g.compat_proj(xout)
         xprop = self.g.compat_proj(metrics.pop('mc_states').proposed.x)
-
-        beta = beta  # .to(self.accelerator.device)
+        beta = beta
         # xprop = to_u1(metrics.pop('mc_states').proposed.x)
         loss = self.loss_fn(xinit, x_prop=xprop, acc=metrics['acc'])
         loss.backward()
@@ -890,6 +910,7 @@ class Trainer(BaseTrainer):
         if make_live:
             return Live(
                 renderable,
+                console=console,
                 # screen=True,
                 transient=True,
                 # redirect_stdout=True,
@@ -1044,6 +1065,7 @@ class Trainer(BaseTrainer):
         beta = setup['beta']
         table = setup['table']
         panel = Panel(table)
+        ctx = self.get_context_manager(panel)
         nleapfrog = setup['nleapfrog']
         eval_steps = setup['eval_steps']
         assert x is not None and beta is not None
@@ -1074,7 +1096,6 @@ class Trainer(BaseTrainer):
                     return self.hmc_step(z, eps=eps, nleapfrog=nleapfrog)
                 return self.eval_step(z)
 
-        ctx = self.get_context_manager(panel)
 
         def refresh_view():
             if isinstance(ctx, Live):
@@ -1550,13 +1571,14 @@ class Trainer(BaseTrainer):
             box=box.HORIZONTALS,
             row_styles=['dim', 'none'],
         )
+        panel = Panel(table)
         # layout = Layout(table)
 
         nepoch = self.steps.nepoch if nepoch is None else nepoch
         assert isinstance(nepoch, int)
         nepoch *= extend
         losses = []
-        ctx = self.get_context_manager(table)
+        ctx = self.get_context_manager(panel)
 
         log_freq = self.steps.log if nlog is None else nlog
         print_freq = self.steps.print if nprint is None else nprint
