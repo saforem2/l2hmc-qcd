@@ -238,13 +238,16 @@ class Trainer(BaseTrainer):
         logfreq = self.config.steps.log
         log.warning(f'logging with freq {logfreq} for wandb.watch')
         # if self.rank == 0 and wandb.run is not None:
-        if self._is_chief and self.config.use_wandb and wandb.run is not None:
+        # if self._is_chief and self.config.use_wandb and wandb.run is not None:
+        if self.config.use_wandb and wandb.run is not None:
             wandb.watch(
-                (
-                    self.dynamics.networks,
-                    self.dynamics.xeps,
-                    self.dynamics.veps
-                ),
+                # (
+                #     self.dynamics.xnet,
+                #     self.dynamics.vnet,
+                #     self.dynamics.xeps,
+                #     self.dynamics.veps
+                # ),
+                self.dynamics,
                 log='all',
                 log_freq=logfreq
             )
@@ -1298,9 +1301,12 @@ class Trainer(BaseTrainer):
         # 2. Calc loss using `xinit`, `xprop` and `acc` (acceptance rate)
         # 3. Backpropagate gradients and update network weights
         # --------------------------------------------------------------------
+        # t0 = time.perf_counter()
         xout, metrics = self.forward_step(x=xinit, beta=beta)
+        # t1 = time.perf_counter()
         xprop = metrics.pop('mc_states').proposed.x
         loss = self.calc_loss(xinit=xinit, xprop=xprop, acc=metrics['acc'])
+        # t2 = time.perf_counter()
         if (aw := self.config.loss.aux_weight) > 0:
             yinit = self.dynamics.unflatten(
                 self.g.random(xout.shape).to(self.device)
@@ -1313,14 +1319,17 @@ class Trainer(BaseTrainer):
                 acc=metrics_['acc']
             )
             loss += aw * aux_loss
+        # t3 = time.perf_counter()
         loss = self.backward_step(loss)
         if isinstance(loss, Tensor):
             loss = loss.item()
         metrics['loss'] = loss
+        # t4 = time.perf_counter()
         if self.config.dynamics.verbose:
             with torch.no_grad():
                 lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
                 metrics.update(lmetrics)
+        # t5 = timer.perf_counter()
         return xout.detach(), metrics
 
     def train_step_old(
