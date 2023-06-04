@@ -329,6 +329,7 @@ def setup_torch(
 
     # if precision == 'float64':
     if precision is not None:
+        log.warning(f'Setting default dtype: {precision}')
         torch.set_default_dtype(dtypes.get(precision, torch.float32))
 
     if torch.cuda.is_available():
