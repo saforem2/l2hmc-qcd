@@ -175,12 +175,7 @@ def log_params_and_grads(
     if wandb.run is None:
         return
     params = {
-        f'params/{k}': (
-            as_tensor(v, nchains=nchains)
-            # torch.nan_to_num(v)
-            # if v is not None
-            # else None
-        )
+        f'params/{k}': as_tensor(v, nchains=nchains)
         for k, v in model.named_parameters()
     }
     grads = {}
