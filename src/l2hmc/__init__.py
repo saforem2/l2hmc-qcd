@@ -108,7 +108,7 @@ def get_logger(
     log = logging.getLogger(name)
     # log.handlers = []
     # from rich.logging import RichHandler
-    from l2hmc.utils.rich import get_console
+    from l2hmc.utils.rich import get_console, is_interactive
     # format = "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
     if rank_zero_only:
         if RANK != 0:
@@ -125,8 +125,14 @@ def get_logger(
             # file=outfile,
             **kwargs
         )
+        if console.is_jupyter:
+            console.is_jupyter = False
         # log.propagate = True
         # log.handlers = []
+        use_markup = (
+            WORLD_SIZE == 1
+            and not is_interactive()
+        )
         log.addHandler(
             RichHandler(
                 omit_repeated_times=False,
@@ -136,8 +142,8 @@ def get_logger(
                 show_level=True,
                 show_path=True,
                 # tracebacks_width=120,
-                markup=(WORLD_SIZE == 1),
-                enable_link_path=(WORLD_SIZE == 1),
+                markup=use_markup,
+                enable_link_path=use_markup,
                 # keywords=['loss=', 'dt=', 'Saving']
             )
         )
