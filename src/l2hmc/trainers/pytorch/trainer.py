@@ -240,7 +240,7 @@ class Trainer(BaseTrainer):
         # if self.rank == 0 and wandb.run is not None:
         # if self._is_chief and self.config.use_wandb and wandb.run is not None:
         if self.config.use_wandb and wandb.run is not None:
-            wandb.watch(
+            wandb.run.watch(
                 # (
                 #     self.dynamics.xnet,
                 #     self.dynamics.vnet,
@@ -252,9 +252,10 @@ class Trainer(BaseTrainer):
                     self.dynamics.xeps,
                     self.dynamics.veps,
                 ),
+                # self.dynamics,
                 log='all',
                 log_freq=logfreq,
-                log_graph=True,
+                # log_graph=True,
             )
         assert (
             isinstance(self.dynamics, Dynamics)
@@ -294,10 +295,11 @@ class Trainer(BaseTrainer):
                 # ),
             )
         else:
-            optimizer = self._optimizer
-            engine, *_ = deepspeed.initialize(
+            # optimizer = self._optimizer
+            engine, optimizer, *_ = deepspeed.initialize(
                 model=self.dynamics,
                 config=self.ds_config,
+                optimizer=self._optimizer,
                 model_parameters=self.dynamics.parameters()  # type:ignore
             )
         assert engine is not None
@@ -698,13 +700,16 @@ class Trainer(BaseTrainer):
 
         if job_type == 'eval' and 'eps' in metrics:
             _ = metrics.pop('eps', None)
+        metrics.update(self.metrics_to_numpy(metrics))
+        avgs = self.histories[job_type].update(metrics)
+        summary = summarize_dict(avgs)
         metrics |= {
             'xeps': torch.tensor(self.dynamics.xeps),
             'veps': torch.tensor(self.dynamics.veps)
         }
-        metrics.update(self.metrics_to_numpy(metrics))
-        avgs = self.histories[job_type].update(metrics)
-        summary = summarize_dict(avgs)
+        metrics |= {
+            f'{k}/avg': v for k, v in avgs.items()
+        }
         if (
                 step is not None
                 and writer is not None
@@ -761,7 +766,8 @@ class Trainer(BaseTrainer):
 
         # if run is not None:
         if wandb.run is not None and self.config.init_wandb:
-            wandb.run.log(dQdict)  # , commit=False)
+            wandb.run.log(dQdict, commit=False)
+            # wandb.run.log({f'{job_type}/{k}/avg': v for k, v in avgs.items()})
             # with StopWatch(
             #         msg=f"`wandb.log({job_type}.metrics)`",
             #         wbtag=f'wblog/{job_type}',
@@ -1260,7 +1266,7 @@ class Trainer(BaseTrainer):
         else:
             if self.grad_scaler is not None:
                 self.grad_scaler.scale(loss).backward()  # type:ignore
-                if self.config.learning_rate.clip_norm > 0.0:
+                if self.config.learning_rate.clip_norm > 0:
                     self.grad_scaler.unscale_(self.optimizer)
                     torch.nn.utils.clip_grad.clip_grad_norm(
                         self.dynamics.parameters(),

@@ -8,10 +8,14 @@ wall_clock_breakdown: true
 #   type: OneBitAdam
 #   params:
 #     lr: 0.0004
-optimizer:
-  type: AdamW
-  params:
-    lr: 0.001
+# optimizer:
+#   type: Adam
+#   params:
+#     lr: 0.001
+# optimizer:
+#   type: AdamW
+#   params:
+#     lr: 0.001
 # flops_profiler:
 #   enabled: false
 #   profile_step: 1
@@ -20,7 +24,7 @@ optimizer:
 #   detailed: false
 #   output_file: null
 fp16:
-  enabled: true
+  enabled: false
   # min_loss_scale: 0
 # bf16:
 #   enabled: false
