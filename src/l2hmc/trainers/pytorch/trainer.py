@@ -247,9 +247,14 @@ class Trainer(BaseTrainer):
                 #     self.dynamics.xeps,
                 #     self.dynamics.veps
                 # ),
-                self.dynamics,
+                (
+                    self.dynamics,
+                    self.dynamics.xeps,
+                    self.dynamics.veps,
+                ),
                 log='all',
-                log_freq=logfreq
+                log_freq=logfreq,
+                log_graph=True,
             )
         assert (
             isinstance(self.dynamics, Dynamics)
