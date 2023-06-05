@@ -280,10 +280,17 @@ class Trainer(BaseTrainer):
     def _setup_deepspeed(self) -> None:
         # TODO: Move ds_config_path to `conf/config.yaml` to be overridable
         self.ds_config = self.prepare_ds_config()
-        if (
-                (fp16 := self.ds_config.get('fp16', None)) is not None
-                and fp16.get('enabled', False)
-        ):
+        # if (
+        #         (fp16 := self.ds_config.get('fp16', None)) is not None
+        #         and fp16.get('enabled', False)
+        # ):
+        if self.use_fp16:
+            log.warning('Using `fp16` in DeepSpeed config...')
+            self.ds_config |= {
+                'fp16': {
+                    'enabled': True,
+                }
+            }
             self.dynamics = self.dynamics.to(torch.half)
         if self._is_chief:
             print_json(json.dumps(self.ds_config, indent=4))
