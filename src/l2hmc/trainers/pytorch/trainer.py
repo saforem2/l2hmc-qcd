@@ -226,6 +226,9 @@ class Trainer(BaseTrainer):
                 # find_unused_parameters=True
             )
             self.grad_scaler = GradScaler()
+            # self.grad_scaler = GradScaler(
+            #     enabled=(self._dtype != torch.float64)
+            # )
         # NOTE: DeepSpeed automatically handles gradient scaling when training
         # with mixed precision.
         elif self.config.backend.lower() in ['ds', 'deepspeed']:
@@ -1112,7 +1115,6 @@ class Trainer(BaseTrainer):
                     return self.hmc_step(z, eps=eps, nleapfrog=nleapfrog)
                 return self.eval_step(z)
 
-
         def refresh_view():
             if isinstance(ctx, Live):
                 ctx.refresh()
@@ -1124,7 +1126,6 @@ class Trainer(BaseTrainer):
         plots = None
         if is_interactive() and make_plots:
             plots = plotter.init_plots()
-
         self.dynamics.eval()
         with ctx:
             x = self.warmup(beta=beta, x=x)
@@ -1164,12 +1165,9 @@ class Trainer(BaseTrainer):
                         step=step,
                         avgs=avgs,
                     )
-
                     if step % nprint == 0:
-                        self.info(summary)
-
+                        log.info(summary)
                     refresh_view()
-
                     if avgs.get('acc', 1.0) < 1e-5:
                         if stuck_counter < patience:
                             stuck_counter += 1
@@ -1177,7 +1175,6 @@ class Trainer(BaseTrainer):
                             self.warning('Chains are stuck! Redrawing x')
                             x = self.lattice.random()
                             stuck_counter = 0
-
                     if job_type == 'hmc' and dynamic_step_size:
                         acc = record.get('acc_mask', None)
                         record['eps'] = eps
@@ -1187,7 +1184,6 @@ class Trainer(BaseTrainer):
                                 eps -= (eps / 10.)
                             else:
                                 eps += (eps / 10.)
-
                     if (
                             is_interactive()
                             and self._is_chief
@@ -1205,10 +1201,8 @@ class Trainer(BaseTrainer):
                                 plots=plots,
                                 logging_steps=nlog,
                             )
-
         if isinstance(ctx, Live):
             ctx.console.clear_live()
-
         tables[str(0)] = setup['table']
         self.dynamics.train()
 
@@ -1278,12 +1272,12 @@ class Trainer(BaseTrainer):
                     self.grad_scaler.step(self.optimizer)
                     self.grad_scaler.update()
             else:
+                loss.backward()
                 if self.config.learning_rate.clip_norm > 0.0:
                     torch.nn.utils.clip_grad.clip_grad_norm(
                         self.dynamics.parameters(),
                         max_norm=self.clip_norm
                     )
-                loss.backward()
                 self.optimizer.step()
         return loss
 
