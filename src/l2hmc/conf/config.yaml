@@ -1,3 +1,4 @@
+---
 # @package _global_
 _target_: l2hmc.configs.ExperimentConfig
 #
@@ -14,7 +15,7 @@ save: true              # Save model w/ checkpoints for restoring later?
 init_aim: true          # Use aim for experiment / metric tracking
 init_wandb: true        # Use WandB for experiment / metric tracking
 use_wandb: true
-use_tb: true
+use_tb: false
 compression: false      # Compression for Horovod
 nchains: null          # Number of chains to use when evaluating model
 ds_config_path: null
@@ -69,3 +70,4 @@ hydra:
   verbose: l2hmc
   job:
     chdir: true
+...
