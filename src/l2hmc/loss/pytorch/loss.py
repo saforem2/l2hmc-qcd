@@ -132,10 +132,12 @@ class LatticeLoss:
             acc: Tensor,
             use_mixed_loss: Optional[bool] = None
     ) -> Tensor:
-        dx = (
-            x_init.flatten(1) - x_prop.flatten(1)
-        ).abs().sum(-1)
-        rmse_loss = (acc * dx)
+        # dx = (
+        #     x_init.flatten(1) - x_prop.flatten(1)
+        # ).abs().sum(-1)
+        dx = (x_prop - x_init)
+        dx2 = (dx.real ** 2 + dx.imag ** 2).flatten(1)
+        rmse_loss = (acc * dx2.mean(1))
         use_mixed = (
             self.config.use_mixed_loss
             if use_mixed_loss is None else use_mixed_loss
