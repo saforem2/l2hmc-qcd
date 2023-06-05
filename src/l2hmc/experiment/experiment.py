@@ -162,13 +162,17 @@ class BaseExperiment(ABC):
             **self.config.wandb.setup,
         )
         assert run is not None and run is wandb.run
-        log.warn(80 * '-')
-        log.warn(fr':sparkle: [bold red]wandb.run.name: {run.name}[/]')
-        log.warn(
-            r':rocket: [bold red]wandb.run: '
-            f'[link={run.url}]{run.name}[/]'
-        )
-        log.warn(80 * '-')
+        # log.warn(80 * '-')
+        # log.warn(fr':sparkle: [bold red]wandb.run.name: {run.name}[/]')
+        # log.warn(
+        #     r':rocket: [bold red]wandb.run: '
+        #     f'[link={run.url}]{run.name}[/]'
+        # )
+        # log.warn(80 * '-')
+        if wandb.run is not None:
+            log.critical(f'🚀 {wandb.run.name}')
+            log.critical(f'🔗 {wandb.run.url}')
+            log.critical(f'📂/: {wandb.run.dir}')
         assert run is wandb.run and run is not None
         wandb.define_metric('dQint_eval', summary='mean')
         run.log_code(HERE.as_posix())

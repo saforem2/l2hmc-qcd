@@ -538,7 +538,6 @@ class Trainer(BaseTrainer):
     ) -> None:
         if not self._is_chief or not self.config.save:
             return
-
         tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
         step = self._gstep
         ckpt_file = self.ckpt_dir.joinpath(
@@ -567,11 +566,11 @@ class Trainer(BaseTrainer):
         torch.save(self.dynamics.state_dict(), modelfile)
         self.info(f'Saving checkpoint to: {ckpt_file.as_posix()}')
         self.info(f'Saving modelfile to: {modelfile.as_posix()}')
-        if run is not None:
-            assert run is wandb.run
+        if wandb.run is not None and self.config.init_wandb:
+            # assert run is wandb.run
             artifact = wandb.Artifact('model', type='model')
             artifact.add_file(modelfile.as_posix())
-            run.log_artifact(artifact)
+            wandb.run.log_artifact(artifact)
 
     def load_ckpt(
             self,
