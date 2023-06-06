@@ -96,7 +96,7 @@ setupPolaris()  {
     module load conda/2023-01-10-unstable
     conda activate base
     VENV_DIR="${ROOT}/venvs/polaris/2023-01-10"
-    venvSetup $VENV_DIR
+    venvSetup "$VENV_DIR"
     # -----------------------------------------------
     NRANKS=$(wc -l < "${PBS_NODEFILE}")
     NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
