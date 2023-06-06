@@ -50,7 +50,6 @@ def evaluate(
         x: Optional[torch.Tensor] = None,
         grab: Optional[bool] = None,
 ) -> tuple[torch.Tensor, dict]:
-    from tqdm import trange
     history = {}
     if x is None:
         state = exp.trainer.dynamics.random_state(beta)
@@ -59,7 +58,7 @@ def evaluate(
     log.info(f'Running {nsteps} steps of {job_type} at beta={beta:.4f}')
     if job_type.lower == 'hmc':
         log.info(f'Using nleapfrog={nleapfrog} steps w/ eps={eps:.4f}')
-    for step in trange(nsteps):
+    for step in range(nsteps):
         log.info(f'STEP: {step}')
         if job_type.lower() == 'eval':
             x, metrics = exp.trainer.eval_step((x, beta))
@@ -143,16 +142,24 @@ class Experiment(BaseExperiment):
             build_networks=build_networks,
             ckpt_dir=self.ckpt_dir,
         )
-        if run is not None:
-            run.watch(
-                self.trainer.dynamics.networks,
-                log='all',
-                log_graph=True,
-                criterion=self.trainer.loss_fn,
-            )
-            ds_config = getattr(self.trainer, 'ds_config', None)
-            if ds_config is not None:
-                run.config['deepspeed_config'] = ds_config
+        # if run is not None:
+        #     import wandb
+        #     logfreq = self.config.steps.log
+        #     assert logfreq is not None
+        #     wandb.watch(
+        #         (
+        #             self.trainer.dynamics.networks,
+        #             self.trainer.dynamics.xeps,
+        #             self.trainer.dynamics.veps,
+        #         ),
+        #         log='all',
+        #         log_graph=True,
+        #         log_freq=logfreq,
+        #         # criterion=self.trainer.loss_fn,
+        #     )
+        #     ds_config = getattr(self.trainer, 'ds_config', None)
+        #     if ds_config is not None:
+        #         run.config['deepspeed_config'] = ds_config
 
         self.run = run
         self.arun = arun

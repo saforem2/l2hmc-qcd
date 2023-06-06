@@ -19,7 +19,9 @@ import xarray as xr
 import socket
 
 from l2hmc.common import get_timestamp, is_interactive, save_and_analyze_data
-from l2hmc.configs import AIM_DIR, ExperimentConfig, HERE, OUTDIRS_FILE
+from l2hmc.configs import (
+    AIM_DIR, ENV_FILTERS, ExperimentConfig, HERE, OUTDIRS_FILE
+)
 from l2hmc.trainers.trainer import BaseTrainer
 # from l2hmc.utils.logger import get_pylogger
 from l2hmc.utils.step_timer import StepTimer
@@ -151,7 +153,6 @@ class BaseExperiment(ABC):
             raise ValueError('WandB already initialized!')
 
         from wandb.util import generate_id
-
         run_id = generate_id()
         self.update_wandb_config(run_id=run_id)
         wandb.tensorboard.patch(root_logdir=os.getcwd())
@@ -160,6 +161,18 @@ class BaseExperiment(ABC):
             # name=wbname,
             **self.config.wandb.setup,
         )
+        assert run is not None and run is wandb.run
+        # log.warn(80 * '-')
+        # log.warn(fr':sparkle: [bold red]wandb.run.name: {run.name}[/]')
+        # log.warn(
+        #     r':rocket: [bold red]wandb.run: '
+        #     f'[link={run.url}]{run.name}[/]'
+        # )
+        # log.warn(80 * '-')
+        if wandb.run is not None:
+            log.critical(f'🚀 {wandb.run.name}')
+            log.critical(f'🔗 {wandb.run.url}')
+            log.critical(f'📂/: {wandb.run.dir}')
         assert run is wandb.run and run is not None
         wandb.define_metric('dQint_eval', summary='mean')
         run.log_code(HERE.as_posix())
@@ -168,10 +181,9 @@ class BaseExperiment(ABC):
                                           throw_on_missing=True)
         run.config.update(cfg_dict)
         env = dict(os.environ)
-        _ = env.pop('LS_COLORS', None)
-        _ = env.pop('LSCOLORS', None)
+        for key in ENV_FILTERS + ['LS_COLORS', 'LSCOLORS']:
+            _ = env.pop(key, None)
         run.config.update({'env': env})
-
         exec = os.environ.get('EXEC', None)
         if exec is not None:
             run.config['exec'] = exec

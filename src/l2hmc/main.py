@@ -1,13 +1,19 @@
+# -*- coding: utf-8 -*-
 """
 main.py
 
 Contains entry point for training Dynamics.
 """
-from __future__ import absolute_import, annotations, division, print_function
+from __future__ import (
+    absolute_import,
+    annotations,
+    division,
+    print_function,
+    unicode_literals
+)
 import logging
 import os
-import sys
-import warnings
+
 import time
 from pathlib import Path
 from mpi4py import MPI
@@ -16,24 +22,27 @@ import json
 import hydra
 from typing import Optional
 from omegaconf.dictconfig import DictConfig
-
-warnings.filterwarnings('ignore')
-
 from l2hmc import get_logger
-log = get_logger(__name__)
-# log = logging.getLogger()
-logging.getLogger('wandb').setLevel(logging.CRITICAL)
-logging.getLogger('aim').setLevel(logging.ERROR)
-logging.getLogger('filelock').setLevel(logging.CRITICAL)
-logging.getLogger('matplotlib').setLevel(logging.CRITICAL)
-logging.getLogger('PIL.PngImagePlugin').setLevel(logging.CRITICAL)
-logging.getLogger('graphviz._tools').setLevel(logging.CRITICAL)
-logging.getLogger('graphviz').setLevel(logging.CRITICAL)
 
+# sys.setdefaultencoding('utf8')
+
+# os.environ['WANDB_SILENT'] = '1'
 comm = MPI.COMM_WORLD
 
 # from l2hmc import logger
-logger = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)
+# log = get_logger(__name__)
+# log = logging.getLogger()
+_ = get_logger('wandb').setLevel(logging.CRITICAL)
+_ = get_logger('aim').setLevel(logging.CRITICAL)
+_ = get_logger('filelock').setLevel(logging.CRITICAL)
+_ = get_logger('matplotlib').setLevel(logging.CRITICAL)
+_ = get_logger('PIL.PngImagePlugin').setLevel(logging.CRITICAL)
+_ = get_logger('graphviz._tools').setLevel(logging.CRITICAL)
+_ = get_logger('graphviz').setLevel(logging.CRITICAL)
+_ = get_logger('deepspeed').setLevel(logging.INFO)
+
+log = get_logger(__name__)
 
 
 def get_experiment(
@@ -80,7 +89,6 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
     if overrides is not None:
         from l2hmc.configs import get_config
         cfg.update(get_config(overrides))
-
     ex = get_experiment(cfg)
     if ex.trainer._is_chief:
         try:
@@ -92,21 +100,17 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
         except Exception as e:
             log.exception(e)
             log.warning('Continuing!')
-
     should_train: bool = (
         ex.config.steps.nera > 0
         and ex.config.steps.nepoch > 0
     )
-
     nchains_eval = max(2, int(ex.config.dynamics.xshape[0] // 4))
-
     # TODO -----------------------------------------------------------------
     # - [ ] Add logic for running distributed inference + HMC
     #     - [ ] If we're training across N devices (CPU, GPU, TPU),
     #           we would like to run an indepdent evaluation + HMC process
     #           on each of them, average the model improvement over these
     # ----------------------------------------------------------------------
-
     # --- [1.] Train model -------------------------------------------------
     if should_train:
         tstart = time.time()
@@ -118,7 +122,6 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
             estart = time.time()
             _ = ex.evaluate(job_type='eval', nchains=nchains_eval)
             log.info(f'Evaluation took: {time.time() - estart:.5f}s')
-
     # --- [3.] Run generic HMC for comparison ------------------------------
     if ex.trainer._is_chief and ex.config.steps.test > 0:
         log.info('Running generic HMC for comparison')
@@ -135,14 +138,17 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
             if ex.run is not None and ex.run is wandb.run:
                 ex.run.log({'model_improvement': improvement})
         log.critical(f'Model improvement: {improvement:.8f}')
-
+        if wandb.run is not None:
+            log.critical(f'🚀 {wandb.run}')
+            log.critical(f'🔗 {wandb.run.url}')
+            log.critical(f'📂/: {wandb.run.dir}')
     if ex.trainer._is_chief:
         try:
             ex.visualize_model()
         except Exception:
             # log.exception(e)
             log.error('Unable to make visuals for model, continuing!')
-
+        log.critical(f"experiment dir: {Path(ex._outdir).as_posix()}")
     return Path(ex._outdir).as_posix()
 
 
@@ -152,7 +158,6 @@ def build_experiment(overrides: Optional[str | list[str]] = None):
     from l2hmc.configs import get_config
     if isinstance(overrides, str):
         overrides = [overrides]
-
     cfg = get_config(overrides)
     exp = get_experiment(cfg=cfg)
     return exp
@@ -169,17 +174,20 @@ def main(cfg: DictConfig):
     ):
         from l2hmc.utils.dist import cleanup
         cleanup()
-
     return output
 
 
 if __name__ == '__main__':
+    import warnings
+    warnings.filterwarnings('ignore')
     import wandb
-    wandb.require(experiment='service')
+    # wandb.require(experiment='service')
     start = time.time()
     outdir = main()
     end = time.time()
     log.info(f'Run completed in: {end - start:4.4f} s')
     if outdir is not None:
         log.info(f'Run located in: {outdir}')
-    sys.exit(0)
+    if wandb.run is not None:
+        wandb.finish(0)
+    # sys.exit(0)

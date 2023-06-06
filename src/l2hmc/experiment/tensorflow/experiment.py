@@ -6,7 +6,7 @@ a subclass of the base `l2hmc/Experiment` object.
 """
 from __future__ import absolute_import, division, print_function, annotations
 import os
-import logging
+# import logging
 
 from omegaconf import DictConfig
 
@@ -136,7 +136,6 @@ class Experiment(BaseExperiment):
                     show_shapes=True,
                     expand_nested=True,
                     show_layer_activations=True
-
                 )
                 fout = outdir.joinpath(f'{key}-{k}.png').resolve().as_posix()
                 log.info(f'Saving model visualizations to: {fout}')
@@ -225,7 +224,7 @@ class Experiment(BaseExperiment):
                 x=x,
                 nera=nera,
                 nepoch=nepoch,
-                run=self.run,
+                # run=self.run,
                 arun=self.arun,
                 writer=writer,
                 train_dir=jobdir,
@@ -237,7 +236,7 @@ class Experiment(BaseExperiment):
                 x=x,
                 nera=nera,
                 nepoch=nepoch,
-                run=self.run,
+                # run=self.run,
                 arun=self.arun,
                 writer=writer,
                 train_dir=jobdir,
@@ -283,7 +282,7 @@ class Experiment(BaseExperiment):
         writer.set_as_default()  # type:ignore
 
         output = self.trainer.eval(
-            run=self.run,
+            # run=self.run,
             arun=self.arun,
             writer=writer,
             nchains=nchains,

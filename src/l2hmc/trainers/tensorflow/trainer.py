@@ -11,6 +11,7 @@ from pathlib import Path
 import time
 from typing import Any, Callable, Optional, Union, Sequence
 
+import wandb
 import aim
 from aim import Distribution
 import horovod.tensorflow as hvd
@@ -131,9 +132,11 @@ class Trainer(BaseTrainer):
             skip: Optional[str | Sequence[str]] = None,
     ) -> None:
         super().__init__(cfg=cfg, keep=keep, skip=skip)
+        self.policy = tf.keras.mixed_precision.global_policy()
         if (
                 (self.config.compression in [True, 'fp16'])
                 or self.config.precision in ['fp16', 'half', 'float16']
+                or self.policy.compute_dtype == 'float16'
         ):
             self.use_fp16: bool = True
             self.compression = hvd.Compression.fp16
@@ -267,8 +270,11 @@ class Trainer(BaseTrainer):
         # TODO: Expand method, re-build LR scheduler, etc
         # TODO: Replace `LearningRateConfig` with `OptimizerConfig`
         # TODO: Optionally, break up in to lrScheduler, OptimizerConfig ?
-        opt = tf.keras.optimizers.Adam(self.config.learning_rate.lr_init)
-        if self.config.precision in ['fp16', 'half', 'float16']:
+        # opt = tf.keras.optimizers.Adam(self.config.learning_rate.lr_init)
+        opt = tf.keras.optimizers.legacy.Adam(self.config.learning_rate.lr_init)
+        # if self.config.precision in ['fp16', 'half', 'float16']:
+        policy = tf.keras.mixed_precision.global_policy()
+        if policy.compute_dtype == 'float16':
             return tf.keras.mixed_precision.LossScaleOptimizer(opt)
         return opt
 
@@ -324,7 +330,7 @@ class Trainer(BaseTrainer):
             metrics: dict,
             job_type: str,
             step: Optional[int] = None,
-            run: Optional[Any] = None,
+            # run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             # model: Optional[Model | Layer] = None,
@@ -359,14 +365,14 @@ class Trainer(BaseTrainer):
         # if writer is not None and self.verbose and step is not None:
         if self.config.init_wandb or self.config.init_aim:
             if job_type == 'train' and log_weights:
-                self.track_weights(run=run)
+                self.track_weights()
 
             self.track_metrics(
                 record=metrics,
                 avgs=avgs,
                 job_type=job_type,
                 step=step,
-                run=run,
+                # run=run,
                 arun=arun,
                 # log_weights=log_weights,
             )
@@ -401,7 +407,7 @@ class Trainer(BaseTrainer):
 
     def track_weights(
             self,
-            run: Optional[Any] = None,
+            # run: Optional[Any] = None,
     ) -> None:
         if not self._is_chief:
             return
@@ -411,7 +417,7 @@ class Trainer(BaseTrainer):
                 f"model/{k.replace('/', '.').replace('dynamics', 'networks')}"
             )
 
-        if run is not None:
+        if (run := wandb.run) is not None:
             weights = {
                 rename(k): tf.cast(v, TF_FLOAT)
                 for k, v in self.dynamics.get_all_weights().items()
@@ -428,12 +434,11 @@ class Trainer(BaseTrainer):
             avgs: dict[str, TensorLike | ScalarLike],
             job_type: str,
             step: Optional[int],
-            run: Optional[Any] = None,
+            # run: Optional[Any] = None,
             arun: Optional[Any] = None,
     ) -> None:
         if not self._is_chief:
             return
-
         dQdict = None
         dQint = record.get('dQint', None)
         if dQint is not None:
@@ -444,8 +449,7 @@ class Trainer(BaseTrainer):
                     'avg': tf.reduce_mean(dQint),
                 }
             }
-
-        if run is not None:
+        if (run := wandb.run) is not None:
             run.log({f'wandb/{job_type}': record}, commit=False)
             run.log({f'avgs/wandb.{job_type}': avgs}, commit=False)
             if dQdict is not None:
@@ -456,10 +460,8 @@ class Trainer(BaseTrainer):
                 'job_type': job_type,
                 'arun': arun
             }
-
             if dQdict is not None:
                 self.aim_track({'dQint': dQint}, prefix='dQ', **kwargs)
-
             try:
                 self.aim_track(avgs, prefix='avgs', **kwargs)
             except Exception as e:
@@ -549,7 +551,7 @@ class Trainer(BaseTrainer):
             eval_steps: Optional[int] = None,
             x: Optional[Tensor] = None,
             skip: Optional[str | Sequence[str]] = None,
-            run: Optional[Any] = None,
+            # run: Optional[Any] = None,
             writer: Optional[Any] = None,
             job_type: Optional[str] = 'eval',
             nchains: Optional[int] = None,
@@ -614,7 +616,7 @@ class Trainer(BaseTrainer):
         if nlog <= eval_steps:
             nlog = min(10, max(1, eval_steps // 100))
 
-        if run is not None:
+        if (run := wandb.run) is not None:
             run.config.update({
                 job_type: {'beta': beta, 'xshape': x.shape.as_list()}
             })
@@ -648,7 +650,7 @@ class Trainer(BaseTrainer):
             eval_steps: Optional[int] = None,
             x: Optional[Tensor] = None,
             skip: Optional[str | Sequence[str]] = None,
-            run: Optional[Any] = None,
+            # run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             job_type: Optional[str] = 'eval',
@@ -667,7 +669,7 @@ class Trainer(BaseTrainer):
         stuck_counter = 0
         setup = self._setup_eval(
             x=x,
-            run=run,
+            # run=run,
             skip=skip,
             beta=beta,
             eps=eps,
@@ -752,7 +754,7 @@ class Trainer(BaseTrainer):
                     }
                     record.update(metrics)
                     avgs, summary = self.record_metrics(
-                        run=run,
+                        # run=run,
                         arun=arun,
                         step=step,
                         writer=writer,
@@ -907,7 +909,7 @@ class Trainer(BaseTrainer):
             beta: Optional[Tensor | float] = None,
             era: int = 0,
             epoch: int = 0,
-            run: Optional[Any] = None,
+            # run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             rows: Optional[dict] = None,
@@ -942,7 +944,7 @@ class Trainer(BaseTrainer):
         }
         # record.update(metrics)
         avgs, summary = self.record_metrics(
-            run=run,
+            # run=run,
             arun=arun,
             step=self._gstep,
             writer=writer,
@@ -968,7 +970,7 @@ class Trainer(BaseTrainer):
             x: Tensor,
             beta: float | Tensor,
             era: Optional[int] = None,
-            run: Optional[Any] = None,
+            # run: Optional[Any] = None,
             arun: Optional[Any] = None,
             nepoch: Optional[int] = None,
             writer: Optional[Any] = None,
@@ -1046,7 +1048,7 @@ class Trainer(BaseTrainer):
                     }
                     record.update(metrics)
                     avgs, summary = self.record_metrics(
-                        run=run,
+                        # run=run,
                         arun=arun,
                         step=self._gstep,
                         writer=writer,
@@ -1206,7 +1208,7 @@ class Trainer(BaseTrainer):
             x: Optional[Tensor] = None,
             skip: Optional[str | Sequence[str]] = None,
             train_dir: Optional[os.PathLike] = None,
-            run: Optional[Any] = None,
+            # run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             nera: Optional[int] = None,
@@ -1269,7 +1271,7 @@ class Trainer(BaseTrainer):
                 x=x,
                 beta=b,
                 era=era,
-                run=run,
+                # run=run,
                 arun=arun,
                 writer=writer,
                 extend=extend,
@@ -1315,7 +1317,7 @@ class Trainer(BaseTrainer):
             x: Optional[Tensor] = None,
             skip: Optional[str | Sequence[str]] = None,
             train_dir: Optional[os.PathLike] = None,
-            run: Optional[Any] = None,
+            # run: Optional[Any] = None,
             arun: Optional[Any] = None,
             writer: Optional[Any] = None,
             nera: Optional[int] = None,
@@ -1364,7 +1366,7 @@ class Trainer(BaseTrainer):
                 x=x,
                 beta=b,
                 era=era,
-                run=run,
+                # run=run,
                 arun=arun,
                 writer=writer,
                 extend=extend,

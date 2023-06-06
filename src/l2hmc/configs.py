@@ -55,6 +55,15 @@ ENV_FILTERS = [
     'PS1',
     'LSCOLORS',
     'LS_COLORS',
+    '_ModuleTable_Sz_'
+    '_ModuleTable003_'
+    '_ModuleTable001_'
+    '_ModuleTable002_',
+    '_ModuleTable003_',
+    '_ModuleTable004_',
+    'BASH_FUNC__conda_activate%%',
+    '_LMFILES_',
+    '__LMOD_REF_COUNT__LMFILES_'
 ]
 
 SYNONYMS = {
@@ -316,8 +325,8 @@ class Steps(BaseConfig):
     nera: int
     nepoch: int
     test: int
-    log: Optional[int] = None
-    print: Optional[int] = None
+    log: int = 100
+    print: int = 200
     extend_last_era: Optional[int] = None
 
     def __post_init__(self):
@@ -630,6 +639,8 @@ class ExperimentConfig(BaseConfig):
     profile: bool = False
     init_aim: bool = True
     init_wandb: bool = True
+    use_wandb: bool = True
+    use_tb: bool = False
     debug_mode: bool = False
     default_mode: bool = True
     print_config: bool = True
@@ -647,6 +658,7 @@ class ExperimentConfig(BaseConfig):
     compression: Optional[str] = None
 
     def __post_init__(self):
+        self.env_config = EnvConfig()
         if self.seed is None:
             import numpy as np
             self.seed = np.random.randint(0)

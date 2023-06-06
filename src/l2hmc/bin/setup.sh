@@ -57,9 +57,11 @@ setupThetaGPU() {
     VENV_DIR="${ROOT}/venvs/thetaGPU/2023-04-26"
     venvSetup "$VENV_DIR"
     # -- MPI / Comms Setup ----------------------------------
-    NRANKS=$(wc -l < "${HOSTFILE}")
+    echo "HOSTFILE: ${HOSTFILE}"
+    echo "COBALT_NODEFILE: ${COBALT_NODEFILE}"
+    NHOSTS=$(wc -l < "${COBALT_NODEFILE}")
     NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
-    NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
+    NGPUS=$((${NHOSTS}*${NGPU_PER_RANK}))
     MPI_COMMAND=$(which mpirun)
     MPI_DEFAULTS="\
       --verbose \
@@ -89,11 +91,14 @@ setupPolaris()  {
     export IBV_FORK_SAFE=1
     export NVME_PATH="/local/scratch/"
     # -----------------------------------------------
-    module load conda/2022-09-08; conda activate base
-    VENV_DIR="${ROOT}/venvs/polaris/2022-09-08"
-    venvSetup $VENV_DIR
+    # module load conda/2022-09-08; conda activate base
+    # VENV_DIR="${ROOT}/venvs/polaris/2022-09-08"
+    module load conda/2023-01-10-unstable
+    conda activate base
+    VENV_DIR="${ROOT}/venvs/polaris/2023-01-10"
+    venvSetup "$VENV_DIR"
     # -----------------------------------------------
-    NRANKS=$(wc -l < "${HOSTFILE}")
+    NRANKS=$(wc -l < "${PBS_NODEFILE}")
     NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
     NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
     MPI_COMMAND=$(which mpiexec)

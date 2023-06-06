@@ -3,78 +3,24 @@ l2hmc/__init__.py
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
+import os
+from typing import Optional
+import warnings
+
+from mpi4py import MPI
+# from rich.logging import RichHandler
+# from l2hmc.utils.enrich import EnRichHandler
+from enrich.logging import RichHandler
+import tqdm
+
+warnings.filterwarnings('ignore')
 
 # import os
-from typing import Optional
-from mpi4py import MPI
-import tqdm
-# from pathlib import Path
-
-# from colorlog import ColoredFormatter
-
-
-# # formatter = ColoredFormatter(
-# # 	"%(log_color)s%(levelname)-8s%(reset)s %(message_log_color)s%(message)s",
-# # 	secondary_log_colors={
-# # 		'message': {
-# # 			'ERROR':    'red',
-# # 			'CRITICAL': 'red'
-# # 		}
-# # 	}
-# # )
-
-# formatter = ColoredFormatter(
-# 	"%(log_color)s%(levelname)-8s%(reset)s %(blue)s%(message)s",
-# 	datefmt=None,
-# 	reset='%X',
-# 	log_colors={
-# 		'DEBUG':    'cyan',
-# 		'INFO':     'green',
-# 		'WARNING':  'yellow',
-# 		'ERROR':    'red',
-# 		'CRITICAL': 'red,bg_white',
-# 	},
-# 	secondary_log_colors={},
-# 	style='%'
-# )
-
-# handler = colorlog.StreamHandler()
-# handler.setFormatter(colorlog.ColoredFormatter(
-# 	'%(log_color)s%(levelname)s:%(name)s:%(message)s'))
-
-# logger = colorlog.getLogger('example')
-# logger.addHandler(handler)
-
-# the handler determines where the logs go: stdout/file
-# shell_handler = RichHandler()
-# file_handler = logging.FileHandler("debug.log")
-
-# logger.setLevel(logging.DEBUG)
-# shell_handler.setLevel(logging.DEBUG)
-# file_handler.setLevel(logging.DEBUG)
-
-# # the formatter determines what our logs will look like
-# fmt_shell = '%(message)s'
-# fmt_file = (
-#     '%(levelname)s %(asctime)s '
-#     '[%(filename)s:%(funcName)s:%(lineno)d] '
-#     '%(message)s'
-# )
-
-# shell_formatter = logging.Formatter(fmt_shell)
-# file_formatter = logging.Formatter(fmt_file)
-
-# # here we hook everything together
-# shell_handler.setFormatter(shell_formatter)
-# file_handler.setFormatter(file_formatter)
-
-# logger.addHandler(shell_handler)
-# logger.addHandler(file_handler)
-
-# from tqdm.contrib import DummyTqdmFile
-import os
 
 os.environ['PYTHONIOENCODING'] = 'utf-8'
+
+RANK = int(MPI.COMM_WORLD.Get_rank())
+WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
 
 
 class DummyTqdmFile(object):
@@ -99,13 +45,13 @@ def get_rich_logger(
         name: Optional[str] = None,
         level: str = 'INFO'
 ) -> logging.Logger:
-    from rich.logging import RichHandler
     # log: logging.Logger = get_logger(name=name, level=level)
     log = logging.getLogger(name)
     log.handlers = []
     from l2hmc.utils.rich import get_console
     console = get_console(
         markup=True,
+        redirect=(WORLD_SIZE > 1),
     )
     handler = RichHandler(
         level,
@@ -119,42 +65,134 @@ def get_rich_logger(
     return log
 
 
+def get_file_logger(
+        name: Optional[str] = None,
+        level: str = 'INFO',
+        rank_zero_only: bool = True,
+        fname: Optional[str] = None,
+        # rich_stdout: bool = True,
+) -> logging.Logger:
+    # logging.basicConfig(stream=DummyTqdmFile(sys.stderr))
+    import logging
+    fname = 'l2hmc' if fname is None else fname
+    log = logging.getLogger(name)
+    if rank_zero_only:
+        fh = logging.FileHandler(f"{fname}.log")
+        if RANK == 0:
+            log.setLevel(level)
+            fh.setLevel(level)
+        else:
+            log.setLevel('CRITICAL')
+            fh.setLevel('CRITICAL')
+    else:
+        fh = logging.FileHandler(f"{fname}-{RANK}.log")
+        log.setLevel(level)
+        fh.setLevel(level)
+    # create formatter and add it to the handlers
+    formatter = logging.Formatter(
+        "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
+    )
+    fh.setFormatter(formatter)
+    log.addHandler(fh)
+    return log
+
+
 def get_logger(
         name: Optional[str] = None,
         level: str = 'INFO',
         rank_zero_only: bool = True,
-        rich_stdout: bool = True,
+        **kwargs,
+        # rich_stdout: bool = True,
 ) -> logging.Logger:
-    rank = int(MPI.COMM_WORLD.Get_rank())
     # logging.basicConfig(stream=DummyTqdmFile(sys.stderr))
     log = logging.getLogger(name)
-    log.handlers = []
-    from rich.logging import RichHandler
-    from l2hmc.utils.rich import get_console
+    # log.handlers = []
+    # from rich.logging import RichHandler
+    from l2hmc.utils.rich import get_console, is_interactive
     # format = "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
     if rank_zero_only:
-        if rank != 0:
+        if RANK != 0:
             log.setLevel('CRITICAL')
         else:
             log.setLevel(level)
-    if rank == 0:
-        console = get_console(markup=True)
+    if RANK == 0:
+        # from pathlib import Path
+        # outdir = Path(os.getcwd()).resolve().absolute()
+        # outfile = outdir.joinpath('console.log').as_posix()
+        console = get_console(
+            markup=True,  # (WORLD_SIZE == 1),
+            redirect=(WORLD_SIZE > 1),
+            # file=outfile,
+            **kwargs
+        )
+        if console.is_jupyter:
+            console.is_jupyter = False
         # log.propagate = True
         # log.handlers = []
+        use_markup = (
+            WORLD_SIZE == 1
+            and not is_interactive()
+        )
         log.addHandler(
             RichHandler(
                 omit_repeated_times=False,
                 level=level,
                 console=console,
+                show_time=True,
+                show_level=True,
                 show_path=True,
-                enable_link_path=False,
                 # tracebacks_width=120,
-                markup=True,
+                markup=use_markup,
+                enable_link_path=use_markup,
                 # keywords=['loss=', 'dt=', 'Saving']
             )
         )
         log.setLevel(level)
     return log
 
-
-# log = get_logger(__name__, level='INFO')
+# def get_logger_old(
+#         name: Optional[str] = None,
+#         level: str = 'INFO',
+#         rank_zero_only: bool = True,
+#         rich_stdout: bool = True,
+# ) -> logging.Logger:
+#     # logging.basicConfig(stream=DummyTqdmFile(sys.stderr))
+#     import logging
+#     # logging.basicConfig(
+#     #     format="[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
+#     # )
+#     log = logging.getLogger(name)
+#     log.handlers = []
+#     # from rich.logging import RichHandler
+#     from l2hmc.utils.rich import RichHandler
+#     from l2hmc.utils.rich import get_console
+#     if rank_zero_only:
+#         if rank != 0:
+#             log.setLevel('CRITICAL')
+#         else:
+#             log.setLevel(level)
+#     if rank == 0:
+#         console = get_console(markup=True)
+#         # log.propagate = True
+#         # log.handlers = []
+#         # formatter = logging.Formatter(
+#         #     "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
+#         # )
+#         rh = RichHandler(
+#             # log_time_format='[%Y-%m-%d][%X]',
+#             omit_repeated_times=False,
+#             level=level,
+#             console=console,
+#             show_path=False,
+#             # show_time=False,
+#             # show_level=False,
+#             enable_link_path=False,
+#             markup=True,
+#         )
+#         # rh.formatter = None
+#         # rh.formatter = formatter
+#         # rh.setFormatter(formatter)
+#         rh.setLevel(level)
+#         log.addHandler(rh)
+#         log.setLevel(level)
+#     return log

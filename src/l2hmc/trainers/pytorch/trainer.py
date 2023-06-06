@@ -6,43 +6,34 @@ Implements methods for training L2HMC sampler.
 from __future__ import absolute_import, annotations, division, print_function
 from collections import defaultdict
 from contextlib import nullcontext
-import logging
-import os
-
-import deepspeed
 import json
+import os
 from pathlib import Path
 import socket
 import time
 from typing import Any, Callable, Optional, Sequence
-from rich.console import ConsoleRenderable
-# from rich.align import Align
 
-from torch.cuda.amp.grad_scaler import GradScaler
 import aim
 from aim import Distribution
+import deepspeed
+from enrich.logging import RichHandler as EnRichHandler
+from hydra.utils import instantiate
 import numpy as np
 from omegaconf import DictConfig
-from hydra.utils import instantiate
 from rich import box, print_json
+from rich.console import ConsoleRenderable
 from rich.live import Live
+from rich.logging import RichHandler as RichHandler
+from rich.panel import Panel
 from rich.table import Table
 import torch
 from torch import nn
+from torch.cuda.amp.grad_scaler import GradScaler
 from torch.optim.lr_scheduler import LambdaLR
 import wandb
-# from transformers.deepspeed import HfDeepSpeedConfig
 
-# from l2hmc.utils.logger import get_pylogger
-
-import l2hmc.utils.live_plots as plotter
 from l2hmc import get_logger
-from l2hmc.common import (
-    ScalarLike,
-    # TensorLike,
-    get_timestamp,
-)
-from l2hmc.utils.dist import setup_torch_distributed
+from l2hmc.common import ScalarLike, get_timestamp
 from l2hmc.configs import CHECKPOINTS_DIR, ExperimentConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.group.su3.pytorch.group import SU3
@@ -53,8 +44,11 @@ from l2hmc.loss.pytorch.loss import LatticeLoss
 from l2hmc.network.pytorch.network import NetworkFactory
 from l2hmc.trackers.pytorch.trackers import update_summaries
 from l2hmc.trainers.trainer import BaseTrainer
-from l2hmc.utils.history import summarize_dict
+from l2hmc.utils.dist import setup_torch_distributed
+from l2hmc.utils.history import StopWatch, summarize_dict
+import l2hmc.utils.live_plots as plotter
 from l2hmc.utils.rich import get_width, is_interactive
+from l2hmc.utils.rich import get_console
 from l2hmc.utils.step_timer import StepTimer
 # WIDTH = int(os.environ.get('COLUMNS', 150))
 
@@ -62,10 +56,18 @@ from l2hmc.utils.step_timer import StepTimer
 # if is_interactive():
 #     from tqdm.rich import trange
 # else:
-from tqdm.auto import trange
+# from tqdm.auto import trange
 
 # log = logging.getLogger(__name__)
 log = get_logger(__name__)
+lh = log.handlers if len(log.handlers) > 0 else []
+
+console = get_console()
+for h in lh:
+    if isinstance(h, (RichHandler, EnRichHandler)):
+        console = h.console
+
+
 
 Tensor = torch.Tensor
 Module = torch.nn.modules.Module
@@ -154,6 +156,11 @@ class Trainer(BaseTrainer):
         self.dynamics: Dynamics = self.build_dynamics(
             build_networks=build_networks,
         )
+        # minlogfreq = int(self.config.steps.nepoch // 20)
+        # logfreq = (
+        #     minlogfreq if self.config.steps.log is None
+        #     else self.config.steps.log
+        # )
         self.ckpt_dir: Path = (
             Path(CHECKPOINTS_DIR).joinpath('checkpoints')
             if ckpt_dir is None
@@ -163,7 +170,6 @@ class Trainer(BaseTrainer):
         # if self.use_fp16:
         #     self.dynamics = self.dynamics.to(torch.half)
         #     # self.warning(f'Dynamics.dtype: {self.dynamics.dtype}')
-
         # --------------------------------------------------------
         # NOTE:
         #   - If we want to try and resume training,
@@ -209,8 +215,6 @@ class Trainer(BaseTrainer):
         # --------------------------------------------------------------------
         # BACKEND SPECIFIC SETUP
         # ----------------------
-        # NOTE: DeepSpeed automatically handles gradient scaling when training
-        # with mixed precision.
         self.ds_config = {}
         self.grad_scaler = None  # Needed for Horovod, DDP
         self.dynamics_engine = None
@@ -222,17 +226,40 @@ class Trainer(BaseTrainer):
                 # find_unused_parameters=True
             )
             self.grad_scaler = GradScaler()
-
+            # self.grad_scaler = GradScaler(
+            #     enabled=(self._dtype != torch.float64)
+            # )
+        # NOTE: DeepSpeed automatically handles gradient scaling when training
+        # with mixed precision.
         elif self.config.backend.lower() in ['ds', 'deepspeed']:
             self._setup_deepspeed()
-
         elif self.config.backend.lower() in ['hvd', 'horovod']:
             # self.grad_scaler = GradScaler()
             self._setup_horovod()
-
         else:
             self.optimizer = self._optimizer
-
+        logfreq = self.config.steps.log
+        log.warning(f'logging with freq {logfreq} for wandb.watch')
+        # if self.rank == 0 and wandb.run is not None:
+        # if self._is_chief and self.config.use_wandb and wandb.run is not None:
+        if self.config.use_wandb and wandb.run is not None:
+            wandb.run.watch(
+                # (
+                #     self.dynamics.xnet,
+                #     self.dynamics.vnet,
+                #     self.dynamics.xeps,
+                #     self.dynamics.veps
+                # ),
+                (
+                    self.dynamics,
+                    self.dynamics.xeps,
+                    self.dynamics.veps,
+                ),
+                # self.dynamics,
+                log='all',
+                log_freq=logfreq,
+                # log_graph=True,
+            )
         assert (
             isinstance(self.dynamics, Dynamics)
             and isinstance(self.dynamics, nn.Module)
@@ -253,22 +280,38 @@ class Trainer(BaseTrainer):
     def _setup_deepspeed(self) -> None:
         # TODO: Move ds_config_path to `conf/config.yaml` to be overridable
         self.ds_config = self.prepare_ds_config()
-        if (
-                (fp16 := self.ds_config.get('fp16', None)) is not None
-                and fp16.get('enabled', False)
-        ):
+        # if (
+        #         (fp16 := self.ds_config.get('fp16', None)) is not None
+        #         and fp16.get('enabled', False)
+        # ):
+        if self.use_fp16:
+            log.warning('Using `fp16` in DeepSpeed config...')
+            self.ds_config |= {
+                'fp16': {
+                    'enabled': True,
+                }
+            }
             self.dynamics = self.dynamics.to(torch.half)
         if self._is_chief:
             print_json(json.dumps(self.ds_config, indent=4))
-        engine, optimizer, *_ = deepspeed.initialize(
-            model=self.dynamics,
-            config=self.ds_config,
-            model_parameters=self.dynamics.parameters()  # noqa
-            # model_parameters=filter(
-            #     lambda p: p.requires_grad,
-            #     self.dynamics.parameters(),
-            # ),
-        )
+        if 'optimizer' in self.ds_config.items():
+            engine, optimizer, *_ = deepspeed.initialize(
+                model=self.dynamics,
+                config=self.ds_config,
+                model_parameters=self.dynamics.parameters()  # type:ignore
+                # model_parameters=filter(
+                #     lambda p: p.requires_grad,
+                #     self.dynamics.parameters(),
+                # ),
+            )
+        else:
+            # optimizer = self._optimizer
+            engine, optimizer, *_ = deepspeed.initialize(
+                model=self.dynamics,
+                config=self.ds_config,
+                optimizer=self._optimizer,
+                model_parameters=self.dynamics.parameters()  # type:ignore
+            )
         assert engine is not None
         assert optimizer is not None
         self.dynamics_engine = engine
@@ -495,7 +538,6 @@ class Trainer(BaseTrainer):
     ) -> None:
         if not self._is_chief or not self.config.save:
             return
-
         tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
         step = self._gstep
         ckpt_file = self.ckpt_dir.joinpath(
@@ -524,11 +566,11 @@ class Trainer(BaseTrainer):
         torch.save(self.dynamics.state_dict(), modelfile)
         self.info(f'Saving checkpoint to: {ckpt_file.as_posix()}')
         self.info(f'Saving modelfile to: {modelfile.as_posix()}')
-        if run is not None:
-            assert run is wandb.run
+        if wandb.run is not None and self.config.init_wandb:
+            # assert run is wandb.run
             artifact = wandb.Artifact('model', type='model')
             artifact.add_file(modelfile.as_posix())
-            run.log_artifact(artifact)
+            wandb.run.log_artifact(artifact)
 
     def load_ckpt(
             self,
@@ -667,24 +709,36 @@ class Trainer(BaseTrainer):
 
         if job_type == 'eval' and 'eps' in metrics:
             _ = metrics.pop('eps', None)
-
         metrics.update(self.metrics_to_numpy(metrics))
         avgs = self.histories[job_type].update(metrics)
         summary = summarize_dict(avgs)
-
+        metrics |= {
+            'xeps': torch.tensor(self.dynamics.xeps),
+            'veps': torch.tensor(self.dynamics.veps)
+        }
+        metrics |= {
+            f'{k}/avg': v for k, v in avgs.items()
+        }
         if (
                 step is not None
                 and writer is not None
         ):
             assert step is not None
-            update_summaries(step=step,
-                             model=model,
-                             writer=writer,
-                             metrics=metrics,
-                             prefix=job_type,
-                             optimizer=optimizer)
+            update_summaries(
+                step=step,
+                # model=model,
+                writer=writer,
+                # with_grads=True,
+                metrics=metrics,
+                prefix=job_type,
+                optimizer=optimizer,
+                use_tb=self.config.use_tb,
+                use_wandb=(
+                    self.config.use_wandb
+                    and self.config.init_wandb
+                )
+            )
             writer.flush()
-
         if self.config.init_aim or self.config.init_wandb:
             self.track_metrics(
                 record=metrics,
@@ -719,14 +773,38 @@ class Trainer(BaseTrainer):
                 }
             }
 
-        if run is not None:
-            try:
-                run.log({f'wandb/{job_type}': record}, commit=False)
-                run.log({f'avgs/wandb.{job_type}': avgs})
-                if dQdict is not None:
-                    run.log(dQdict, commit=False)
-            except ValueError:
-                self.warning('Unable to track record with WandB, skipping!')
+        # if run is not None:
+        if wandb.run is not None and self.config.init_wandb:
+            wandb.run.log(dQdict, commit=False)
+            # wandb.run.log({f'{job_type}/{k}/avg': v for k, v in avgs.items()})
+            # with StopWatch(
+            #         msg=f"`wandb.log({job_type}.metrics)`",
+            #         wbtag=f'wblog/{job_type}',
+            #         iter=step,
+            #         prefix='TrackingTimers/',
+            #         log_output=False,
+            # ):
+            #     record = {
+            #         f'{job_type}/metrics/{k}': v for k, v in record.items()
+            #     }
+            #     record |= {
+            #         f'{job_type}/metrics/{k}/avg': v for k, v in avgs.items()
+            #     }
+            #     try:
+            #         wandb.run.log(record, commit=False)
+            #         if dQdict is not None:
+            #             wandb.run.log(dQdict)
+            #     except ValueError:
+            #         self.warning(
+            #             'Unable to track record with WandB, skipping!'
+            #         )
+            # try:
+            #     wandb.run.log({f'{job_type}.metrics': record}, commit=False)
+            #     wandb.run.log({f'{job_type}.avgs': avgs})
+            #     # wandb.run.log({f'wandb/{job_type}': record}, commit=False)
+            #     # wandb.run.log({f'avgs/wandb.{job_type}': avgs})
+            #     if dQdict is not None:
+            #         wandb.run.log(dQdict, commit=False)
         if arun is not None:
             kwargs = {
                 'step': step,
@@ -756,8 +834,7 @@ class Trainer(BaseTrainer):
             xout, metrics = self.dynamics((xinit, beta))
         xout = self.g.compat_proj(xout)
         xprop = self.g.compat_proj(metrics.pop('mc_states').proposed.x)
-
-        beta = beta  # .to(self.accelerator.device)
+        beta = beta
         # xprop = to_u1(metrics.pop('mc_states').proposed.x)
         loss = self.loss_fn(xinit, x_prop=xprop, acc=metrics['acc'])
         loss.backward()
@@ -858,6 +935,7 @@ class Trainer(BaseTrainer):
         if make_live:
             return Live(
                 renderable,
+                console=console,
                 # screen=True,
                 transient=True,
                 # redirect_stdout=True,
@@ -1011,6 +1089,8 @@ class Trainer(BaseTrainer):
         eps = setup['eps']
         beta = setup['beta']
         table = setup['table']
+        panel = Panel(table)
+        ctx = self.get_context_manager(panel)
         nleapfrog = setup['nleapfrog']
         eval_steps = setup['eval_steps']
         assert x is not None and beta is not None
@@ -1041,8 +1121,6 @@ class Trainer(BaseTrainer):
                     return self.hmc_step(z, eps=eps, nleapfrog=nleapfrog)
                 return self.eval_step(z)
 
-        ctx = self.get_context_manager(table)
-
         def refresh_view():
             if isinstance(ctx, Live):
                 ctx.refresh()
@@ -1054,7 +1132,6 @@ class Trainer(BaseTrainer):
         plots = None
         if is_interactive() and make_plots:
             plots = plotter.init_plots()
-
         self.dynamics.eval()
         with ctx:
             x = self.warmup(beta=beta, x=x)
@@ -1094,12 +1171,9 @@ class Trainer(BaseTrainer):
                         step=step,
                         avgs=avgs,
                     )
-
                     if step % nprint == 0:
-                        self.info(summary)
-
+                        log.info(summary)
                     refresh_view()
-
                     if avgs.get('acc', 1.0) < 1e-5:
                         if stuck_counter < patience:
                             stuck_counter += 1
@@ -1107,7 +1181,6 @@ class Trainer(BaseTrainer):
                             self.warning('Chains are stuck! Redrawing x')
                             x = self.lattice.random()
                             stuck_counter = 0
-
                     if job_type == 'hmc' and dynamic_step_size:
                         acc = record.get('acc_mask', None)
                         record['eps'] = eps
@@ -1117,7 +1190,6 @@ class Trainer(BaseTrainer):
                                 eps -= (eps / 10.)
                             else:
                                 eps += (eps / 10.)
-
                     if (
                             is_interactive()
                             and self._is_chief
@@ -1135,10 +1207,8 @@ class Trainer(BaseTrainer):
                                 plots=plots,
                                 logging_steps=nlog,
                             )
-
         if isinstance(ctx, Live):
             ctx.console.clear_live()
-
         tables[str(0)] = setup['table']
         self.dynamics.train()
 
@@ -1196,7 +1266,7 @@ class Trainer(BaseTrainer):
         else:
             if self.grad_scaler is not None:
                 self.grad_scaler.scale(loss).backward()  # type:ignore
-                if self.config.learning_rate.clip_norm > 0.0:
+                if self.config.learning_rate.clip_norm > 0:
                     self.grad_scaler.unscale_(self.optimizer)
                     torch.nn.utils.clip_grad.clip_grad_norm(
                         self.dynamics.parameters(),
@@ -1208,12 +1278,12 @@ class Trainer(BaseTrainer):
                     self.grad_scaler.step(self.optimizer)
                     self.grad_scaler.update()
             else:
+                loss.backward()
                 if self.config.learning_rate.clip_norm > 0.0:
                     torch.nn.utils.clip_grad.clip_grad_norm(
                         self.dynamics.parameters(),
                         max_norm=self.clip_norm
                     )
-                loss.backward()
                 self.optimizer.step()
         return loss
 
@@ -1243,9 +1313,12 @@ class Trainer(BaseTrainer):
         # 2. Calc loss using `xinit`, `xprop` and `acc` (acceptance rate)
         # 3. Backpropagate gradients and update network weights
         # --------------------------------------------------------------------
+        # t0 = time.perf_counter()
         xout, metrics = self.forward_step(x=xinit, beta=beta)
+        # t1 = time.perf_counter()
         xprop = metrics.pop('mc_states').proposed.x
         loss = self.calc_loss(xinit=xinit, xprop=xprop, acc=metrics['acc'])
+        # t2 = time.perf_counter()
         if (aw := self.config.loss.aux_weight) > 0:
             yinit = self.dynamics.unflatten(
                 self.g.random(xout.shape).to(self.device)
@@ -1258,14 +1331,17 @@ class Trainer(BaseTrainer):
                 acc=metrics_['acc']
             )
             loss += aw * aux_loss
+        # t3 = time.perf_counter()
         loss = self.backward_step(loss)
         if isinstance(loss, Tensor):
             loss = loss.item()
         metrics['loss'] = loss
+        # t4 = time.perf_counter()
         if self.config.dynamics.verbose:
             with torch.no_grad():
                 lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
                 metrics.update(lmetrics)
+        # t5 = timer.perf_counter()
         return xout.detach(), metrics
 
     def train_step_old(
@@ -1517,13 +1593,14 @@ class Trainer(BaseTrainer):
             box=box.HORIZONTALS,
             row_styles=['dim', 'none'],
         )
+        panel = Panel(table)
         # layout = Layout(table)
 
         nepoch = self.steps.nepoch if nepoch is None else nepoch
         assert isinstance(nepoch, int)
         nepoch *= extend
         losses = []
-        ctx = self.get_context_manager(table)
+        ctx = self.get_context_manager(panel)
 
         log_freq = self.steps.log if nlog is None else nlog
         print_freq = self.steps.print if nprint is None else nprint
