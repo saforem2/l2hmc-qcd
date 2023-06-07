@@ -33,7 +33,8 @@ comm = MPI.COMM_WORLD
 # logger = logging.getLogger(__name__)
 # log = get_logger(__name__)
 # log = logging.getLogger()
-_ = get_logger('wandb').setLevel(logging.CRITICAL)
+_ = get_logger('root').setLevel(logging.INFO)
+# _ = get_logger('wandb').setLevel(logging.CRITICAL)
 _ = get_logger('aim').setLevel(logging.CRITICAL)
 _ = get_logger('filelock').setLevel(logging.CRITICAL)
 _ = get_logger('matplotlib').setLevel(logging.CRITICAL)
@@ -90,7 +91,7 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
         from l2hmc.configs import get_config
         cfg.update(get_config(overrides))
     ex = get_experiment(cfg)
-    if ex.trainer._is_chief:
+    if ex.trainer._is_orchestrator:
         try:
             from omegaconf import OmegaConf
             from rich import print_json
@@ -117,13 +118,13 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
         _ = ex.train()
         log.info(f'Training took: {time.time() - tstart:.5f}s')
         # --- [2.] Evaluate trained model ----------------------------------
-        if ex.trainer._is_chief and ex.config.steps.test > 0:
+        if ex.trainer._is_orchestrator and ex.config.steps.test > 0:
             log.info('Evaluating trained model')
             estart = time.time()
             _ = ex.evaluate(job_type='eval', nchains=nchains_eval)
             log.info(f'Evaluation took: {time.time() - estart:.5f}s')
     # --- [3.] Run generic HMC for comparison ------------------------------
-    if ex.trainer._is_chief and ex.config.steps.test > 0:
+    if ex.trainer._is_orchestrator and ex.config.steps.test > 0:
         log.info('Running generic HMC for comparison')
         hstart = time.time()
         _ = ex.evaluate(job_type='hmc', nchains=nchains_eval)
@@ -142,7 +143,7 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
             log.critical(f'🚀 {wandb.run}')
             log.critical(f'🔗 {wandb.run.url}')
             log.critical(f'📂/: {wandb.run.dir}')
-    if ex.trainer._is_chief:
+    if ex.trainer._is_orchestrator:
         try:
             ex.visualize_model()
         except Exception:

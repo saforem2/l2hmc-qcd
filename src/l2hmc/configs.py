@@ -631,6 +631,7 @@ class ExperimentConfig(BaseConfig):
     annealing_schedule: AnnealingSchedule
     # ----- Optional (w/ defaults) ------------
     # conv: Optional[ConvolutionConfig] = None
+    gradient_accumulation_steps: int = 1
     restore: bool = True
     save: bool = True
     c1: float = 0.0
@@ -669,6 +670,13 @@ class ExperimentConfig(BaseConfig):
         self.ds_config = {}
         self.xdim = self.dynamics.xdim
         self.xshape = self.dynamics.xshape
+        self.micro_batch_size = self.dynamics.nchains
+        self.global_batch_size = (
+            self.env.world_size
+            * self.micro_batch_size
+            * self.gradient_accumulation_steps
+        )
+        # TODO: Add quantity analogous for throughput/img_per_sec
         if self.ds_config_path is None:
             fpath = Path(CONF_DIR).joinpath('ds_config.yaml')
             self.ds_config_path = fpath.resolve().as_posix()

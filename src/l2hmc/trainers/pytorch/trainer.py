@@ -143,7 +143,7 @@ class Trainer(BaseTrainer):
         self.size: int = dsetup['size']
         self.rank: int = dsetup['rank']
         self.local_rank: int = dsetup['local_rank']
-        self._is_chief: bool = (self.local_rank == 0 and self.rank == 0)
+        self._is_orchestrator: bool = (self.local_rank == 0 and self.rank == 0)
         self._with_cuda: bool = torch.cuda.is_available()
         self._dtype = torch.get_default_dtype()
         self.device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -183,7 +183,7 @@ class Trainer(BaseTrainer):
             # self._optimizer: torch.optim.Optimizer = output['optimizer']
             ckpt: dict = output['ckpt']
             self._gstep: int = ckpt.get('gstep', ckpt.get('step', 0))
-            if self._is_chief:
+            if self._is_orchestrator:
                 self.warning(
                     f'Restoring global step from ckpt! '
                     f'self._gstep: {self._gstep}'
@@ -200,11 +200,19 @@ class Trainer(BaseTrainer):
             lr=self.config.learning_rate.lr_init
         )
         self.num_params = self.count_parameters(self.dynamics)
-        self.autocast_context_train = torch.autocast(  # type:ignore
-                dtype=self._dtype,
-                enabled=(not self._dtype == torch.float64),
-                device_type='cuda' if torch.cuda.is_available() else 'cpu'
+        self.enable_autocast = (
+            self._dtype != torch.float64
+            and self.device != 'cpu'
         )
+        if self.enable_autocast:
+            self.autocast_context_train = torch.autocast(  # type:ignore
+                    dtype=self._dtype,
+                    enabled=self.enable_autocast,
+                    device_type=self.device,
+                    # 'cuda' if torch.cuda.is_available() else 'cpu'
+            )
+        else:
+            self.autocast_context_train = nullcontext()
         # else:
         #     self.warning('Using `torch.optim.SGD` optimizer')
         #     self._optimizer = torch.optim.SGD(
@@ -292,7 +300,8 @@ class Trainer(BaseTrainer):
                 }
             }
             self.dynamics = self.dynamics.to(torch.half)
-        if self._is_chief:
+        # if self._is_chief:
+        if self.rank == 0:
             print_json(json.dumps(self.ds_config, indent=4))
         if 'optimizer' in self.ds_config.items():
             engine, optimizer, *_ = deepspeed.initialize(
@@ -422,11 +431,11 @@ class Trainer(BaseTrainer):
         return ds_config
 
     def warning(self, s: str) -> None:
-        if self._is_chief:
+        if self._is_orchestrator:
             log.warning(s)
 
     def info(self, s: str) -> None:
-        if self._is_chief:
+        if self._is_orchestrator:
             log.info(s)
 
     def draw_x(self):
@@ -435,7 +444,7 @@ class Trainer(BaseTrainer):
         ).flatten(1)
 
     def reset_optimizer(self):
-        if self._is_chief:
+        if self._is_orchestrator:
             import horovod.torch as hvd
             self.warning('Resetting optimizer state!')
             self.optimizer.state = defaultdict(dict)
@@ -536,7 +545,7 @@ class Trainer(BaseTrainer):
             metrics: Optional[dict] = None,
             run: Optional[Any] = None,
     ) -> None:
-        if not self._is_chief or not self.config.save:
+        if not (self.rank == 0) or not self.config.save:
             return
         tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
         step = self._gstep
@@ -598,9 +607,6 @@ class Trainer(BaseTrainer):
             'optimizer': optimizer,
             'ckpt': {}
         }
-        # if not self._is_chief:
-        #     return output
-
         ckpts = [
             Path(self.ckpt_dir).joinpath(i)
             for i in os.listdir(self.ckpt_dir)
@@ -663,10 +669,10 @@ class Trainer(BaseTrainer):
         return output
 
     def should_log(self, epoch):
-        return (epoch % self.steps.log == 0 and self._is_chief)
+        return (epoch % self.steps.log == 0 and self._is_orchestrator)
 
     def should_print(self, epoch):
-        return (epoch % self.steps.print == 0 and self._is_chief)
+        return (epoch % self.steps.print == 0 and self._is_orchestrator)
 
     def should_emit(self, epoch: int, nepoch: int) -> bool:
         nprint = min(
@@ -682,7 +688,7 @@ class Trainer(BaseTrainer):
             or epoch % nlog == 0
         )
 
-        return self._is_chief and emit
+        return self._is_orchestrator and emit
 
     def record_metrics(
             self,
@@ -926,7 +932,7 @@ class Trainer(BaseTrainer):
             renderable: ConsoleRenderable,
     ) -> Live | nullcontext:
         make_live = (
-            self._is_chief
+            self._is_orchestrator
             and self.size == 1          # not worth the trouble when dist.
             and not is_interactive()    # AND not in a jupyter / ipython kernel
             and int(get_width()) > 100  # make sure wide enough to fit table
@@ -1192,7 +1198,7 @@ class Trainer(BaseTrainer):
                                 eps += (eps / 10.)
                     if (
                             is_interactive()
-                            and self._is_chief
+                            and self._is_orchestrator
                             and plots is not None
                     ):
                         if len(self.histories[job_type].history.keys()) == 0:
@@ -1238,7 +1244,7 @@ class Trainer(BaseTrainer):
         x.requires_grad_(True)
         self.optimizer.zero_grad()
         with self.autocast_context_train:
-            if self._gstep == 0 and self._is_chief:
+            if self._gstep == 0 and self._is_orchestrator:
                 log.debug(f'[TRAINING] x.dtype: {x.dtype}')
                 log.debug(f'[TRAINING] x.device: {x.device}')
             # try:
@@ -1269,8 +1275,8 @@ class Trainer(BaseTrainer):
                 if self.config.learning_rate.clip_norm > 0:
                     self.grad_scaler.unscale_(self.optimizer)
                     torch.nn.utils.clip_grad.clip_grad_norm(
-                        self.dynamics.parameters(),
-                        self.config.learning_rate.clip_norm
+                        parameters=self.dynamics.parameters(),
+                        max_norm=self.config.learning_rate.clip_norm
                     )
                     self.grad_scaler.step(self.optimizer)
                     self.grad_scaler.update()
@@ -1281,7 +1287,7 @@ class Trainer(BaseTrainer):
                 loss.backward()
                 if self.config.learning_rate.clip_norm > 0.0:
                     torch.nn.utils.clip_grad.clip_grad_norm(
-                        self.dynamics.parameters(),
+                        parameters=self.dynamics.parameters(),
                         max_norm=self.clip_norm
                     )
                 self.optimizer.step()
@@ -1380,7 +1386,7 @@ class Trainer(BaseTrainer):
                 enabled=(not self._dtype == torch.float64),
                 device_type='cuda' if torch.cuda.is_available() else 'cpu'
         ):
-            if self._gstep == 0 and self._is_chief:
+            if self._gstep == 0 and self._is_orchestrator:
                 log.debug(f'[TRAINING] x.dtype: {xinit.dtype}')
                 log.debug(f'[TRAINING] x.device: {xinit.device}')
 
@@ -1610,10 +1616,10 @@ class Trainer(BaseTrainer):
         # log.info(f'print_freq: {print_freq}')
 
         def should_print(epoch):
-            return (self._is_chief and (epoch % print_freq == 0))
+            return (self._is_orchestrator and (epoch % print_freq == 0))
 
         def should_log(epoch):
-            return (self._is_chief and (epoch % log_freq == 0))
+            return (self._is_orchestrator and (epoch % log_freq == 0))
 
         def refresh_view():
             if isinstance(ctx, Live):
@@ -1695,7 +1701,7 @@ class Trainer(BaseTrainer):
                     refresh_view()
                     if (
                             is_interactive()
-                            and self._is_chief
+                            and self._is_orchestrator
                             and plots is not None
                     ):
                         if len(self.histories['train'].history.keys()) == 0:
@@ -1828,7 +1834,7 @@ class Trainer(BaseTrainer):
                         f' plaq_diff: {pdiff:.4f}'
                     )
                     return x
-                if nsteps > 100 and step % 10 == 0 and self._is_chief:
+                if nsteps > 100 and step % 10 == 0 and self._is_orchestrator:
                     log.info(
                         f'(warm-up) step: {step}, plaqs: {plaqs.mean():.4f}'
                     )
@@ -1889,7 +1895,7 @@ class Trainer(BaseTrainer):
             if era == (nera - 1) and self.steps.extend_last_era is not None:
                 extend = int(self.steps.extend_last_era)
 
-            if self._is_chief:
+            if self._is_orchestrator:
                 if era > 1 and str(era - 1) in self.summaries['train']:
                     esummary = self.histories['train'].era_summary(f'{era-1}')
                     log.info(f'Avgs over last era:\n {esummary}\n')
@@ -1922,7 +1928,7 @@ class Trainer(BaseTrainer):
                 else:
                     b += (b / 10.)  # self.config.annealing_schedule._dbeta
 
-            if self._is_chief and self.config.save:
+            if self._is_orchestrator and self.config.save:
                 st0 = time.time()
                 self.save_ckpt(era, epoch, run=run)
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
@@ -1976,7 +1982,7 @@ class Trainer(BaseTrainer):
             if era == (nera - 1) and self.steps.extend_last_era is not None:
                 extend = int(self.steps.extend_last_era)
 
-            if self._is_chief:
+            if self._is_orchestrator:
                 if era > 1 and str(era - 1) in self.summaries['train']:
                     esummary = self.histories['train'].era_summary(f'{era-1}')
                     log.info(f'Avgs over last era:\n {esummary}\n')
@@ -2011,7 +2017,7 @@ class Trainer(BaseTrainer):
             if (era + 1) == nera or (era + 1) % 5 == 0 and self.config.save:
                 self.save_ckpt(era, epoch, run=run)
 
-            if self._is_chief:
+            if self._is_orchestrator:
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
                 log.info(f'Era {era} took: {time.time() - epoch_start:<5g}s')
 

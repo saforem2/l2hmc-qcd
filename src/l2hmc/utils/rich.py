@@ -15,7 +15,7 @@ from typing import Optional
 from typing import Any
 from typing import Generator
 
-from enrich import STYLES
+from enrich.style import STYLES
 from enrich.console import Console
 from enrich.logging import RichHandler
 from omegaconf import DictConfig, OmegaConf

@@ -334,7 +334,7 @@ class Experiment(BaseExperiment):
         # console.save_html(htmlfile.as_posix())
         log.info(f'Training took: {time.time() - tstart:.4f}')
 
-        if self.trainer._is_chief:
+        if self.trainer._is_orchestrator:
             dset = self.save_dataset(
                 # output=output,
                 nchains=nchains,
@@ -364,7 +364,7 @@ class Experiment(BaseExperiment):
     ) -> dict | None:
         """Evaluate model."""
         # if RANK != 0:
-        if not self.trainer._is_chief:
+        if not self.trainer._is_orchestrator:
             return None
 
         assert job_type in ['eval', 'hmc']

@@ -40,7 +40,7 @@ dependencies = [
   "aim",
   "tqdm",
   "torchviz",
-  "git+https://github.com/saforem2/enrich",
+  "enrich @ git+https://github.com/saforem2/enrich",
 ]
 dynamic = ["version"]
 
@@ -70,6 +70,10 @@ exclude = [
   "src/l2hmc/outputs/",
   "**old**",
 ]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
 
 [tool.hatch.build.targets.sdist]
 
