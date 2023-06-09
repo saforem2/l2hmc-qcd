@@ -116,9 +116,6 @@ def get_logger(
         else:
             log.setLevel(level)
     if RANK == 0:
-        # from pathlib import Path
-        # outdir = Path(os.getcwd()).resolve().absolute()
-        # outfile = outdir.joinpath('console.log').as_posix()
         console = get_console(
             markup=True,  # (WORLD_SIZE == 1),
             redirect=(WORLD_SIZE > 1),
@@ -149,50 +146,3 @@ def get_logger(
         )
         log.setLevel(level)
     return log
-
-# def get_logger_old(
-#         name: Optional[str] = None,
-#         level: str = 'INFO',
-#         rank_zero_only: bool = True,
-#         rich_stdout: bool = True,
-# ) -> logging.Logger:
-#     # logging.basicConfig(stream=DummyTqdmFile(sys.stderr))
-#     import logging
-#     # logging.basicConfig(
-#     #     format="[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
-#     # )
-#     log = logging.getLogger(name)
-#     log.handlers = []
-#     # from rich.logging import RichHandler
-#     from l2hmc.utils.rich import RichHandler
-#     from l2hmc.utils.rich import get_console
-#     if rank_zero_only:
-#         if rank != 0:
-#             log.setLevel('CRITICAL')
-#         else:
-#             log.setLevel(level)
-#     if rank == 0:
-#         console = get_console(markup=True)
-#         # log.propagate = True
-#         # log.handlers = []
-#         # formatter = logging.Formatter(
-#         #     "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
-#         # )
-#         rh = RichHandler(
-#             # log_time_format='[%Y-%m-%d][%X]',
-#             omit_repeated_times=False,
-#             level=level,
-#             console=console,
-#             show_path=False,
-#             # show_time=False,
-#             # show_level=False,
-#             enable_link_path=False,
-#             markup=True,
-#         )
-#         # rh.formatter = None
-#         # rh.formatter = formatter
-#         # rh.setFormatter(formatter)
-#         rh.setLevel(level)
-#         log.addHandler(rh)
-#         log.setLevel(level)
-#     return log
