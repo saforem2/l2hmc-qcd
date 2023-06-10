@@ -15,8 +15,6 @@ import tqdm
 
 warnings.filterwarnings('ignore')
 
-# import os
-
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 RANK = int(MPI.COMM_WORLD.Get_rank())
@@ -102,9 +100,7 @@ def get_logger(
         level: str = 'INFO',
         rank_zero_only: bool = True,
         **kwargs,
-        # rich_stdout: bool = True,
 ) -> logging.Logger:
-    # logging.basicConfig(stream=DummyTqdmFile(sys.stderr))
     log = logging.getLogger(name)
     # log.handlers = []
     # from rich.logging import RichHandler
@@ -119,7 +115,6 @@ def get_logger(
         console = get_console(
             markup=True,  # (WORLD_SIZE == 1),
             redirect=(WORLD_SIZE > 1),
-            # file=outfile,
             **kwargs
         )
         if console.is_jupyter:
@@ -138,10 +133,8 @@ def get_logger(
                 show_time=True,
                 show_level=True,
                 show_path=True,
-                # tracebacks_width=120,
                 markup=use_markup,
                 enable_link_path=use_markup,
-                # keywords=['loss=', 'dt=', 'Saving']
             )
         )
         log.setLevel(level)
