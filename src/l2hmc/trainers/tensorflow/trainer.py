@@ -153,7 +153,7 @@ class Trainer(BaseTrainer):
         self.size: int = hvd.size()
         self.rank: int = hvd.rank()
         self.local_rank: int = hvd.local_rank()
-        self._is_chief: bool = (self.rank == 0)
+        self._is_orchestrator: bool = (self.rank == 0)
         self.lattice: Lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
         self.dynamics: Dynamics = self.build_dynamics(
@@ -183,7 +183,7 @@ class Trainer(BaseTrainer):
         self.reduce_lr.set_optimizer(self.optimizer)
         # self.rank = hvd.local_rank()
         # self.global_rank = hvd.rank()
-        # self._is_chief = self.rank == 0 and self.global_rank == 0
+        # self._is_orchestrator = self.rank == 0 and self.global_rank == 0
         if self.config.dynamics.group == 'U1':
             self.g = U1Phase()
         elif self.config.dynamics.group == 'SU3':
@@ -192,11 +192,11 @@ class Trainer(BaseTrainer):
             raise ValueError
 
     def warning(self, s: str) -> None:
-        if self._is_chief:
+        if self._is_orchestrator:
             log.warning(s)
 
     def info(self, s: str) -> None:
-        if self._is_chief:
+        if self._is_orchestrator:
             log.info(s)
 
     def call_dynamics(
@@ -307,7 +307,7 @@ class Trainer(BaseTrainer):
             self,
             manager: CheckpointManager,
     ) -> os.PathLike | None:
-        if not self._is_chief or not self.config.save:
+        if not self._is_orchestrator or not self.config.save:
             return
 
         ckpt = manager.save()
@@ -316,13 +316,13 @@ class Trainer(BaseTrainer):
     def should_log(self, epoch):
         return (
             epoch % self.steps.log == 0
-            and self._is_chief
+            and self._is_orchestrator
         )
 
     def should_print(self, epoch):
         return (
             epoch % self.steps.print == 0
-            and self._is_chief
+            and self._is_orchestrator
         )
 
     def record_metrics(
@@ -409,7 +409,7 @@ class Trainer(BaseTrainer):
             self,
             # run: Optional[Any] = None,
     ) -> None:
-        if not self._is_chief:
+        if not self._is_orchestrator:
             return
 
         def rename(k):
@@ -437,7 +437,7 @@ class Trainer(BaseTrainer):
             # run: Optional[Any] = None,
             arun: Optional[Any] = None,
     ) -> None:
-        if not self._is_chief:
+        if not self._is_orchestrator:
             return
         dQdict = None
         dQint = record.get('dQint', None)
@@ -529,7 +529,7 @@ class Trainer(BaseTrainer):
 
     def get_context_manager(self, table: Table) -> Live | nullcontext:
         make_live = (
-            self._is_chief
+            self._is_orchestrator
             and self.size == 1       # not worth the trouble when distributed
             and not is_interactive()  # AND not in a jupyter / ipython kernel
             and int(get_width()) > 120    # make sure wide enough to fit table
@@ -737,7 +737,7 @@ class Trainer(BaseTrainer):
             for step in trange(
                     eval_steps,
                     dynamic_ncols=True,
-                    disable=(not self._is_chief),
+                    disable=(not self._is_orchestrator),
             ):
                 timer.start()
                 x, metrics = eval_fn((x, beta))  # type:ignore
@@ -791,7 +791,7 @@ class Trainer(BaseTrainer):
                                 eps += (eps / 10.)
                     if (
                             is_interactive()
-                            and self._is_chief
+                            and self._is_orchestrator
                             and plots is not None
                     ):
                         if len(self.histories[job_type].history.keys()) == 0:
@@ -1001,10 +1001,10 @@ class Trainer(BaseTrainer):
         assert log_freq is not None and print_freq is not None
 
         def should_print(epoch):
-            return (self._is_chief and (epoch % print_freq == 0))
+            return (self._is_orchestrator and (epoch % print_freq == 0))
 
         def should_log(epoch):
-            return (self._is_chief and (epoch % log_freq == 0))
+            return (self._is_orchestrator and (epoch % log_freq == 0))
 
         def refresh_view():
             if isinstance(ctx, Live):
@@ -1025,7 +1025,7 @@ class Trainer(BaseTrainer):
             for epoch in trange(
                     nepoch,
                     dynamic_ncols=True,
-                    disable=(not self._is_chief),
+                    disable=(not self._is_orchestrator),
                     leave=True,
                     desc='Training'
             ):
@@ -1073,7 +1073,7 @@ class Trainer(BaseTrainer):
                     refresh_view()
                     if (
                             is_interactive()
-                            and self._is_chief
+                            and self._is_orchestrator
                             and plots is not None
                     ):
                         if len(self.histories['train'].history.keys()) == 0:
@@ -1128,7 +1128,7 @@ class Trainer(BaseTrainer):
 
         # -- Setup checkpoint manager for TensorFlow --------------------------
         # manager = None
-        # if self._is_chief:
+        # if self._is_orchestrator:
         manager = self.setup_CheckpointManager()
 
         self._gstep = K.get_value(self.optimizer.iterations)
@@ -1257,7 +1257,7 @@ class Trainer(BaseTrainer):
             if era == (nera - 1) and self.steps.extend_last_era is not None:
                 extend = int(self.steps.extend_last_era)
 
-            if self._is_chief:
+            if self._is_orchestrator:
                 if era > 1 and str(era - 1) in self.summaries['train']:
                     esummary = self.histories['train'].era_summary(f'{era-1}')
                     log.info(f'Avgs over last era:\n {esummary}\n')
@@ -1296,7 +1296,7 @@ class Trainer(BaseTrainer):
                 else:
                     b += (b / 10.)
 
-            if self._is_chief:
+            if self._is_orchestrator:
                 st0 = time.time()
                 if self.config.save:
                     self.save_ckpt(manager)
@@ -1353,7 +1353,7 @@ class Trainer(BaseTrainer):
             if era == (nera - 1) and self.steps.extend_last_era is not None:
                 extend = int(self.steps.extend_last_era)
 
-            if self._is_chief:
+            if self._is_orchestrator:
                 if era > 1 and str(era - 1) in self.summaries['train']:
                     esummary = self.histories['train'].era_summary(f'{era-1}')
                     log.info(f'Avgs over last era:\n {esummary}\n')
@@ -1391,7 +1391,7 @@ class Trainer(BaseTrainer):
                 if self.config.save:
                     _ = self.save_ckpt(manager)
 
-            if self._is_chief:
+            if self._is_orchestrator:
                 log.info(f'Saving took: {time.time() - st0:<5g}s')
                 log.info(f'Era {era} took: {time.time() - epoch_start:<5g}s')
 
