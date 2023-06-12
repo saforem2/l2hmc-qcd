@@ -79,6 +79,10 @@ def to_u1(x: Tensor) -> Tensor:
     return ((x + PI) % TWO_PI) - PI
 
 
+def sigmoid(x: torch.Tensor) -> torch.Tensor:
+    return 1 / (1 + torch.exp(-x))
+
+
 def rand_unif(
         shape: Shape,
         a: float,
@@ -234,6 +238,117 @@ class Dynamics(nn.Module):
         return networks
 
     @torch.no_grad()
+    def _init_weight(
+            self,
+            m: nn.Module,
+            idx: int,
+            method='xavier_uniform',
+            rval: Optional[float] = None,
+            constant: Optional[float] = None,
+            bias: Optional[bool] = None,
+            min: Optional[float] = None,
+            max: Optional[float] = None,
+            mean: Optional[float] = None,
+            std: Optional[float] = None,
+    ):
+        def log_init(idx: int, s: str) -> None:
+            if idx == 0:
+                log.info(s)
+        b = m.bias
+        w = m.weight
+        assert isinstance(b, torch.Tensor)
+        assert isinstance(w, torch.Tensor)
+        if method is None:
+            if rval is not None:
+                log_init(
+                    idx=idx,
+                    s=('Initializing weights from '
+                       f'~ U[-{rval:.2f}, {rval:.2f}]')
+                )
+                nn.init.uniform(m.weight, a=-rval, b=rval)
+                if bias and m.bias is not None:
+                    nn.init.uniform(m.bias, a=-rval, b=rval)
+            if constant is not None:
+                log_init(
+                    idx=idx,
+                    s=f'Initializing weights with const = {constant}'
+                )
+                nn.init.constant_(w, constant)
+                # if bias is not None:
+                if bias and m.bias is not None:
+                    log_init(
+                        idx=idx,
+                        s=f'Initializing weights with bias: {bias}'
+                    )
+                    if m.bias is not None:
+                        nn.init.constant_(b, bias)
+        elif method in ['zero', 'zeros']:
+            log_init(
+                idx=idx,
+                s='Iniitializing weights with 0 s'
+            )
+            nn.init.zeros_(w)
+            # if bias:
+            if bias and m.bias is not None:
+                nn.init.zeros_(b)
+        elif method == 'uniform':
+            a = 0.0 if min is None else min
+            b = 1.0 if max is None else max
+            log_init(idx=idx, s=f'Initializing weights ~ U[{a}, {b}]')
+            nn.init.uniform_(w, a=a, b=b)
+            if bias and b is not None:
+                nn.init.uniform_(b, a=a, b=b)
+        elif method == 'normal':
+            mean = 0.0 if mean is None else mean
+            std = 1.0 if std is None else std
+            log_init(
+                idx=idx,
+                s=(f'Initializing weights '
+                    f'~ N[{mean:.2f}; {std:.2f}]')
+            )
+            nn.init.normal_(w, mean=mean, std=std)
+            if bias and b is not None:
+                nn.init.normal_(b, mean=mean, std=std)
+        elif method == 'xavier_uniform':
+            log_init(idx=idx, s=f'Initializing weights with: {method}')
+            nn.init.xavier_uniform_(w)
+            if bias and b is not None:
+                nn.init.xavier_uniform_(b)
+        elif method == 'kaiming_uniform':
+            log_init(idx=idx, s=f'Initializing weights with: {method}')
+            nn.init.kaiming_uniform_(w)
+            if bias and b is not None:
+                nn.init.kaiming_uniform_(b)
+        elif method == 'xavier_normal':
+            log_init(idx=idx, s=f'Initializing weights with: {method}')
+            nn.init.xavier_normal_(w)
+            if bias and b is not None:
+                nn.init.xavier_normal_(b)
+        elif method == 'kaiming_normal':
+            log_init(idx=idx, s=f'Initializing weights with: {method}')
+            nn.init.kaiming_normal_(w)
+            if bias and b is not None:
+                nn.init.kaiming_normal_(b)
+        else:
+            try:
+                method = getattr(nn.init, method)
+                if method is not None and callable(method):
+                    method(m.weight)
+                    # if bias:
+                    if bias and m.bias is not None:
+                        method(m.bias)
+            except NameError:
+                log.warning('. '.join([
+                    'Unable to initialize weights',
+                    f' with {method}',
+                    'Falling back to default: xavier_uniform_'
+                ]))
+                nn.init.xavier_uniform_(w)
+                # if bias:
+                if bias and m.bias is not None:
+                    nn.init.xavier_uniform_(b)
+
+    @torch.no_grad()
     def init_weights(
             self,
             *,
@@ -253,120 +368,141 @@ class Dynamics(nn.Module):
         # for p in self.parameters():
         #     if p.dim() > 1:
         #         nn.init.xavier_uniform_(p)
+        rg = not self.config.eps_fixed
+        self.xeps = nn.ParameterList(
+            [
+                nn.parameter.Parameter(
+                    torch.tensor(self.config.eps, requires_grad=rg),
+                    requires_grad=rg,
+                )
+                for _ in range(self.config.nleapfrog)
+            ]
+        )
+        self.veps = nn.ParameterList(
+            [
+                nn.parameter.Parameter(
+                    torch.tensor(self.config.eps, requires_grad=rg),
+                    requires_grad=rg,
+                )
+                for _ in range(self.config.nleapfrog)
+            ]
+        )
         for idx, m in enumerate(self.modules()):
+            if not isinstance(getattr(m, 'weight', None), torch.Tensor):
+                continue
             # if hasattr(m, 'weight'):
             # if isinstance(m, nn.Module):
-            if isinstance(m, nn.Linear):
-                # if bias is not None:
-                #     if isinstance(bias, float):
-                #         log_init(
-                #             idx=idx,
-                #             s=f'initializing bias with: {bias:.4f}'
-                #         )
-                #         nn.init.constant_(m.bias, bias)
-                #     else:
-                #         log_init(
-                #             idx=idx,
-                #             s='Initializing bias-es with weights!'
-                #         )
-                #         SET_BIAS = True
-                # else:
-                #     SET_BIAS = False
-                if method is None:
-                    if rval is not None:
-                        log_init(
-                            idx=idx,
-                            s=('Initializing weights from '
-                               f'~ U[-{rval:.2f}, {rval:.2f}]')
-                        )
-                        nn.init.uniform(m.weight, a=-rval, b=rval)
-                        if bias and m.bias is not None:
-                            nn.init.uniform(m.bias, a=-rval, b=rval)
-                    if constant is not None:
-                        log_init(
-                            idx=idx,
-                            s=f'Initializing weights with const = {constant}'
-                        )
-                        nn.init.constant_(m.weight, constant)
-                        # if bias is not None:
-                        if bias and m.bias is not None:
-                            log_init(
-                                idx=idx,
-                                s=f'Initializing weights with bias: {bias}'
-                            )
-                            if m.bias is not None:
-                                nn.init.constant_(m.bias, bias)
-                elif method in ['zero', 'zeros']:
+            # if isinstance(m, nn.Linear):
+            # if bias is not None:
+            #     if isinstance(bias, float):
+            #         log_init(
+            #             idx=idx,
+            #             s=f'initializing bias with: {bias:.4f}'
+            #         )
+            #         nn.init.constant_(m.bias, bias)
+            #     else:
+            #         log_init(
+            #             idx=idx,
+            #             s='Initializing bias-es with weights!'
+            #         )
+            #         SET_BIAS = True
+            # else:
+            #     SET_BIAS = False
+            if method is None:
+                if rval is not None:
                     log_init(
                         idx=idx,
-                        s='Iniitializing weights with 0 s'
+                        s=('Initializing weights from '
+                           f'~ U[-{rval:.2f}, {rval:.2f}]')
                     )
-                    nn.init.zeros_(m.weight)
-                    # if bias:
+                    nn.init.uniform(m.weight, a=-rval, b=rval)
                     if bias and m.bias is not None:
-                        nn.init.zeros_(m.bias)
-                elif method == 'uniform':
-                    a = 0.0 if min is None else min
-                    b = 1.0 if max is None else max
-                    log_init(idx=idx, s=f'Initializing weights ~ U[{a}, {b}]')
-                    nn.init.uniform_(m.weight, a=a, b=b)
-                    # if bias:
-                    if bias and m.bias is not None:
-                        nn.init.uniform_(m.bias, a=a, b=b)
-                elif method == 'normal':
-                    mean = 0.0 if mean is None else mean
-                    std = 1.0 if std is None else std
+                        nn.init.uniform(m.bias, a=-rval, b=rval)
+                if constant is not None:
                     log_init(
                         idx=idx,
-                        s=(f'Initializing weights '
-                            f'~ N[{mean:.2f}; {std:.2f}]')
+                        s=f'Initializing weights with const = {constant}'
                     )
-                    nn.init.normal_(m.weight, mean=mean, std=std)
-                    # if bias:
+                    nn.init.constant_(m.weight, constant)
+                    # if bias is not None:
                     if bias and m.bias is not None:
-                        nn.init.normal_(m.bias, mean=mean, std=std)
-                elif method == 'xavier_uniform':
-                    log_init(idx=idx, s=f'Initializing weights with: {method}')
+                        log_init(
+                            idx=idx,
+                            s=f'Initializing weights with bias: {bias}'
+                        )
+                        if m.bias is not None:
+                            nn.init.constant_(m.bias, bias)
+            elif method in ['zero', 'zeros']:
+                log_init(
+                    idx=idx,
+                    s='Iniitializing weights with 0 s'
+                )
+                nn.init.zeros_(m.weight)
+                # if bias:
+                if bias and m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif method == 'uniform':
+                a = 0.0 if min is None else min
+                b = 1.0 if max is None else max
+                log_init(idx=idx, s=f'Initializing weights ~ U[{a}, {b}]')
+                nn.init.uniform_(m.weight, a=a, b=b)
+                # if bias:
+                if bias and m.bias is not None:
+                    nn.init.uniform_(m.bias, a=a, b=b)
+            elif method == 'normal':
+                mean = 0.0 if mean is None else mean
+                std = 1.0 if std is None else std
+                log_init(
+                    idx=idx,
+                    s=(f'Initializing weights '
+                        f'~ N[{mean:.2f}; {std:.2f}]')
+                )
+                nn.init.normal_(m.weight, mean=mean, std=std)
+                # if bias:
+                if bias and m.bias is not None:
+                    nn.init.normal_(m.bias, mean=mean, std=std)
+            elif method == 'xavier_uniform':
+                log_init(idx=idx, s=f'Initializing weights with: {method}')
+                nn.init.xavier_uniform_(m.weight)
+                # if bias:
+                if bias and m.bias is not None:
+                    nn.init.xavier_uniform_(m.bias)
+            elif method == 'kaiming_uniform':
+                log_init(idx=idx, s=f'Initializing weights with: {method}')
+                nn.init.kaiming_uniform_(m.weight)
+                # if bias:
+                if bias and m.bias is not None:
+                    nn.init.kaiming_uniform_(m.bias)
+            elif method == 'xavier_normal':
+                log_init(idx=idx, s=f'Initializing weights with: {method}')
+                nn.init.xavier_normal_(m.weight)
+                # if bias:
+                if bias and m.bias is not None:
+                    nn.init.xavier_normal_(m.bias)
+            elif method == 'kaiming_normal':
+                log_init(idx=idx, s=f'Initializing weights with: {method}')
+                nn.init.kaiming_normal_(m.weight)
+                # if bias:
+                if bias and m.bias is not None:
+                    nn.init.kaiming_normal_(m.bias)
+            else:
+                try:
+                    method = getattr(nn.init, method)
+                    if method is not None and callable(method):
+                        method(m.weight)
+                        # if bias:
+                        if bias and m.bias is not None:
+                            method(m.bias)
+                except NameError:
+                    log.warning('. '.join([
+                        'Unable to initialize weights',
+                        f' with {method}',
+                        'Falling back to default: xavier_uniform_'
+                    ]))
                     nn.init.xavier_uniform_(m.weight)
                     # if bias:
                     if bias and m.bias is not None:
                         nn.init.xavier_uniform_(m.bias)
-                elif method == 'kaiming_uniform':
-                    log_init(idx=idx, s=f'Initializing weights with: {method}')
-                    nn.init.kaiming_uniform_(m.weight)
-                    # if bias:
-                    if bias and m.bias is not None:
-                        nn.init.kaiming_uniform_(m.bias)
-                elif method == 'xavier_normal':
-                    log_init(idx=idx, s=f'Initializing weights with: {method}')
-                    nn.init.xavier_normal_(m.weight)
-                    # if bias:
-                    if bias and m.bias is not None:
-                        nn.init.xavier_normal_(m.bias)
-                elif method == 'kaiming_normal':
-                    log_init(idx=idx, s=f'Initializing weights with: {method}')
-                    nn.init.kaiming_normal_(m.weight)
-                    # if bias:
-                    if bias and m.bias is not None:
-                        nn.init.kaiming_normal_(m.bias)
-                else:
-                    try:
-                        method = getattr(nn.init, method)
-                        if method is not None and callable(method):
-                            method(m.weight)
-                            # if bias:
-                            if bias and m.bias is not None:
-                                method(m.bias)
-                    except NameError:
-                        log.warning('. '.join([
-                            'Unable to initialize weights',
-                            f' with {method}',
-                            'Falling back to default: xavier_uniform_'
-                        ]))
-                        nn.init.xavier_uniform_(m.weight)
-                        # if bias:
-                        if bias and m.bias is not None:
-                            nn.init.xavier_uniform_(m.bias)
 
     def save(self, outdir: os.PathLike) -> None:
         netdir = Path(outdir).joinpath('networks')
@@ -1070,7 +1206,7 @@ class Dynamics(nn.Module):
     def _update_v_fwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the forward direction"""
         # assert isinstance(self.veps, nn.ParameterList)
-        eps = self.veps[step]
+        eps = sigmoid(self.veps[step].log())
         # vNet: (x, F) --> (s, t, q)
         x = self.g.compat_proj(self.unflatten(state.x))
         force = self.grad_potential(x, state.beta)
@@ -1088,7 +1224,7 @@ class Dynamics(nn.Module):
     def _update_v_bwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the backward direction"""
         # assert isinstance(self.veps, nn.ParameterList)
-        eps = self.veps[step]  # .clamp_min_(0.)
+        eps = sigmoid(self.veps[step].log())  # .clamp_min_(0.)
         force = self.grad_potential(state.x, state.beta)
         x = state.x
         v = state.v
@@ -1114,7 +1250,7 @@ class Dynamics(nn.Module):
             first: bool,
     ) -> tuple[State, Tensor]:
         """Single x update in the forward direction."""
-        eps = self.xeps[step]
+        eps = sigmoid(self.xeps[step].log())
         m = self.unflatten(m)
         mb = (torch.ones_like(m) - m).to(self.device)
         xm_init = m * state.x
@@ -1161,7 +1297,7 @@ class Dynamics(nn.Module):
     ) -> tuple[State, Tensor]:
         """Update the position in the backward direction."""
         # assert isinstance(self.xeps, nn.ParameterList)
-        eps = self.xeps[step]
+        eps = sigmoid(self.xeps[step].log())
         m = self.unflatten(m)
         mb = (torch.ones_like(m) - m).to(self.device)
         xm_init = m * state.x
