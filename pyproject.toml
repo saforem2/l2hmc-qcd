@@ -27,6 +27,7 @@ dependencies = [
   "mpi4py",
   "h5py",
   "seaborn",
+  "pillow",
   "xarray",
   "joblib",
   "celerite",
