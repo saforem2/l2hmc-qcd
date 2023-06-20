@@ -80,7 +80,7 @@ def to_u1(x: Tensor) -> Tensor:
 
 
 def sigmoid(x: torch.Tensor) -> torch.Tensor:
-    return 1 / (1 + torch.exp(-x))
+    return 1. / (1. + torch.exp(-x))
 
 
 def rand_unif(
@@ -508,8 +508,6 @@ class Dynamics(nn.Module):
         netdir = Path(outdir).joinpath('networks')
         outfile = netdir.joinpath('dynamics.pt')
         netdir.mkdir(exist_ok=True, parents=True)
-        # assert isinstance(self.xeps, nn.ParameterList)
-        # assert isinstance(self.veps, nn.ParameterList)
         self.save_eps(outdir=netdir)
         torch.save(self.state_dict(), outfile.as_posix())
 
@@ -517,8 +515,6 @@ class Dynamics(nn.Module):
         netdir = Path(outdir).joinpath('networks')
         fxeps = netdir.joinpath('xeps.npy')
         fveps = netdir.joinpath('veps.npy')
-        # assert isinstance(self.xeps, nn.ParameterList)
-        # assert isinstance(self.veps, nn.ParameterList)
         xeps = np.array([
             i.detach().cpu().numpy() for i in self.xeps
         ])
