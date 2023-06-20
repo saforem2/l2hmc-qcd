@@ -6,7 +6,6 @@ Implements various configuration objects
 from __future__ import absolute_import, annotations, division, print_function
 import json
 import rich.repr
-# import logging
 import os
 
 from abc import ABC, abstractmethod
@@ -21,7 +20,6 @@ import numpy as np
 from omegaconf import DictConfig
 import l2hmc.utils.dist as udist
 
-# logger = logging.getLogger(__name__)
 from l2hmc import get_logger
 
 logger = get_logger(__name__)
