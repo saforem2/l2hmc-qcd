@@ -93,6 +93,10 @@ def xy_repr(x: Tensor) -> Tensor:
     return tf.stack([tf.math.cos(x), tf.math.sin(x)], axis=-1)
 
 
+def sigmoid(x: Tensor | Any) -> Tensor:
+    return 1. / (1. + tf.exp(tf.negative(x)))
+
+
 class Dynamics(Model):
     def __init__(
             self,
@@ -189,13 +193,16 @@ class Dynamics(Model):
         if self.config.use_separate_networks:
             for lf in range(self.config.nleapfrog):
                 vnet = self._get_vnet(lf)
-                weights.update(vnet.get_weights_dict())
+                weights |= vnet.get_weights_dict()
+                # weights.update(vnet.get_weights_dict())
 
                 xnet0 = self._get_xnet(lf, first=True)
-                weights.update(xnet0.get_weights_dict())
+                # weights.update(xnet0.get_weights_dict())
+                weights |= xnet0.get_weights_dict()
                 if self.config.use_split_xnets:
                     xnet1 = self._get_xnet(lf, first=False)
-                    weights.update(xnet1.get_weights_dict())
+                    # weights.update(xnet1.get_weights_dict())
+                    weights |= xnet1.get_weights_dict()
         else:
             vnet = self._get_vnet(0)
             weights = vnet.get_weights_dict()
@@ -217,13 +224,13 @@ class Dynamics(Model):
         """Build networks."""
         split = self.config.use_split_xnets
         n = self.nlf if self.config.use_separate_networks else 1
-        networks = network_factory.build_networks(
+        # return networks['xnet'], networks['vnet']
+        # return networks
+        return network_factory.build_networks(
             n,
             split,
             group=self.g,
         )
-        # return networks['xnet'], networks['vnet']
-        return networks
 
     def call(
             self,
@@ -241,7 +248,7 @@ class Dynamics(Model):
         return self.apply_transition(inputs, training=training)
 
     @staticmethod
-    def flatten(x: Tensor | IndexedSlices | Any ) -> Tensor:
+    def flatten(x: Tensor | IndexedSlices | Any) -> Tensor:
         return tf.reshape(x, (x.shape[0], -1))
 
     def random_state(self, beta: float = 1.) -> State:
@@ -548,8 +555,8 @@ class Dynamics(Model):
             )
         eps = self.config.eps_hmc if eps is None else eps
         nlf = (
-            self.config.nleapfrog if not self.config.merge_directions
-            else 2 * self.config.nleapfrog
+            2 * self.config.nleapfrog if self.config.merge_directions
+            else self.config.nleapfrog
         )
         assert nlf <= 2 * self.config.nleapfrog
         nleapfrog = nlf if nleapfrog is None else nleapfrog
@@ -1044,7 +1051,7 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         """Update the momentum in the forward direction."""
-        # eps = self.veps[step]
+        eps = sigmoid(tf.math.log(self.veps[step]))
         # force = tf.cast(tf.reshape(force, state.v.shape), state.v.dtype)
         # exp_s = tf.cast(
         #     tf.reshape(tf.exp(logjac), state.v.shape),
@@ -1065,7 +1072,7 @@ class Dynamics(Model):
         force = self.grad_potential(state.x, state.beta)
         # vNet: (x, F) --> (s, t, q)
         s, t, q = self._call_vnet(step, (state.x, force), training=training)
-        eps = tf.cast(self.veps[step], s.dtype)
+        eps = tf.cast(eps, s.dtype)
         halfeps = tf.scalar_mul(0.5, eps)
         assert eps is not None and isinstance(eps, tf.Tensor)
         logjac = tf.scalar_mul(halfeps, s)
@@ -1086,13 +1093,13 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         """Update the momentum in the backward direction."""
-        # eps = self.veps[step]
+        eps = sigmoid(tf.math.log(self.veps[step]))
         force = self.grad_potential(state.x, state.beta)
         x = state.x
         v = state.v
         # vNet: (x, force) --> (s, t, q)
         s, t, q = self._call_vnet(step, (x, force), training=training)
-        eps = tf.cast(self.veps[step], s.dtype)
+        eps = tf.cast(eps, s.dtype)
         assert eps is not None and isinstance(eps, tf.Tensor)
         halfeps = tf.scalar_mul(0.5, eps)
         logjac = tf.scalar_mul(tf.negative(halfeps), s)
@@ -1103,7 +1110,9 @@ class Dynamics(Model):
         exp_q = tf.reshape(tf.scalar_mul(eps, q), v.shape)
         t = tf.reshape(t, v.shape)
         force = tf.cast(tf.reshape(force, v.shape), s.dtype)
-        vb = exp_s * tf.math.add(v, tf.scalar_mul(halfeps, (force * exp_q + t)))
+        vb = (
+            exp_s * tf.math.add(v, tf.scalar_mul(halfeps, (force * exp_q + t)))
+        )
         # exp_s = tf.cast(tf.reshape(tf.exp(logjac), v.shape), v.dtype)
         # exp_q = tf.cast(tf.reshape(tf.exp(eps * q), v.shape), v.dtype)
         # t = tf.cast(tf.reshape(t, v.shape), v.dtype)
@@ -1130,7 +1139,7 @@ class Dynamics(Model):
             first: bool,
             training: bool = True,
     ) -> tuple[State, Tensor]:
-        eps = self.xeps[step]
+        eps = sigmoid(tf.math.log(self.xeps[step]))
         mb = (tf.ones_like(m) - m)
         x = self.flatten(state.x)
         v = self.flatten(state.v)
@@ -1224,7 +1233,7 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         """Update the position in the backward direction."""
-        eps = self.xeps[step]  # .clamp_min_(0.)
+        eps = sigmoid(tf.math.log(self.xeps[step]))  # .clamp_min_(0.)
         m = tf.cast(m, state.x.dtype)
         x = tf.reshape(state.x, (state.x.shape[0], -1))
         v = tf.reshape(state.v, x.shape)
@@ -1356,7 +1365,6 @@ class Dynamics(Model):
             )
         except Exception as e:
             log.exception(e)
-            pass
 
         if self.config.use_separate_networks:
             for lf in range(self.config.nleapfrog):
