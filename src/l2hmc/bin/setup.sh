@@ -1,17 +1,30 @@
 #!/bin/bash -l
 
-TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
-HOST=$(hostname)
+# TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
+# HOST=$(hostname)
+# echo "Job started at: ${TSTAMP} on ${HOST}"
+# echo "Job running in: ${DIR}"
+
 
 # ---- Specify directories and executable for experiment ------------------
-TMP=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd -LP)
-DIR=$(dirname "${TMP}")
-MAIN="${DIR}/main.py"
-PARENT=$(dirname "$DIR")
-ROOT=$(dirname "$PARENT")
+# TMP=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd -LP)
+# DIR=$(dirname "${TMP}")
+# MAIN="${DIR}/main.py"
+# PARENT=$(dirname "$DIR")
+# ROOT=$(dirname "$PARENT")
 
-echo "Job started at: ${TSTAMP} on ${HOST}"
-echo "Job running in: ${DIR}"
+# Resolve path to current file
+SOURCE=${BASH_SOURCE[0]}
+while [ -L "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
+  DIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
+  SOURCE=$(readlink "$SOURCE")
+  [[ $SOURCE != /* ]] && SOURCE=$DIR/$SOURCE # if $SOURCE was a relative symlink, we need to resolve it relative to the path where the symlink file was located
+done
+DIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
+PARENT=$(dirname "${DIR}")
+MAIN="${PARENT}/main.py"
+GRANDPARENT=$(dirname "${PARENT}")
+ROOT=$(dirname "${GRANDPARENT}")
 
 NCPUS=$(getconf _NPROCESSORS_ONLN)
 
@@ -26,6 +39,20 @@ thetaGPU230426() {
   conda activate base
   conda activate /lus/grand/projects/datascience/foremans/locations/thetaGPU/miniconda3/envs/2023-04-26
 }
+
+setupConda() {
+  CONDA_DATE="$1"
+  module load "conda/${CONDA_DATE}"
+  conda activate base
+  echo "Using: $(which python3)"
+}
+
+setupCondaCustom() {
+  CONDA_PATH="$2"
+  conda activate "$CONDA_PATH"
+  echo "Using $(which python3)"
+}
+
 
 venvSetup() {
   VENV_DIR="$1"
@@ -61,7 +88,7 @@ setupThetaGPU() {
     echo "COBALT_NODEFILE: ${COBALT_NODEFILE}"
     NHOSTS=$(wc -l < "${COBALT_NODEFILE}")
     NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
-    NGPUS=$((${NHOSTS}*${NGPU_PER_RANK}))
+    NGPUS=$((NHOSTS * NGPU_PER_RANK))
     MPI_COMMAND=$(which mpirun)
     MPI_DEFAULTS="\
       --verbose \
@@ -100,7 +127,7 @@ setupPolaris()  {
     # -----------------------------------------------
     NRANKS=$(wc -l < "${PBS_NODEFILE}")
     NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
-    NGPUS=$((${NRANKS}*${NGPU_PER_RANK}))
+    NGPUS=$((NHOSTS * NGPU_PER_RANK))
     MPI_COMMAND=$(which mpiexec)
     # -----------------------------------------------
     MPI_DEFAULTS="\
