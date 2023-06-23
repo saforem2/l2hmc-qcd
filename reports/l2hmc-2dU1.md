@@ -11,9 +11,9 @@ This notebook will (attempt) to walk through the steps needed to successfully in
 
 For this example, we wish to train the L2HMC sampler for the 2D $U(1)$ lattice gauge model with Wilson action:
 
-$$
+$$\begin{equation*}
 S_{\beta}(n) = \beta \sum_{n}\sum_{\mu<\nu}\mathrm{Re}\left[1 - U_{\mu\nu}(n) \right]
-$$
+\end{equation*}$$
 
 This consists of the following steps:
   1. Build an `Experiment` by parsing our configuration object
@@ -43,14 +43,14 @@ Since our goal is to generate _independent configurations_, the more our sampler
 ## Imports / Setup
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-09T23:42:28.968461Z', iopub.status.busy: '2023-06-09T23:42:28.968155Z', iopub.status.idle: '2023-06-09T23:42:31.367466Z', shell.execute_reply: '2023-06-09T23:42:31.366834Z', shell.execute_reply.started: '2023-06-09T23:42:28.968444Z'}
 #| tags: []
 ! nvidia-smi | tail --lines -7
 ```
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-09T23:43:15.724437Z', iopub.status.busy: '2023-06-09T23:43:15.724152Z', iopub.status.idle: '2023-06-09T23:43:16.401756Z', shell.execute_reply: '2023-06-09T23:43:16.401101Z', shell.execute_reply.started: '2023-06-09T23:43:15.724420Z'}
+#| execution: {iopub.execute_input: '2023-06-23T17:55:29.625997Z', iopub.status.busy: '2023-06-23T17:55:29.625355Z', iopub.status.idle: '2023-06-23T17:55:36.426583Z', shell.execute_reply: '2023-06-23T17:55:36.425961Z', shell.execute_reply.started: '2023-06-23T17:55:29.625976Z'}
 #| tags: []
+# automatically detect and reload local changes to modules
 %load_ext autoreload
 %autoreload 2
 %matplotlib widget
@@ -58,18 +58,9 @@ Since our goal is to generate _independent configurations_, the more our sampler
 import os
 import warnings
 
-os.environ['MASTER_PORT'] = '3456'
+os.environ['COLORTERM'] = 'truecolor'
+
 warnings.filterwarnings('ignore')
-```
-
-```{python}
-#| execution: {iopub.execute_input: '2023-06-09T23:43:26.367331Z', iopub.status.busy: '2023-06-09T23:43:26.366987Z', iopub.status.idle: '2023-06-09T23:43:26.657862Z', shell.execute_reply: '2023-06-09T23:43:26.657185Z', shell.execute_reply.started: '2023-06-09T23:43:26.367315Z'}
-#| tags: []
-# automatically detect and reload local changes to modules
-%load_ext autoreload
-%autoreload 2
-
-import os
 # --------------------------------------
 # BE SURE TO GRAB A FRESH GPU !
 os.environ['CUDA_VISIBLE_DEVICES'] = '2'
@@ -78,34 +69,32 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 ```
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-09T23:43:28.249635Z', iopub.status.busy: '2023-06-09T23:43:28.249359Z', iopub.status.idle: '2023-06-09T23:43:28.537298Z', shell.execute_reply: '2023-06-09T23:43:28.536622Z', shell.execute_reply.started: '2023-06-09T23:43:28.249617Z'}
+#| execution: {iopub.execute_input: '2023-06-23T17:55:36.428548Z', iopub.status.busy: '2023-06-23T17:55:36.427922Z', iopub.status.idle: '2023-06-23T17:55:36.702843Z', shell.execute_reply: '2023-06-23T17:55:36.702225Z', shell.execute_reply.started: '2023-06-23T17:55:36.428530Z'}
 #| tags: []
 devices = os.environ.get('CUDA_VISIBLE_DEVICES', None)
 print(devices)
-!getconf _NPROCESSORS_ONLN
+!getconf _NPROCESSORS_ONLN  # get number of availble CPUs
 ```
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-09T23:43:29.598477Z', iopub.status.busy: '2023-06-09T23:43:29.598262Z', iopub.status.idle: '2023-06-09T23:43:29.885289Z', shell.execute_reply: '2023-06-09T23:43:29.884622Z', shell.execute_reply.started: '2023-06-09T23:43:29.598460Z'}
+#| execution: {iopub.execute_input: '2023-06-23T17:55:36.703921Z', iopub.status.busy: '2023-06-23T17:55:36.703700Z', iopub.status.idle: '2023-06-23T17:55:36.979382Z', shell.execute_reply: '2023-06-23T17:55:36.978760Z', shell.execute_reply.started: '2023-06-23T17:55:36.703904Z'}
 #| tags: []
 os.environ['TORCH_CPP_LOG_LEVEL'] = 'ERROR'
 os.environ['AUTOGRAPH_VERBOSITY'] = '10'
-#os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 !echo $CUDA_VISIBLE_DEVICES
 ```
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-09T23:45:14.972232Z', iopub.status.busy: '2023-06-09T23:45:14.971789Z', iopub.status.idle: '2023-06-09T23:45:15.112777Z', shell.execute_reply: '2023-06-09T23:45:15.112329Z', shell.execute_reply.started: '2023-06-09T23:45:14.972216Z'}
+#| execution: {iopub.execute_input: '2023-06-23T17:55:36.980565Z', iopub.status.busy: '2023-06-23T17:55:36.980240Z', iopub.status.idle: '2023-06-23T17:55:51.889407Z', shell.execute_reply: '2023-06-23T17:55:51.889107Z', shell.execute_reply.started: '2023-06-23T17:55:36.980547Z'}
 #| tags: []
 from __future__ import absolute_import, print_function, annotations, division
-%matplotlib widget
-
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 from IPython.display import set_matplotlib_formats
 
 from l2hmc.main import build_experiment
+from l2hmc.utils.rich import get_console
 from l2hmc.utils.plot_helpers import set_plot_style
 
 set_plot_style()
@@ -116,15 +105,20 @@ sns.set_context('notebook')
 sns.set_style("ticks")
 set_matplotlib_formats('retina')
 plt.rcParams['figure.figsize'] = [12.4, 4.8]
-import seaborn as sns
-from l2hmc.utils.plot_helpers import set_plot_style
-#console = get_console()
-#print(console.is_jupyter)
-#if console.is_jupyter:
-#    console.is_jupyter = False
-#print(console.is_jupyter)
+
+console = get_console()
+print(console.is_jupyter)
+if console.is_jupyter:
+    console.is_jupyter = False
+print(console.is_jupyter)
 ```
 
+```{python}
+#| execution: {iopub.execute_input: '2023-06-23T17:55:51.891183Z', iopub.status.busy: '2023-06-23T17:55:51.890729Z', iopub.status.idle: '2023-06-23T17:55:51.929480Z', shell.execute_reply: '2023-06-23T17:55:51.929290Z', shell.execute_reply.started: '2023-06-23T17:55:51.891167Z'}
+#| tags: []
+import l2hmc
+l2hmc.__file__
+```
 
 # Initialize and Build `Experiment` objects:
 
@@ -158,14 +152,16 @@ Specifics about the training / evaluation / hmc runs can be flexibly overridden 
 </div>
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-09T23:44:36.377754Z', iopub.status.busy: '2023-06-09T23:44:36.377410Z', iopub.status.idle: '2023-06-09T23:44:36.422048Z', shell.execute_reply: '2023-06-09T23:44:36.421488Z', shell.execute_reply.started: '2023-06-09T23:44:36.377735Z'}
+#| execution: {iopub.execute_input: '2023-06-23T17:57:47.150216Z', iopub.status.busy: '2023-06-23T17:57:47.149780Z', iopub.status.idle: '2023-06-23T17:57:47.189337Z', shell.execute_reply: '2023-06-23T17:57:47.189085Z', shell.execute_reply.started: '2023-06-23T17:57:47.150199Z'}
 #| tags: []
 import numpy as np
 
-seed = np.random.randint(100000)
+#seed = np.random.randint(100000)
+seed=76043
 
 DEFAULTS = {
     'seed': f'{seed}',
+    'precision': 'fp16',
     'init_aim': False,
     'init_wandb': False,
     'use_wandb': False,
@@ -175,18 +171,23 @@ DEFAULTS = {
     'dynamics': {
         'nleapfrog': 10,
         'nchains': 4096,
+        'eps': 0.05,
     },
     'conv': 'none',
     'steps': {
-        'log': 10,
-        'print': 100,
-        'nepoch': 1000,
+        'log': 20,
+        'print': 250,
+        'nepoch': 5000,
         'nera': 1,
     },
     'annealing_schedule': {
         'beta_init': 4.0,
         'beta_final': 4.0,
     },
+    #'learning_rate': {
+    #    #'lr_init': 0.0005,
+    #    #'clip_norm': 10.0,
+    #},
 }
 
 outputs = {
@@ -204,14 +205,15 @@ outputs = {
 ```
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-09T23:44:36.519723Z', iopub.status.busy: '2023-06-09T23:44:36.519215Z', iopub.status.idle: '2023-06-09T23:44:36.575913Z', shell.execute_reply: '2023-06-09T23:44:36.575353Z', shell.execute_reply.started: '2023-06-09T23:44:36.519700Z'}
+#| execution: {iopub.execute_input: '2023-06-23T17:57:48.851215Z', iopub.status.busy: '2023-06-23T17:57:48.850786Z', iopub.status.idle: '2023-06-23T17:57:48.938467Z', shell.execute_reply: '2023-06-23T17:57:48.938288Z', shell.execute_reply.started: '2023-06-23T17:57:48.851199Z'}
 #| tags: []
 from l2hmc.configs import dict_to_list_of_overrides
 OVERRIDES = dict_to_list_of_overrides(DEFAULTS)
+OVERRIDES
 ```
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-09T23:44:39.269613Z', iopub.status.busy: '2023-06-09T23:44:39.269287Z', iopub.status.idle: '2023-06-09T23:44:49.854308Z', shell.execute_reply: '2023-06-09T23:44:49.853795Z', shell.execute_reply.started: '2023-06-09T23:44:39.269596Z'}
+#| execution: {iopub.execute_input: '2023-06-23T17:57:49.004189Z', iopub.status.busy: '2023-06-23T17:57:49.003894Z', iopub.status.idle: '2023-06-23T17:58:17.737951Z', shell.execute_reply: '2023-06-23T17:58:17.737527Z', shell.execute_reply.started: '2023-06-23T17:57:49.004174Z'}
 #| scrolled: true
 #| tags: []
 # Build PyTorch Experiment
@@ -220,18 +222,15 @@ ptExpU1 = build_experiment(
         *OVERRIDES,
         'framework=pytorch',
         'backend=DDP',
-        'precision=fp16',
     ]
 )
 ```
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-09T23:44:49.856274Z', iopub.status.busy: '2023-06-09T23:44:49.855670Z', iopub.status.idle: '2023-06-09T23:44:54.622705Z', shell.execute_reply: '2023-06-09T23:44:54.622223Z', shell.execute_reply.started: '2023-06-09T23:44:49.856256Z'}
+#| execution: {iopub.execute_input: '2023-06-23T17:58:17.739670Z', iopub.status.busy: '2023-06-23T17:58:17.739149Z', iopub.status.idle: '2023-06-23T17:58:19.356460Z', shell.execute_reply: '2023-06-23T17:58:19.355981Z', shell.execute_reply.started: '2023-06-23T17:58:17.739654Z'}
 #| tags: []
 # Build TensorFlow Experiment
-
 import tensorflow as tf
-
 tf.keras.mixed_precision.set_global_policy('mixed_float16')
 
 tfExpU1 = build_experiment(
@@ -239,27 +238,24 @@ tfExpU1 = build_experiment(
         *OVERRIDES,
         'framework=tensorflow',
         'backend=horovod',
-        'precision=fp16',
     ]
 )
 ```
-
 
 ## PyTorch
 
 ### Training
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-09T16:34:37.256239Z', iopub.status.busy: '2023-06-09T16:34:37.255876Z', iopub.status.idle: '2023-06-09T17:28:39.894248Z', shell.execute_reply: '2023-06-09T17:28:39.832714Z', shell.execute_reply.started: '2023-06-09T16:34:37.256222Z'}
+#| execution: {iopub.execute_input: '2023-06-23T17:58:19.357429Z', iopub.status.busy: '2023-06-23T17:58:19.357149Z', iopub.status.idle: '2023-06-23T18:51:15.529944Z', shell.execute_reply: '2023-06-23T18:51:15.529298Z', shell.execute_reply.started: '2023-06-23T17:58:19.357413Z'}
 #| scrolled: true
 #| tags: []
 outputs['pytorch']['train'] = ptExpU1.trainer.train()
-```
+    #nera=5,
+    #nepoch=2000,
+    #beta=[4.0, 4.25, 4.5, 4.75, 5.0],
+#)
 
-```{python}
-#| execution: {iopub.execute_input: '2023-06-09T17:28:40.057111Z', iopub.status.busy: '2023-06-09T17:28:40.056815Z', iopub.status.idle: '2023-06-09T17:31:22.975110Z', shell.execute_reply: '2023-06-09T17:31:22.974612Z', shell.execute_reply.started: '2023-06-09T17:28:40.057094Z'}
-#| scrolled: true
-#| tags: []
 _ = ptExpU1.save_dataset(job_type='train', nchains=32)
 ```
 
@@ -268,7 +264,7 @@ _ = ptExpU1.save_dataset(job_type='train', nchains=32)
 #### Evaluation
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-09T17:31:22.976160Z', iopub.status.busy: '2023-06-09T17:31:22.976006Z', iopub.status.idle: '2023-06-09T17:40:51.136809Z', shell.execute_reply: '2023-06-09T17:40:51.136343Z', shell.execute_reply.started: '2023-06-09T17:31:22.976145Z'}
+#| execution: {iopub.execute_input: '2023-06-23T18:52:36.700835Z', iopub.status.busy: '2023-06-23T18:52:36.700439Z', iopub.status.idle: '2023-06-23T19:02:12.771274Z', shell.execute_reply: '2023-06-23T19:02:12.757752Z', shell.execute_reply.started: '2023-06-23T18:52:36.700817Z'}
 #| scrolled: true
 #| tags: []
 outputs['pytorch']['eval'] = ptExpU1.trainer.eval(
@@ -280,14 +276,10 @@ outputs['pytorch']['eval'] = ptExpU1.trainer.eval(
 _ = ptExpU1.save_dataset(job_type='eval', nchains=32)
 ```
 
-```{python}
-for k, v in ptExpSU3.trainer.dy
-```
-
 #### HMC
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-09T17:40:51.324057Z', iopub.status.busy: '2023-06-09T17:40:51.323883Z', iopub.status.idle: '2023-06-09T17:43:28.593296Z', shell.execute_reply: '2023-06-09T17:43:28.592758Z', shell.execute_reply.started: '2023-06-09T17:40:51.324042Z'}
+#| execution: {iopub.execute_input: '2023-06-23T19:02:12.861098Z', iopub.status.busy: '2023-06-23T19:02:12.860736Z', iopub.status.idle: '2023-06-23T19:04:52.573175Z', shell.execute_reply: '2023-06-23T19:04:52.572673Z', shell.execute_reply.started: '2023-06-23T19:02:12.861080Z'}
 #| scrolled: true
 #| tags: []
 outputs['pytorch']['hmc'] = ptExpU1.trainer.eval(
@@ -304,10 +296,14 @@ _ = ptExpU1.save_dataset(job_type='hmc', nchains=32)
 ### Train
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-04T23:24:30.130364Z', iopub.status.busy: '2023-06-04T23:24:30.129972Z', iopub.status.idle: '2023-06-04T23:38:15.085564Z', shell.execute_reply: '2023-06-04T23:38:15.084913Z', shell.execute_reply.started: '2023-06-04T23:24:30.130345Z'}
+#| execution: {iopub.execute_input: '2023-06-23T19:04:52.742638Z', iopub.status.busy: '2023-06-23T19:04:52.742508Z', iopub.status.idle: '2023-06-23T19:31:22.805102Z', shell.execute_reply: '2023-06-23T19:31:22.804577Z', shell.execute_reply.started: '2023-06-23T19:04:52.742620Z'}
 #| scrolled: true
 #| tags: []
 outputs['tensorflow']['train'] = tfExpU1.trainer.train()
+#    nera=5,
+#    nepoch=2000,
+#    beta=[4.0, 4.25, 4.5, 4.75, 5.0],
+#)
 _ = tfExpU1.save_dataset(job_type='train', nchains=32)
 ```
 
@@ -316,7 +312,7 @@ _ = tfExpU1.save_dataset(job_type='train', nchains=32)
 #### Evaluate
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-05T00:02:46.693758Z', iopub.status.busy: '2023-06-05T00:02:46.677442Z', iopub.status.idle: '2023-06-05T00:08:53.740184Z', shell.execute_reply: '2023-06-05T00:08:53.739550Z', shell.execute_reply.started: '2023-06-05T00:02:46.693726Z'}
+#| execution: {iopub.execute_input: '2023-06-23T19:31:22.812150Z', iopub.status.busy: '2023-06-23T19:31:22.812028Z', iopub.status.idle: '2023-06-23T19:36:40.325620Z', shell.execute_reply: '2023-06-23T19:36:40.325083Z', shell.execute_reply.started: '2023-06-23T19:31:22.812134Z'}
 #| scrolled: true
 #| tags: []
 outputs['tensorflow']['eval'] = tfExpU1.trainer.eval(
@@ -331,7 +327,7 @@ _ = tfExpU1.save_dataset(job_type='eval', nchains=32)
 #### HMC
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-05T00:08:53.741493Z', iopub.status.busy: '2023-06-05T00:08:53.741292Z', iopub.status.idle: '2023-06-05T00:19:05.197152Z', shell.execute_reply: '2023-06-05T00:19:05.196435Z', shell.execute_reply.started: '2023-06-05T00:08:53.741477Z'}
+#| execution: {iopub.execute_input: '2023-06-23T19:36:40.326972Z', iopub.status.busy: '2023-06-23T19:36:40.326685Z', iopub.status.idle: '2023-06-23T19:46:08.444425Z', shell.execute_reply: '2023-06-23T19:46:08.443653Z', shell.execute_reply.started: '2023-06-23T19:36:40.326954Z'}
 #| scrolled: true
 #| tags: []
 outputs['tensorflow']['hmc'] = tfExpU1.trainer.eval(
@@ -382,7 +378,7 @@ Explicitly, this means that the **more efficient** the model $\longrightarrow$
 </div>
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-05T00:19:05.201857Z', iopub.status.busy: '2023-06-05T00:19:05.201719Z', iopub.status.idle: '2023-06-05T00:19:07.180876Z', shell.execute_reply: '2023-06-05T00:19:07.180294Z', shell.execute_reply.started: '2023-06-05T00:19:05.201835Z'}
+#| execution: {iopub.execute_input: '2023-06-23T20:34:56.244038Z', iopub.status.busy: '2023-06-23T20:34:56.231121Z', iopub.status.idle: '2023-06-23T20:34:57.040167Z', shell.execute_reply: '2023-06-23T20:34:57.039703Z', shell.execute_reply.started: '2023-06-23T20:34:56.244015Z'}
 #| tags: []
 import xarray as xr
 
@@ -435,7 +431,7 @@ We aggregate the data into the `dsets` dict below, grouped by:
 2. **Job type** (`train`, `eval`, `hmc`)
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-05T00:19:07.183321Z', iopub.status.busy: '2023-06-05T00:19:07.183128Z', iopub.status.idle: '2023-06-05T00:19:07.786468Z', shell.execute_reply: '2023-06-05T00:19:07.785897Z', shell.execute_reply.started: '2023-06-05T00:19:07.183306Z'}
+#| execution: {iopub.execute_input: '2023-06-23T20:35:54.373083Z', iopub.status.busy: '2023-06-23T20:35:54.372676Z', iopub.status.idle: '2023-06-23T20:35:54.825550Z', shell.execute_reply: '2023-06-23T20:35:54.825010Z', shell.execute_reply.started: '2023-06-23T20:35:54.373066Z'}
 #| tags: []
 import logging
 log = logging.getLogger(__name__)
@@ -451,12 +447,12 @@ for fw in fws:
         elif fw == 'tf':
             hist = tfExpU1.trainer.histories.get(mode, None)
         if hist is not None:
-            log.info(f'Getting dataset for {fw}: {mode}')
+            console.print(f'Getting dataset for {fw}: {mode}')
             dsets[fw][mode] = hist.get_dataset()
 ```
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-05T00:19:07.787421Z', iopub.status.busy: '2023-06-05T00:19:07.787276Z', iopub.status.idle: '2023-06-05T00:19:08.386614Z', shell.execute_reply: '2023-06-05T00:19:08.386008Z', shell.execute_reply.started: '2023-06-05T00:19:07.787407Z'}
+#| execution: {iopub.execute_input: '2023-06-23T20:35:58.578527Z', iopub.status.busy: '2023-06-23T20:35:58.578168Z', iopub.status.idle: '2023-06-23T20:35:59.069135Z', shell.execute_reply: '2023-06-23T20:35:59.068694Z', shell.execute_reply.started: '2023-06-23T20:35:58.578511Z'}
 #| tags: []
 import numpy as np
 import matplotlib.pyplot as plt
@@ -527,13 +523,13 @@ _ = ax[1].legend(loc='best', frameon=False)
 ## TensorFlow Results
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-05T00:19:08.387797Z', iopub.status.busy: '2023-06-05T00:19:08.387409Z', iopub.status.idle: '2023-06-05T00:19:08.637720Z', shell.execute_reply: '2023-06-05T00:19:08.637141Z', shell.execute_reply.started: '2023-06-05T00:19:08.387778Z'}
+#| execution: {iopub.execute_input: '2023-06-23T20:36:04.351646Z', iopub.status.busy: '2023-06-23T20:36:04.351281Z', iopub.status.idle: '2023-06-23T20:36:04.482539Z', shell.execute_reply: '2023-06-23T20:36:04.482121Z', shell.execute_reply.started: '2023-06-23T20:36:04.351630Z'}
 #| tags: []
 import rich
 ```
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-05T00:19:08.638688Z', iopub.status.busy: '2023-06-05T00:19:08.638535Z', iopub.status.idle: '2023-06-05T00:19:09.305203Z', shell.execute_reply: '2023-06-05T00:19:09.304680Z', shell.execute_reply.started: '2023-06-05T00:19:08.638673Z'}
+#| execution: {iopub.execute_input: '2023-06-23T20:36:05.721407Z', iopub.status.busy: '2023-06-23T20:36:05.721100Z', iopub.status.idle: '2023-06-23T20:36:06.270051Z', shell.execute_reply: '2023-06-23T20:36:06.269602Z', shell.execute_reply.started: '2023-06-23T20:36:05.721390Z'}
 #| tags: []
 sns.set_context('notebook')
 ndraws = len(dsets['tf']['eval']['dQint'].draw)
@@ -555,16 +551,16 @@ _ = ax[0].set_title(f'Eval, total: {etot.values}', fontsize='x-large');
 _ = ax[1].set_title(f'HMC, total: {htot.values}', fontsize='x-large');
 _ = fig.suptitle(fr'TensorFlow Improvement: {100*(etot / htot):3.0f}%', fontsize='x-large')
 
-log.info(f"TensorFlow, EVAL\n dQint.sum('chain'):\n {dqe.astype(int).sum('chain').T}")
-log.info(f"dQint.sum(): {dqe.astype(int).sum().T}")
-log.info(f"TensorFlow, HMC\n dQint.sum('chain'):\n {dqh.astype(int).sum('chain').T}")
-log.info(f"dQint.sum(): {dqh.astype(int).sum().T}")
+console.print(f"TensorFlow, EVAL\n dQint.sum('chain'):\n {dqe.astype(int).sum('chain').T}")
+console.print(f"dQint.sum(): {dqe.astype(int).sum().T}")
+console.print(f"TensorFlow, HMC\n dQint.sum('chain'):\n {dqh.astype(int).sum('chain').T}")
+console.print(f"dQint.sum(): {dqh.astype(int).sum().T}")
 ```
 
 ### PyTorch Results
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-05T00:19:09.306297Z', iopub.status.busy: '2023-06-05T00:19:09.305918Z', iopub.status.idle: '2023-06-05T00:19:09.944283Z', shell.execute_reply: '2023-06-05T00:19:09.943718Z', shell.execute_reply.started: '2023-06-05T00:19:09.306281Z'}
+#| execution: {iopub.execute_input: '2023-06-23T20:36:22.957194Z', iopub.status.busy: '2023-06-23T20:36:22.956847Z', iopub.status.idle: '2023-06-23T20:36:23.503873Z', shell.execute_reply: '2023-06-23T20:36:23.503418Z', shell.execute_reply.started: '2023-06-23T20:36:22.957178Z'}
 #| tags: []
 sns.set_context('notebook')
 ndraws = len(dsets['pt']['eval']['dQint'].draw)
@@ -586,18 +582,18 @@ _ = ax[0].set_title(f'Eval, total: {etot.values}', fontsize='x-large');
 _ = ax[1].set_title(f'HMC, total: {htot.values}', fontsize='x-large');
 _ = fig.suptitle(fr'PyTorch Improvement: {100*(etot / htot):3.0f}%', fontsize='x-large')
 
-log.info(60 * '-')
-log.info(f"PyTorch, EVAL\n dQint.sum('chain'):\n {dqe.astype(int).sum('chain').T.values}")
-log.info(f"dQint.sum(): {dqe.astype(int).sum().T.values}")
-log.info(60 * '-')
-log.info(f"PyTorch, HMC\n dQint.sum('chain'):\n {dqh.astype(int).sum('chain').T.values}")
-log.info(f"dQint.sum(): {dqh.astype(int).sum().T.values}")
+console.print(60 * '-')
+console.print(f"PyTorch, EVAL\n dQint.sum('chain'):\n {dqe.astype(int).sum('chain').T.values}")
+console.print(f"dQint.sum(): {dqe.astype(int).sum().T.values}")
+console.print(60 * '-')
+console.print(f"PyTorch, HMC\n dQint.sum('chain'):\n {dqh.astype(int).sum('chain').T.values}")
+console.print(f"dQint.sum(): {dqh.astype(int).sum().T.values}")
 ```
 
 ## Comparisons
 
 ```{python}
-#| execution: {iopub.execute_input: '2023-06-05T00:19:09.945445Z', iopub.status.busy: '2023-06-05T00:19:09.945063Z', iopub.status.idle: '2023-06-05T00:19:13.970371Z', shell.execute_reply: '2023-06-05T00:19:13.969758Z', shell.execute_reply.started: '2023-06-05T00:19:09.945428Z'}
+#| execution: {iopub.execute_input: '2023-06-23T20:36:29.465415Z', iopub.status.busy: '2023-06-23T20:36:29.465070Z', iopub.status.idle: '2023-06-23T20:36:30.957623Z', shell.execute_reply: '2023-06-23T20:36:30.957152Z', shell.execute_reply.started: '2023-06-23T20:36:29.465399Z'}
 #| tags: []
 import matplotlib.pyplot as plt
 from l2hmc.utils.plot_helpers import set_plot_style, COLORS
@@ -616,7 +612,7 @@ for idx in range(4):
         figsize=(3. * figsize[0], figsize[1]),
     )
     _ = ax.plot(
-        dsets['pt']['eval'].intQ[idx],  # .dQint.mean('chain')[100:],
+        dsets['pt']['eval'].intQ[idx] + 5,  # .dQint.mean('chain')[100:],
         color=COLORS['red'],
         ls=':',
         label='Trained',
@@ -624,7 +620,7 @@ for idx in range(4):
     );
 
     _ = ax.plot(
-        dsets['pt']['hmc'].intQ[idx],  # .dQint.mean('chain')[100:],
+        dsets['pt']['hmc'].intQ[idx] - 5,  # .dQint.mean('chain')[100:],
         ls='-',
         label='HMC',
         color='#666666',
@@ -633,7 +629,7 @@ for idx in range(4):
     );
 
     _ = ax1.plot(
-        dsets['tf']['eval'].intQ[idx],  # .dQint.mean('chain')[-100:],
+        dsets['tf']['eval'].intQ[idx] + 5,  # .dQint.mean('chain')[-100:],
         color=COLORS['blue'],
         ls=':',
         label='Trained',
@@ -641,7 +637,7 @@ for idx in range(4):
 
     );
     _ = ax1.plot(
-        dsets['tf']['hmc'].intQ[idx],  # .dQint.mean('chain')[-100:],
+        dsets['tf']['hmc'].intQ[idx] - 5,  # .dQint.mean('chain')[-100:],
         color='#666666',
         ls='-',
         label='HMC',
@@ -651,12 +647,13 @@ for idx in range(4):
     _ = ax.set_title('PyTorch', fontsize='x-large')
     _ = ax1.set_title('TensorFlow', fontsize='x-large')
     #_ = ax1.set_ylim(ax.get_ylim())
-    _ = ax.grid(True, alpha=0.4)
-    _ = ax1.grid(True, alpha=0.4)
+    _ = ax.grid(True, alpha=0.2)
+    _ = ax1.grid(True, alpha=0.2)
     _ = ax.set_xlabel('MD Step', fontsize='large')
     _ = ax1.set_xlabel('MD Step', fontsize='large')
     _ = ax.set_ylabel('dQint', fontsize='large')
-    _ = ax.legend(loc='best', framealpha=0.0, ncol=2, labelcolor='#666666')
-    _ = ax1.legend(loc='best', framealpha=0.0, ncol=2, labelcolor='#666666')
+    _ = ax.legend(loc='best', ncol=2, labelcolor='#939393')
+    _ = ax1.legend(loc='best', ncol=2, labelcolor='#939393')
 ```
+
 
