@@ -37,6 +37,62 @@ log = get_logger(__name__)
 
 Tensor = torch.Tensor
 
+from l2hmc.trainers.pytorch.trainer import Trainer
+
+def train_step(
+        x: torch.Tensor,
+        beta: torch.Tensor,
+        trainer: Trainer,
+) -> tuple[torch.Tensor, dict]:
+    xout, metrics = trainer.dynamics_engine((x, beta))
+    mcstates = metrics.pop('mc_states')
+    loss = trainer.calc_loss(
+        xinit=mcstates.init.x,
+        xprop=mcstates.proposed.x,
+        acc=metrics['acc']
+    )
+    loss.register_hook(lambda grad: grad.nan_to_num())
+    trainer.optimizer.zero_grad()
+    loss.backward()
+    # log.info(f'mcstates.init.x.grad')
+    torch.nn.utils.clip_grad.clip_grad_norm(
+        trainer.dynamics.parameters(),
+        max_norm=0.1,
+    )
+    trainer.optimizer.step()
+    metrics |= {'loss': loss.item()}
+    print_dict(metrics, grab=False)
+    return xout.detach(), metrics
+
+
+def train(
+        nsteps: int,
+        trainer: Trainer,
+        beta: float | torch.Tensor,
+        nlog: int = 1,
+        nprint: int = 1,
+        x: Optional[torch.Tensor] = None,
+        grab: Optional[bool] = None,
+) -> tuple[torch.Tensor, dict]:
+    beta = torch.tensor(beta) if isinstance(beta, float) else beta
+    history = {}
+    if x is None:
+        state = exp.trainer.dynamics.random_state(beta)
+        x = state.x
+    assert x is not None
+    for step in range(nsteps):
+        log.info(f'STEP: {step}')
+        x, metrics = train_step(x, beta=beta, trainer=trainer)
+        if (step > 0 and step % nprint == 0):
+            print_dict(metrics, grab=grab)
+        if (step > 0 and step % nlog == 0):
+            for key, val in metrics.items():
+                try:
+                    history[key].append(val)
+                except KeyError:
+                    history[key] = [val]
+    return x, history
+
 
 def evaluate(
         nsteps: int,
