@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from math import pi as PI
 import os
 from pathlib import Path
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Sequence, Union
 from typing import Tuple
 
 import numpy as np
@@ -237,6 +237,28 @@ class Dynamics(nn.Module):
         )
         return networks
 
+    def _build_xnet(
+            self,
+            xshape: Sequence[int],
+            network_config: cfgs.NetworkConfig,
+            input_shapes: Optional[dict[str, int | Sequence[int]]] = None,
+            net_weight: Optional[cfgs.NetWeight] = None,
+            conv_config: Optional[cfgs.ConvolutionConfig] = None,
+            name: Optional[str] = None,
+    ):
+        # return LeapfrogLayer
+        pass
+
+    def _build_networks1(
+            self,
+            network_factory: NetworkFactory
+    ) -> nn.ModuleDict:
+        """Build networks."""
+        split = self.config.use_split_xnets
+        n = self.nlf if self.config.use_separate_networks else 1
+        # return networks
+        pass
+
     @torch.no_grad()
     def _init_weight(
             self,
@@ -360,6 +382,8 @@ class Dynamics(nn.Module):
             max: Optional[float] = None,
             mean: Optional[float] = None,
             std: Optional[float] = None,
+            xeps: Optional[float] = None,
+            veps: Optional[float] = None,
             # fn: Optional[Callable] = None,
     ):
         def log_init(idx: int, s: str) -> None:
@@ -369,10 +393,12 @@ class Dynamics(nn.Module):
         #     if p.dim() > 1:
         #         nn.init.xavier_uniform_(p)
         rg = not self.config.eps_fixed
+        xeps = self.config.eps if xeps is None else xeps
+        veps = self.config.eps if veps is None else veps
         self.xeps = nn.ParameterList(
             [
                 nn.parameter.Parameter(
-                    torch.tensor(self.config.eps, requires_grad=rg),
+                    torch.tensor(xeps, requires_grad=rg),
                     requires_grad=rg,
                 )
                 for _ in range(self.config.nleapfrog)
@@ -381,7 +407,7 @@ class Dynamics(nn.Module):
         self.veps = nn.ParameterList(
             [
                 nn.parameter.Parameter(
-                    torch.tensor(self.config.eps, requires_grad=rg),
+                    torch.tensor(veps, requires_grad=rg),
                     requires_grad=rg,
                 )
                 for _ in range(self.config.nleapfrog)
@@ -800,10 +826,13 @@ class Dynamics(nn.Module):
             inputs: tuple[Tensor, Tensor],
     ) -> dict:
         x, beta = inputs
-        xshape = [x.shape[0], *self.xshape[1:]]
-        v = self.g.random_momentum(xshape).to(x.device)
+        v = self.g.random_momentum(
+            (x.shape[0], *self.xshape[1:])
+        ).to(x.device)
         init = State(x=x, v=v, beta=beta)
-        proposed, metrics = self.transition_kernel_fb(init)
+        proposed, metrics = self.transition_kernel_fb(
+            State(x, v, beta)
+        )
         return {'init': init, 'proposed': proposed, 'metrics': metrics}
 
     def generate_proposal(
