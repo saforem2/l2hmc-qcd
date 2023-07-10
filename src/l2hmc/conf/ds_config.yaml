@@ -1,7 +1,7 @@
 ---
 dump_state: false
 gradient_accumulation_steps: 1
-wall_clock_breakdown: true
+wall_clock_breakdown: false
 # prescale_gradients: false
 # zero_allow_untested_optimizer: true
 # optimizer:
