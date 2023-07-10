@@ -112,12 +112,13 @@ def set_plot_style(**kwargs):
     )
     plt.rcParams['axes.labelcolor'] = '#bdbdbd'
     plt.rcParams.update(**kwargs)
-    if not is_interactive():
-        figsize = plt.rcParamsDefault.get('figure.figsize', (4.5, 3))
-        x = figsize[0]
-        y = figsize[1]
-        plt.rcParams['figure.figsize'] = [2.5 * x, 2. * y]
-        plt.rcParams['figure.dpi'] = 400
+    plt.rcParams |= {'figure.figsize': [12.4, 4.8]}
+    # if not is_interactive():
+    #     figsize = plt.rcParamsDefault.get('figure.figsize', (4.5, 3))
+    #     x = figsize[0]
+    #     y = figsize[1]
+    #     plt.rcParams['figure.figsize'] = [2.5 * x, 2. * y]
+    #     plt.rcParams['figure.dpi'] = 400
 
 
 def get_timestamp(fstr=None):
