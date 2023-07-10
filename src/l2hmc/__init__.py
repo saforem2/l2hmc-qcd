@@ -53,7 +53,7 @@ def get_rich_logger(
     )
     handler = RichHandler(
         level,
-        rich_tracebacks=True,
+        rich_tracebacks=False,
         console=console,
         show_path=False,
         enable_link_path=False
