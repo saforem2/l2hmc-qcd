@@ -13,6 +13,7 @@ from __future__ import (
 )
 import logging
 import os
+import sys
 
 import time
 from pathlib import Path
@@ -135,9 +136,9 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
             title=f'{ex.config.framework}',
         )
         # improvement = comm.gather(improvement, root=0)
-        if ex.config.init_wandb:
-            if ex.run is not None and ex.run is wandb.run:
-                ex.run.log({'model_improvement': improvement})
+        if ex.config.init_wandb and wandb.run is not None:
+            wandb.run.log({'model_improvement': improvement})
+            # if ex.run is not None and ex.run is wandb.run:
         log.critical(f'Model improvement: {improvement:.8f}')
         if wandb.run is not None:
             log.critical(f'🚀 {wandb.run}')
@@ -160,8 +161,7 @@ def build_experiment(overrides: Optional[str | list[str]] = None):
     if isinstance(overrides, str):
         overrides = [overrides]
     cfg = get_config(overrides)
-    exp = get_experiment(cfg=cfg)
-    return exp
+    return get_experiment(cfg=cfg)
 
 
 @hydra.main(version_base=None, config_path='./conf', config_name='config')
@@ -170,7 +170,7 @@ def main(cfg: DictConfig):
     fw = cfg.get('framework', None)
     be = cfg.get('backend', None)
     if (
-            str(fw).lower() in ['pt', 'torch', 'pytorch']
+            str(fw).lower() in {'pt', 'torch', 'pytorch'}
             and str(be).lower() == 'ddp'
     ):
         from l2hmc.utils.dist import cleanup
@@ -182,13 +182,13 @@ if __name__ == '__main__':
     import warnings
     warnings.filterwarnings('ignore')
     import wandb
-    # wandb.require(experiment='service')
+    wandb.require(experiment='service')
     start = time.time()
     outdir = main()
     end = time.time()
     log.info(f'Run completed in: {end - start:4.4f} s')
     if outdir is not None:
         log.info(f'Run located in: {outdir}')
-    if wandb.run is not None:
-        wandb.finish(0)
-    # sys.exit(0)
+    # if wandb.run is not None:
+    #     wandb.finish(0)
+    sys.exit(0)
