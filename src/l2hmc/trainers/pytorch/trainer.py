@@ -231,7 +231,7 @@ class Trainer(BaseTrainer):
             self.optimizer = self._optimizer
             self.dynamics_engine = DDP(
                 self.dynamics,
-                # find_unused_parameters=True
+                find_unused_parameters=True
             )
             self.grad_scaler = GradScaler()
             # self.grad_scaler = GradScaler(
@@ -258,11 +258,12 @@ class Trainer(BaseTrainer):
                 #     self.dynamics.xeps,
                 #     self.dynamics.veps
                 # ),
-                (
-                    self.dynamics,
-                    self.dynamics.xeps,
-                    self.dynamics.veps,
-                ),
+                # (
+                #     self.dynamics,
+                #     self.dynamics.xeps,
+                #     self.dynamics.veps,
+                # ),
+                self.dynamics,
                 # self.dynamics,
                 log='all',
                 log_freq=logfreq,
@@ -442,6 +443,11 @@ class Trainer(BaseTrainer):
         return self.g.random(
             list(self.config.dynamics.xshape)
         ).flatten(1)
+
+    def draw_v(self):
+        return self.g.random_momentum(
+            list(self.config.dynamics.xshape)
+        )
 
     def reset_optimizer(self):
         if self._is_orchestrator:
@@ -1231,8 +1237,11 @@ class Trainer(BaseTrainer):
             xprop: torch.Tensor,
             acc: torch.Tensor,
     ) -> torch.Tensor:
-        loss = self.loss_fn(xinit, xprop, acc)
-        return loss
+        # loss = self.loss_fn(xinit, xprop, acc)
+        # if loss.isnan():
+        #     log.critical(f'loss.isnan()!: {loss}')
+        #     loss = torch.ones_like(loss, requires_grad=True) * 1e-6
+        return self.loss_fn(xinit, xprop, acc)
 
     def forward_step(
             self,
