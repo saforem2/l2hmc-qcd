@@ -86,19 +86,19 @@ def main():
         eps=0.1,
         nleapfrog=1,
         job_type='hmc',
-        nlog=2,
-        nprint=25,
+        nlog=1,
+        nprint=2,
         grab=True
     )
     plot_metrics(history_hmc, title='HMC', marker='.')
     xeval, history_eval = evaluate(
-        nsteps=100,
+        nsteps=10,
         exp=ptExpSU3,
         beta=6.0,
         x=state.x,
         job_type='eval',
-        nlog=2,
-        nprint=25,
+        nlog=1,
+        nprint=2,
         grab=True,
     )
     plot_metrics(history_eval, title='Evaluate', marker='.')
