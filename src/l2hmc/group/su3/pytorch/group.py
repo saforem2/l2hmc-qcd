@@ -104,7 +104,8 @@ class SU3(Group):
 
         Make traceless with tr(B - (tr(B) / N) * I) = tr(B) - tr(B) = 0
         """
-        return projectSU(x)
+        with torch.no_grad():
+            return self.projectSU(x)
 
     def random(self, shape: Sequence[int]) -> Tensor:
         """Returns (batched) random SU(3) matrices."""
@@ -200,11 +201,7 @@ class SU3(Group):
         return x @ t2
 
     def projectSU(self, x: Tensor) -> Tensor:
-        nc = x.shape[-1]
-        m = self.projectU(x)
-        d = m.det().to(x.dtype)
-        p = (1.0 / (-nc)) * torch.atan2(d.imag, d.real)
-        return m * torch.complex(p.cos(), p.sin()).reshape(p.shape + (1, 1))
+        return projectSU(x)
 
     def norm2(
             self,

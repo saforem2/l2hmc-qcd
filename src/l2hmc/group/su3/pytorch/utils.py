@@ -11,18 +11,23 @@ import numpy as np
 import torch
 # from l2hmc.group.pytorch.logm import charpoly3x3, su3_to_eigs, log3x3
 
+from l2hmc import get_logger
+
+log = get_logger(__name__)
 
 Array = np.array
 Tensor = torch.Tensor
 
-ONE_HALF = 1. / 2.
-ONE_THIRD = 1. / 3.
-TWO_PI = torch.tensor(2. * PI)
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 SQRT1by2 = torch.tensor(np.sqrt(1. / 2.), device=DEVICE)
 SQRT1by3 = torch.tensor(np.sqrt(1. / 3.), device=DEVICE)
+SQRT3 = torch.tensor(3., device=DEVICE).sqrt_()
+ONE_HALF = 1. / 2.
+ONE_THIRD = 1. / 3.
+TWO_PI = torch.tensor(2. * PI, dtype=torch.float64, device=DEVICE)
+EPS = torch.tensor(1e-12, dtype=torch.float64, device=DEVICE)
 
 
 f012 = +1.0
@@ -43,7 +48,7 @@ def cmax(x: Tensor, y: Tensor) -> Tensor:
 
 def unit(
         shape: Sequence[int],
-        dtype: Optional[torch.dtype] = torch.complex64,
+        dtype: Optional[torch.dtype] = torch.complex128,
 ):
     batch_shape = list([1] * (len(shape) - 2))
     eye = torch.zeros(list(batch_shape + [*shape[-2:]])).to(dtype)
@@ -149,8 +154,7 @@ def norm2(
         exclude: Optional[Sequence[int]] = None,
 ) -> Tensor:
     """No reduction if axis is empty"""
-    # n = torch.real(torch.multiply(x.conj(), x))
-    if x.dtype == torch.complex64 or x.dtype == torch.complex128:
+    if x.is_complex():
         x = x.abs()
     n = x.square()
     if exclude is None:
@@ -187,6 +191,35 @@ def randTAH3(shape: Sequence[int]):
     ], dim=-1)
 
 
+def acos_safe1(x, eps=1e-4):
+    sign = torch.sign(x)
+    slope = np.arccos(1-eps) / eps
+    return torch.where(
+        abs(x) <= 1-eps,
+        torch.acos(x),
+        (
+            torch.acos(sign * (1 - eps))
+            - slope * sign * (abs(x) - 1 + eps)
+        )
+    )
+
+
+def acos_safe(x, eps=1e-4):
+    slope = np.arccos(1-eps) / eps
+    # TODO: stop doing this allocation once sparse gradients with NaNs (like in
+    # th.where) are handled differently.
+    buf = torch.empty_like(x)
+    good = abs(x) <= 1-eps
+    bad = ~good
+    sign = torch.sign(x[bad])
+    buf[good] = torch.acos(x[good])
+    buf[bad] = (
+        torch.acos(sign * (1 - eps))
+        - slope*sign*(abs(x[bad]) - 1 + eps)
+    )
+    return buf
+
+
 def eigs3x3(
         tr: Tensor,
         p2: Tensor,
@@ -210,11 +243,34 @@ def eigs3x3(
     minv = -1.0 * torch.ones(isq3.shape).to(isq3.device)
 
     rsq3 = maxv.minimum(minv.maximum(rsq3c.real))
+    rsq3 = rsq3.clamp_(-1.0 + EPS, 1.0 - EPS)
+    # rsq3 = rsq3.clamp_(-0.99, 0.99)
+    # csq3 = macvc.minimum(minvc.maximum(isq3c.imag))
+    # rsq3_n2 = norm2(rsq3)
+    # if any(rsq3_n2.max() > 1.0):
+    # log.info(f"rsq3: {rsq3}")
+    # rsq3_ = rsq3.clamp(1.0 - 1.0e-32)
+    # t = (1.0 / 3.0) * torch.acos(rsq3.clamp_(-0.999999999999, 0.9999999999999))
     t = (1.0 / 3.0) * torch.acos(rsq3)
+    # # if t.requires_grad:
+    # t.register_hook(
+    #     lambda z: log.info(
+    #         f"[hook] torch.acos(rsq3):\n {z}"
+    #     )
+    # )
+    # t.register_hook(
+    #     lambda z: log.info(
+    #         f"[hook] torch.acos(rsq3).grad:\n {z.grad}"
+    #     )
+    # )
+    # t.register_hook(lambda grad: grad.clamp(max=1.0))  # grad.clamp(max=1.0))
+    # t = (1.0 / 3.0) * torch.acos(rsq3.clamp_(-0.999999, 0.999999))
+
+    # t = (1.0 / 3.0) * acos_safe(rsq3)
     st = torch.sin(t)
     ct = torch.cos(t)
     sqc = sq * ct
-    sqs = torch.tensor(np.sqrt(3)) * sq * st
+    sqs = SQRT3 * sq * st
     ll = tr3 + sqc
     e0 = tr3 - 2 * sqc
     e1 = ll + sqs
@@ -231,7 +287,20 @@ def rsqrtPHM3f(tr, p2, det):
     u = se0 + se1 + se2
     w = se0 * se1 * se2
     d = w * (se0 + se1) * (se0 + se2) * (se1 + se2)
+    # di = torch.tensor(1.0) / d
+    # di.register_hook(lambda grad: grad.clamp_(max=1.0))
+
+    # d.register_hook(lambda z: log.info(f"[hook] d:\n {z}"))
+    # d.register_hook(lambda grad: log.info(f"[hook] d.grad:\n {grad}"))
+    # d.register_hook(lambda grad: grad + 1e-6)
+    # d = torch.where(d == 0., 0.1, d)
+    # di = 1.0 / torch.where(d == 0, 1e-6, d)
     di = 1.0 / d
+    # di = di.clamp_(-3e38, 3e38)
+    # return torch.where(torch.abs(x) > torch.abs(y), x, y)
+    # di.register_hook(lambda z: log.info(f"[hook] 1/d:\n {z}"))
+    # di.register_hook(lambda grad: grad.clamp(max=1.0))
+
     c0 = di * (
         w * u * u
         + e0 * se0 * (e1 + e2)
@@ -258,7 +327,8 @@ def rsqrtPHM3(x: Tensor) -> Tensor:
 
 def projectU(x: Tensor) -> Tensor:
     """x (x'x)^{1/2}"""
-    t = x.adjoint() @ x
+    # t = x.adjoint() @ x
+    t = torch.matmul(x.adjoint(), x)
     t2 = rsqrtPHM3(t)
     # return torch.matmul(x, t2)
     return x @ t2
@@ -267,7 +337,7 @@ def projectU(x: Tensor) -> Tensor:
 def projectSU(x: Tensor) -> Tensor:
     nc = x.shape[-1]
     m = projectU(x)
-    d = m.det().to(x.dtype)
+    d = m.det().to(torch.complex128)
     p = (1.0 / (-nc)) * torch.atan2(d.imag, d.real)
     return m * torch.complex(p.cos(), p.sin()).reshape(list(p.shape) + [1, 1])
 
@@ -306,17 +376,12 @@ def checkSU(x: Tensor) -> tuple[Tensor, Tensor]:
          2. det(x)
     from unitarity
     """
-    # nc = torch.tensor(x.shape[-1]).to(x.dtype)
     nc = x.shape[-1]
     d = norm2(x.adjoint() @ x - eyeOf(x))
     d += norm2(-1 + x.det(), axis=[])
-    # d_ = d.flatten(1)
     d = d.unsqueeze(1)
     a = d.mean(tuple(range(1, len(d.shape))))
     b = d.amax(tuple(range(1, len(d.shape))))
-    # b, _ = d.max(*range(1, len(d.shape)))
-    # a = d.mean(dim=tuple(range(1, len(d.shape))))
-    # b = d.max(dim=tuple(range(1, len(d.shape))))
     c = float(2 * (nc * nc + 1))
 
     return (a / c).sqrt(), (b / c).sqrt()
