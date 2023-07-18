@@ -97,7 +97,7 @@ def train(
 def evaluate(
         nsteps: int,
         exp: Experiment,
-        beta: float,
+        beta: float | torch.Tensor,
         nlog: int = 1,
         nprint: int = 1,
         job_type: str = 'eval',
@@ -107,8 +107,9 @@ def evaluate(
         grab: Optional[bool] = None,
 ) -> tuple[torch.Tensor, dict]:
     history = {}
+    beta_ = beta.item() if isinstance(beta, torch.Tensor) else beta
     if x is None:
-        state = exp.trainer.dynamics.random_state(beta)
+        state = exp.trainer.dynamics.random_state(beta_)
         x = state.x
     assert x is not None
     log.info(f'Running {nsteps} steps of {job_type} at beta={beta:.4f}')
@@ -117,7 +118,7 @@ def evaluate(
     for step in range(nsteps):
         log.info(f'STEP: {step}')
         if job_type.lower() == 'eval':
-            x, metrics = exp.trainer.eval_step((x, beta))
+            x, metrics = exp.trainer.eval_step((x, beta_))
         elif job_type.lower() == 'hmc':
             x, metrics = exp.trainer.hmc_step(
                 (x, beta),
