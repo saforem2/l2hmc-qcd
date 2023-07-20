@@ -136,6 +136,9 @@ class U1Phase(Group):
         # TODO: Fix for U1
         return x
 
+    def projectSU(self, x):
+        return self.compat_proj(x)
+
     def random(self, shape: Sequence[int]) -> Tensor:
         return self.compat_proj(TWO_PI * torch.rand(*shape))
 
