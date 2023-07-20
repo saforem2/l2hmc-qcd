@@ -8,6 +8,7 @@ from typing import Optional, Sequence
 
 import torch
 
+from l2hmc import DEVICE
 from l2hmc.group.group import Group
 from l2hmc.group.su3.pytorch.utils import (
     checkU,
@@ -28,7 +29,8 @@ log = logging.getLogger(__name__)
 
 Tensor = torch.Tensor
 
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+# DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 
 
 class SU3(Group):
@@ -92,7 +94,8 @@ class SU3(Group):
         R = - T^a tr[T^a (X - X†)]
           = T^a ∂_a (- tr[X + X†])
         """
-        nc = torch.tensor(x.shape[-1]).to(x.dtype)
+        nc = torch.tensor(x.shape[-1])
+        assert nc == 3  # SU3 for the time being
         r = 0.5 * (x - x.adjoint())
         d = torch.diagonal(r, dim1=-2, dim2=-1).sum(-1) / nc
         r = r - d.reshape(d.shape + (1, 1)) * eyeOf(x)
@@ -104,14 +107,16 @@ class SU3(Group):
 
         Make traceless with tr(B - (tr(B) / N) * I) = tr(B) - tr(B) = 0
         """
-        with torch.no_grad():
-            return self.projectSU(x)
+        # with torch.no_grad():
+        return self.projectSU(x)
 
     def random(self, shape: Sequence[int]) -> Tensor:
         """Returns (batched) random SU(3) matrices."""
         r = torch.randn(*shape, requires_grad=True, device=DEVICE)
         i = torch.randn(*shape, requires_grad=True, device=DEVICE)
-        return projectSU(torch.complex(r, i)).to(DEVICE)
+        with torch.no_grad():
+            x = projectSU(torch.complex(r, i)).to(DEVICE)
+        return x
 
     def random_momentum(self, shape: Sequence[int]) -> Tensor:
         """Returns (batched) Traceless Anti-Hermitian matrices"""
