@@ -18,6 +18,7 @@ import time
 import torch
 from torch.utils.tensorboard.writer import SummaryWriter
 
+from l2hmc.utils.history import BaseHistory
 from l2hmc import get_logger
 from l2hmc.configs import NetWeights
 from l2hmc.configs import ExperimentConfig
@@ -105,8 +106,9 @@ def evaluate(
         nleapfrog: Optional[int] = None,
         x: Optional[torch.Tensor] = None,
         grab: Optional[bool] = None,
-) -> tuple[torch.Tensor, dict]:
-    history = {}
+) -> tuple[torch.Tensor, BaseHistory]:
+    # history = {}
+    history = BaseHistory()
     beta_ = beta.item() if isinstance(beta, torch.Tensor) else beta
     if x is None:
         state = exp.trainer.dynamics.random_state(beta_)
@@ -132,11 +134,7 @@ def evaluate(
         if (step > 0 and step % nprint == 0):
             print_dict(metrics, grab=grab)
         if (step > 0 and step % nlog == 0):
-            for key, val in metrics.items():
-                try:
-                    history[key].append(val)
-                except KeyError:
-                    history[key] = [val]
+            history.update(metrics)
     return x, history
 
 
