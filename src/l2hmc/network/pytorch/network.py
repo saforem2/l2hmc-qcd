@@ -17,6 +17,7 @@ from l2hmc.group.su3.pytorch.group import SU3
 from l2hmc.group.u1.pytorch.group import U1Phase
 
 
+from l2hmc import DEVICE
 from l2hmc.configs import (
     NetWeight,
     NetworkConfig,
@@ -34,7 +35,7 @@ log = get_logger(__name__)
 
 Tensor = torch.Tensor
 
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+# DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 ACTIVATION_FNS = {
     'elu': nn.ELU(inplace=True),
