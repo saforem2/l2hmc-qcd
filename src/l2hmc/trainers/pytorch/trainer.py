@@ -33,7 +33,7 @@ from torch.optim.lr_scheduler import LambdaLR
 import wandb
 
 from l2hmc import get_logger
-from l2hmc.common import ScalarLike, get_timestamp
+from l2hmc.common import ScalarLike, get_timestamp, print_dict
 from l2hmc.configs import CHECKPOINTS_DIR, ExperimentConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.group.su3.pytorch.group import SU3
@@ -233,7 +233,8 @@ class Trainer(BaseTrainer):
                 self.dynamics,
                 find_unused_parameters=True
             )
-            self.grad_scaler = GradScaler()
+            if self._dtype != torch.float64:
+                self.grad_scaler = GradScaler()
             # self.grad_scaler = GradScaler(
             #     enabled=(self._dtype != torch.float64)
             # )
@@ -1248,7 +1249,7 @@ class Trainer(BaseTrainer):
             x: torch.Tensor,
             beta: torch.Tensor,
     ) -> tuple[torch.Tensor, dict]:
-        x = self.g.compat_proj(x.reshape(self.xshape)).to(self._dtype)
+        # x = self.g.compat_proj(x.reshape(self.xshape)).to(self._dtype)
         beta = beta.to(self._dtype).to(self.device)
         x.requires_grad_(True)
         self.optimizer.zero_grad()
@@ -2105,3 +2106,22 @@ class Trainer(BaseTrainer):
                            name=name,
                            step=step,
                            context=context)  # type: ignore
+
+    def print_weights(self, grab: bool = True):
+        _ = print_dict({
+            k: v for k, v in self.dynamics.named_parameters()
+        }, grab=grab)
+
+    def print_grads(self, grab: bool = True):
+        _ = print_dict({
+            k: v.grad for k, v in self.dynamics.named_parameters()
+        }, grab=grab)
+
+    def print_grads_and_weights(self, grab: bool = True):
+        log.info(80 * '-')
+        log.info('GRADS:')
+        self.print_grads(grab=grab)
+        log.info(80 * '-')
+        log.info('WEIGHTS:')
+        self.print_weights(grab=grab)
+        log.info(80 * '-')
