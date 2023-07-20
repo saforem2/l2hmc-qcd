@@ -11,7 +11,7 @@ import numpy as np
 import torch
 # from l2hmc.group.pytorch.logm import charpoly3x3, su3_to_eigs, log3x3
 
-from l2hmc import get_logger
+from l2hmc import get_logger, DEVICE
 
 log = get_logger(__name__)
 
@@ -19,7 +19,7 @@ Array = np.array
 Tensor = torch.Tensor
 
 
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+# DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 SQRT1by2 = torch.tensor(np.sqrt(1. / 2.), device=DEVICE)
 SQRT1by3 = torch.tensor(np.sqrt(1. / 3.), device=DEVICE)
