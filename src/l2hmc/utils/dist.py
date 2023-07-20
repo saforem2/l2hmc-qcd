@@ -254,7 +254,7 @@ def setup_torch_distributed(
     if rank == 0 and local_rank == 0:
         log.info(f'Using {backend} for distributed training')
 
-    if be in ['ddp', 'DDP']:
+    if be in {'ddp', 'DDP'}:
         dsetup = setup_torch_DDP(port)
         size = dsetup['world_size']
         rank = dsetup['rank']
@@ -268,7 +268,7 @@ def setup_torch_distributed(
 
     elif be in ['horovod', 'hvd']:
         import horovod.torch as hvd
-        hvd.init() if not hvd.is_initialized() else None
+        _ = None if hvd.is_initialized() else hvd.init()
         rank = hvd.rank()
         size = hvd.size()
         local_rank = hvd.local_rank()
