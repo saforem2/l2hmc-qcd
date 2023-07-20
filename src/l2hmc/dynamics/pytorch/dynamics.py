@@ -793,6 +793,9 @@ class Dynamics(nn.Module):
     def random_state(self, beta: float) -> State:
         x = self.g.random(list(self.xshape)).to(self.device)
         v = self.g.random_momentum(list(self.xshape)).to(x.device)
+        # with torch.no_grad():
+        #     x = self.g.projectSU(x)
+        #     v = self.g.projectTAH(v)
         return State(x=x, v=v, beta=torch.tensor(beta).to(self.device))
 
     def test_reversibility(self) -> dict[str, Tensor]:
@@ -1180,9 +1183,9 @@ class Dynamics(nn.Module):
         """
         m, mb = self._get_mask(step)
         m, mb = m.to(self.device), mb.to(self.device)
-        sumlogdet = torch.zeros(state.x.shape[0], device=self.device)
+        # sumlogdet = torch.zeros(state.x.shape[0], device=self.device)
         state, logdet = self._update_v_fwd(step, state)
-        sumlogdet = sumlogdet + logdet
+        sumlogdet = logdet
         state, logdet = self._update_x_fwd(step, state, m, first=True)
         sumlogdet = sumlogdet + logdet
         state, logdet = self._update_x_fwd(step, state, mb, first=False)
@@ -1228,43 +1231,94 @@ class Dynamics(nn.Module):
             return self.g.vec_to_group(x)
         return torch.complex(x[..., 0], x[..., 1])
 
+    def _update_v_fwd_hmc(self, step: int, state: State) -> Tensor:
+        eps = sigmoid(self.veps[step].log())
+        x_ = state.x.reshape_as(state.v)
+        force1 = self.grad_potential(x_, state.beta)       # f = dU / dx
+        return state.v - 0.5 * eps * force1                # v -= ½ veps * f
+
+    def _update_v_bwd_hmc(self, step: int, state: State) -> Tensor:
+        eps = sigmoid(self.veps[step].log())
+        x_ = state.x.reshape_as(state.v)
+        force1 = self.grad_potential(x_, state.beta)       # f = dU / dx
+        return state.v + 0.5 * eps * force1                # v -= ½ veps * f
+
     def _update_v_fwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the forward direction"""
-        # assert isinstance(self.veps, nn.ParameterList)
-        eps = sigmoid(self.veps[step].log())
-        # vNet: (x, F) --> (s, t, q)
-        x = self.g.compat_proj(self.unflatten(state.x))
-        force = self.grad_potential(x, state.beta)
-        s, t, q = self._call_vnet(step, (x, force))
-        logjac = eps * s / 2.  # jacobian factor, also used in exp_s below
-        logdet = self.flatten(logjac).sum(1)
-        force = force.reshape_as(state.v)
-        exp_s = (logjac.exp()).reshape_as(state.v)
-        exp_q = (eps * q).exp().reshape_as(state.v)
-        t = t.reshape_as(state.v)
-        vf = (exp_s * state.v) - (0.5 * eps * (force * exp_q + t))
-        # v1 = state.v - 0.5 * eps * force1                  # v -= ½ veps * f
-        return State(x, vf, state.beta), logdet.real
+        force = self.grad_potential(state.x, state.beta)
+        if self.config.group == 'U1':
+            eps = sigmoid(self.veps[step].log())
+            s, t, q = self._call_vnet(step, (state.x, force))
+            # s = self.g.projectTAH(self.unflatten(s))
+            # t = self.g.projectTAH(self.unflatten(t))
+            # q = self.g.projectTAH(self.unflatten(q))
+            # NOTE: For x ∈ U(1), we define ProjectTAH(x) := x
+            logjac = eps * s / 2.  # jacobian factor, also used in exp_s below
+            logdet = self.flatten(logjac).sum(1)
+            force = force.reshape_as(state.v)
+            exp_s = logjac.exp().reshape_as(state.v)
+            exp_q = (eps * q).exp().reshape_as(state.v)
+            t = t.reshape_as(state.v)
+            exp_s = self.g.projectTAH(logjac.exp().reshape_as(state.v))
+            exp_q = self.g.projectTAH((eps * q).exp().reshape_as(state.v))
+            t = self.g.projectTAH(t.reshape_as(state.v))
+            force_new = self.g.projectTAH(force * exp_q + t)
+            vf = (exp_s * state.v) - 0.5 * eps * force_new
+            # vf = (exp_s * state.v) - (0.5 * eps * (force * exp_q + t))
+        elif self.config.group == 'SU3':
+            eps = self.veps[step]
+            # vf = self._update_v_fwd_hmc(step, state)
+            # logdet = torch.zeros(vf.shape[0]).to(vf.device)
+            s, t, q = self._call_vnet(step, (state.x, force))
+            logjac = eps * s / 2.
+            logdet = self.flatten(logjac).sum(1)
+            exp_s = logjac.exp().reshape_as(state.v)
+            t = t.reshape_as(state.v)
+            force = force.reshape_as(state.v)
+            exp_q = (eps * q).exp().reshape_as(state.v)
+            force_ = exp_q * force + t
+            v_ = exp_s * state.v
+            vf = v_ - 0.5 * eps * force_
+            # vf = (exp_s * state.v) - 0.5 * eps * force
+            # vf = self.g.projectTAH(vf)
+        else:
+            raise ValueError(f'Unexpected group: {self.config.group}')
+        return State(state.x, vf, state.beta), logdet.real
 
     def _update_v_bwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the backward direction"""
-        # assert isinstance(self.veps, nn.ParameterList)
-        eps = sigmoid(self.veps[step].log())  # .clamp_min_(0.)
-        force = self.grad_potential(state.x, state.beta)
-        x = state.x
-        v = state.v
         # vNet: (x, force) --> (s, t, q)
-        s, t, q = self._call_vnet(step, (x, force))
-        logjac = (-eps * s / 2.)  # jacobian factor, also used in exp_s below
-        logdet = self.flatten(logjac).sum(1)
-        v = v.reshape((-1, *self.xshape[1:]))
-        exp_s = logjac.exp().reshape_as(v)
-        exp_q = (eps * q).exp().reshape_as(v)
-        t = t.reshape_as(v)
-        force = force.reshape_as(v)
-        vb = exp_s * (v + 0.5 * eps * (force * exp_q + t))
-        # if self.config.group == 'SU3':
-        #     vb = self.g.projectTAH(vb)
+        force = self.grad_potential(state.x, state.beta)
+        if self.config.group == 'U1':
+            eps = sigmoid(self.veps[step].log())  # .clamp_min_(0.)
+            s, t, q = self._call_vnet(step, (state.x, force))
+            # s = self.g.projectTAH(self.unflatten(s))
+            # t = self.g.projectTAH(self.unflatten(t))
+            # q = self.g.projectTAH(self.unflatten(q))
+            logjac = (-eps * s / 2.)  # jacobian factor, also used in exp_s below
+            logdet = self.flatten(logjac).sum(1)
+            exp_s = self.g.projectTAH(logjac.exp().reshape_as(state.v))
+            exp_q = self.g.projectTAH((eps * q).exp().reshape_as(state.v))
+            t = self.g.projectTAH(t.reshape_as(state.v))
+            force = force.reshape_as(state.v)
+            force_new = self.g.projectTAH(force * exp_q + t)
+            vb = exp_s * (state.v + 0.5 * eps * force_new)
+            # vb = exp_s * (state.v + 0.5 * eps * (force * exp_q + t))
+        elif self.config.group == 'SU3':
+            eps = self.veps[step]
+            # vb = self.g.projectTAH(vb)
+            # vb = self._update_v_bwd_hmc(step, state)
+            # logdet = torch.zeros(vb.shape[0]).to(vb.device)
+            s, t, q = self._call_vnet(step, (state.x, force))
+            logjac = (-eps * s / 2.)
+            logdet = self.flatten(logjac).sum(1)
+            exp_s = logjac.exp().reshape_as(state.v)
+            exp_q = (eps * q).exp().reshape_as(state.v)
+            force = force.reshape_as(state.v)
+            t = t.reshape_as(state.v)
+            vb = exp_s * (state.v + 0.5 * eps * (force * exp_q + t))
+        else:
+            raise ValueError(f'Unexpected group: {self.config.group}')
         return State(state.x, vb, state.beta), logdet.real
 
     def _update_x_fwd(
@@ -1279,14 +1333,14 @@ class Dynamics(nn.Module):
         m = self.unflatten(m)
         mb = (torch.ones_like(m) - m).to(self.device)
         xm_init = m * state.x
-        x = self.flatten(state.x)
-        v = self.flatten(state.v)
-        s, t, q = self._call_xnet(step, (xm_init, state.v), first=first)
-        s = eps * s
-        q = eps * q
-        exp_s = s.exp()
-        exp_q = q.exp()
         if self.config.group == 'U1':
+            x = self.flatten(state.x)
+            v = self.flatten(state.v)
+            s, t, q = self._call_xnet(step, (xm_init, state.v), first=first)
+            s = eps * s
+            q = eps * q
+            exp_s = s.exp()
+            exp_q = q.exp()
             if self.config.use_ncp:
                 halfx = (x / 2.).flatten(1)
                 _x = 2. * (halfx.tan() * exp_s).atan()
@@ -1300,17 +1354,27 @@ class Dynamics(nn.Module):
                 xp = x * exp_s + eps * (v * exp_q + t)
                 xf = xm_init + (mb * xp)
                 logdet = (mb * s).sum(dim=1)
+            xf = self.g.compat_proj(xf)
         elif self.config.group == 'SU3':
-            exp_s = exp_s.reshape_as(state.x).to(state.x.dtype)
-            exp_q = exp_q.reshape_as(state.x).to(state.x.dtype)
-            t = t.reshape_as(state.x).to(state.x.dtype)
-            eps = eps.to(state.x.dtype)
-            xp = self.g.update_gauge(state.x, eps * (state.v * exp_q + t))
-            xf = xm_init + (mb * xp)
-            logdet = (mb.flatten(1) * s.to(mb.dtype)).sum(1)
+            # eps = self.config.eps if eps is None else eps
+            x_ = state.x.reshape_as(state.v)
+            xf = self.g.update_gauge(x_, eps * state.v)        # x += eps * V
+            logdet = torch.zeros(state.x.shape[0]).to(state.x.device)
+
+        # elif self.config.group == 'SU3':
+        #     exp_s = exp_s.reshape_as(state.x).to(state.x.dtype)
+        #     exp_q = exp_q.reshape_as(state.x).to(state.x.dtype)
+        #     t = t.reshape_as(state.x).to(state.x.dtype)
+        #     eps = eps.to(state.x.dtype)
+        #     # TODO: double check + test implementation for 4D SU(3)
+        #     xp = self.g.update_gauge(
+        #         state.x,
+        #         eps * self.g.projectTAH(state.v)  # self.g.projectTAH(state.v * exp_q + t)
+        #     )
+        #     xf = xm_init + (mb * xp)
+        #     logdet = torch.zeros(state.x.shape[0]).to(state.x.device)
         else:
             raise ValueError('Unexpected value for self.config.group')
-        xf = self.g.compat_proj(xf)
         return State(x=xf, v=state.v, beta=state.beta), logdet.real
 
     def _update_x_bwd(
@@ -1350,21 +1414,25 @@ class Dynamics(nn.Module):
                 xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
                 xb = xm_init + (mb * xnew)
                 logdet = (mb * s).sum(dim=1)
+            xb = self.g.compat_proj(xb)
         elif self.config.group == 'SU3':
-            exp_s = exp_s.reshape(state.x.shape).to(state.x.dtype)
-            exp_q = exp_q.reshape(state.x.shape).to(state.x.dtype)
-            t = t.reshape_as(state.x).to(state.x.dtype)
-            eps = eps.to(state.x.dtype)
-            xnew = exp_s * self.g.update_gauge(
-                state.x,
-                -(eps * (state.v * exp_q + t))
-            )
-            xb = self.unflatten(xm_init + (mb * xnew))
-            logdet = (mb.flatten(1) * s.to(mb.dtype)).sum(1)
+            x_ = state.x.reshape_as(state.v)
+            xb = self.g.update_gauge(x_, -eps * state.v)        # x += eps * V
+            logdet = torch.zeros(state.x.shape[0]).to(state.x.device)
+        # elif self.config.group == 'SU3':
+        #     # exp_s = exp_s.reshape(state.x.shape).to(state.x.dtype)
+        #     exp_q = exp_q.reshape(state.x.shape).to(state.x.dtype)
+        #     t = t.reshape_as(state.x).to(state.x.dtype)
+        #     eps = eps.to(state.x.dtype)
+        #     xnew = self.g.update_gauge(
+        #         state.x,
+        #         -eps * self.g.projectTAH(state.v * exp_q + t)
+        #     )
+        #     xb = self.unflatten(xm_init + (mb * xnew))
+        #     logdet = torch.zeros(state.x.shape[0]).to(state.x.device)
+        #     # logdet = (mb.flatten(1) * s.to(mb.dtype)).sum(1)
         else:
             raise ValueError('Unexpected value for `self.g`')
-
-        xb = self.g.compat_proj(xb)
         return State(x=xb, v=state.v, beta=state.beta), logdet.real
 
     def hamiltonian(self, state: State) -> Tensor:
