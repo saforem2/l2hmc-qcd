@@ -42,7 +42,7 @@ OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 
 
 # -- namedtuple objects -------------------------------------------------------
-State = namedtuple('State', ['x', 'v', 'beta'])
+# State = namedtuple('State', ['x', 'v', 'beta'])
 MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
 
 FP16_SYNONYMS = ['float16', 'fp16', '16', 'half']
@@ -128,6 +128,13 @@ def list_to_str(x: list) -> str:
 
 
 @dataclass
+class State:
+    x: Any
+    v: Any
+    beta: Any
+
+
+@dataclass
 @rich.repr.auto
 class BaseConfig(ABC):
 
@@ -195,12 +202,16 @@ class EnvConfig:
 
     def __post_init__(self):
         import socket
-        self.hostname = socket.gethostname()
         dist_env = udist.query_environment()
         self.rank = dist_env['rank']
         self.local_rank = dist_env['local_rank']
         self.world_size = dist_env['world_size']
-        self.addr = socket.gethostbyaddr(self.hostname)[0]
+        try:
+            self.hostname = socket.gethostname()
+            self.addr = socket.gethostbyaddr(self.hostname)[0]
+        except Exception:
+            self.hostname = 'localhost'
+            self.addr = socket.gethostbyaddr(self.hostname)[0]
         if self.addr.startswith('x3'):
             self.machine = 'Polaris'
             self.nodefile = os.environ.get('PBS_NODEFILE', None)
