@@ -4,7 +4,7 @@
     "href": "index.html#papers-slides-etc.",
     "title": "Overview",
     "section": "Papers 📚, Slides 📊 etc.",
-    "text": "Papers 📚, Slides 📊 etc.\n\n📕 Notebooks / Reports:\n\n📙 2D U(1) Model (w/ fp16 or fp32 for training)\n📒 4D SU(3) Model (w/ complex128 + fp64 for training)\n\nalt link (if github won’t load)\n\n\n📝 Papers:\n\nAccelerated Sampling Techniques for Lattice Gauge Theory @ BNL & RBRC: DWQ @ 25 (12/2021)\nTraining Topological Samplers for Lattice Gauge Theory from the ML for HEP, on and off the Lattice @ \\mathrm{ECT}^{*} Trento (09/2021) (+ 📊 slides)\nDeep Learning Hamiltonian Monte Carlo @ Deep Learning for Simulation (SimDL) Workshop ICLR 2021\n\n📚 : arXiv:2105.03418\n\n📊 : poster"
+    "text": "Papers 📚, Slides 📊 etc.\n\n📊 Slides (07/31/2023 @ Lattice 2023)\n📕 Notebooks / Reports:\n\n📙 2D U(1) Model (w/ fp16 or fp32 for training)\n📒 4D SU(3) Model (w/ complex128 + fp64 for training)\n\nalt link (if github won’t load)\n\n\n📝 Papers:\n\nLeapfrogLayers: A Trainable Framework for Effective Topological Sampling, 2022\n\nAccelerated Sampling Techniques for Lattice Gauge Theory @ BNL & RBRC: DWQ @ 25 (12/2021)\nTraining Topological Samplers for Lattice Gauge Theory from the ML for HEP, on and off the Lattice @ \\mathrm{ECT}^{*} Trento (09/2021) (+ 📊 slides)\nDeep Learning Hamiltonian Monte Carlo @ Deep Learning for Simulation (SimDL) Workshop ICLR 2021\n\n📚 : arXiv:2105.03418\n\n📊 : poster"
   },
   {
     "objectID": "index.html#background",
