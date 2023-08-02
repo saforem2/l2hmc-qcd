@@ -1,0 +1,204 @@
+citation:
+   type: article
+   container-title: "L2HMC"
+   url: https://saforem2.github.io/l2hmc-qcd
+author:
+  - name: Sam Foreman
+    # id: sf
+    url: https://samforeman.me
+    orcid: 0000-0002-9981-0876
+    email: foremans@anl.gov
+    # affiliation: 
+    #   - name: Argonne National Laboratory
+    #     city: Chicago
+    #     state: IL
+    #     url: https://alcf.anl.gov
+date: today
+# toc: true
+author-title: ""
+affiliation-title: ""
+published-title: ""
+title-block-categories: false
+  # - author: true
+  # - date: true
+  # - affiliation: false
+number-sections: false
+bibliography: references.bib
+# filters:
+#   - lua/callouts.lua
+# highlight-style:
+#   dark: dracula
+#   light: dracula-light
+
+execute:
+  keep-ipynb: true
+  freeze: auto
+project:
+  render:
+    - index.qmd
+    - qmd/l2hmc-2DU1.qmd
+    - qmd/*.qmd
+    # - qmd/GettingStarted/*.qmd
+    # - qmd/ClimRR/*.qmd
+    # - qmd/ClimRR/chicago-temp.qmd
+    # - qmd/ClimRR/definitions.qmd
+    # - qmd/setup.qmd
+    # - qmd/intro.qmd
+    # - qmd/ClimRR.qmd
+    # - qmd/chicago.qmd
+    # - qmd/iris.qmd
+    # - qmd/illinois.qmd
+  type: website
+  output-dir: "docs"
+  preview:
+    port: 4203
+website:
+  page-navigation: true
+  title: "l2hmc-qcd"
+  site-url: "https://saforem2.github.io/l2hmc-qcd"
+  favicon: "./assets/favicon.svg"
+  # back-to-top-navigation: true
+  reader-mode: true
+  navbar:
+    logo: "https://raw.githubusercontent.com/saforem2/anl-job-talk/main/docs/assets/anl.svg"
+    background: "#222222"
+    foregound: "#f8f8f8"
+    # - light:
+    #   background: "#1A8FFF"
+    #   foreground: "#FDFDFD"
+    right:
+      - icon: github
+        href: https://github.com/saforem2/l2hmc-qcd
+        aria-label: GitHub
+    # left: auto
+      # - href: index.qmd
+      #   text: Analysis
+      # - href: ./qmd/Climrr.qmd
+      #   text: ClimRR
+      # - href: ./qmd/iris.qmd
+      #   text: Iris
+  open-graph: true
+  repo-url: https://github.com/saforem2/l2hmc-qcd
+  repo-actions: [edit, issue]
+  google-analytics: G-XVM2Y822Y1
+  sidebar:
+    style: "floating"
+    search: true
+    collapse-level: 2
+    contents:
+      - href: index.qmd
+        text: Home
+      - href: qmd/l2hmc-2DU1.qmd
+        text: "Example: 2D U(1)"
+      - href: qmd/pages.qmd
+        text: Additional Pages
+      - section: "Documentation"
+        contents:
+          - href: qmd/docs.qmd
+            text: Documentation
+      # - section: "Getting Started"
+      #   contents:
+      #     - href: qmd/GettingStarted/setup.qmd
+      #       text: Setup and Installation
+      #     - href: qmd/GettingStarted/intro.qmd
+      #       text: "Intro: Working with GeoSpatial Data"
+      #     - href: qmd/GettingStarted/example.qmd
+      #       text: "Example: Groceries in Chicago"
+      # - section: "ClimRR"
+      #   contents:
+      #     - href: qmd/ClimRR/ClimRR.qmd
+      #       text: Overview of ClimRR
+      #     - href: qmd/ClimRR/definitions.qmd
+      #       text: Variable Definitions
+      #     - href: qmd/GettingStarted/chicago.qmd
+      #       text: "Example: ClimRR in Chicago"
+      #     - href: qmd/ClimRR/chicago-temp.qmd
+      #       text: "Example: ClimRR Temperature Analysis"
+      #     - href: qmd/ClimRR/analysis.qmd
+      #       text: Data Analysis with ClimRR
+      # - section: "ClimRR"
+      #   contents:
+      #     - href: qmd/ClimRR.qmd
+      #       text: Overview of ClimRR
+      #     - href: qmd/chicago.qmd
+      #       text: Analyzing Geospatial Data
+      #   contents:
+      #     - href: qmd/ClimRR.qmd
+      #       text: Overview of ClimRR
+      #     - href: qmd/ClimRR.qmd
+      #       text: Intro to Geospatial Data
+      #     - href: qmd/chicago.qmd
+      #       text: Analysis
+      #     # - href: qmd/illinois.md
+      #     #   text: Illinois
+      #     - href: qmd/iris.qmd
+      #       text: Extras
+  page-footer: 
+    left: "Copyright 2023, Sam Foreman" 
+    right: 
+      - icon: github
+        href: https://github.com/saforem2/l2hmc-qcd
+      - icon: twitter
+        href: https://twitter.com/saforem2
+format:
+  html:
+    toc: true
+    self-contained: false
+    # line-numbers: true
+    # code-link: true
+    # embed-resources: false
+    # self-contained-math: false
+    toc-location: right
+    grid:
+      sidebar-width: 200px
+      body-width: 950px
+      margin-width: 150px
+      gutter-width: 1em
+    # embed-resources: true
+    page-layout: article
+    fig-responsive: true
+    anchor-sections: true
+    highlight-style: atom-one
+      # dark: atom-one
+      # light: a11y
+    # highlight-style:
+    #     dark: "atom-one"
+    #     light: "github"
+    # highlight-style: atom-one
+    code-overflow: scroll
+    code-fold: false
+    code-copy: hover
+    code-summary: " "
+    # code-line-numbers: true
+    # code-tools:
+    #   source: repo
+    #   toggle: true
+    #   caption: none
+    # code-tools:
+    #   source: repo
+    #   toggle: true
+    #   caption: none
+    html-math-method: katex
+    css:
+      - css/default.css
+      # - css/code.css
+      - css/callouts.css
+      # - css/code-callout.css
+      # - css/quarto-syntax-highlighting-dark.css
+      # - css/quarto-syntax-highlighting.css
+      # - css/quarto.css
+    theme: 
+      # dark: [css/common.scss, css/quarto-syntax-highlighting-dark.scss, css/custom.scss]
+      dark: 
+        - css/common.scss
+        - css/custom.scss 
+      light:
+        - css/common.scss
+        - css/light.scss
+        # [css/common.scss, css/quarto-syntax-highlighting-dark.scss, css/custom.scss]
+      # light: [css/common.scss, css/light.scss]
+    # smooth-scroll: true
+    citations-hover: true
+    footnotes-hover: true
+    header-includes: |
+      <link href="https://pvinis.github.io/iosevka-webfont/3.4.1/iosevka.css" rel="stylesheet" />
