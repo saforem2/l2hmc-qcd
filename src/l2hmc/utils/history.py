@@ -4,10 +4,12 @@ history.py
 Contains implementation of History object for tracking / aggregating metrics.
 """
 from __future__ import absolute_import, annotations, division, print_function
+
+import os
+import time
 from contextlib import ContextDecorator, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-import time
 from typing import Any, Optional, Union
 
 import matplotlib.pyplot as plt
@@ -19,10 +21,15 @@ import torch
 import wandb
 import xarray as xr
 
+import l2hmc.utils.plot_helpers as hplt
 from l2hmc import get_logger
 from l2hmc.common import grab_tensor
 from l2hmc.configs import MonteCarloStates, Steps
-import l2hmc.utils.plot_helpers as hplt
+from l2hmc.configs import PROJECT_DIR
+# from l2hmc.common import get_timestamp
+from l2hmc.utils.plot_helpers import make_ridgeplots, set_plot_style, set_size, plot_combined, subplots, plot_dataset
+
+from utils.rich import is_interactive
 
 # TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray]
 TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray, list]
@@ -188,6 +195,15 @@ class BaseHistory:
             key: str,
             val: Any
     ) -> float | int | bool | np.floating | np.integer:
+        if isinstance(val, (list, tuple)):
+            if isinstance(val[0], torch.Tensor):
+                val = grab_tensor(torch.stack(val))
+            elif isinstance(val, np.ndarray):
+                val = np.stack(val)
+            else:
+                val = val
+        if isinstance(val, (tf.Tensor, torch.Tensor)):
+            val = grab_tensor(val)
         try:
             self.history[key].append(val)
         except KeyError:
@@ -206,7 +222,6 @@ class BaseHistory:
         # ):
         #     # assert val is not None and isinstance(val, ScalarLike)
         #     return val
-
         avg = np.mean(val).real
         assert isinstance(avg, np.floating)
         return avg
@@ -241,14 +256,14 @@ class BaseHistory:
 
         return avgs
 
-    def plot_dataArray(
+    def plot_dataArray1(
             self,
             val: xr.DataArray,
             key: Optional[str] = None,
             therm_frac: float = 0.,
             num_chains: int = 16,
             title: Optional[str] = None,
-            outdir: Optional[str] = None,
+            outdir: Optional[os.PathLike] = None,
             subplots_kwargs: Optional[dict[str, Any]] = None,
             plot_kwargs: Optional[dict[str, Any]] = None,
 
@@ -260,15 +275,16 @@ class BaseHistory:
         subfigs = None
 
         # tmp = val[0]
-        arr = val.values  # shape: [nchains, ndraws]
-        steps = np.arange(arr.shape[0])
-
+        # arr = val.values  # shape: [nchains, ndraws]
+        # steps = np.arange(arr.shape[0])
+        steps = val.draw.values
+        nchains, ndraws = val.shape
         if therm_frac is not None and therm_frac > 0:
-            drop = int(therm_frac * arr.shape[0])
-            arr = arr[drop:]
+            drop = int(therm_frac * val.shape[0])
+            arr = val[drop:]
             steps = steps[drop:]
 
-        if len(arr.shape) == 2:
+        if len(val.shape) == 2:
             _ = subplots_kwargs.pop('constrained_layout', True)
             figsize = (3 * figsize[0], 1.5 * figsize[1])
 
@@ -282,8 +298,8 @@ class BaseHistory:
             ax1.grid(False)
             color = plot_kwargs.get('color', None)
             label = r'$\langle$' + f' {key} ' + r'$\rangle$'
-            ax.plot(steps, arr.mean(-1), lw=1.5*LW, label=label, **plot_kwargs)
-            sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, shade=True)
+            ax.plot(steps, val.mean('chain'), lw=1.5*LW, label=label, **plot_kwargs)
+            sns.kdeplot(y=val.values.flatten(), ax=ax1, color=color, shade=True)
             ax1.set_xticks([])
             ax1.set_xticklabels([])
             sns.despine(ax=ax, top=True, right=True)
@@ -296,23 +312,24 @@ class BaseHistory:
             im = val.plot(ax=ax0)           # type:ignore
             im.colorbar.set_label(key)      # type:ignore
             sns.despine(subfigs[0])
-            ax0.plot(steps, arr.mean(0), lw=2., color=color)
-            for idx in range(min(num_chains, arr.shape[0])):
-                ax0.plot(steps, arr[idx, :], lw=1., alpha=0.7, color=color)
+            ax0.plot(steps, val.mean('chain'), lw=2., color=color)
+            for idx in range(min(num_chains, len(val.chain))):
+                ax0.plot(steps, val.values[idx, :], lw=1., alpha=0.7, color=color)
 
         else:
-            if len(arr.shape) == 1:
+            if len(val.shape) == 1:
                 fig, ax = plt.subplots(**subplots_kwargs)
                 assert isinstance(ax, plt.Axes)
-                ax.plot(steps, arr, **plot_kwargs)
+                ax.plot(steps, val.values, **plot_kwargs)
                 axes = ax
-            elif len(arr.shape) == 3:
+            elif len(val.shape) == 3:
                 fig, ax = plt.subplots(**subplots_kwargs)
                 assert isinstance(ax, plt.Axes)
                 cmap = plt.get_cmap('viridis')
-                nlf = arr.shape[1]
+                # nlf = arr.shape[1]
+                nlf = val.leapfrog
                 for idx in range(nlf):
-                    y = arr[:, idx, :].mean(-1)
+                    y = val[:, idx, :].mean('chain')
                     pkwargs = {
                         'color': cmap(idx / nlf),
                         'label': f'{idx}',
@@ -322,16 +339,16 @@ class BaseHistory:
             else:
                 raise ValueError('Unexpected shape encountered')
 
-            ax.set_ylabel(key)
+            # ax.set_ylabel(key)
 
-            if num_chains > 0 and len(arr.shape) > 1:
-                lw = LW / 2.
-                for idx in range(min(num_chains, arr.shape[1])):
-                    # ax = subfigs[0].subplots(1, 1)
-                    # plot values of invidual chains, arr[:, idx]
-                    # where arr[:, idx].shape = [ndraws, 1]
-                    ax.plot(steps, arr[:, idx],
-                            alpha=0.5, lw=lw/2., **plot_kwargs)
+            # if num_chains > 0 and len(val.chain) > 1:
+            #     lw = LW / 2.
+            #     for idx in range(min(num_chains, len(val.chain))):
+            #         # ax = subfigs[0].subplots(1, 1)
+            #         # plot values of invidual chains, arr[:, idx]
+            #         # where arr[:, idx].shape = [ndraws, 1]
+            #         ax.plot(steps, val.values[idx, :],
+            #                 alpha=0.5, lw=lw/2., **plot_kwargs)
 
         matplotx.line_labels()
         ax.set_xlabel('draw')
@@ -349,9 +366,9 @@ class BaseHistory:
             val: np.ndarray,
             key: Optional[str] = None,
             therm_frac: Optional[float] = 0.,
-            num_chains: Optional[int] = 0,
+            num_chains: Optional[int] = 128,
             title: Optional[str] = None,
-            outdir: Optional[str] = None,
+            outdir: Optional[os.PathLike] = None,
             subplots_kwargs: Optional[dict[str, Any]] = None,
             plot_kwargs: Optional[dict[str, Any]] = None,
     ):
@@ -379,8 +396,12 @@ class BaseHistory:
             subfigs = fig.subfigures(1, 2)
 
             gs_kw = {'width_ratios': [1.33, 0.33]}
-            (ax, ax1) = subfigs[1].subplots(1, 2, sharey=True,
-                                            gridspec_kw=gs_kw)
+            (ax, ax1) = subfigs[1].subplots(
+                1,
+                2,
+                sharey=True,
+                gridspec_kw=gs_kw
+            )
             ax.grid(alpha=0.2)
             ax1.grid(False)
             color = plot_kwargs.get('color', None)
@@ -413,12 +434,31 @@ class BaseHistory:
                 cmap = plt.get_cmap('viridis')
                 nlf = arr.shape[1]
                 for idx in range(nlf):
-                    y = arr[:, idx, :].mean(-1)
-                    pkwargs = {
-                        'color': cmap(idx / nlf),
-                        'label': f'{idx}',
-                    }
-                    ax.plot(steps, y, **pkwargs)
+                    # y = arr[:, idx, :].mean(-1)
+                    # pkwargs = {
+                    #     'color': cmap(idx / nlf),
+                    #     'label': f'{idx}',
+                    # }
+                    # ax.plot(steps, y, **pkwargs)
+                    label = plot_kwargs.pop('label', None)
+                    if label is not None:
+                        label = f'{label}-{idx}'
+                    y = arr[:, idx, :]
+                    color = cmap(idx / y.shape[1])
+                    plot_kwargs['color'] = cmap(idx / y.shape[1])
+                    if len(y.shape) == 2:
+                        # TOO: Plot chains
+                        if num_chains > 0:
+                            for idx in range(min((num_chains, y.shape[1]))):
+                                _ = ax.plot(steps, y[:, idx],  # color,
+                                            lw=LW/2., alpha=0.8, **plot_kwargs)
+
+                        _ = ax.plot(steps, y.mean(-1),  # color=color,
+                                    label=label, **plot_kwargs)
+                    else:
+
+                        _ = ax.plot(steps, y,  # color=color,
+                                    label=label, **plot_kwargs)
                 axes = ax
             else:
                 raise ValueError('Unexpected shape encountered')
@@ -426,12 +466,12 @@ class BaseHistory:
             ax.set_ylabel(key)
 
         if num_chains > 0 and len(arr.shape) > 1:
-            lw = LW / 2.
+            # lw = LW / 2.
             for idx in range(min(num_chains, arr.shape[1])):
                 # ax = subfigs[0].subplots(1, 1)
                 # plot values of invidual chains, arr[:, idx]
                 # where arr[:, idx].shape = [ndraws, 1]
-                ax.plot(steps, arr[:, idx], alpha=0.5, lw=lw/2., **plot_kwargs)
+                ax.plot(steps, arr[:, idx], alpha=0.5, lw=LW/2., **plot_kwargs)
 
         matplotx.line_labels()
         ax.set_xlabel('draw')
@@ -453,12 +493,246 @@ class BaseHistory:
 
         return fig, subfigs, axes
 
-    def plot_all(
+    def plot_dataArray(
             self,
-            num_chains: int = 0,
-            therm_frac: float = 0.,
+            val: xr.DataArray,
+            key: Optional[str] = None,
+            therm_frac: Optional[float] = 0.,
+            num_chains: Optional[int] = 0,
             title: Optional[str] = None,
             outdir: Optional[str] = None,
+            subplots_kwargs: Optional[dict[str, Any]] = None,
+            plot_kwargs: Optional[dict[str, Any]] = None,
+            line_labels: bool = False,
+            logfreq: Optional[int] = None,
+    ):
+        plot_kwargs = {} if plot_kwargs is None else plot_kwargs
+        subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
+        set_plot_style()
+        plt.rcParams['axes.labelcolor'] = '#bdbdbd'
+        figsize = subplots_kwargs.get('figsize', set_size())
+        subplots_kwargs.update({'figsize': figsize})
+        subfigs = None
+        # if key == 'dt':
+        #     therm_frac = 0.2
+        arr = val.values  # shape: [nchains, ndraws]
+        # steps = np.arange(len(val.coords['draw']))
+        steps = val.coords['draw']
+        if therm_frac is not None and therm_frac > 0.0:
+            drop = int(therm_frac * arr.shape[0])
+            arr = arr[drop:]
+            steps = steps[drop:]
+        if len(arr.shape) == 2:
+            fig, axes = plot_combined(val, key=key,
+                                      num_chains=num_chains,
+                                      plot_kwargs=plot_kwargs,
+                                      subplots_kwargs=subplots_kwargs)
+        else:
+            if len(arr.shape) == 1:
+                fig, ax = subplots(**subplots_kwargs)
+                try:
+                    ax.plot(steps, arr, **plot_kwargs)
+                except ValueError:
+                    try:
+                        ax.plot(steps, arr[~np.isnan(arr)], **plot_kwargs)
+                    except Exception:
+                        log.error(f'Unable to plot {key}! Continuing')
+                _ = ax.grid(True, alpha=0.2)
+                axes = ax
+            elif len(arr.shape) == 3:
+                fig, ax = subplots(**subplots_kwargs)
+                cmap = plt.get_cmap('viridis')
+                y = val.mean('chain')
+                for idx in range(len(val.coords['leapfrog'])):
+                    pkwargs = {
+                        'color': cmap(idx / len(val.coords['leapfrog'])),
+                        'label': f'{idx}',
+                    }
+                    ax.plot(steps, y[idx], **pkwargs)
+                axes = ax
+            else:
+                raise ValueError('Unexpected shape encountered')
+            ax = plt.gca()
+            assert isinstance(ax, plt.Axes)
+            _ = ax.set_ylabel(key)
+            _ = ax.set_xlabel('draw')
+            # matplotx.line_labels()
+            if line_labels:
+                matplotx.line_labels()
+            # if num_chains > 0 and len(arr.shape) > 1:
+            #     lw = LW / 2.
+            #     #for idx in range(min(num_chains, arr.shape[1])):
+            #     nchains = len(val.coords['chains'])
+            #     for idx in range(min(nchains, num_chains)):
+            #         # ax = subfigs[0].subplots(1, 1)
+            #         # plot values of invidual chains, arr[:, idx]
+            #         # where arr[:, idx].shape = [ndraws, 1]
+            #         ax.plot(steps, val
+            #                 alpha=0.5, lw=lw/2., **plot_kwargs)
+        if title is not None:
+            fig = plt.gcf()
+            _ = fig.suptitle(title)
+        if logfreq is not None:
+            ax = plt.gca()
+            xticks = ax.get_xticks()
+            _ = ax.set_xticklabels([
+                f'{logfreq * int(i)}' for i in xticks
+            ])
+        if outdir is not None:
+            dirs = {
+                'png': Path(outdir).joinpath("pngs/"),
+                'svg': Path(outdir).joinpath("svgs/"),
+            }
+            _ = [i.mkdir(exist_ok=True, parents=True) for i in dirs.values()]
+            from l2hmc.configs import PROJECT_DIR
+            log.info(
+                f"Saving {key} plot to: "
+                f"{Path(outdir).resolve().relative_to(PROJECT_DIR)}"
+            )
+            for ext, d in dirs.items():
+                outfile = d.joinpath(f"{key}.{ext}")
+                plt.savefig(outfile, dpi=400, bbox_inches='tight')
+        return (fig, subfigs, axes)
+
+    def plot_dataset(
+        self,
+            therm_frac: float = 0.,
+            title: Optional[str] = None,
+            outdir: Optional[os.PathLike] = None,
+            subplots_kwargs: Optional[dict[str, Any]] = None,
+            plot_kwargs: Optional[dict[str, Any]] = None,
+    ):
+        dataset = self.get_dataset()
+        return plot_dataset(
+            dataset=dataset,
+            therm_frac=therm_frac,
+            title=title,
+            outdir=outdir,
+            subplots_kwargs=subplots_kwargs,
+            plot_kwargs=plot_kwargs
+        )
+
+    def plot_2d_xarr(
+            self,
+            xarr: xr.DataArray,
+            label: Optional[str] = None,
+            num_chains: Optional[int] = None,
+            title: Optional[str] = None,
+            outdir: Optional[os.PathLike] = None,
+            subplots_kwargs: Optional[dict[str, Any]] = None,
+            plot_kwargs: Optional[dict[str, Any]] = None,
+    ):
+        plot_kwargs = {} if plot_kwargs is None else plot_kwargs
+        subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
+        assert len(xarr.shape) == 2
+        assert 'draw' in xarr.coords and 'chain' in xarr.coords
+        num_chains = len(xarr.chain) if num_chains is None else num_chains
+        # _ = subplots_kwargs.pop('constrained_layout', True)
+        figsize = plt.rcParams.get('figure.figsize', (8, 6))
+        figsize = (3 * figsize[0], 1.5 * figsize[1])
+        fig = plt.figure(figsize=figsize, constrained_layout=True)
+        subfigs = fig.subfigures(1, 2)
+        gs_kw = {'width_ratios': [1.33, 0.33]}
+        (ax, ax1) = subfigs[1].subplots(
+            1,
+            2,
+            sharey=True,
+            gridspec_kw=gs_kw
+        )
+        ax.grid(alpha=0.2)
+        ax1.grid(False)
+        color = plot_kwargs.get('color', f'C{np.random.randint(6)}')
+        label = r'$\langle$' + f' {label} ' + r'$\rangle$'
+        ax.plot(
+            xarr.draw.values,
+            xarr.mean('chain'),
+            color=color,
+            lw=1.5*LW,
+            label=label,
+            **plot_kwargs
+        )
+        for idx in range(num_chains):
+            # ax = subfigs[0].subplots(1, 1)
+            # plot values of invidual chains, arr[:, idx]
+            # where arr[:, idx].shape = [ndraws, 1]
+            # ax0.plot(
+            #     xarr.draw.values,
+            #     xarr[xarr.chain == idx][0],
+            #     lw=1.,
+            #     alpha=0.7,
+            #     color=color
+            # )
+            ax.plot(
+                xarr.draw.values,
+                xarr[xarr.chain == idx][0],
+                color=color,
+                alpha=0.5,
+                lw=LW/2.,
+                **plot_kwargs
+            )
+
+        axes = (ax, ax1)
+        sns.kdeplot(
+            y=xarr.values.flatten(),
+            ax=ax1,
+            color=color,
+            shade=True
+        )
+        ax1.set_xticks([])
+        ax1.set_xticklabels([])
+        # ax1.set_yticks([])
+        # ax1.set_yticklabels([])
+        sns.despine(ax=ax, top=True, right=True)
+        sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
+        # ax.legend(loc='best', frameon=False)
+        ax1.set_xlabel('')
+        # ax1.set_ylabel('')
+        # ax.set_yticks(ax.get_yticks())
+        # ax.set_yticklabels(ax.get_yticklabels())
+        # ax.set_ylabel(key)
+        # _ = subfigs[1].subplots_adjust(wspace=-0.75)
+        # if num_chains > 0 and len(arr.shape) > 1:
+        # lw = LW / 2.
+        # num_chains = np.min([
+        #     16,
+        #     len(xarr.coords['chain']),
+        # ])
+        sns.despine(subfigs[0])
+        ax0 = subfigs[0].subplots(1, 1)
+        im = xarr.plot(ax=ax0)           # type:ignore
+        im.colorbar.set_label(label)      # type:ignore
+        # ax0.plot(
+        #     xarr.draw.values,
+        #     xarr.mean('chain'),
+        #     lw=2.,
+        #     color=color
+        # )
+        # for idx in range(min(num_chains, i.shape[1])):
+        # matplotx.line_labels()
+        ax.set_xlabel('draw')
+        if title is not None:
+            fig.suptitle(title)
+
+        if outdir is not None:
+            assert label is not None
+            # plt.savefig(Path(outdir).joinpath(f'{key}.svg'),
+            #             dpi=400, bbox_inches='tight')
+            outfile = Path(outdir).joinpath(f'{label}.svg')
+            if outfile.is_file():
+                tstamp = hplt.get_timestamp('%Y-%m-%d-%H%M%S')
+                pngdir = Path(outdir).joinpath('pngs')
+                pngdir.mkdir(exist_ok=True, parents=True)
+                pngfile = pngdir.joinpath(f'{label}-{tstamp}.png')
+                svgfile = Path(outdir).joinpath(f'{label}-{tstamp}.svg')
+                plt.savefig(pngfile, dpi=400, bbox_inches='tight')
+                plt.savefig(svgfile, dpi=400, bbox_inches='tight')
+
+    def plot_all(
+            self,
+            num_chains: int = 128,
+            therm_frac: float = 0.,
+            title: Optional[str] = None,
+            outdir: Optional[os.PathLike] = None,
             subplots_kwargs: Optional[dict[str, Any]] = None,
             plot_kwargs: Optional[dict[str, Any]] = None,
     ):
@@ -466,11 +740,22 @@ class BaseHistory:
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
 
         dataset = self.get_dataset()
+
+        _ = make_ridgeplots(
+            dataset,
+            outdir=outdir,
+            drop_nans=True,
+            drop_zeros=False,
+            num_chains=num_chains,
+            cmap='viridis',
+            save_plot=(outdir is not None),
+        )
+
         for idx, (key, val) in enumerate(dataset.data_vars.items()):
             color = f'C{idx%9}'
             plot_kwargs['color'] = color
 
-            _, subfigs, ax = self.plot(
+            fig, subfigs, ax = self.plot(
                 val=val.values.T.real,
                 key=str(key),
                 title=title,
@@ -480,6 +765,16 @@ class BaseHistory:
                 plot_kwargs=plot_kwargs,
                 subplots_kwargs=subplots_kwargs,
             )
+            if fig is not None:
+                _ = sns.despine(
+                    fig,
+                    top=True,
+                    right=True,
+                    bottom=True,
+                    left=True
+                )
+
+            # _ = plt.grid(True, alpha=0.4)
             if subfigs is not None:
                 # edgecolor = plt.rcParams['axes.edgecolor']
                 plt.rcParams['axes.edgecolor'] = plt.rcParams['axes.facecolor']
@@ -491,11 +786,30 @@ class BaseHistory:
                 # im.colorbar.set_label(f'{key}')  # , labelpad=1.25)
                 sns.despine(subfigs[0], top=True, right=True,
                             left=True, bottom=True)
-                if outdir is not None:
-                    Path(outdir).mkdir(exist_ok=True)
-                    outfile = Path(outdir).joinpath(f'{key}.svg').as_posix()
-                    print(f'Saving figure to: {outfile}')
+            if outdir is not None:
+                dirs = {
+                    'png': Path(outdir).joinpath("pngs/"),
+                    'svg': Path(outdir).joinpath("svgs/"),
+                }
+                _ = [
+                    i.mkdir(exist_ok=True, parents=True) for i in dirs.values()
+                ]
+                log.info(
+                    f"Saving {key} plot to: "
+                    f"{Path(outdir).resolve().relative_to(PROJECT_DIR)}"
+                )
+                for ext, d in dirs.items():
+                    outfile = d.joinpath(f"{key}.{ext}")
+                    if outfile.is_file():
+                        log.info(
+                            f"Saving {key} plot to: "
+                            f"{outfile.resolve().relative_to(PROJECT_DIR)}"
+                        )
+                        outfile = d.joinpath(f"{key}-subfig.{ext}")
+                    # log.info(f"Saving {key}.ext to: {outfile}")
                     plt.savefig(outfile, dpi=400, bbox_inches='tight')
+            if is_interactive():
+                plt.show()
 
         return dataset
 

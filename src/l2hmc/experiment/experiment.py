@@ -5,7 +5,7 @@ Contains implementation of Experiment object, defined by a static config.
 """
 from __future__ import absolute_import, annotations, division, print_function
 from abc import ABC, abstractmethod
-import logging
+# import logging
 import os
 from pathlib import Path
 from typing import Optional, Any
@@ -205,7 +205,11 @@ class BaseExperiment(ABC):
         if machine is not None:
             run.config['machine'] = machine
 
-        hostname = socket.gethostbyaddr(socket.gethostname())[0].lower()
+        try:
+            hostname = socket.gethostbyaddr(socket.gethostname())[0].lower()
+        except socket.herror:
+            log.critical('Error getting hostname! Using `localhost`')
+            hostname = 'localhost'
         run.config['hostname'] = hostname
         if 'thetagpu' in hostname:
             run.config['machine'] = 'ThetaGPU'

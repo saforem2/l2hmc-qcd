@@ -1,6 +1,6 @@
 _target_: l2hmc.configs.NetworkConfig
 
-units: [16, 16, 16]
+units: [16, 16, 16, 16]
 dropout_prob: 0.2
-activation_fn: "elu"
-use_batch_norm: false
+activation_fn: "leaky_relu"
+use_batch_norm: true

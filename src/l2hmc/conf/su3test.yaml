@@ -1,0 +1,59 @@
+---
+framework: pytorch
+init_aim: false
+init_wandb: false
+restore: false
+save: false
+use_tb: false
+use_wandb: false
+annealing_schedule:
+  beta_final: 6.0
+  beta_init: 6.0
+backend: DDP
+conv: none
+dynamics:
+  eps: 0.01
+  eps_fixed: false
+  group: SU3
+  latvolume:
+    - 4
+    - 4
+    - 4
+    - 4
+  nchains: 12
+  nleapfrog: 4
+  merge_directions: true
+  use_separate_networks: true
+  use_split_xnets: true
+  verbose: true
+learning_rate:
+  clip_norm: 1.0
+  lr_init: 1e-04
+loss:
+  aux_weight: 1.0
+  charge_weight: 0.0
+  plaq_weight: 0.1
+  rmse_weight: 0.1
+  use_mixed_loss: true
+net_weights:
+  v:
+    q: 1.0
+    s: 1.0
+    t: 1.0
+  x:
+    q: 1.0
+    s: 1.0
+    t: 1.0
+network:
+  activation_fn: tanh
+  dropout_prob: 0.0
+  units:
+    - 256
+  use_batch_norm: false
+steps:
+  log: 1
+  nepoch: 10
+  nera: 1
+  print: 1
+  test: 50
+...

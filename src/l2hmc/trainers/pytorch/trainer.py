@@ -33,7 +33,7 @@ from torch.optim.lr_scheduler import LambdaLR
 import wandb
 
 from l2hmc import get_logger
-from l2hmc.common import ScalarLike, get_timestamp
+from l2hmc.common import ScalarLike, get_timestamp, print_dict
 from l2hmc.configs import CHECKPOINTS_DIR, ExperimentConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.group.su3.pytorch.group import SU3
@@ -231,9 +231,10 @@ class Trainer(BaseTrainer):
             self.optimizer = self._optimizer
             self.dynamics_engine = DDP(
                 self.dynamics,
-                # find_unused_parameters=True
+                find_unused_parameters=True
             )
-            self.grad_scaler = GradScaler()
+            if self._dtype != torch.float64:
+                self.grad_scaler = GradScaler()
             # self.grad_scaler = GradScaler(
             #     enabled=(self._dtype != torch.float64)
             # )
@@ -258,11 +259,12 @@ class Trainer(BaseTrainer):
                 #     self.dynamics.xeps,
                 #     self.dynamics.veps
                 # ),
-                (
-                    self.dynamics,
-                    self.dynamics.xeps,
-                    self.dynamics.veps,
-                ),
+                # (
+                #     self.dynamics,
+                #     self.dynamics.xeps,
+                #     self.dynamics.veps,
+                # ),
+                self.dynamics,
                 # self.dynamics,
                 log='all',
                 log_freq=logfreq,
@@ -442,6 +444,11 @@ class Trainer(BaseTrainer):
         return self.g.random(
             list(self.config.dynamics.xshape)
         ).flatten(1)
+
+    def draw_v(self):
+        return self.g.random_momentum(
+            list(self.config.dynamics.xshape)
+        )
 
     def reset_optimizer(self):
         if self._is_orchestrator:
@@ -1231,15 +1238,18 @@ class Trainer(BaseTrainer):
             xprop: torch.Tensor,
             acc: torch.Tensor,
     ) -> torch.Tensor:
-        loss = self.loss_fn(xinit, xprop, acc)
-        return loss
+        # loss = self.loss_fn(xinit, xprop, acc)
+        # if loss.isnan():
+        #     log.critical(f'loss.isnan()!: {loss}')
+        #     loss = torch.ones_like(loss, requires_grad=True) * 1e-6
+        return self.loss_fn(xinit, xprop, acc)
 
     def forward_step(
             self,
             x: torch.Tensor,
             beta: torch.Tensor,
     ) -> tuple[torch.Tensor, dict]:
-        x = self.g.compat_proj(x.reshape(self.xshape)).to(self._dtype)
+        # x = self.g.compat_proj(x.reshape(self.xshape)).to(self._dtype)
         beta = beta.to(self._dtype).to(self.device)
         x.requires_grad_(True)
         self.optimizer.zero_grad()
@@ -1324,10 +1334,12 @@ class Trainer(BaseTrainer):
         # t1 = time.perf_counter()
         xprop = metrics.pop('mc_states').proposed.x
         loss = self.calc_loss(xinit=xinit, xprop=xprop, acc=metrics['acc'])
+        # xout.reshape_as()
         # t2 = time.perf_counter()
+        aux_loss = 0.0
         if (aw := self.config.loss.aux_weight) > 0:
             yinit = self.dynamics.unflatten(
-                self.g.random(xout.shape).to(self.device)
+                self.g.random(xinit.shape).to(self.device)
             )
             _, metrics_ = self.forward_step(x=yinit, beta=beta)
             yprop = metrics_.pop('mc_states').proposed.x
@@ -1336,12 +1348,13 @@ class Trainer(BaseTrainer):
                 xprop=yprop,
                 acc=metrics_['acc']
             )
-            loss += aw * aux_loss
+            aux_loss += aw * aux_loss
+        loss_tot = loss + aux_loss
         # t3 = time.perf_counter()
-        loss = self.backward_step(loss)
-        if isinstance(loss, Tensor):
-            loss = loss.item()
-        metrics['loss'] = loss
+        loss = self.backward_step(loss_tot)
+        if isinstance(loss_tot, Tensor):
+            loss_tot = loss_tot.item()
+        metrics['loss'] = loss_tot
         # t4 = time.perf_counter()
         if self.config.dynamics.verbose:
             with torch.no_grad():
@@ -2096,3 +2109,22 @@ class Trainer(BaseTrainer):
                            name=name,
                            step=step,
                            context=context)  # type: ignore
+
+    def print_weights(self, grab: bool = True):
+        _ = print_dict({
+            k: v for k, v in self.dynamics.named_parameters()
+        }, grab=grab)
+
+    def print_grads(self, grab: bool = True):
+        _ = print_dict({
+            k: v.grad for k, v in self.dynamics.named_parameters()
+        }, grab=grab)
+
+    def print_grads_and_weights(self, grab: bool = True):
+        log.info(80 * '-')
+        log.info('GRADS:')
+        self.print_grads(grab=grab)
+        log.info(80 * '-')
+        log.info('WEIGHTS:')
+        self.print_weights(grab=grab)
+        log.info(80 * '-')

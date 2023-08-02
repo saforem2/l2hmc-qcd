@@ -81,7 +81,7 @@ def set_plot_style(**kwargs):
         # 'grid.color': '#353535',
         'path.simplify': True,
         'savefig.bbox': 'tight',
-        'legend.labelcolor': '#666666',
+        'legend.labelcolor': '#838383',
         # 'axes.labelcolor': (189, 189, 189, 1.0),
         # 'grid.color': (0.434, 0.434, 0.434, 0.2),  # #66666602
         # 'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
@@ -92,32 +92,33 @@ def set_plot_style(**kwargs):
         'savefig.format': 'svg',
         'axes.edgecolor': 'none',
         'axes.grid': True,
-        'axes.labelcolor': '#666',
-        'axes.titlecolor': '#666',
-        'grid.color': '#666',
-        'text.color': '#666',
+        'axes.labelcolor': '#838383',
+        'axes.titlecolor': '#838383',
+        'grid.color': '#838383',
+        'text.color': '#838383',
         'grid.linestyle': '--',
         'grid.linewidth': 0.5,
         'grid.alpha': 0.4,
         'xtick.color': 'none',
         'ytick.color': 'none',
-        'xtick.labelcolor': '#666',
+        'xtick.labelcolor': '#838383',
         'legend.edgecolor': 'none',
-        'ytick.labelcolor': '#666',
+        'ytick.labelcolor': '#838383',
         # 'savefig.transparent': True,
     })
     plt.rcParams['axes.prop_cycle'] = plt.cycler(
         'color',
         list(COLORS.values())
     )
-    plt.rcParams['axes.labelcolor'] = '#bdbdbd'
+    plt.rcParams['axes.labelcolor'] = '#939393'
     plt.rcParams.update(**kwargs)
-    if not is_interactive():
-        figsize = plt.rcParamsDefault.get('figure.figsize', (4.5, 3))
-        x = figsize[0]
-        y = figsize[1]
-        plt.rcParams['figure.figsize'] = [2.5 * x, 2. * y]
-        plt.rcParams['figure.dpi'] = 400
+    plt.rcParams |= {'figure.figsize': [12.4, 4.8]}
+    # if not is_interactive():
+    #     figsize = plt.rcParamsDefault.get('figure.figsize', (4.5, 3))
+    #     x = figsize[0]
+    #     y = figsize[1]
+    #     plt.rcParams['figure.figsize'] = [2.5 * x, 2. * y]
+    #     plt.rcParams['figure.dpi'] = 400
 
 
 def get_timestamp(fstr=None):
@@ -485,8 +486,8 @@ def plot_dataArray(
     figsize = subplots_kwargs.get('figsize', set_size())
     subplots_kwargs.update({'figsize': figsize})
     subfigs = None
-    if key == 'dt':
-        therm_frac = 0.2
+    # if key == 'dt':
+    #     therm_frac = 0.2
     arr = val.values  # shape: [nchains, ndraws]
     # steps = np.arange(len(val.coords['draw']))
     steps = val.coords['draw']
@@ -736,6 +737,7 @@ def plot_metric(
                     label = f'{label}-{idx}'
                 y = arr[:, idx]
                 color = cmap(idx / y.shape[1])
+                _ = plot_kwargs.pop('color', None)
                 if len(y.shape) == 2:
                     # TOO: Plot chains
                     if num_chains > 0:
@@ -850,11 +852,10 @@ def plot_dataset(
             plot_kwargs=plot_kwargs,
             subplots_kwargs=subplots_kwargs,
         )
-        if outdir is not None:
-            outfile = Path(outdir).joinpath(f'{key}.{ext}')
-            Path(outfile.parent).mkdir(exist_ok=True, parents=True)
-            outfile = outfile.as_posix()
+        if fig is not None:
+            _ = sns.despine(fig, top=True, right=True, bottom=True, left=True)
 
+        _ = ax.grid(True, alpha=0.4)
         if subfigs is not None:
             # edgecolor = plt.rcParams['axes.edgecolor']
             plt.rcParams['axes.edgecolor'] = plt.rcParams['axes.facecolor']
@@ -869,11 +870,33 @@ def plot_dataset(
             im.colorbar.set_label(f'{key}')                # type:ignore
             _ = sns.despine(subfigs[0], top=True, right=True,
                             left=True, bottom=True)
-            if outdir is not None:
-                log.info(f'Saving figure to: {outfile}')
-                _ = plt.savefig(outfile, dpi=400, bbox_inches='tight')
-        else:
-            _ = fig.savefig(outfile, dpi=400, bbox_inches='tight')
+        if outdir is not None:
+            dirs = {
+                'png': Path(outdir).joinpath("pngs/"),
+                'svg': Path(outdir).joinpath("svgs/"),
+            }
+            _ = [i.mkdir(exist_ok=True, parents=True) for i in dirs.values()]
+            # pngdir = Path(outdir).joinpath(f"pngs/")
+            # svgdir = Path(outdir).joinpath(f"svgs/")
+            # pfile = pngdir.joinpath(f"{key}.png")
+            # sfile = svgdir.joinpath(f"{key}.svg")
+            from l2hmc.configs import PROJECT_DIR
+            log.info(
+                f"Saving {key} plot to: "
+                f"{Path(outdir).resolve().relative_to(PROJECT_DIR)}"
+            )
+            for ext, d in dirs.items():
+                outfile = d.joinpath(f"{key}.{ext}")
+                # log.info(f"Saving {key}.ext to: {outfile}")
+                plt.savefig(outfile, dpi=400, bbox_inches='tight')
+            # outfile = Path(outdir).joinpath(f'{key}.{ext}')
+            # Path(outfile.parent).mkdir(exist_ok=True, parents=True)
+            # outfile = outfile.as_posix()
+        # if outfile is not None:
+        #     log.info(f'Saving figure to: {outfile}')
+        #     _ = plt.savefig(outfile, dpi=400, bbox_inches='tight')
+        # else:
+        #     _ = fig.savefig(outfile, dpi=400, bbox_inches='tight')
 
     return dataset
 
@@ -1003,8 +1026,16 @@ def make_ridgeplots(
                     pngdir.mkdir(exist_ok=True, parents=True)
 
                     log.info(f'Saving figure to: {fsvg.as_posix()}')
-                    _ = plt.savefig(fsvg.as_posix(), bbox_inches='tight')
-                    _ = plt.savefig(fpng.as_posix(), bbox_inches='tight')
+                    _ = plt.savefig(
+                        fsvg.as_posix(),
+                        dpi=400,
+                        bbox_inches='tight'
+                    )
+                    _ = plt.savefig(
+                        fpng.as_posix(),
+                        dpi=400,
+                        bbox_inches='tight'
+                    )
 
                 log.debug(
                     f'Ridgeplot for {key} took {time.time() - tstart:.3f}s'

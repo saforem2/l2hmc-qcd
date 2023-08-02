@@ -1,6 +1,16 @@
 ## --------------------------------
 ## USER-DEFINED .gitignore below
 ## --------------------------------
+.sourcery.yaml
+plots-4dSU3/
+qmd/
+reports/l2hmc.html
+src/l2hmc/.jukit/
+src/l2hmc/.virtual_documents/
+src/l2hmc/feature_sourcery/
+src/l2hmc/notebooks/.jukit/
+src/l2hmc/notebooks/detached
+
 **.venv**
 /**venv**/**
 poetry.lock
@@ -571,3 +581,5 @@ bin/*experiments*
 *node_modules*
 *2021_*
 bin/*scale_*
+
+/.quarto/

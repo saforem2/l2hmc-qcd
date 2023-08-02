@@ -13,6 +13,29 @@ from pathlib import Path
 import json
 import pandas as pd
 
+import functools
+import datetime
+
+from l2hmc import get_logger
+from l2hmc.common import get_timestamp
+
+log = get_logger(__name__)
+
+
+def log_execution_and_time(function):
+    @functools.wraps(function)
+    def wrapper(*args, **kwargs):
+        NOW = get_timestamp()
+        start = time.time()
+        log.info(
+            f"{NOW} - Start execution of: {function.__name__}"
+        )
+        result = function(*args, **kwargs)
+        end = time.time()
+        log.info(f"{function.__name__} took {end - start:.4f} seconds")
+        return result
+    return wrapper
+
 
 class BaseTimer:
     def __init__(

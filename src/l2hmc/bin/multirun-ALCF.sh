@@ -101,7 +101,7 @@ setupPolaris()  {
     fi
     export CFLAGS="-I${CONDA_PREFIX}/include/"
     export LDFLAGS="-L${CONDA_PREFIX}/lib/"
-    export IBV_FORK_SAFE=1
+    # export IBV_FORK_SAFE=1
     # -----------------------------------------------
     NRANKS=$(wc -l < "${HOSTFILE}")
     # HOSTFILE=${HOSTFILE}

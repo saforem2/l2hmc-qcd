@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.3.433">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="Sam Foreman">
+<meta name="dcterms.date" content="2023-08-02">
+
+<title>l2hmc-qcd</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<link href="./qmd/l2hmc-2DU1.html" rel="next">
+<link href="././assets/favicon.svg" rel="icon" type="image/svg+xml">
+<script src="site_libs/quarto-html/quarto.js"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-dark.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap.min.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="site_libs/bootstrap/bootstrap-dark.min.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 20,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script async="" src="https://www.googletagmanager.com/gtag/js?id=G-XVM2Y822Y1"></script>
+
+<script type="text/javascript">
+
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
+</script>
+<link href="https://pvinis.github.io/iosevka-webfont/3.4.1/iosevka.css" rel="stylesheet">
+
+  <script>window.backupDefine = window.define; window.define = undefined;</script><script src="https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/katex.min.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", function () {
+ var mathElements = document.getElementsByClassName("math");
+ var macros = [];
+ for (var i = 0; i < mathElements.length; i++) {
+  var texText = mathElements[i].firstChild;
+  if (mathElements[i].tagName == "SPAN") {
+   katex.render(texText.data, mathElements[i], {
+    displayMode: mathElements[i].classList.contains('display'),
+    throwOnError: false,
+    macros: macros,
+    fleqn: false
+   });
+}}});
+  </script>
+  <script>window.define = window.backupDefine; window.backupDefine = undefined;</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/katex.min.css">
+
+<link rel="stylesheet" href="css/default.css">
+<link rel="stylesheet" href="css/callouts.css">
+<meta property="og:title" content="">
+<meta property="og:description" content="">
+<meta property="og:image" content="https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg">
+<meta property="og:site-name" content="l2hmc-qcd">
+</head>
+
+<body class="nav-sidebar floating nav-fixed">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg navbar-dark ">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container">
+    <a href="./index.html" class="navbar-brand navbar-brand-logo">
+    <img src="https://raw.githubusercontent.com/saforem2/anl-job-talk/main/docs/assets/anl.svg" alt="" class="navbar-logo">
+    </a>
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">l2hmc-qcd</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/saforem2/l2hmc-qcd" rel="" target=""><i class="bi bi-github" role="img" aria-label="GitHub">
+</i> 
+ <span class="menu-text"></span></a>
+  </li>  
+</ul>
+            <div class="quarto-navbar-tools">
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="Toggle dark mode"><i class="bi"></i></a>
+  <a href="" class="quarto-reader-toggle quarto-navigation-tool px-1" onclick="window.quartoToggleReader(); return false;" title="Toggle reader mode">
+  <div class="quarto-reader-toggle-btn">
+  <i class="bi"></i>
+  </div>
+</a>
+</div>
+          </div> <!-- /navcollapse -->
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar,#quarto-sidebar-glass" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+      <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Home</a></li></ol></nav>
+      <a class="flex-grow-1" role="button" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar,#quarto-sidebar-glass" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+      </a>
+      <button type="button" class="btn quarto-search-button" aria-label="" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal sidebar-navigation floating overflow-auto">
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Home</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./qmd/l2hmc-2DU1.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Example: 2D U(1)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./qmd/pages.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Additional Pages</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" aria-expanded="true">
+ <span class="menu-text">Documentation</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./qmd/docs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Documentation</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar,#quarto-sidebar-glass"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#overview" id="toc-overview" class="nav-link active" data-scroll-target="#overview">Overview</a>
+  <ul class="collapse">
+  <li><a href="#papers-slides-etc." id="toc-papers-slides-etc." class="nav-link" data-scroll-target="#papers-slides-etc.">Papers 📚, Slides 📊 etc.</a></li>
+  <li><a href="#background" id="toc-background" class="nav-link" data-scroll-target="#background">Background</a></li>
+  </ul></li>
+  <li><a href="#installation" id="toc-installation" class="nav-link" data-scroll-target="#installation">Installation</a></li>
+  <li><a href="#training" id="toc-training" class="nav-link" data-scroll-target="#training">Training</a>
+  <ul class="collapse">
+  <li><a href="#configuration-management" id="toc-configuration-management" class="nav-link" data-scroll-target="#configuration-management">Configuration Management</a></li>
+  <li><a href="#running-at-alcf" id="toc-running-at-alcf" class="nav-link" data-scroll-target="#running-at-alcf">Running at ALCF</a></li>
+  </ul></li>
+  <li><a href="#details" id="toc-details" class="nav-link" data-scroll-target="#details">Details</a>
+  <ul class="collapse">
+  <li><a href="#organization" id="toc-organization" class="nav-link" data-scroll-target="#organization">Organization</a>
+  <ul class="collapse">
+  <li><a href="#dynamics-network" id="toc-dynamics-network" class="nav-link" data-scroll-target="#dynamics-network">Dynamics / Network</a></li>
+  </ul></li>
+  <li><a href="#contact" id="toc-contact" class="nav-link" data-scroll-target="#contact">Contact</a></li>
+  <li><a href="#citation" id="toc-citation" class="nav-link" data-scroll-target="#citation">Citation</a></li>
+  <li><a href="#acknowledgement" id="toc-acknowledgement" class="nav-link" data-scroll-target="#acknowledgement">Acknowledgement</a></li>
+  </ul></li>
+  <li><a href="#overview-1" id="toc-overview-1" class="nav-link" data-scroll-target="#overview-1">Overview</a>
+  <ul class="collapse">
+  <li><a href="#papers-slides-etc.-1" id="toc-papers-slides-etc.-1" class="nav-link" data-scroll-target="#papers-slides-etc.-1">Papers 📚, Slides 📊 etc.</a></li>
+  <li><a href="#background-1" id="toc-background-1" class="nav-link" data-scroll-target="#background-1">Background</a></li>
+  </ul></li>
+  <li><a href="#installation-1" id="toc-installation-1" class="nav-link" data-scroll-target="#installation-1">Installation</a></li>
+  <li><a href="#training-1" id="toc-training-1" class="nav-link" data-scroll-target="#training-1">Training</a>
+  <ul class="collapse">
+  <li><a href="#configuration-management-1" id="toc-configuration-management-1" class="nav-link" data-scroll-target="#configuration-management-1">Configuration Management</a></li>
+  <li><a href="#running-at-alcf-1" id="toc-running-at-alcf-1" class="nav-link" data-scroll-target="#running-at-alcf-1">Running at ALCF</a></li>
+  </ul></li>
+  <li><a href="#details-1" id="toc-details-1" class="nav-link" data-scroll-target="#details-1">Details</a>
+  <ul class="collapse">
+  <li><a href="#organization-1" id="toc-organization-1" class="nav-link" data-scroll-target="#organization-1">Organization</a>
+  <ul class="collapse">
+  <li><a href="#dynamics-network-1" id="toc-dynamics-network-1" class="nav-link" data-scroll-target="#dynamics-network-1">Dynamics / Network</a></li>
+  </ul></li>
+  <li><a href="#contact-1" id="toc-contact-1" class="nav-link" data-scroll-target="#contact-1">Contact</a></li>
+  <li><a href="#citation-1" id="toc-citation-1" class="nav-link" data-scroll-target="#citation-1">Citation</a></li>
+  <li><a href="#acknowledgement-1" id="toc-acknowledgement-1" class="nav-link" data-scroll-target="#acknowledgement-1">Acknowledgement</a></li>
+  </ul></li>
+  </ul>
+<div class="toc-actions"><div><i class="bi bi-github"></i></div><div class="action-links"><p><a href="https://github.com/saforem2/l2hmc-qcd/edit/main/index.qmd" class="toc-action">Edit this page</a></p><p><a href="https://github.com/saforem2/l2hmc-qcd/issues/new" class="toc-action">Report an issue</a></p></div></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+
+
+<div style="text-align:center;">
+<p><img src="https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg" class="img-fluid"></p>
+<!-- ![l2hmc-qcd](https://github.com/saforem2/saforem2/blob/main/assets/l2hmc-qcd-small.svg) -->
+<p><a href="https://hits.seeyoufarm.com"><img alt="hits" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fsaforem2%2Fl2hmc-qcd&amp;count_bg=%2300CCFF&amp;title_bg=%23555555&amp;icon=&amp;icon_color=%23111111&amp;title=👋&amp;edge_flat=false"></a><br>
+<a href="https://github.com/saforem2/l2hmc-qcd/"><img alt="l2hmc-qcd" src="https://img.shields.io/badge/-l2hmc--qcd-252525?style=flat&amp;logo=github&amp;labelColor=gray"></a> <a href="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd"><img alt="codefactor" src="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge"></a> <br> <a href="https://arxiv.org/abs/2112.01582"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg"></a> <a href="https://arxiv.org/abs/2105.03418"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg"></a> <br> <a href="https://hydra.cc"><img alt="hydra" src="https://img.shields.io/badge/Config-Hydra-89b8cd"></a> <a href="https://pytorch.org/get-started/locally/"><img alt="pyTorch" src="https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&amp;logoColor=white"></a> <a href="https://www.tensorflow.org"><img alt="tensorflow" src="https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&amp;logo=TensorFlow&amp;logoColor=white"></a> <br> <a href="https://wandb.ai/l2hmc-qcd/l2hmc-qcd"><img src="https://raw.githubusercontent.com/wandb/assets/main/wandb-github-badge-28.svg" alt="Weights &amp; Biases monitoring" height="20"></a></p>
+</div>
+<details open="">
+<summary>
+<b>Contents</b>
+</summary>
+<ul>
+<li><a href="#overview">Overview</a>
+<ul>
+<li><a href="https://github.com/saforem2/l2hmc-qcd/#training--experimenting">Papers 📚, Slides 📊, etc.</a></li>
+<li><a href="#background">Background</a></li>
+</ul></li>
+<li><a href="#installation">Installation</a></li>
+<li><a href="#training">Training</a>
+<ul>
+<li><a href="#configuration-management">Configuration Management</a></li>
+<li><a href="#running-at-ALCF">Running @ ALCF</a></li>
+</ul></li>
+<li><a href="#details">Details</a>
+<ul>
+<li><a href="#organization">Organization</a>
+<ul>
+<li><a href="#dynamics---network">Dynamics / Network</a>
+<ul>
+<li><a href="#network-architecture">Network Architecture</a></li>
+</ul></li>
+<li><a href="#lattice">Lattice</a></li>
+</ul></li>
+</ul></li>
+</ul>
+</details>
+<section id="overview" class="level1">
+<h1>Overview</h1>
+<section id="papers-slides-etc." class="level2">
+<h2 class="anchored" data-anchor-id="papers-slides-etc.">Papers 📚, Slides 📊 etc.</h2>
+<ul>
+<li><a href="./reports/">📕 Notebooks / Reports</a>:
+<ul>
+<li><a href="./reports/l2hmc-2DU1.md">📙 2D U(1) Model (w/ <code>fp16</code> or <code>fp32</code> for training)</a></li>
+<li><a href="./src/l2hmc/notebooks/l2hmc-2dU1.ipynb">📒 4D SU(3) Model (w/ <code>complex128</code> + <code>fp64</code> for training)</a>
+<ul>
+<li><a href="https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/pytorch-SU3d4.ipynb">alt link (if github won’t load)</a></li>
+</ul></li>
+</ul></li>
+<li>📝 Papers:
+<ul>
+<li><a href="https://saforem2.github.io/l2hmc-dwq25/#/">Accelerated Sampling Techniques for Lattice Gauge Theory</a> @ <a href="https://indico.bnl.gov/event/13576/">BNL &amp; RBRC: DWQ @ 25</a> (12/2021)</li>
+<li><a href="https://bit.ly/l2hmc-ect2021">Training Topological Samplers for Lattice Gauge Theory</a> from the <a href="https://indico.ectstar.eu/event/77/"><em>ML for HEP, on and off the Lattice</em></a> @ <span class="math inline">\mathrm{ECT}^{*}</span> Trento (09/2021) (+ 📊 <a href="https://www.bit.ly/l2hmc-ect2021">slides</a>)</li>
+<li><a href="https://arxiv.org/abs/2105.03418">Deep Learning Hamiltonian Monte Carlo</a> @ <a href="https://simdl.github.io/overview/">Deep Learning for Simulation (SimDL) Workshop</a> <strong>ICLR 2021</strong>
+<ul>
+<li>📚 : <a href="https://arxiv.org/abs/2105.03418">arXiv:2105.03418</a><br>
+</li>
+<li>📊 : <a href="https://www.bit.ly/l2hmc_poster">poster</a></li>
+</ul></li>
+</ul></li>
+</ul>
+</section>
+<section id="background" class="level2">
+<h2 class="anchored" data-anchor-id="background">Background</h2>
+<p>The L2HMC algorithm aims to improve upon <a href="https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo">HMC</a> by optimizing a carefully chosen loss function which is designed to minimize autocorrelations within the Markov Chain, thereby improving the efficiency of the sampler.</p>
+<p>A detailed description of the original L2HMC algorithm can be found in the paper:</p>
+<p><a href="https://arxiv.org/abs/1711.09268"><em>Generalizing Hamiltonian Monte Carlo with Neural Network</em></a></p>
+<p>with implementation available at <a href="https://github.com/brain-research/l2hmc">brain-research/l2hmc/</a> by <a href="http://ai.stanford.edu/~danilevy">Daniel Levy</a>, <a href="http://matthewdhoffman.com/">Matt D. Hoffman</a> and <a href="sohldickstein.com">Jascha Sohl-Dickstein</a>.</p>
+<p>Broadly, given an <em>analytically</em> described target distribution, π(x), L2HMC provides a <em>statistically exact</em> sampler that:</p>
+<ul>
+<li>Quickly converges to the target distribution (fast <strong><em>burn-in</em></strong>).</li>
+<li>Quickly produces uncorrelated samples (fast <strong><em>mixing</em></strong>).</li>
+<li>Is able to efficiently mix between energy levels.</li>
+<li>Is capable of traversing low-density zones to mix between modes (often difficult for generic HMC).</li>
+</ul>
+</section>
+</section>
+<section id="installation" class="level1">
+<h1>Installation</h1>
+<blockquote class="blockquote">
+<p><strong>Warning</strong><br> It is recommended to install <em>inside</em> an existing virtual environment<br> (ideally one with <code>tensorflow, pytorch [horovod,deepspeed]</code> already installed)</p>
+</blockquote>
+<details open="">
+<summary>
+<b>From source (RECOMMENDED)</b>
+</summary>
+<div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/saforem2/l2hmc-qcd</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> l2hmc-qcd</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co"># for development addons:</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="co"># python3 -m pip install -e ".[dev]"</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> <span class="at">-m</span> pip install <span class="at">-e</span> .</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<details closed="">
+<summary>
+<b> From <a href="https://pypi.org/project/l2hmc/"> <code>l2hmc</code> on PyPI</a> </b>
+</summary>
+<p>
+</p><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> <span class="at">-m</span> pip install l2hmc</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p></p>
+</details>
+<p>Test install:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> <span class="at">-c</span> <span class="st">'import l2hmc ; print(l2hmc.__file__)'</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="ex">/path/to/l2hmc-qcd/src/l2hmc/__init__.py</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details></section>
+<section id="training" class="level1">
+<h1>Training</h1>
+<section id="configuration-management" class="level2">
+<h2 class="anchored" data-anchor-id="configuration-management">Configuration Management</h2>
+<p>This project uses <a href="https://hydra.cc"><code>hydra</code></a> for configuration management and supports distributed training for both PyTorch and TensorFlow.</p>
+<p>In particular, we support the following combinations of <code>framework</code> + <code>backend</code> for distributed training:</p>
+<ul>
+<li>TensorFlow (+ Horovod for distributed training)</li>
+<li>PyTorch +
+<ul>
+<li>DDP</li>
+<li>Horovod</li>
+<li>DeepSpeed</li>
+</ul></li>
+</ul>
+<p>The main entry point is <a href="./src/l2hmc/main.py"><code>src/l2hmc/main.py</code></a>, which contains the logic for running an end-to-end <code>Experiment</code>.</p>
+<p>An <a href="./src/l2hmc/experiment/"><code>Experiment</code></a> consists of the following sub-tasks:</p>
+<ol type="1">
+<li>Training</li>
+<li>Evaluation</li>
+<li>HMC (for comparison and to measure model improvement)</li>
+</ol>
+<p><strong>All</strong> configuration options can be dynamically overridden via the CLI at runtime, and we can specify our desired <code>framework</code> and <code>backend</code> combination via:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> main.py mode=debug framework=pytorch backend=deepspeed precision=fp16</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>to run a (non-distributed) Experiment with <code>pytorch + deepspeed</code> with <code>fp16</code> precision.</p>
+<p>The <a href="./src/l2hmc/conf/config.yaml"><code>l2hmc/conf/config.yaml</code></a> contains a brief explanation of each of the various parameter options, and values can be overriden either by modifying the <code>config.yaml</code> file, or directly through the command line, e.g.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> src/l2hmc</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="ex">./train.sh</span> mode=debug framework=pytorch <span class="op">&gt;</span> train.log <span class="dv">2</span><span class="op">&gt;&amp;</span><span class="dv">1</span> <span class="kw">&amp;</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">tail</span> <span class="at">-f</span> train.log <span class="va">$(</span><span class="fu">tail</span> <span class="at">-1</span> logs/latest<span class="va">)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Additional information about various configuration options can be found in:</p>
+<ul>
+<li><a href="./src/l2hmc/configs.py"><code>src/l2hmc/configs.py</code></a>: Contains implementations of the (concrete python objects) that are adjustable for our experiment.</li>
+<li><a href="./src/l2hmc/conf/config.yaml"><code>src/l2hmc/conf/config.yaml</code></a>: Starting point with default configuration options for a generic <code>Experiment</code>.</li>
+</ul>
+<p>for more information on how this works I encourage you to read <a href="https://hydra.cc">Hydra’s Documentation Page</a>.</p>
+</section>
+<section id="running-at-alcf" class="level2">
+<h2 class="anchored" data-anchor-id="running-at-alcf">Running at ALCF</h2>
+<p>For running with distributed training on ALCF systems, we provide a complete <a href="./src/l2hmc/train.sh"><code>src/l2hmc/train.sh</code></a> script which should run without issues on either Polaris or ThetaGPU @ ALCF.</p>
+</section>
+</section>
+<section id="details" class="level1">
+<h1>Details</h1>
+<p><strong>Goal:</strong> Use L2HMC to <strong>efficiently</strong> generate <em>gauge configurations</em> for calculating observables in lattice QCD.</p>
+<p>A detailed description of the (ongoing) work to apply this algorithm to simulations in lattice QCD (specifically, a 2D U(1) lattice gauge theory model) can be found in <a href="https://arxiv.org/abs/2105.03418">arXiv:2105.03418</a>.</p>
+<div data-align="center">
+<p><img src="assets/l2hmc_poster.jpeg" alt="l2hmc-qcd poster" width="90%"></p>
+</div>
+<section id="organization" class="level2">
+<h2 class="anchored" data-anchor-id="organization">Organization</h2>
+<section id="dynamics-network" class="level3">
+<h3 class="anchored" data-anchor-id="dynamics-network">Dynamics / Network</h3>
+<p>For a given target distribution, π(x), the <code>Dynamics</code> object (<a href="src/l2hmc/dynamics"><code>src/l2hmc/dynamics/</code></a>) implements methods for generating proposal configurations (x’ ~ π) using the generalized leapfrog update.</p>
+<p>This generalized leapfrog update takes as input a buffer of lattice configurations <code>x</code> and generates a proposal configuration <code>x' = Dynamics(x)</code> by evolving generalized L2HMC dynamics.</p>
+<section id="network-architecture" class="level4">
+<h4 class="anchored" data-anchor-id="network-architecture">Network Architecture</h4>
+<p>An illustration of the <code>leapfrog layer</code> updating <code>(x, v) --&gt; (x', v')</code> can be seen below.</p>
+<div data-align="center">
+<p><img src="assets/lflayer.png" alt="leapfrog layer" width="800/"></p>
+</div>
+</section>
+</section>
+</section>
+<section id="contact" class="level2">
+<h2 class="anchored" data-anchor-id="contact">Contact</h2>
+<p><strong><em>Code author:</em></strong> Sam Foreman</p>
+<p><strong><em>Pull requests and issues should be directed to:</em></strong> <a href="http://github.com/saforem2">saforem2</a></p>
+</section>
+<section id="citation" class="level2">
+<h2 class="anchored" data-anchor-id="citation">Citation</h2>
+<p>If you use this code or found this work interesting, please cite our work along with the original paper:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode bibtex code-with-copy"><code class="sourceCode bibtex"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="va">@misc</span>{<span class="ot">foreman2021deep</span>,</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>      <span class="dt">title</span>={Deep Learning Hamiltonian Monte Carlo}, </span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>      <span class="dt">author</span>={Sam Foreman and Xiao-Yong Jin and James C. Osborn},</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">year</span>={2021},</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">eprint</span>={2105.03418},</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">archivePrefix</span>={arXiv},</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>      <span class="dt">primaryClass</span>={hep-lat}</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode bibtex code-with-copy"><code class="sourceCode bibtex"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="va">@article</span>{<span class="ot">levy2017generalizing</span>,</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">title</span>={Generalizing Hamiltonian Monte Carlo with Neural Networks},</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">author</span>={Levy, Daniel and Hoffman, Matthew D. and Sohl-Dickstein, Jascha},</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">journal</span>={arXiv preprint arXiv:1711.09268},</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">year</span>={2017}</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="acknowledgement" class="level2">
+<h2 class="anchored" data-anchor-id="acknowledgement">Acknowledgement</h2>
+<blockquote class="blockquote">
+<p><strong>Note</strong><br> This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357.<br> This work describes objective technical results and analysis.<br> Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government.</p>
+</blockquote>
+</section>
+</section>
+<section id="overview-1" class="level1">
+<h1>Overview</h1>
+<section id="papers-slides-etc.-1" class="level2">
+<h2 class="anchored" data-anchor-id="papers-slides-etc.-1">Papers 📚, Slides 📊 etc.</h2>
+<ul>
+<li><a href="./src/l2hmc/notebooks/">📕 Notebooks</a>:
+<ul>
+<li>📙 2D <span class="math inline">U(1)</span> Model (w/ <code>fp16</code> or <code>fp32</code> for training)
+<ul>
+<li><a href="./src/l2hmc/notebooks/l2hmc-2dU1.ipynb"><code>src/l2hmc/notebooks/l2hmc-2dU1.ipynb</code></a></li>
+<li><a href="https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/l2hmc-2dU1.ipynb">alt link (if Github won’t load)</a></li>
+</ul></li>
+<li>📒 4D <span class="math inline">SU(3)</span> Model (w/ <code>complex128</code> + <code>fp64</code> for training)
+<ul>
+<li>PyTorch:
+<ul>
+<li><a href="./src/l2hmc/notebooks/l2hmc-2dU1.ipynb"><code>src/l2hmc/notebooks/pytorch-SU3d4.ipynb</code></a></li>
+<li><a href="https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/pytorch-SU3d4.ipynb">alt link (if github won’t load)</a></li>
+</ul></li>
+</ul></li>
+</ul></li>
+<li>📝 Papers:
+<ul>
+<li><a href="https://saforem2.github.io/l2hmc-dwq25/#/">Accelerated Sampling Techniques for Lattice Gauge Theory</a> @ <a href="https://indico.bnl.gov/event/13576/">BNL &amp; RBRC: DWQ @ 25</a> (12/2021)</li>
+<li><a href="https://bit.ly/l2hmc-ect2021">Training Topological Samplers for Lattice Gauge Theory</a> from the <a href="https://indico.ectstar.eu/event/77/"><em>ML for HEP, on and off the Lattice</em></a> @ <span class="math inline">\mathrm{ECT}^{*}</span> Trento (09/2021) (+ 📊 <a href="https://www.bit.ly/l2hmc-ect2021">slides</a>)</li>
+<li><a href="https://arxiv.org/abs/2105.03418">Deep Learning Hamiltonian Monte Carlo</a> @ <a href="https://simdl.github.io/overview/">Deep Learning for Simulation (SimDL) Workshop</a> <strong>ICLR 2021</strong>
+<ul>
+<li>📚 : <a href="https://arxiv.org/abs/2105.03418">arXiv:2105.03418</a><br>
+</li>
+<li>📊 : <a href="https://www.bit.ly/l2hmc_poster">poster</a></li>
+</ul></li>
+</ul></li>
+</ul>
+</section>
+<section id="background-1" class="level2">
+<h2 class="anchored" data-anchor-id="background-1">Background</h2>
+<p>The L2HMC algorithm aims to improve upon <a href="https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo">HMC</a> by optimizing a carefully chosen loss function which is designed to minimize autocorrelations within the Markov Chain, thereby improving the efficiency of the sampler.</p>
+<p>A detailed description of the original L2HMC algorithm can be found in the paper:</p>
+<p><a href="https://arxiv.org/abs/1711.09268"><em>Generalizing Hamiltonian Monte Carlo with Neural Network</em></a></p>
+<p>with implementation available at <a href="https://github.com/brain-research/l2hmc">brain-research/l2hmc/</a> by <a href="http://ai.stanford.edu/~danilevy">Daniel Levy</a>, <a href="http://matthewdhoffman.com/">Matt D. Hoffman</a> and <a href="sohldickstein.com">Jascha Sohl-Dickstein</a>.</p>
+<p>Broadly, given an <em>analytically</em> described target distribution, π(x), L2HMC provides a <em>statistically exact</em> sampler that:</p>
+<ul>
+<li>Quickly converges to the target distribution (fast <strong><em>burn-in</em></strong>).</li>
+<li>Quickly produces uncorrelated samples (fast <strong><em>mixing</em></strong>).</li>
+<li>Is able to efficiently mix between energy levels.</li>
+<li>Is capable of traversing low-density zones to mix between modes (often difficult for generic HMC).</li>
+</ul>
+</section>
+</section>
+<section id="installation-1" class="level1">
+<h1>Installation</h1>
+<blockquote class="blockquote">
+<p><strong>Warning</strong><br> It is recommended to install <em>inside</em> an existing virtual environment<br> (ideally one with <code>tensorflow, pytorch [horovod,deepspeed]</code> already installed)</p>
+</blockquote>
+<details open="">
+<summary>
+<b>From source (RECOMMENDED)</b>
+</summary>
+<div class="sourceCode" id="cb8"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/saforem2/l2hmc-qcd</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> l2hmc-qcd</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="co"># for development addons:</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="co"># python3 -m pip install -e ".[dev]"</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> <span class="at">-m</span> pip install <span class="at">-e</span> .</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<details closed="">
+<summary>
+<b> From <a href="https://pypi.org/project/l2hmc/"> <code>l2hmc</code> on PyPI</a> </b>
+</summary>
+<p>
+</p><div class="sourceCode" id="cb9"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> <span class="at">-m</span> pip install l2hmc</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p></p>
+</details>
+<p>Test install:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> <span class="at">-c</span> <span class="st">'import l2hmc ; print(l2hmc.__file__)'</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="ex">/path/to/l2hmc-qcd/src/l2hmc/__init__.py</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details></section>
+<section id="training-1" class="level1">
+<h1>Training</h1>
+<section id="configuration-management-1" class="level2">
+<h2 class="anchored" data-anchor-id="configuration-management-1">Configuration Management</h2>
+<p>This project uses <a href="https://hydra.cc"><code>hydra</code></a> for configuration management and supports distributed training for both PyTorch and TensorFlow.</p>
+<p>In particular, we support the following combinations of <code>framework</code> + <code>backend</code> for distributed training:</p>
+<ul>
+<li>TensorFlow (+ Horovod for distributed training)</li>
+<li>PyTorch +
+<ul>
+<li>DDP</li>
+<li>Horovod</li>
+<li>DeepSpeed</li>
+</ul></li>
+</ul>
+<p>The main entry point is <a href="./src/l2hmc/main.py"><code>src/l2hmc/main.py</code></a>, which contains the logic for running an end-to-end <code>Experiment</code>.</p>
+<p>An <a href="./src/l2hmc/experiment/"><code>Experiment</code></a> consists of the following sub-tasks:</p>
+<ol type="1">
+<li>Training</li>
+<li>Evaluation</li>
+<li>HMC (for comparison and to measure model improvement)</li>
+</ol>
+<p><strong>All</strong> configuration options can be dynamically overridden via the CLI at runtime, and we can specify our desired <code>framework</code> and <code>backend</code> combination via:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> main.py mode=debug framework=pytorch backend=deepspeed precision=fp16</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>to run a (non-distributed) Experiment with <code>pytorch + deepspeed</code> with <code>fp16</code> precision.</p>
+<p>The <a href="./src/l2hmc/conf/config.yaml"><code>l2hmc/conf/config.yaml</code></a> contains a brief explanation of each of the various parameter options, and values can be overriden either by modifying the <code>config.yaml</code> file, or directly through the command line, e.g.</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> src/l2hmc</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="ex">./train.sh</span> mode=debug framework=pytorch <span class="op">&gt;</span> train.log <span class="dv">2</span><span class="op">&gt;&amp;</span><span class="dv">1</span> <span class="kw">&amp;</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="fu">tail</span> <span class="at">-f</span> train.log <span class="va">$(</span><span class="fu">tail</span> <span class="at">-1</span> logs/latest<span class="va">)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>Additional information about various configuration options can be found in:</p>
+<ul>
+<li><a href="./src/l2hmc/configs.py"><code>src/l2hmc/configs.py</code></a>: Contains implementations of the (concrete python objects) that are adjustable for our experiment.</li>
+<li><a href="./src/l2hmc/conf/config.yaml"><code>src/l2hmc/conf/config.yaml</code></a>: Starting point with default configuration options for a generic <code>Experiment</code>.</li>
+</ul>
+<p>for more information on how this works I encourage you to read <a href="https://hydra.cc">Hydra’s Documentation Page</a>.</p>
+</section>
+<section id="running-at-alcf-1" class="level2">
+<h2 class="anchored" data-anchor-id="running-at-alcf-1">Running at ALCF</h2>
+<p>For running with distributed training on ALCF systems, we provide a complete <a href="./src/l2hmc/train.sh"><code>src/l2hmc/train.sh</code></a> script which should run without issues on either Polaris or ThetaGPU @ ALCF.</p>
+</section>
+</section>
+<section id="details-1" class="level1">
+<h1>Details</h1>
+<p><strong>Goal:</strong> Use L2HMC to <strong>efficiently</strong> generate <em>gauge configurations</em> for calculating observables in lattice QCD.</p>
+<p>A detailed description of the (ongoing) work to apply this algorithm to simulations in lattice QCD (specifically, a 2D U(1) lattice gauge theory model) can be found in <a href="https://arxiv.org/abs/2105.03418">arXiv:2105.03418</a>.</p>
+<div data-align="center">
+<p><img src="assets/l2hmc_poster.jpeg" alt="l2hmc-qcd poster" width="90%"></p>
+</div>
+<section id="organization-1" class="level2">
+<h2 class="anchored" data-anchor-id="organization-1">Organization</h2>
+<section id="dynamics-network-1" class="level3">
+<h3 class="anchored" data-anchor-id="dynamics-network-1">Dynamics / Network</h3>
+<p>For a given target distribution, π(x), the <code>Dynamics</code> object (<a href="src/l2hmc/dynamics"><code>src/l2hmc/dynamics/</code></a>) implements methods for generating proposal configurations (x’ ~ π) using the generalized leapfrog update.</p>
+<p>This generalized leapfrog update takes as input a buffer of lattice configurations <code>x</code> and generates a proposal configuration <code>x' = Dynamics(x)</code> by evolving generalized L2HMC dynamics.</p>
+<section id="network-architecture-1" class="level4">
+<h4 class="anchored" data-anchor-id="network-architecture-1">Network Architecture</h4>
+<p>An illustration of the <code>leapfrog layer</code> updating <code>(x, v) --&gt; (x', v')</code> can be seen below.</p>
+<div data-align="center">
+<p><img src="assets/lflayer.png" alt="leapfrog layer" width="800/"></p>
+</div>
+</section>
+</section>
+</section>
+<section id="contact-1" class="level2">
+<h2 class="anchored" data-anchor-id="contact-1">Contact</h2>
+<p><strong><em>Code author:</em></strong> Sam Foreman</p>
+<p><strong><em>Pull requests and issues should be directed to:</em></strong> <a href="http://github.com/saforem2">saforem2</a></p>
+</section>
+<section id="citation-1" class="level2">
+<h2 class="anchored" data-anchor-id="citation-1">Citation</h2>
+<p>If you use this code or found this work interesting, please cite our work along with the original paper:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode bibtex code-with-copy"><code class="sourceCode bibtex"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="va">@misc</span>{<span class="ot">foreman2021deep</span>,</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>      <span class="dt">title</span>={Deep Learning Hamiltonian Monte Carlo}, </span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>      <span class="dt">author</span>={Sam Foreman and Xiao-Yong Jin and James C. Osborn},</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">year</span>={2021},</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">eprint</span>={2105.03418},</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">archivePrefix</span>={arXiv},</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>      <span class="dt">primaryClass</span>={hep-lat}</span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb14"><pre class="sourceCode bibtex code-with-copy"><code class="sourceCode bibtex"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="va">@article</span>{<span class="ot">levy2017generalizing</span>,</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">title</span>={Generalizing Hamiltonian Monte Carlo with Neural Networks},</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">author</span>={Levy, Daniel and Hoffman, Matthew D. and Sohl-Dickstein, Jascha},</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">journal</span>={arXiv preprint arXiv:1711.09268},</span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">year</span>={2017}</span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="acknowledgement-1" class="level2">
+<h2 class="anchored" data-anchor-id="acknowledgement-1">Acknowledgement</h2>
+<blockquote class="blockquote">
+<p><strong>Note</strong><br> This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357.<br> This work describes objective technical results and analysis.<br> Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government.</p>
+</blockquote>
+
+
+</section>
+</section>
+
+<div id="quarto-appendix" class="default"><section class="quarto-appendix-contents"><h2 class="anchored quarto-appendix-heading">Citation</h2><div><div class="quarto-appendix-secondary-label">BibTeX citation:</div><pre class="sourceCode code-with-copy quarto-appendix-bibtex"><code class="sourceCode bibtex">@misc{foreman2023,
+  author = {Foreman, Sam},
+  date = {2023-08-02},
+  url = {https://saforem2.github.io/l2hmc-qcd},
+  langid = {en}
+}
+</code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre><div class="quarto-appendix-secondary-label">For attribution, please cite this work as:</div><div id="ref-foreman2023" class="csl-entry quarto-appendix-citeas" role="listitem">
+Foreman, Sam. 2023. <em>L2HMC</em>. <a href="https://saforem2.github.io/l2hmc-qcd">https://saforem2.github.io/l2hmc-qcd</a>.
+</div></div></section></div></main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const disableStylesheet = (stylesheets) => {
+    for (let i=0; i < stylesheets.length; i++) {
+      const stylesheet = stylesheets[i];
+      stylesheet.rel = 'prefetch';
+    }
+  }
+  const enableStylesheet = (stylesheets) => {
+    for (let i=0; i < stylesheets.length; i++) {
+      const stylesheet = stylesheets[i];
+      stylesheet.rel = 'stylesheet';
+    }
+  }
+  const manageTransitions = (selector, allowTransitions) => {
+    const els = window.document.querySelectorAll(selector);
+    for (let i=0; i < els.length; i++) {
+      const el = els[i];
+      if (allowTransitions) {
+        el.classList.remove('notransition');
+      } else {
+        el.classList.add('notransition');
+      }
+    }
+  }
+  const toggleColorMode = (alternate) => {
+    // Switch the stylesheets
+    const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+    manageTransitions('#quarto-margin-sidebar .nav-link', false);
+    if (alternate) {
+      enableStylesheet(alternateStylesheets);
+      for (const sheetNode of alternateStylesheets) {
+        if (sheetNode.id === "quarto-bootstrap") {
+          toggleBodyColorMode(sheetNode);
+        }
+      }
+    } else {
+      disableStylesheet(alternateStylesheets);
+      toggleBodyColorPrimary();
+    }
+    manageTransitions('#quarto-margin-sidebar .nav-link', true);
+    // Switch the toggles
+    const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+    for (let i=0; i < toggles.length; i++) {
+      const toggle = toggles[i];
+      if (toggle) {
+        if (alternate) {
+          toggle.classList.add("alternate");     
+        } else {
+          toggle.classList.remove("alternate");
+        }
+      }
+    }
+    // Hack to workaround the fact that safari doesn't
+    // properly recolor the scrollbar when toggling (#1455)
+    if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+      manageTransitions("body", false);
+      window.scrollTo(0, 1);
+      setTimeout(() => {
+        window.scrollTo(0, 0);
+        manageTransitions("body", true);
+      }, 40);  
+    }
+  }
+  const isFileUrl = () => { 
+    return window.location.protocol === 'file:';
+  }
+  const hasAlternateSentinel = () => {  
+    let styleSentinel = getColorSchemeSentinel();
+    if (styleSentinel !== null) {
+      return styleSentinel === "alternate";
+    } else {
+      return false;
+    }
+  }
+  const setStyleSentinel = (alternate) => {
+    const value = alternate ? "alternate" : "default";
+    if (!isFileUrl()) {
+      window.localStorage.setItem("quarto-color-scheme", value);
+    } else {
+      localAlternateSentinel = value;
+    }
+  }
+  const getColorSchemeSentinel = () => {
+    if (!isFileUrl()) {
+      const storageValue = window.localStorage.getItem("quarto-color-scheme");
+      return storageValue != null ? storageValue : localAlternateSentinel;
+    } else {
+      return localAlternateSentinel;
+    }
+  }
+  let localAlternateSentinel = 'alternate';
+  // Dark / light mode switch
+  window.quartoToggleColorScheme = () => {
+    // Read the current dark / light value 
+    let toAlternate = !hasAlternateSentinel();
+    toggleColorMode(toAlternate);
+    setStyleSentinel(toAlternate);
+  };
+  // Ensure there is a toggle, if there isn't float one in the top right
+  if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+    const a = window.document.createElement('a');
+    a.classList.add('top-right');
+    a.classList.add('quarto-color-scheme-toggle');
+    a.href = "";
+    a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+    const i = window.document.createElement("i");
+    i.classList.add('bi');
+    a.appendChild(i);
+    window.document.body.appendChild(a);
+  }
+  // Switch to dark mode if need be
+  if (hasAlternateSentinel()) {
+    toggleColorMode(true);
+  } else {
+    toggleColorMode(false);
+  }
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const isCodeAnnotation = (el) => {
+    for (const clz of el.classList) {
+      if (clz.startsWith('code-annotation-')) {                     
+        return true;
+      }
+    }
+    return false;
+  }
+  const clipboard = new window.ClipboardJS('.code-copy-button', {
+    text: function(trigger) {
+      const codeEl = trigger.previousElementSibling.cloneNode(true);
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+  });
+  clipboard.on('success', function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  });
+  function tippyHover(el, contentFn) {
+    const config = {
+      allowHTML: true,
+      content: contentFn,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start'
+    };
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      return note.innerHTML;
+    });
+  }
+      let selectedAnnoteEl;
+      const selectorForAnnotation = ( cell, annotation) => {
+        let cellAttr = 'data-code-cell="' + cell + '"';
+        let lineAttr = 'data-code-annotation="' +  annotation + '"';
+        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+        return selector;
+      }
+      const selectCodeLines = (annoteEl) => {
+        const doc = window.document;
+        const targetCell = annoteEl.getAttribute("data-target-cell");
+        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+        const lineIds = lines.map((line) => {
+          return targetCell + "-" + line;
+        })
+        let top = null;
+        let height = null;
+        let parent = null;
+        if (lineIds.length > 0) {
+            //compute the position of the single el (top and bottom and make a div)
+            const el = window.document.getElementById(lineIds[0]);
+            top = el.offsetTop;
+            height = el.offsetHeight;
+            parent = el.parentElement.parentElement;
+          if (lineIds.length > 1) {
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+            height = bottom - top;
+          }
+          if (top !== null && height !== null && parent !== null) {
+            // cook up a div (if necessary) and position it 
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            div.style.top = top - 2 + "px";
+            div.style.height = height + 4 + "px";
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            gutterDiv.style.top = top - 2 + "px";
+            gutterDiv.style.height = height + 4 + "px";
+          }
+          selectedAnnoteEl = annoteEl;
+        }
+      };
+      const unselectCodeLines = () => {
+        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+        elementsIds.forEach((elId) => {
+          const div = window.document.getElementById(elId);
+          if (div) {
+            div.remove();
+          }
+        });
+        selectedAnnoteEl = undefined;
+      };
+      // Attach click handler to the DT
+      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+      for (const annoteDlNode of annoteDls) {
+        annoteDlNode.addEventListener('click', (event) => {
+          const clickedEl = event.target;
+          if (clickedEl !== selectedAnnoteEl) {
+            unselectCodeLines();
+            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+            if (activeEl) {
+              activeEl.classList.remove('code-annotation-active');
+            }
+            selectCodeLines(clickedEl);
+            clickedEl.classList.add('code-annotation-active');
+          } else {
+            // Unselect the line
+            unselectCodeLines();
+            clickedEl.classList.remove('code-annotation-active');
+          }
+        });
+      }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="./qmd/l2hmc-2DU1.html" class="pagination-link">
+        <span class="nav-page-text">Example: 2D U(1)</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+    <div class="nav-footer-left">Copyright 2023, Sam Foreman</div>   
+    <div class="nav-footer-center">
+      &nbsp;
+    </div>
+    <div class="nav-footer-right">
+      <ul class="footer-items list-unstyled">
+    <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/saforem2/l2hmc-qcd">
+      <i class="bi bi-github" role="img">
+</i> 
+    </a>
+  </li>  
+    <li class="nav-item compact">
+    <a class="nav-link" href="https://twitter.com/saforem2">
+      <i class="bi bi-twitter" role="img">
+</i> 
+    </a>
+  </li>  
+</ul>
+    </div>
+  </div>
+</footer>
+
+
+
+</body></html>

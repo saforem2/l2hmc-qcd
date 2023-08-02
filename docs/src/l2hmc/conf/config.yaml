@@ -1,0 +1,73 @@
+---
+# @package _global_
+_target_: l2hmc.configs.ExperimentConfig
+#
+# ----------------------------------------------------------------------------
+framework: pytorch      # ML framework to use: one of 'pytorch', 'tensorflow'
+backend: 'DDP'          # Backend to use for distributed training
+profile: false          # Flag for profiling in pytorch
+precision: 'float32'    # Default floating point precision
+width: 200              # Setting controlling terminal width for printing
+seed: 9992              # Seed for random number
+compile: true           # Compile network in tensorflow? (True by default)
+restore: true           # try restoring weights from previous checkpoint
+save: true              # Save model w/ checkpoints for restoring later?
+init_aim: true          # Use aim for experiment / metric tracking
+init_wandb: true        # Use WandB for experiment / metric tracking
+use_wandb: true
+use_tb: false
+compression: false      # Compression for Horovod
+nchains: null          # Number of chains to use when evaluating model
+ds_config_path: null
+# optional num_threads: 8
+# optional outdir: outputs/${now:%Y-%m-%d_%H-%M-%S}
+# ----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+# pretty print config at the start of the run using Rich library
+print_config: true
+# ----------------------------------------------------------------------------
+# disable python warnings if they annoy you
+ignore_warnings: true
+# name of the run, should be used along with experiment mode
+name: null
+# ----------------------------------------------------------------------------
+
+defaults:
+  - _self_
+  # ------------------------------------------------------------------------------------------
+  #                                 DEFAULTS
+  # ------------------------------------------------------------------------------------------
+  - steps: default.yaml               # Defines num_era, num_epoch, num_test, etc.
+  - dynamics: default.yaml            # Defines gauge group, nleapfrog, lattice volume, etc.
+  - wandb: default.yaml               # Weights & Biases config
+  - logdir: default.yaml              # Defines where to run experiment using info from cfg
+  - loss: default.yaml                # Defines weights of various terms in loss function
+  - network: default.yaml             # Defines network architecture, activation fns, etc.
+  - conv: default.yaml                # Defines arch of Conv block to prepend to xnetwork
+  - net_weights: default.yaml         # Weights for controlling rel contribution of net fns
+  - learning_rate: default.yaml       # Defines initial lr, optimizer type, lr schedule, etc.
+  - annealing_schedule: default.yaml  # Defines annealing schedule to use for training
+  # - accelerator: default.yaml       # Defines options for HuggingFace Accelerator
+  # ------------------------------------------------------------------------------------------
+  # modes are special collections of config options for different purposes, e.g. debugging
+  - mode: default.yaml
+  # experiment configs allow for version control of specific configurations
+  # for example, use them to store best hyperparameters for each model configuration
+  # - experiment: null
+  # - hydra/run: default.yaml
+  # - optional local: default.yaml
+  #
+  - override hydra/hydra_logging: colorlog
+  - override hydra/job_logging: custom
+  # - override hydra/launcher: joblib
+
+  # https://hydra.cc/docs/tutorials/basic/running_your_app/logging/
+  # use this to set level of only chosen command line loggers to 'DEBUG'
+  # verbose: [src.train, src.utils]
+
+hydra:
+  verbose: l2hmc
+  job:
+    chdir: true
+...

@@ -18,6 +18,7 @@ import time
 import torch
 from torch.utils.tensorboard.writer import SummaryWriter
 
+from l2hmc.utils.history import BaseHistory
 from l2hmc import get_logger
 from l2hmc.configs import NetWeights
 from l2hmc.configs import ExperimentConfig
@@ -37,11 +38,67 @@ log = get_logger(__name__)
 
 Tensor = torch.Tensor
 
+from l2hmc.trainers.pytorch.trainer import Trainer
+
+def train_step(
+        x: torch.Tensor,
+        beta: torch.Tensor,
+        trainer: Trainer,
+) -> tuple[torch.Tensor, dict]:
+    xout, metrics = trainer.dynamics_engine((x, beta))
+    mcstates = metrics.pop('mc_states')
+    loss = trainer.calc_loss(
+        xinit=mcstates.init.x,
+        xprop=mcstates.proposed.x,
+        acc=metrics['acc']
+    )
+    loss.register_hook(lambda grad: grad.nan_to_num())
+    trainer.optimizer.zero_grad()
+    loss.backward()
+    # log.info(f'mcstates.init.x.grad')
+    torch.nn.utils.clip_grad.clip_grad_norm(
+        trainer.dynamics.parameters(),
+        max_norm=0.1,
+    )
+    trainer.optimizer.step()
+    metrics |= {'loss': loss.item()}
+    print_dict(metrics, grab=False)
+    return xout.detach(), metrics
+
+
+def train(
+        nsteps: int,
+        trainer: Trainer,
+        beta: float | torch.Tensor,
+        nlog: int = 1,
+        nprint: int = 1,
+        x: Optional[torch.Tensor] = None,
+        grab: Optional[bool] = None,
+) -> tuple[torch.Tensor, dict]:
+    beta = torch.tensor(beta) if isinstance(beta, float) else beta
+    history = {}
+    if x is None:
+        state = exp.trainer.dynamics.random_state(beta)
+        x = state.x
+    assert x is not None
+    for step in range(nsteps):
+        log.info(f'STEP: {step}')
+        x, metrics = train_step(x, beta=beta, trainer=trainer)
+        if (step > 0 and step % nprint == 0):
+            print_dict(metrics, grab=grab)
+        if (step > 0 and step % nlog == 0):
+            for key, val in metrics.items():
+                try:
+                    history[key].append(val)
+                except KeyError:
+                    history[key] = [val]
+    return x, history
+
 
 def evaluate(
         nsteps: int,
         exp: Experiment,
-        beta: float,
+        beta: float | torch.Tensor,
         nlog: int = 1,
         nprint: int = 1,
         job_type: str = 'eval',
@@ -49,10 +106,12 @@ def evaluate(
         nleapfrog: Optional[int] = None,
         x: Optional[torch.Tensor] = None,
         grab: Optional[bool] = None,
-) -> tuple[torch.Tensor, dict]:
-    history = {}
+) -> tuple[torch.Tensor, BaseHistory]:
+    # history = {}
+    history = BaseHistory()
+    beta_ = beta.item() if isinstance(beta, torch.Tensor) else beta
     if x is None:
-        state = exp.trainer.dynamics.random_state(beta)
+        state = exp.trainer.dynamics.random_state(beta_)
         x = state.x
     assert x is not None
     log.info(f'Running {nsteps} steps of {job_type} at beta={beta:.4f}')
@@ -61,7 +120,7 @@ def evaluate(
     for step in range(nsteps):
         log.info(f'STEP: {step}')
         if job_type.lower() == 'eval':
-            x, metrics = exp.trainer.eval_step((x, beta))
+            x, metrics = exp.trainer.eval_step((x, beta_))
         elif job_type.lower() == 'hmc':
             x, metrics = exp.trainer.hmc_step(
                 (x, beta),
@@ -75,11 +134,7 @@ def evaluate(
         if (step > 0 and step % nprint == 0):
             print_dict(metrics, grab=grab)
         if (step > 0 and step % nlog == 0):
-            for key, val in metrics.items():
-                try:
-                    history[key].append(val)
-                except KeyError:
-                    history[key] = [val]
+            history.update(metrics)
     return x, history
 
 

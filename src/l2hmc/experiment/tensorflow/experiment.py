@@ -65,7 +65,7 @@ class Experiment(BaseExperiment):
         run = None
         arun = None
         # if self._rank == 0 and self.config.init_wandb:
-        # if (self.trainer._is_chief and self.config.init_wandb):
+        # if (self.trainer._is_orchestrator and self.config.init_wandb):
         if self._rank == 0 and self.config.init_wandb:
             # import wandb
             log.warning(
@@ -74,7 +74,7 @@ class Experiment(BaseExperiment):
             run = super()._init_wandb()
             run.config['SIZE'] = hvd.size()
 
-        # if (self.trainer._is_chief and self.config.init_aim):
+        # if (self.trainer._is_orchestrator and self.config.init_aim):
         if self._rank == 0 and self.config.init_aim:
             log.warning(
                 f'Initializing Aim from {self._rank}:{self._local_rank}'
@@ -246,7 +246,7 @@ class Experiment(BaseExperiment):
                 nlog=nlog,
                 # restore=self.config.restore,
             )
-        if self.trainer._is_chief:
+        if self.trainer._is_orchestrator:
             output['dataset'] = self.save_dataset(
                 # output=output,
                 save_data=save_data,
@@ -274,7 +274,7 @@ class Experiment(BaseExperiment):
     ) -> dict:
         """Evaluate model."""
         assert job_type in ['eval', 'hmc']
-        if not self.trainer._is_chief:
+        if not self.trainer._is_orchestrator:
             return {}
 
         jobdir = self.get_jobdir(job_type=job_type)
