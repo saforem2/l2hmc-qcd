@@ -3,7 +3,7 @@
 ## --------------------------------
 .sourcery.yaml
 plots-4dSU3/
-qmd/
+.qmd/
 reports/l2hmc.html
 src/l2hmc/.jukit/
 src/l2hmc/.virtual_documents/
