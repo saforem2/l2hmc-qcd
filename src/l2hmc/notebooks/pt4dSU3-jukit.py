@@ -1,7 +1,7 @@
 r"""°°°
 # `l2hmc-qcd`
 
-This notebook contains a minimal working example for the 4D $SU(3)$ model
+This notebook contains a minimal working example uor the 4D $SU(3)$ model
 
 Uses `torch.complex128` by default
 °°°"""
@@ -10,8 +10,7 @@ r"""°°°
 ## Setup
 °°°"""
 #|%%--%%| <ony6FlNRK5|aIbo82QZ6U>
-# %matplotlib inline
-# import matplotlib_inline
+# %matplotlib inline import matplotlib_inline
 # matplotlib_inline.backend_inline.set_matplotlib_formats('svg')
 import lovely_tensors as lt
 lt.monkey_patch()
@@ -119,16 +118,25 @@ su3conf = Path(f"{CONF_DIR}/su3test.yaml")
 with su3conf.open('r') as stream:
     conf = dict(yaml.safe_load(stream))
 # overrides = {
+#     'framework': 'pytorch',
 #     'backend': 'DDP',
 #     'dynamics': {
 #         'eps': 0.15,
-#         'merge_directions': True,
+#         'nleapfrog': 8,
+#         'nchains': 4,
+#         'use_separate_networks': False,
 #     },
 #     'network': {
-#         'use_batch_norm': True,
+#         'units': [32, 32, 32],
+#         'activation_fn': 'tanh',
+#         # 'use_batch_norm': True,
+#     },
+#     'learning_rate': {
+#         'clip_norm': 100.0,
+#         'lr_init': 0.0005,
 #     },
 #     'loss': {
-#         'use_mixed_loss': False,
+#         'use_mixed_loss': True,
 #     },
 #     'net_weights': {
 #         'x': {
@@ -144,11 +152,14 @@ with su3conf.open('r') as stream:
 #     }
 # }
 # conf |= overrides
+# conf['dynamics']['eps'] = 0.05
+# conf['dynamics']['nchains'] = 8
+# conf['loss']['use_mixed_loss'] = True
 console.print(conf)
+overrides = dict_to_list_of_overrides(conf)
 
 # |%%--%%| <QvpgSwgrLI|rG0f7zmJbO>
 
-overrides = dict_to_list_of_overrides(conf)
 ptExpSU3 = get_experiment(overrides=[*overrides], build_networks=True)
 console.print(ptExpSU3.config)
 state = ptExpSU3.trainer.dynamics.random_state(6.0)
@@ -158,16 +169,9 @@ assert isinstance(state.x, torch.Tensor)
 assert isinstance(state.beta, torch.Tensor)
 assert isinstance(ptExpSU3, Experiment)
 
-# |%%--%%| <rG0f7zmJbO|dqVpW4I8wq>
-r"""°°°
-## HMC
-°°°"""
-#|%%--%%| <dqVpW4I8wq|99EodnQDPS>
-
+#|%%--%%| <rG0f7zmJbO|99EodnQDPS>
 from l2hmc.utils.plot_helpers import set_plot_style
 set_plot_style()
-
-#|%%--%%| <99EodnQDPS|OdzRarKTlR>
 
 from l2hmc.common import get_timestamp
 TSTAMP = get_timestamp()
@@ -179,64 +183,78 @@ HMC_DIR.mkdir(exist_ok=True, parents=True)
 EVAL_DIR.mkdir(exist_ok=True, parents=True)
 TRAIN_DIR.mkdir(exist_ok=True, parents=True)
 
-# |%%--%%| <OdzRarKTlR|XEEPtsCnQT>
+# ptExpSU3.trainer.dynamics.init_weights( method='xavier_uniform',
+#     # constant=0.0,
+#     # method='uniform',
+#     # min=-1e-6,
+#     # max=1e-6,
+#     # bias=True,
+#     # xeps=0.05,
+#     # veps=0.05,
+# )
+# ptExpSU3.trainer.optimizer.zero_grad()
+ptExpSU3.trainer.print_grads_and_weights()
+console.print(ptExpSU3.config)
 
-xhmc, history_hmc = evaluate(
-    nsteps=100,
-    exp=ptExpSU3,
-    beta=state.beta,
-    x=state.x,
-    eps=0.1,
-    nleapfrog=4,
-    job_type='hmc',
-    nlog=5,
-    nprint=10,
-    grab=True
+# |%%--%%| <99EodnQDPS|2CLIQasWMO>
+r"""°°°
+## Training
+°°°"""
+#|%%--%%| <2CLIQasWMO|s1fvvL6d5f>
+
+from l2hmc.utils.history import BaseHistory
+history: BaseHistory = BaseHistory()
+state = ptExpSU3.trainer.dynamics.random_state(6.0)
+dynamics = ptExpSU3.trainer.dynamics
+x = state.x
+freq = {'print': 2, 'save': 5}
+for step in range(500):
+    console.print(f'TRAIN STEP: {step}')
+    x, metrics = ptExpSU3.trainer.train_step((x, state.beta))
+    avg, diff = ptExpSU3.trainer.g.checkSU(dynamics.unflatten(x))
+    console.print(f"avg: {avg}")
+    console.print(f"diff: {diff}")
+    # x = ptExpSU3.trainer.g.projectSU(dynamics.unflatten(x))
+    # x = ptExpSU3.trainer.g.projectSU(dynamics.unflatten(x))
+    if (step > 0 and step % freq['print'] == 0):
+        print_dict(metrics, grab=True)
+    if (step > 0 and step % freq['save'] == 0):
+        history.update(metrics)
+
+#|%%--%%| <s1fvvL6d5f|v0zGvghU1y>
+dataset = history.get_dataset()
+history.plot_all(
+    outdir=TRAIN_DIR,
+    title='Train',
+    num_chains=x.shape[0],
 )
+console.print(f'{TRAIN_DIR.as_posix()}')
 
-#|%%--%%| <XEEPtsCnQT|hmRYMjWELh>
-
-import l2hmc.utils.plot_helpers as ph
-xhmc = ptExpSU3.trainer.dynamics.unflatten(xhmc)
-console.log(f"checkSU(x_hmc): {g.checkSU(xhmc)}")
-dataset_hmc = history_hmc.get_dataset()
-ph.plot_dataset(dataset_hmc, outdir=HMC_DIR)
-# plot_metrics(history_hmc, title='HMC', marker='.')
-
-#|%%--%%| <hmRYMjWELh|8mvysCe9S6>
-
-history_hmc.plot_all(title="HMC", outdir=HMC_DIR)
-
-#|%%--%%| <8mvysCe9S6|C9ywINGEBl>
-
-# history_hmc.plot_dataArray1(dataset_hmc.plaqs, key='Plaqs (HMC)')
-# ph.plot_array(dataset_hmc.plaqs.values, key='Plaqs (HMC)')
-
-# |%%--%%| <C9ywINGEBl|buExHZxW3Y>
+# |%%--%%| <v0zGvghU1y|buExHZxW3Y>
 r"""°°°
 ## Evaluation
 °°°"""
 # |%%--%%| <buExHZxW3Y|gN0SI4JuE9>
 
 state = ptExpSU3.trainer.dynamics.random_state(6.0)
-ptExpSU3.trainer.dynamics.init_weights(
-    # method='zeros',
-    # constant=0.0,
-    # method='uniform',
-    # min=-1e-3,
-    # max=1e-3,
-    # bias=True,
-    xeps=0.05,
-    veps=0.05,
-)
+# ptExpSU3.trainer.dynamics.init_weights(
+#     # method='zeros',
+#     # constant=0.0,
+#     # method='uniform',
+#     # min=-1e-3,
+#     # max=1e-3,
+#     # bias=True,
+#     xeps=0.05,
+#     veps=0.05,
+# )
 xeval, history_eval = evaluate(
-    nsteps=100,
+    nsteps=500,
     exp=ptExpSU3,
     beta=6.0,
-    x=state.x,
+    # x=state.x,
     job_type='eval',
     nlog=5,
-    nprint=10,
+    nprint=2,
     grab=True,
 )
 
@@ -246,73 +264,74 @@ dataset_eval = history_eval.get_dataset()
 
 #|%%--%%| <nqDHiw6xGT|AxT7V3bOUW>
 
-# plot_metrics(history_eval, title='Evaluate', marker='.')
 history_eval.plot_all(outdir=EVAL_DIR, title='Eval')
 
 xeval = ptExpSU3.trainer.dynamics.unflatten(xeval)
 console.log(f"checkSU(x_eval): {g.checkSU(xeval)}")
 console.log(f"checkSU(x_eval): {g.checkSU(g.projectSU(xeval))}")
 
-#|%%--%%| <AxT7V3bOUW|sZS0woiNby>
-
-# plt.rcParams['figure.dpi'] = 300
-# plot_metric(np.stack(history_eval.history['plaqs']), name='Plaqs (Eval)', marker='.')
-
-# |%%--%%| <sZS0woiNby|2CLIQasWMO>
+# |%%--%%| <AxT7V3bOUW|dqVpW4I8wq>
 r"""°°°
-## Training
+## HMC
 °°°"""
-#|%%--%%| <2CLIQasWMO|s1fvvL6d5f>
 
-
-ptExpSU3.trainer.dynamics.init_weights(
-    # method='xavier_uniform',
-    # constant=0.0,
-    # method='uniform',
-    # min=-1e-6,
-    # max=1e-6,
-    # bias=True,
-    xeps=0.05,
-    veps=0.05,
+xhmc, history_hmc = evaluate(
+    nsteps=500,
+    exp=ptExpSU3,
+    beta=6.0,
+    x=state.x,
+    eps=0.1,
+    nleapfrog=8,
+    job_type='hmc',
+    nlog=5,
+    nprint=5,
+    grab=True
 )
-# ptExpSU3.trainer.optimizer.zero_grad()
-ptExpSU3.trainer.print_grads_and_weights()
 
-#|%%--%%| <s1fvvL6d5f|bJL3jNh9ZL>
+#|%%--%%| <dqVpW4I8wq|xSbTkYW4DH>
 
-from l2hmc.utils.history import BaseHistory
-# history = {}
-history: BaseHistory = BaseHistory()
-# state = ptExpSU3.trainer.dynamics.random_state(6.0)
-# x = state.x
-freq = {'print': 5, 'save': 5}
-for step in range(100):
-    console.print(f'TRAIN STEP: {step}')
-    x, metrics = ptExpSU3.trainer.train_step((x, state.beta))
-    if (step > 0 and step % freq['print'] == 0):
-        print_dict(metrics, grab=True)
-    if (step > 0 and step % freq['save'] == 0):
-        history.update(metrics)
-        # for key, val in metrics.items():
-        #     try:
-        #         history[key].append(val)
-        #     except KeyError:
-        #         history[key] = [val]
-# plot_metrics(history, title='train', marker='.')
+import l2hmc.utils.plot_helpers as ph
+xhmc = ptExpSU3.trainer.dynamics.unflatten(xhmc)
+console.log(f"checkSU(x_hmc): {g.checkSU(xhmc)}")
+dataset_hmc = history_hmc.get_dataset()
+# ph.plot_dataset(dataset_hmc, outdir=HMC_DIR)
+# plot_metrics(history_hmc, title='HMC', marker='.')
 
-#|%%--%%| <bJL3jNh9ZL|v0zGvghU1y>
+#|%%--%%| <xSbTkYW4DH|8mvysCe9S6>
 
-dataset = history.get_dataset()
+history_hmc.plot_all(title="HMC", outdir=HMC_DIR)
 
-#|%%--%%| <v0zGvghU1y|ksvgseRJjO>
+#|%%--%%| <8mvysCe9S6|iEdyJ2pQsW>
 
-history.plot_all(outdir=TRAIN_DIR, title='Train')
+import matplotlib.pyplot as plt
+pdiff = dataset_eval.plaqs - dataset_hmc.plaqs
+pdiff
 
+#|%%--%%| <iEdyJ2pQsW|nj30j4bfwP>
+
+import xarray as xr
+
+fig, ax = plt.subplots(figsize=(12, 4))
+(pdiff ** 2).plot(ax=ax)  #, robust=True)
+ax.set_title(r"$\left|\delta U_{\mu\nu}\right|^{2}$ (HMC - Eval)")
+outfile = Path(EVAL_DIR).joinpath('pdiff.svg')
+fig.savefig(outfile.as_posix(), dpi=400, bbox_inches='tight')
+
+
+#|%%--%%| <nj30j4bfwP|C9ywINGEBl>
+
+# history_hmc.plot_dataArray1(dataset_hmc.plaqs, key='Plaqs (HMC)')
+# ph.plot_array(dataset_hmc.plaqs.values, key='Plaqs (HMC)')
+
+
+
+dynamics = ptExpSU3.trainer.dynamics
 xeval = ptExpSU3.trainer.dynamics.unflatten(xeval)
-console.log(f"checkSU(x_train): {g.checkSU(x)}")
+console.log(f"checkSU(x_train): {g.checkSU(dynamics.unflatten(x))}")
 console.log(f"checkSU(x_train): {g.checkSU(g.projectSU(x))}")
 
-#|%%--%%| <ksvgseRJjO|syvbV3dfEx>
+
+#|%%--%%| <C9ywINGEBl|syvbV3dfEx>
 
 x = ptExpSU3.trainer.dynamics.unflatten(x)
 console.print(f"checkSU(x_train): {g.checkSU(x)}")
