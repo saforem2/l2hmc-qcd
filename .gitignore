@@ -581,3 +581,5 @@ bin/*experiments*
 *node_modules*
 *2021_*
 bin/*scale_*
+
+/.quarto/
