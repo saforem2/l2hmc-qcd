@@ -26,12 +26,24 @@ def rand_unif(
         b: float,
         requires_grad: bool = True
 ):
+    """Return tensor x ~ U(a, b), where a <= x <= b with shape `shape`
+
+    >>> import numpy as np
+    >>> x = rand_unif([1, 2, 3], -1, 1)
+    >>> x.shape
+    torch.Size([1, 2, 3])
+    >>> (-1. <= x.min()).item()
+    True
+    >>> (x.max() <= 1.).item()
+    True
+    """
     rand = (a - b) * torch.rand(tuple(shape)) + b
     return rand.clone().detach().requires_grad_(requires_grad)
 
 
 def random_angle(shape: Sequence[int], requires_grad: bool = True) -> Tensor:
-    """Returns random angle with `shape` and values in (-pi, pi)."""
+    """Returns random angle with `shape` and values in (-pi, pi).
+    """
     return rand_unif(shape, -PI, PI, requires_grad=requires_grad)
 
 
@@ -56,6 +68,10 @@ class U1Phase(Group):
         """Convert complex to Cartesian.
 
         exp(i φ) --> [cos φ, sin φ]
+
+        >>> g = U1Phase()
+        >>> g.phase_to_coords(torch.tensor([1.0, 0.0]))
+        tensor([0.5403, 1.0000, 0.8415, 0.0000])
         """
         return torch.cat([phi.cos(), phi.sin()], -1)
 
@@ -147,3 +163,8 @@ class U1Phase(Group):
 
     def kinetic_energy(self, p: Tensor) -> Tensor:
         return 0.5 * p.flatten(1).square().sum(-1)
+
+
+if __name__ == "__main__":
+    import doctest
+    doctest.testmod()
