@@ -1334,10 +1334,12 @@ class Trainer(BaseTrainer):
         # t1 = time.perf_counter()
         xprop = metrics.pop('mc_states').proposed.x
         loss = self.calc_loss(xinit=xinit, xprop=xprop, acc=metrics['acc'])
+        # xout.reshape_as()
         # t2 = time.perf_counter()
+        aux_loss = 0.0
         if (aw := self.config.loss.aux_weight) > 0:
             yinit = self.dynamics.unflatten(
-                self.g.random(xout.shape).to(self.device)
+                self.g.random(xinit.shape).to(self.device)
             )
             _, metrics_ = self.forward_step(x=yinit, beta=beta)
             yprop = metrics_.pop('mc_states').proposed.x
@@ -1346,12 +1348,13 @@ class Trainer(BaseTrainer):
                 xprop=yprop,
                 acc=metrics_['acc']
             )
-            loss += aw * aux_loss
+            aux_loss += aw * aux_loss
+        loss_tot = loss + aux_loss
         # t3 = time.perf_counter()
-        loss = self.backward_step(loss)
-        if isinstance(loss, Tensor):
-            loss = loss.item()
-        metrics['loss'] = loss
+        loss = self.backward_step(loss_tot)
+        if isinstance(loss_tot, Tensor):
+            loss_tot = loss_tot.item()
+        metrics['loss'] = loss_tot
         # t4 = time.perf_counter()
         if self.config.dynamics.verbose:
             with torch.no_grad():
