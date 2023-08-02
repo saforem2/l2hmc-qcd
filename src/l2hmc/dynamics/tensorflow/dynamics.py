@@ -409,12 +409,12 @@ class Dynamics(Model):
 
             metrics[key] = vfb
 
-        metrics.update({
+        metrics |= {
             'acc': acc,
             'acc_mask': ma_,
             'sumlogdet': sumlogdet,
             'mc_states': mc_states,
-        })
+        }
 
         return x_out, metrics
 
@@ -494,7 +494,7 @@ class Dynamics(Model):
             'logdet': logdet,
         }
         if extras is not None:
-            metrics.update(extras)
+            metrics |= extras
 
         if step is not None:
             metrics.update({
@@ -792,8 +792,7 @@ class Dynamics(Model):
         xnets = []
         for step in range(self.config.nleapfrog):
             nets = self._get_xnets(step)
-            for net in nets:
-                xnets.append(net)
+            xnets.extend(iter(nets))
         return xnets
 
     def _get_all_vnets(self) -> list:
@@ -824,10 +823,7 @@ class Dynamics(Model):
         vnets = self._get_all_vnets()
         weights = {}
         for xnet in xnets:
-            weights.update({
-                f'{self.rename_weight(w.name)}': w
-                for w in xnet.weights
-            })
+            weights |= {f'{self.rename_weight(w.name)}': w for w in xnet.weights}
         for vnet in vnets:
             weights.update({
                 # self.format_weight_name(w.name): w
@@ -850,9 +846,7 @@ class Dynamics(Model):
         if self.config.use_separate_networks and isinstance(xnet, dict):
             xnet = xnet[str(step)]
             if self.config.use_split_xnets:
-                if first:
-                    return xnet['first']
-                return xnet['second']
+                return xnet['first'] if first else xnet['second']
             return xnet
         return xnet
 

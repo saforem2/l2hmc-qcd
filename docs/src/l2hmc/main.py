@@ -53,7 +53,7 @@ def get_experiment(
         skip: Optional[str | list[str]] = None,
 ):
     framework = cfg.get('framework', None)
-    os.environ['RUNDIR'] = str(os.getcwd())
+    os.environ['RUNDIR'] = os.getcwd()
     if framework in ['tf', 'tensorflow']:
         cfg.framework = 'tensorflow'
         from l2hmc.utils.dist import setup_tensorflow

@@ -273,7 +273,7 @@ class Trainer(BaseTrainer):
         assert (
             isinstance(self.dynamics, Dynamics)
             and isinstance(self.dynamics, nn.Module)
-            and str(self.config.dynamics.group).upper() in ['U1', 'SU3']
+            and str(self.config.dynamics.group).upper() in {'U1', 'SU3'}
         )
 
     def count_parameters(self, model: Optional[nn.Module] = None) -> int:
@@ -411,8 +411,6 @@ class Trainer(BaseTrainer):
             ).lower()
             if hostname.startswith('thetagpu'):
                 nvme_path = Path('/raid/scratch/').resolve()
-            elif hostname.startswith('x'):
-                nvme_path = Path('/local/scratch').resolve()
             else:
                 nvme_path = Path('/local/scratch').resolve()
             if nvme_path.exists():
@@ -497,18 +495,15 @@ class Trainer(BaseTrainer):
             dynamics = self.build_dynamics(build_networks=build_networks)
 
         assert dynamics is not None
-        if self.config.dynamics.group == 'U1':
-            optimizer = torch.optim.Adam(
-                dynamics.parameters(),
-                lr=self.config.learning_rate.lr_init
+        return (
+            torch.optim.Adam(
+                dynamics.parameters(), lr=self.config.learning_rate.lr_init
             )
-        else:
-            optimizer = torch.optim.SGD(
-                dynamics.parameters(),
-                lr=self.config.learning_rate.lr_init
+            if self.config.dynamics.group == 'U1'
+            else torch.optim.SGD(
+                dynamics.parameters(), lr=self.config.learning_rate.lr_init
             )
-
-        return optimizer
+        )
 
     def build_dynamics(
             self,
@@ -535,8 +530,6 @@ class Trainer(BaseTrainer):
         return dynamics
 
     def get_lr(self, step: int) -> float:
-        if step < len(self._lr_warmup):
-            return self.config.learning_rate.lr_init
         return self.config.learning_rate.lr_init
 
     def build_lr_schedule(self):
@@ -552,7 +545,7 @@ class Trainer(BaseTrainer):
             metrics: Optional[dict] = None,
             run: Optional[Any] = None,
     ) -> None:
-        if not (self.rank == 0) or not self.config.save:
+        if self.rank != 0 or not self.config.save:
             return
         tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
         step = self._gstep
@@ -573,7 +566,7 @@ class Trainer(BaseTrainer):
             'optimizer_state_dict': self.optimizer.state_dict(),
         }
         if metrics is not None:
-            ckpt.update(metrics)
+            ckpt |= metrics
 
         torch.save(ckpt, ckpt_file)
         modelfile = self.ckpt_dir.joinpath(
@@ -626,7 +619,7 @@ class Trainer(BaseTrainer):
         ]
 
         self.info(f'Looking for checkpoints in:\n {self.ckpt_dir}')
-        if len(ckpts) == 0:
+        if not ckpts:
             self.warning('No checkpoints found to load from')
             return output
 
@@ -708,21 +701,21 @@ class Trainer(BaseTrainer):
             model: Optional[nn.Module | Dynamics] = None,
             optimizer: Optional[Any] = None
     ) -> tuple[dict[str, ScalarLike], str]:
-        assert job_type in ['train', 'eval', 'hmc']
+        assert job_type in {'train', 'eval', 'hmc'}
         if step is None:
             timer = self.timers.get(job_type, None)
             if isinstance(timer, StepTimer):
                 step = timer.iterations
 
         if step is not None:
-            metrics.update({f'{job_type[0]}step': step})
+            metrics[f'{job_type[0]}step'] = step
 
         if job_type == 'train' and step is not None:
             metrics['lr'] = self.get_lr(step)
 
         if job_type == 'eval' and 'eps' in metrics:
             _ = metrics.pop('eps', None)
-        metrics.update(self.metrics_to_numpy(metrics))
+        metrics |= self.metrics_to_numpy(metrics)
         avgs = self.histories[job_type].update(metrics)
         summary = summarize_dict(avgs)
         metrics |= {
@@ -938,14 +931,12 @@ class Trainer(BaseTrainer):
             self,
             renderable: ConsoleRenderable,
     ) -> Live | nullcontext:
-        make_live = (
+        if make_live := (
             self._is_orchestrator
-            and self.size == 1          # not worth the trouble when dist.
-            and not is_interactive()    # AND not in a jupyter / ipython kernel
+            and self.size == 1  # not worth the trouble when dist.
+            and not is_interactive()  # AND not in a jupyter / ipython kernel
             and int(get_width()) > 100  # make sure wide enough to fit table
-        )
-        # renderable_c = Align.center(renderable)
-        if make_live:
+        ):
             return Live(
                 renderable,
                 console=console,
@@ -1279,28 +1270,24 @@ class Trainer(BaseTrainer):
         ):
             self.dynamics_engine.backward(loss)  # type:ignore
             self.dynamics_engine.step()  # type:ignore
+        elif self.grad_scaler is None:
+            loss.backward()
+            if self.config.learning_rate.clip_norm > 0.0:
+                torch.nn.utils.clip_grad.clip_grad_norm(
+                    parameters=self.dynamics.parameters(),
+                    max_norm=self.clip_norm
+                )
+            self.optimizer.step()
         else:
-            if self.grad_scaler is not None:
-                self.grad_scaler.scale(loss).backward()  # type:ignore
-                if self.config.learning_rate.clip_norm > 0:
-                    self.grad_scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad.clip_grad_norm(
-                        parameters=self.dynamics.parameters(),
-                        max_norm=self.config.learning_rate.clip_norm
-                    )
-                    self.grad_scaler.step(self.optimizer)
-                    self.grad_scaler.update()
-                else:
-                    self.grad_scaler.step(self.optimizer)
-                    self.grad_scaler.update()
-            else:
-                loss.backward()
-                if self.config.learning_rate.clip_norm > 0.0:
-                    torch.nn.utils.clip_grad.clip_grad_norm(
-                        parameters=self.dynamics.parameters(),
-                        max_norm=self.clip_norm
-                    )
-                self.optimizer.step()
+            self.grad_scaler.scale(loss).backward()  # type:ignore
+            if self.config.learning_rate.clip_norm > 0:
+                self.grad_scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad.clip_grad_norm(
+                    parameters=self.dynamics.parameters(),
+                    max_norm=self.config.learning_rate.clip_norm
+                )
+            self.grad_scaler.step(self.optimizer)
+            self.grad_scaler.update()
         return loss
 
     def train_step(
@@ -1394,11 +1381,7 @@ class Trainer(BaseTrainer):
         # [1.] Forward call
         xinit.requires_grad_(True)
         self.optimizer.zero_grad()
-        with torch.autocast(  # type:ignore
-                dtype=self._dtype,
-                enabled=(not self._dtype == torch.float64),
-                device_type='cuda' if torch.cuda.is_available() else 'cpu'
-        ):
+        with torch.autocast(dtype=self._dtype, enabled=self._dtype != torch.float64, device_type='cuda' if torch.cuda.is_available() else 'cpu'):
             if self._gstep == 0 and self._is_orchestrator:
                 log.debug(f'[TRAINING] x.dtype: {xinit.dtype}')
                 log.debug(f'[TRAINING] x.device: {xinit.device}')
@@ -1434,40 +1417,31 @@ class Trainer(BaseTrainer):
         ):
             self.dynamics_engine.backward(loss)  # type:ignore
             self.dynamics_engine.step()  # type:ignore
-        else:
-            # scaler.scale(loss).backward()
-            # scaler.unscale_(optimizer)
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
-            # scaler.step(optimizer)
-            # scaler.update()
-            if self.grad_scaler is not None:
-                self.grad_scaler.scale(loss).backward()  # type:ignore
-                if self.config.learning_rate.clip_norm > 0.0:
-                    self.grad_scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad.clip_grad_norm(
-                        self.dynamics.parameters(),
-                        self.config.learning_rate.clip_norm
-                    )
-                    self.grad_scaler.step(self.optimizer)
-                    self.grad_scaler.update()
-                else:
-                    self.grad_scaler.step(self.optimizer)
-                    self.grad_scaler.update()
-                # if self.config.learning_rate.clip_norm > 0:
-                #     self.grad_scaler.unscale_(self.optimizer)
-                #     torch.nn.utils.clip_grad.clip_grad_norm_(
-                #         self.dynamics.parameters(),
-                #         max_norm=self.clip_norm
-                #     )
-            else:
-                if self.config.learning_rate.clip_norm > 0.0:
-                    torch.nn.utils.clip_grad.clip_grad_norm(
-                        self.dynamics.parameters(),
-                        max_norm=self.clip_norm
-                    )
-                loss.backward()
-                self.optimizer.step()
+        elif self.grad_scaler is None:
+            if self.config.learning_rate.clip_norm > 0.0:
+                torch.nn.utils.clip_grad.clip_grad_norm(
+                    self.dynamics.parameters(),
+                    max_norm=self.clip_norm
+                )
+            loss.backward()
+            self.optimizer.step()
 
+        else:
+            self.grad_scaler.scale(loss).backward()  # type:ignore
+            if self.config.learning_rate.clip_norm > 0.0:
+                self.grad_scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad.clip_grad_norm(
+                    self.dynamics.parameters(),
+                    self.config.learning_rate.clip_norm
+                )
+            self.grad_scaler.step(self.optimizer)
+            self.grad_scaler.update()
+                    # if self.config.learning_rate.clip_norm > 0:
+                    #     self.grad_scaler.unscale_(self.optimizer)
+                    #     torch.nn.utils.clip_grad.clip_grad_norm_(
+                    #         self.dynamics.parameters(),
+                    #         max_norm=self.clip_norm
+                    #     )
         if isinstance(loss, Tensor):
             loss = loss.item()
 
@@ -1894,13 +1868,7 @@ class Trainer(BaseTrainer):
         assert x is not None and isinstance(x, Tensor)
         assert nera is not None
         assert train_dir is not None
-        plots = None
-        if is_interactive() and make_plots:
-            plots = plotter.init_plots()
-            # configs,
-            # figsize=(9, 3),
-            # dpi=125
-
+        plots = plotter.init_plots() if is_interactive() and make_plots else None
         self.info(f'[TRAINING] x.dtype: {x.dtype}')
         self.info(f'[TRAINING] self._dtype: {self._dtype}')
         for era in range(nera):
@@ -1933,7 +1901,7 @@ class Trainer(BaseTrainer):
             self.rows['train'][str(era)] = edata['rows']
             self.tables['train'][str(era)] = edata['table']
             self.summaries['train'][str(era)] = edata['summaries']
-            losses = torch.Tensor([i for i in edata['losses'][1:]])
+            losses = torch.Tensor(list(edata['losses'][1:]))
             if self.config.annealing_schedule.dynamic:
                 dy_avg = (losses[1:] - losses[:-1]).mean().item()
                 if dy_avg > 0:
@@ -2078,11 +2046,7 @@ class Trainer(BaseTrainer):
     ) -> None:
         context = {'subset': job_type}
         for key, val in metrics.items():
-            if prefix is not None:
-                name = f'{prefix}/{key}'
-            else:
-                name = f'{key}'
-
+            name = f'{prefix}/{key}' if prefix is not None else f'{key}'
             if isinstance(val, dict):
                 for k, v in val.items():
                     self.aim_track(
@@ -2111,9 +2075,7 @@ class Trainer(BaseTrainer):
                            context=context)  # type: ignore
 
     def print_weights(self, grab: bool = True):
-        _ = print_dict({
-            k: v for k, v in self.dynamics.named_parameters()
-        }, grab=grab)
+        _ = print_dict(dict(self.dynamics.named_parameters()), grab=grab)
 
     def print_grads(self, grab: bool = True):
         _ = print_dict({
