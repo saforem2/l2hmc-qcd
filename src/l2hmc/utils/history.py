@@ -29,6 +29,8 @@ from l2hmc.configs import PROJECT_DIR
 # from l2hmc.common import get_timestamp
 from l2hmc.utils.plot_helpers import make_ridgeplots, set_plot_style, set_size, plot_combined, subplots, plot_dataset
 
+from utils.rich import is_interactive
+
 # TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray]
 TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray, list]
 ScalarLike = Union[float, int, bool, np.floating, np.integer]
@@ -449,7 +451,7 @@ class BaseHistory:
                         if num_chains > 0:
                             for idx in range(min((num_chains, y.shape[1]))):
                                 _ = ax.plot(steps, y[:, idx],  # color,
-                                            lw=LW/4., alpha=0.7, **plot_kwargs)
+                                            lw=LW/2., alpha=0.8, **plot_kwargs)
 
                         _ = ax.plot(steps, y.mean(-1),  # color=color,
                                     label=label, **plot_kwargs)
@@ -464,12 +466,12 @@ class BaseHistory:
             ax.set_ylabel(key)
 
         if num_chains > 0 and len(arr.shape) > 1:
-            lw = LW / 2.
+            # lw = LW / 2.
             for idx in range(min(num_chains, arr.shape[1])):
                 # ax = subfigs[0].subplots(1, 1)
                 # plot values of invidual chains, arr[:, idx]
                 # where arr[:, idx].shape = [ndraws, 1]
-                ax.plot(steps, arr[:, idx], alpha=0.5, lw=lw/2., **plot_kwargs)
+                ax.plot(steps, arr[:, idx], alpha=0.5, lw=LW/2., **plot_kwargs)
 
         matplotx.line_labels()
         ax.set_xlabel('draw')
@@ -610,6 +612,121 @@ class BaseHistory:
             plot_kwargs=plot_kwargs
         )
 
+    def plot_2d_xarr(
+            self,
+            xarr: xr.DataArray,
+            label: Optional[str] = None,
+            num_chains: Optional[int] = None,
+            title: Optional[str] = None,
+            outdir: Optional[os.PathLike] = None,
+            subplots_kwargs: Optional[dict[str, Any]] = None,
+            plot_kwargs: Optional[dict[str, Any]] = None,
+    ):
+        plot_kwargs = {} if plot_kwargs is None else plot_kwargs
+        subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
+        assert len(xarr.shape) == 2
+        assert 'draw' in xarr.coords and 'chain' in xarr.coords
+        num_chains = len(xarr.chain) if num_chains is None else num_chains
+        # _ = subplots_kwargs.pop('constrained_layout', True)
+        figsize = plt.rcParams.get('figure.figsize', (8, 6))
+        figsize = (3 * figsize[0], 1.5 * figsize[1])
+        fig = plt.figure(figsize=figsize, constrained_layout=True)
+        subfigs = fig.subfigures(1, 2)
+        gs_kw = {'width_ratios': [1.33, 0.33]}
+        (ax, ax1) = subfigs[1].subplots(
+            1,
+            2,
+            sharey=True,
+            gridspec_kw=gs_kw
+        )
+        ax.grid(alpha=0.2)
+        ax1.grid(False)
+        color = plot_kwargs.get('color', f'C{np.random.randint(6)}')
+        label = r'$\langle$' + f' {label} ' + r'$\rangle$'
+        ax.plot(
+            xarr.draw.values,
+            xarr.mean('chain'),
+            color=color,
+            lw=1.5*LW,
+            label=label,
+            **plot_kwargs
+        )
+        for idx in range(num_chains):
+            # ax = subfigs[0].subplots(1, 1)
+            # plot values of invidual chains, arr[:, idx]
+            # where arr[:, idx].shape = [ndraws, 1]
+            # ax0.plot(
+            #     xarr.draw.values,
+            #     xarr[xarr.chain == idx][0],
+            #     lw=1.,
+            #     alpha=0.7,
+            #     color=color
+            # )
+            ax.plot(
+                xarr.draw.values,
+                xarr[xarr.chain == idx][0],
+                color=color,
+                alpha=0.5,
+                lw=LW/2.,
+                **plot_kwargs
+            )
+
+        axes = (ax, ax1)
+        sns.kdeplot(
+            y=xarr.values.flatten(),
+            ax=ax1,
+            color=color,
+            shade=True
+        )
+        ax1.set_xticks([])
+        ax1.set_xticklabels([])
+        # ax1.set_yticks([])
+        # ax1.set_yticklabels([])
+        sns.despine(ax=ax, top=True, right=True)
+        sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
+        # ax.legend(loc='best', frameon=False)
+        ax1.set_xlabel('')
+        # ax1.set_ylabel('')
+        # ax.set_yticks(ax.get_yticks())
+        # ax.set_yticklabels(ax.get_yticklabels())
+        # ax.set_ylabel(key)
+        # _ = subfigs[1].subplots_adjust(wspace=-0.75)
+        # if num_chains > 0 and len(arr.shape) > 1:
+        # lw = LW / 2.
+        # num_chains = np.min([
+        #     16,
+        #     len(xarr.coords['chain']),
+        # ])
+        sns.despine(subfigs[0])
+        ax0 = subfigs[0].subplots(1, 1)
+        im = xarr.plot(ax=ax0)           # type:ignore
+        im.colorbar.set_label(label)      # type:ignore
+        # ax0.plot(
+        #     xarr.draw.values,
+        #     xarr.mean('chain'),
+        #     lw=2.,
+        #     color=color
+        # )
+        # for idx in range(min(num_chains, i.shape[1])):
+        # matplotx.line_labels()
+        ax.set_xlabel('draw')
+        if title is not None:
+            fig.suptitle(title)
+
+        if outdir is not None:
+            assert label is not None
+            # plt.savefig(Path(outdir).joinpath(f'{key}.svg'),
+            #             dpi=400, bbox_inches='tight')
+            outfile = Path(outdir).joinpath(f'{label}.svg')
+            if outfile.is_file():
+                tstamp = hplt.get_timestamp('%Y-%m-%d-%H%M%S')
+                pngdir = Path(outdir).joinpath('pngs')
+                pngdir.mkdir(exist_ok=True, parents=True)
+                pngfile = pngdir.joinpath(f'{label}-{tstamp}.png')
+                svgfile = Path(outdir).joinpath(f'{label}-{tstamp}.svg')
+                plt.savefig(pngfile, dpi=400, bbox_inches='tight')
+                plt.savefig(svgfile, dpi=400, bbox_inches='tight')
+
     def plot_all(
             self,
             num_chains: int = 128,
@@ -691,6 +808,8 @@ class BaseHistory:
                         outfile = d.joinpath(f"{key}-subfig.{ext}")
                     # log.info(f"Saving {key}.ext to: {outfile}")
                     plt.savefig(outfile, dpi=400, bbox_inches='tight')
+            if is_interactive():
+                plt.show()
 
         return dataset
 
