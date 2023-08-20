@@ -1,12 +1,18 @@
 ---
-# jupyter: climrr
 callout-appearance: simple
+format:
+   html:
+      toc: true
+      grid:
+         body-width: 1150px
 title-block-banner: false
-# https://www.anl.gov/sites/www/files/2021-09/CPA_RESIZE_Climate%20Resilience%20Images_01_1920x1080.jpg
+sidebar: false
 editor:
    render-on-save: true
 execute:
    freeze: true
+# jupyter: climrr
+# https://www.anl.gov/sites/www/files/2021-09/CPA_RESIZE_Climate%20Resilience%20Images_01_1920x1080.jpg
 # format:
   # html:
   #   # page-layout: full
@@ -123,9 +129,12 @@ Broadly, given an *analytically* described target distribution, π(x), L2HMC pro
 
 # Installation
 
-> **Warning**<br>
-> It is recommended to install _inside_ an existing virtual environment<br>
-> (ideally one with `tensorflow, pytorch [horovod,deepspeed]` already installed)
+::: {.callout-warning title="Warning" collapse="false" style="width:100%!important;"}
+
+It is recommended to install _inside_ an existing virtual environment<br>
+ (ideally one with `tensorflow, pytorch [horovod,deepspeed]` already installed)
+
+:::
 
 <details open><summary><b>From source (RECOMMENDED)</b></summary>
 
@@ -158,7 +167,7 @@ Test install:
 
 ```bash
 python3 -c 'import l2hmc ; print(l2hmc.__file__)'
-/path/to/l2hmc-qcd/src/l2hmc/__init__.py
+# output: /path/to/l2hmc-qcd/src/l2hmc/__init__.py
 ```
 
 # Training
