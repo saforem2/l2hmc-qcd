@@ -11,51 +11,12 @@ editor:
    render-on-save: true
 execute:
    freeze: true
-# jupyter: climrr
-# https://www.anl.gov/sites/www/files/2021-09/CPA_RESIZE_Climate%20Resilience%20Images_01_1920x1080.jpg
-# format:
-  # html:
-  #   # page-layout: full
-  #   grid:
-  #     sidebar-width: 200px
-  #     body-width: 850px
-  #     margin-width: 450px
-# published-title: ""
-# reference-location: margin
-# citation-location: margin
-# title: "Intro to HPC: Climate Analysis"
-# title-block-banner: false
-# title-block-banner: "#2196F3"
-# jolla trestles solana marquee broadside
-# author:
-#   - name: Sam Foreman
-#     id: sf
-#     url: https://samforeman.me
-#     orcid: 0000-0002-9981-0876
-#     email: foremans@anl.gov
-#     affiliation: 
-#       - name: Argonne National Laboratory
-#         city: Chicago
-#         state: IL
-#         url: https://alcf.anl.gov
-# about:
-#    links:
-#       - icon: github
-#         href: https://github.com/saforem2/quarto-examples
-#       - icon: twitter
-#         href: https://twitter.com/saforem2
-#    template: solana
-#    image: https://www.anl.gov/sites/www/files/2021-09/CPA_RESIZE_Climate%20Resilience%20Images_01_1920x1080.jpg
-#    image-width: 10em
-#    image-shape: rounded
 ---
 
 
 ::: {style="text-align:center;"}
 
 ![](https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg)
-
-<!-- ![l2hmc-qcd](https://github.com/saforem2/saforem2/blob/main/assets/l2hmc-qcd-small.svg) -->
 
 <a href="https://hits.seeyoufarm.com"><img alt="hits" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fsaforem2%2Fl2hmc-qcd&count_bg=%2300CCFF&title_bg=%23555555&icon=&icon_color=%23111111&title=👋&edge_flat=false"></a>    
 <a href="https://github.com/saforem2/l2hmc-qcd/"><img alt="l2hmc-qcd" src="https://img.shields.io/badge/-l2hmc--qcd-252525?style=flat&logo=github&labelColor=gray"></a> <a href="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd"><img alt="codefactor" src="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge"></a>
@@ -82,7 +43,6 @@ execute:
   * [Organization](#organization)
     + [Dynamics / Network](#dynamics---network)
       - [Network Architecture](#network-architecture)
-    + [Lattice](#lattice)
 
 </details>
 
