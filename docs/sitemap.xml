@@ -2,7 +2,7 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://saforem2.github.io/l2hmc-qcd/index.html</loc>
-    <lastmod>2023-08-02T15:08:18.104Z</lastmod>
+    <lastmod>2023-08-19T23:36:25.834Z</lastmod>
   </url>
   <url>
     <loc>https://saforem2.github.io/l2hmc-qcd/qmd/index.html</loc>
@@ -14,7 +14,7 @@
   </url>
   <url>
     <loc>https://saforem2.github.io/l2hmc-qcd/qmd/pages.html</loc>
-    <lastmod>2023-08-02T14:33:05.871Z</lastmod>
+    <lastmod>2023-08-02T15:25:52.908Z</lastmod>
   </url>
   <url>
     <loc>https://saforem2.github.io/l2hmc-qcd/qmd/docs.html</loc>
@@ -22,6 +22,10 @@
   </url>
   <url>
     <loc>https://saforem2.github.io/l2hmc-qcd/qmd/l2hmc-2DU1.html</loc>
-    <lastmod>2023-08-02T15:06:01.412Z</lastmod>
+    <lastmod>2023-08-19T23:37:11.323Z</lastmod>
+  </url>
+  <url>
+    <loc>https://saforem2.github.io/l2hmc-qcd/qmd/l2hmc-2DU1-alt.html</loc>
+    <lastmod>2023-08-19T23:32:18.917Z</lastmod>
   </url>
 </urlset>
