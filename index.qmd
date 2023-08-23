@@ -30,7 +30,7 @@ execute:
 :::
 
 
-<details open><summary><b>Contents</b></summary>
+<details closed><summary><b>Contents</b></summary>
 
 - [Overview](#overview)
   * [Papers 📚, Slides 📊, etc.](https://github.com/saforem2/l2hmc-qcd/#training--experimenting)
@@ -48,12 +48,14 @@ execute:
 
 # Overview
 
+
 ## Papers 📚, Slides 📊 etc.
 - [📊 Slides (07/31/2023 @ Lattice 2023)](https://saforem2.github.io/lattice23/#/title-slide)
 - [📕 Notebooks / Reports](./reports/):
-  - [📙 2D U(1) Model (w/ `fp16` or `fp32` for training)](./reports/l2hmc-2DU1.md)
-  - [📒 4D SU(3) Model (w/ `complex128` + `fp64` for training)](./src/l2hmc/notebooks/l2hmc-2dU1.ipynb)
-    - [alt link (if github won't load)](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/pytorch-SU3d4.ipynb)
+  - [📓 2D $U(1)$ Example](./qmd/l2hmc-2DU1.qmd)
+    - [📙 2D U(1) Model (w/ `fp16` or `fp32` for training)](./reports/l2hmc-2DU1.md)
+    - [📒 4D SU(3) Model (w/ `complex128` + `fp64` for training)](./src/l2hmc/notebooks/l2hmc-2dU1.ipynb)
+      - [alt link (if github won't load)](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/pytorch-SU3d4.ipynb)
 
 - 📝 Papers:
     - [LeapfrogLayers: A Trainable Framework for Effective Topological Sampling](https://arxiv.org/abs/2112.01582), 2022  

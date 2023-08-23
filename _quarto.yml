@@ -60,7 +60,7 @@ website:
   page-navigation: true
   title: "l2hmc-qcd"
   site-url: "https://saforem2.github.io/l2hmc-qcd"
-  favicon: "./assets/favicon.svg"
+  favicon: "favicon.svg"
   back-to-top-navigation: true
   navbar:
     logo: "./favicon.svg"
@@ -144,7 +144,7 @@ format:
     highlight-style: atom-one
     code-overflow: scroll
     code-fold: false
-    code-copy: hover
+    code-copy: true
     code-summary: " "
     code-tools:
       source: repo
