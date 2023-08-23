@@ -1,150 +1,10 @@
 [
   {
-    "objectID": "index.html#papers-slides-etc.",
-    "href": "index.html#papers-slides-etc.",
-    "title": "",
-    "section": "Papers 📚, Slides 📊 etc.",
-    "text": "Papers 📚, Slides 📊 etc.\n\n📊 Slides (07/31/2023 @ Lattice 2023)\n📕 Notebooks / Reports:\n\n📙 2D U(1) Model (w/ fp16 or fp32 for training)\n📒 4D SU(3) Model (w/ complex128 + fp64 for training)\n\nalt link (if github won’t load)\n\n\n📝 Papers:\n\nLeapfrogLayers: A Trainable Framework for Effective Topological Sampling, 2022\n\nAccelerated Sampling Techniques for Lattice Gauge Theory @ BNL & RBRC: DWQ @ 25 (12/2021)\nTraining Topological Samplers for Lattice Gauge Theory from the ML for HEP, on and off the Lattice @ \\mathrm{ECT}^{*} Trento (09/2021) (+ 📊 slides)\nDeep Learning Hamiltonian Monte Carlo @ Deep Learning for Simulation (SimDL) Workshop ICLR 2021\n\n📚 : arXiv:2105.03418\n\n📊 : poster"
-  },
-  {
-    "objectID": "index.html#background",
-    "href": "index.html#background",
-    "title": "",
-    "section": "Background",
-    "text": "Background\nThe L2HMC algorithm aims to improve upon HMC by optimizing a carefully chosen loss function which is designed to minimize autocorrelations within the Markov Chain, thereby improving the efficiency of the sampler.\nA detailed description of the original L2HMC algorithm can be found in the paper:\nGeneralizing Hamiltonian Monte Carlo with Neural Network\nwith implementation available at brain-research/l2hmc/ by Daniel Levy, Matt D. Hoffman and Jascha Sohl-Dickstein.\nBroadly, given an analytically described target distribution, π(x), L2HMC provides a statistically exact sampler that:\n\nQuickly converges to the target distribution (fast burn-in).\nQuickly produces uncorrelated samples (fast mixing).\nIs able to efficiently mix between energy levels.\nIs capable of traversing low-density zones to mix between modes (often difficult for generic HMC)."
-  },
-  {
-    "objectID": "index.html#configuration-management",
-    "href": "index.html#configuration-management",
-    "title": "",
-    "section": "Configuration Management",
-    "text": "Configuration Management\nThis project uses hydra for configuration management and supports distributed training for both PyTorch and TensorFlow.\nIn particular, we support the following combinations of framework + backend for distributed training:\n\nTensorFlow (+ Horovod for distributed training)\nPyTorch +\n\nDDP\nHorovod\nDeepSpeed\n\n\nThe main entry point is src/l2hmc/main.py, which contains the logic for running an end-to-end Experiment.\nAn Experiment consists of the following sub-tasks:\n\nTraining\nEvaluation\nHMC (for comparison and to measure model improvement)\n\nAll configuration options can be dynamically overridden via the CLI at runtime, and we can specify our desired framework and backend combination via:\npython3 main.py mode=debug framework=pytorch backend=deepspeed precision=fp16\nto run a (non-distributed) Experiment with pytorch + deepspeed with fp16 precision.\nThe l2hmc/conf/config.yaml contains a brief explanation of each of the various parameter options, and values can be overriden either by modifying the config.yaml file, or directly through the command line, e.g.\ncd src/l2hmc\n./train.sh mode=debug framework=pytorch &gt; train.log 2&gt;&1 &\ntail -f train.log $(tail -1 logs/latest)\nAdditional information about various configuration options can be found in:\n\nsrc/l2hmc/configs.py: Contains implementations of the (concrete python objects) that are adjustable for our experiment.\nsrc/l2hmc/conf/config.yaml: Starting point with default configuration options for a generic Experiment.\n\nfor more information on how this works I encourage you to read Hydra’s Documentation Page."
-  },
-  {
-    "objectID": "index.html#running-at-alcf",
-    "href": "index.html#running-at-alcf",
-    "title": "",
-    "section": "Running at ALCF",
-    "text": "Running at ALCF\nFor running with distributed training on ALCF systems, we provide a complete src/l2hmc/train.sh script which should run without issues on either Polaris or ThetaGPU @ ALCF."
-  },
-  {
-    "objectID": "index.html#organization",
-    "href": "index.html#organization",
-    "title": "",
-    "section": "Organization",
-    "text": "Organization\n\nDynamics / Network\nFor a given target distribution, π(x), the Dynamics object (src/l2hmc/dynamics/) implements methods for generating proposal configurations (x’ ~ π) using the generalized leapfrog update.\nThis generalized leapfrog update takes as input a buffer of lattice configurations x and generates a proposal configuration x' = Dynamics(x) by evolving generalized L2HMC dynamics.\n\nNetwork Architecture\nAn illustration of the leapfrog layer updating (x, v) --&gt; (x', v') can be seen below."
-  },
-  {
-    "objectID": "index.html#contact",
-    "href": "index.html#contact",
-    "title": "",
-    "section": "Contact",
-    "text": "Contact\nCode author: Sam Foreman\nPull requests and issues should be directed to: saforem2"
-  },
-  {
-    "objectID": "index.html#citation",
-    "href": "index.html#citation",
-    "title": "",
-    "section": "Citation",
-    "text": "Citation\nIf you use this code or found this work interesting, please cite our work along with the original paper:\n@misc{foreman2021deep,\n      title={Deep Learning Hamiltonian Monte Carlo}, \n      author={Sam Foreman and Xiao-Yong Jin and James C. Osborn},\n      year={2021},\n      eprint={2105.03418},\n      archivePrefix={arXiv},\n      primaryClass={hep-lat}\n}\n@article{levy2017generalizing,\n  title={Generalizing Hamiltonian Monte Carlo with Neural Networks},\n  author={Levy, Daniel and Hoffman, Matthew D. and Sohl-Dickstein, Jascha},\n  journal={arXiv preprint arXiv:1711.09268},\n  year={2017}\n}"
-  },
-  {
-    "objectID": "index.html#acknowledgement",
-    "href": "index.html#acknowledgement",
-    "title": "",
-    "section": "Acknowledgement",
-    "text": "Acknowledgement\n\nNote This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357. This work describes objective technical results and analysis. Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government."
-  },
-  {
-    "objectID": "qmd/index.html",
-    "href": "qmd/index.html",
-    "title": "Additional Pages",
-    "section": "",
-    "text": "Additional Pages\n\nDocumentation\n\n\n\n\n\nCitationBibTeX citation:@misc{foreman2023,\n  author = {Foreman, Sam},\n  date = {2023-07-28},\n  url = {https://saforem2.github.io/l2hmc-qcd},\n  langid = {en}\n}\nFor attribution, please cite this work as:\nForeman, Sam. 2023. L2HMC. https://saforem2.github.io/l2hmc-qcd."
-  },
-  {
-    "objectID": "qmd/docs/index.html",
-    "href": "qmd/docs/index.html",
-    "title": "Documentation",
-    "section": "",
-    "text": "Documentation\n\n\n\n\n\n\nTODO\n\n\n\nComplete!\n\n\n\n\n\n\nCitationBibTeX citation:@misc{foreman2023,\n  author = {Foreman, Sam},\n  date = {2023-07-28},\n  url = {https://saforem2.github.io/l2hmc-qcd},\n  langid = {en}\n}\nFor attribution, please cite this work as:\nForeman, Sam. 2023. L2HMC. https://saforem2.github.io/l2hmc-qcd."
-  },
-  {
     "objectID": "qmd/pages.html",
     "href": "qmd/pages.html",
-    "title": "Additional Pages",
+    "title": "",
     "section": "",
-    "text": "Additional Pages\n\nDocumentation\n\n\n\n\n\nCitationBibTeX citation:@misc{foreman2023,\n  author = {Foreman, Sam},\n  date = {2023-08-02},\n  url = {https://saforem2.github.io/l2hmc-qcd},\n  langid = {en}\n}\nFor attribution, please cite this work as:\nForeman, Sam. 2023. L2HMC. https://saforem2.github.io/l2hmc-qcd."
-  },
-  {
-    "objectID": "qmd/docs.html",
-    "href": "qmd/docs.html",
-    "title": "Documentation",
-    "section": "",
-    "text": "Documentation\n\n\n\n\n\n\nTODO\n\n\n\nComplete!\n\n\n\n\n\n\nCitationBibTeX citation:@misc{foreman2023,\n  author = {Foreman, Sam},\n  date = {2023-08-02},\n  url = {https://saforem2.github.io/l2hmc-qcd},\n  langid = {en}\n}\nFor attribution, please cite this work as:\nForeman, Sam. 2023. L2HMC. https://saforem2.github.io/l2hmc-qcd."
-  },
-  {
-    "objectID": "index.html",
-    "href": "index.html",
-    "title": "Overview",
-    "section": "",
-    "text": "l2hmc-qcd"
-  },
-  {
-    "objectID": "index.html#papers-slides-etc.-1",
-    "href": "index.html#papers-slides-etc.-1",
-    "title": "Overview",
-    "section": "Papers 📚, Slides 📊 etc.",
-    "text": "Papers 📚, Slides 📊 etc.\n\n📕 Notebooks:\n\n📙 2D U(1) Model (w/ fp16 or fp32 for training)\n\nsrc/l2hmc/notebooks/l2hmc-2dU1.ipynb\nalt link (if Github won’t load)\n\n📒 4D SU(3) Model (w/ complex128 + fp64 for training)\n\nPyTorch:\n\nsrc/l2hmc/notebooks/pytorch-SU3d4.ipynb\nalt link (if github won’t load)\n\n\n\n📝 Papers:\n\nAccelerated Sampling Techniques for Lattice Gauge Theory @ BNL & RBRC: DWQ @ 25 (12/2021)\nTraining Topological Samplers for Lattice Gauge Theory from the ML for HEP, on and off the Lattice @ \\mathrm{ECT}^{*} Trento (09/2021) (+ 📊 slides)\nDeep Learning Hamiltonian Monte Carlo @ Deep Learning for Simulation (SimDL) Workshop ICLR 2021\n\n📚 : arXiv:2105.03418\n\n📊 : poster"
-  },
-  {
-    "objectID": "index.html#background-1",
-    "href": "index.html#background-1",
-    "title": "Overview",
-    "section": "Background",
-    "text": "Background\nThe L2HMC algorithm aims to improve upon HMC by optimizing a carefully chosen loss function which is designed to minimize autocorrelations within the Markov Chain, thereby improving the efficiency of the sampler.\nA detailed description of the original L2HMC algorithm can be found in the paper:\nGeneralizing Hamiltonian Monte Carlo with Neural Network\nwith implementation available at brain-research/l2hmc/ by Daniel Levy, Matt D. Hoffman and Jascha Sohl-Dickstein.\nBroadly, given an analytically described target distribution, π(x), L2HMC provides a statistically exact sampler that:\n\nQuickly converges to the target distribution (fast burn-in).\nQuickly produces uncorrelated samples (fast mixing).\nIs able to efficiently mix between energy levels.\nIs capable of traversing low-density zones to mix between modes (often difficult for generic HMC)."
-  },
-  {
-    "objectID": "index.html#configuration-management-1",
-    "href": "index.html#configuration-management-1",
-    "title": "Overview",
-    "section": "Configuration Management",
-    "text": "Configuration Management\nThis project uses hydra for configuration management and supports distributed training for both PyTorch and TensorFlow.\nIn particular, we support the following combinations of framework + backend for distributed training:\n\nTensorFlow (+ Horovod for distributed training)\nPyTorch +\n\nDDP\nHorovod\nDeepSpeed\n\n\nThe main entry point is src/l2hmc/main.py, which contains the logic for running an end-to-end Experiment.\nAn Experiment consists of the following sub-tasks:\n\nTraining\nEvaluation\nHMC (for comparison and to measure model improvement)\n\nAll configuration options can be dynamically overridden via the CLI at runtime, and we can specify our desired framework and backend combination via:\npython3 main.py mode=debug framework=pytorch backend=deepspeed precision=fp16\nto run a (non-distributed) Experiment with pytorch + deepspeed with fp16 precision.\nThe l2hmc/conf/config.yaml contains a brief explanation of each of the various parameter options, and values can be overriden either by modifying the config.yaml file, or directly through the command line, e.g.\ncd src/l2hmc\n./train.sh mode=debug framework=pytorch &gt; train.log 2&gt;&1 &\ntail -f train.log $(tail -1 logs/latest)\nAdditional information about various configuration options can be found in:\n\nsrc/l2hmc/configs.py: Contains implementations of the (concrete python objects) that are adjustable for our experiment.\nsrc/l2hmc/conf/config.yaml: Starting point with default configuration options for a generic Experiment.\n\nfor more information on how this works I encourage you to read Hydra’s Documentation Page."
-  },
-  {
-    "objectID": "index.html#running-at-alcf-1",
-    "href": "index.html#running-at-alcf-1",
-    "title": "Overview",
-    "section": "Running at ALCF",
-    "text": "Running at ALCF\nFor running with distributed training on ALCF systems, we provide a complete src/l2hmc/train.sh script which should run without issues on either Polaris or ThetaGPU @ ALCF."
-  },
-  {
-    "objectID": "index.html#organization-1",
-    "href": "index.html#organization-1",
-    "title": "Overview",
-    "section": "Organization",
-    "text": "Organization\n\nDynamics / Network\nFor a given target distribution, π(x), the Dynamics object (src/l2hmc/dynamics/) implements methods for generating proposal configurations (x’ ~ π) using the generalized leapfrog update.\nThis generalized leapfrog update takes as input a buffer of lattice configurations x and generates a proposal configuration x' = Dynamics(x) by evolving generalized L2HMC dynamics.\n\nNetwork Architecture\nAn illustration of the leapfrog layer updating (x, v) --&gt; (x', v') can be seen below."
-  },
-  {
-    "objectID": "index.html#contact-1",
-    "href": "index.html#contact-1",
-    "title": "Overview",
-    "section": "Contact",
-    "text": "Contact\nCode author: Sam Foreman\nPull requests and issues should be directed to: saforem2"
-  },
-  {
-    "objectID": "index.html#citation-1",
-    "href": "index.html#citation-1",
-    "title": "Overview",
-    "section": "Citation",
-    "text": "Citation\nIf you use this code or found this work interesting, please cite our work along with the original paper:\n@misc{foreman2021deep,\n      title={Deep Learning Hamiltonian Monte Carlo}, \n      author={Sam Foreman and Xiao-Yong Jin and James C. Osborn},\n      year={2021},\n      eprint={2105.03418},\n      archivePrefix={arXiv},\n      primaryClass={hep-lat}\n}\n@article{levy2017generalizing,\n  title={Generalizing Hamiltonian Monte Carlo with Neural Networks},\n  author={Levy, Daniel and Hoffman, Matthew D. and Sohl-Dickstein, Jascha},\n  journal={arXiv preprint arXiv:1711.09268},\n  year={2017}\n}"
-  },
-  {
-    "objectID": "index.html#acknowledgement-1",
-    "href": "index.html#acknowledgement-1",
-    "title": "Overview",
-    "section": "Acknowledgement",
-    "text": "Acknowledgement\n\nNote This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357. This work describes objective technical results and analysis. Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government."
+    "text": "Additional Pages\n\nDocumentation\n\n\n\n\n\n Back to topCitationBibTeX citation:@misc{foreman2023,\n  author = {Foreman, Sam},\n  date = {2023-08-23},\n  url = {https://saforem2.github.io/l2hmc-qcd},\n  langid = {en}\n}\nFor attribution, please cite this work as:\nForeman, Sam. 2023. L2HMC. https://saforem2.github.io/l2hmc-qcd."
   },
   {
     "objectID": "qmd/l2hmc-2DU1.html",
@@ -196,45 +56,66 @@
     "text": "Comparisons"
   },
   {
-    "objectID": "qmd/l2hmc-2DU1-alt.html",
-    "href": "qmd/l2hmc-2DU1-alt.html",
-    "title": "l2hmc: Example",
+    "objectID": "index.html#papers-slides-etc.",
+    "href": "index.html#papers-slides-etc.",
+    "title": "",
+    "section": "Papers 📚, Slides 📊 etc.",
+    "text": "Papers 📚, Slides 📊 etc.\n\n📊 Slides (07/31/2023 @ Lattice 2023)\n📕 Notebooks / Reports:\n\n📓 2D U(1) Example\n\n📙 2D U(1) Model (w/ fp16 or fp32 for training)\n📒 4D SU(3) Model (w/ complex128 + fp64 for training)\n\nalt link (if github won’t load)\n\n\n\n📝 Papers:\n\nLeapfrogLayers: A Trainable Framework for Effective Topological Sampling, 2022\n\nAccelerated Sampling Techniques for Lattice Gauge Theory @ BNL & RBRC: DWQ @ 25 (12/2021)\nTraining Topological Samplers for Lattice Gauge Theory from the ML for HEP, on and off the Lattice @ \\mathrm{ECT}^{*} Trento (09/2021) (+ 📊 slides)\nDeep Learning Hamiltonian Monte Carlo @ Deep Learning for Simulation (SimDL) Workshop ICLR 2021\n\n📚 : arXiv:2105.03418\n\n📊 : poster"
+  },
+  {
+    "objectID": "index.html#background",
+    "href": "index.html#background",
+    "title": "",
+    "section": "Background",
+    "text": "Background\nThe L2HMC algorithm aims to improve upon HMC by optimizing a carefully chosen loss function which is designed to minimize autocorrelations within the Markov Chain, thereby improving the efficiency of the sampler.\nA detailed description of the original L2HMC algorithm can be found in the paper:\nGeneralizing Hamiltonian Monte Carlo with Neural Network\nwith implementation available at brain-research/l2hmc/ by Daniel Levy, Matt D. Hoffman and Jascha Sohl-Dickstein.\nBroadly, given an analytically described target distribution, π(x), L2HMC provides a statistically exact sampler that:\n\nQuickly converges to the target distribution (fast burn-in).\nQuickly produces uncorrelated samples (fast mixing).\nIs able to efficiently mix between energy levels.\nIs capable of traversing low-density zones to mix between modes (often difficult for generic HMC)."
+  },
+  {
+    "objectID": "index.html#configuration-management",
+    "href": "index.html#configuration-management",
+    "title": "",
+    "section": "Configuration Management",
+    "text": "Configuration Management\nThis project uses hydra for configuration management and supports distributed training for both PyTorch and TensorFlow.\nIn particular, we support the following combinations of framework + backend for distributed training:\n\nTensorFlow (+ Horovod for distributed training)\nPyTorch +\n\nDDP\nHorovod\nDeepSpeed\n\n\nThe main entry point is src/l2hmc/main.py, which contains the logic for running an end-to-end Experiment.\nAn Experiment consists of the following sub-tasks:\n\nTraining\nEvaluation\nHMC (for comparison and to measure model improvement)\n\nAll configuration options can be dynamically overridden via the CLI at runtime, and we can specify our desired framework and backend combination via:\npython3 main.py mode=debug framework=pytorch backend=deepspeed precision=fp16\nto run a (non-distributed) Experiment with pytorch + deepspeed with fp16 precision.\nThe l2hmc/conf/config.yaml contains a brief explanation of each of the various parameter options, and values can be overriden either by modifying the config.yaml file, or directly through the command line, e.g.\ncd src/l2hmc\n./train.sh mode=debug framework=pytorch &gt; train.log 2&gt;&1 &\ntail -f train.log $(tail -1 logs/latest)\nAdditional information about various configuration options can be found in:\n\nsrc/l2hmc/configs.py: Contains implementations of the (concrete python objects) that are adjustable for our experiment.\nsrc/l2hmc/conf/config.yaml: Starting point with default configuration options for a generic Experiment.\n\nfor more information on how this works I encourage you to read Hydra’s Documentation Page."
+  },
+  {
+    "objectID": "index.html#running-at-alcf",
+    "href": "index.html#running-at-alcf",
+    "title": "",
+    "section": "Running at ALCF",
+    "text": "Running at ALCF\nFor running with distributed training on ALCF systems, we provide a complete src/l2hmc/train.sh script which should run without issues on either Polaris or ThetaGPU @ ALCF."
+  },
+  {
+    "objectID": "index.html#organization",
+    "href": "index.html#organization",
+    "title": "",
+    "section": "Organization",
+    "text": "Organization\n\nDynamics / Network\nFor a given target distribution, π(x), the Dynamics object (src/l2hmc/dynamics/) implements methods for generating proposal configurations (x’ ~ π) using the generalized leapfrog update.\nThis generalized leapfrog update takes as input a buffer of lattice configurations x and generates a proposal configuration x' = Dynamics(x) by evolving generalized L2HMC dynamics.\n\nNetwork Architecture\nAn illustration of the leapfrog layer updating (x, v) --&gt; (x', v') can be seen below."
+  },
+  {
+    "objectID": "index.html#contact",
+    "href": "index.html#contact",
+    "title": "",
+    "section": "Contact",
+    "text": "Contact\nCode author: Sam Foreman\nPull requests and issues should be directed to: saforem2"
+  },
+  {
+    "objectID": "index.html#citation",
+    "href": "index.html#citation",
+    "title": "",
+    "section": "Citation",
+    "text": "Citation\nIf you use this code or found this work interesting, please cite our work along with the original paper:\n@misc{foreman2021deep,\n      title={Deep Learning Hamiltonian Monte Carlo}, \n      author={Sam Foreman and Xiao-Yong Jin and James C. Osborn},\n      year={2021},\n      eprint={2105.03418},\n      archivePrefix={arXiv},\n      primaryClass={hep-lat}\n}\n@article{levy2017generalizing,\n  title={Generalizing Hamiltonian Monte Carlo with Neural Networks},\n  author={Levy, Daniel and Hoffman, Matthew D. and Sohl-Dickstein, Jascha},\n  journal={arXiv preprint arXiv:1711.09268},\n  year={2017}\n}"
+  },
+  {
+    "objectID": "index.html#acknowledgement",
+    "href": "index.html#acknowledgement",
+    "title": "",
+    "section": "Acknowledgement",
+    "text": "Acknowledgement\n\nNote This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357. This work describes objective technical results and analysis. Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government."
+  },
+  {
+    "objectID": "qmd/docs.html",
+    "href": "qmd/docs.html",
+    "title": "",
     "section": "",
-    "text": "This notebook will (attempt) to walk through the steps needed to successfully instantiate and “run” an experiment.\nFor this example, we wish to train the L2HMC sampler for the 2D U(1) lattice gauge model with Wilson action:\n\\begin{equation*}\nS_{\\beta}(n) = \\beta \\sum_{n}\\sum_{\\mu&lt;\\nu}\\mathrm{Re}\\left[1 - U_{\\mu\\nu}(n) \\right]\n\\end{equation*}\nThis consists of the following steps: 1. Build an Experiment by parsing our configuration object 2. Train our model using the Experiment.train() method 3. Evaluate our trained model Experiment.evaluate(job_type='eval') 4. Compare our trained models’ performance against generic HMC Experiment.evaluate(job_type='hmc')"
-  },
-  {
-    "objectID": "qmd/l2hmc-2DU1-alt.html#imports-setup",
-    "href": "qmd/l2hmc-2DU1-alt.html#imports-setup",
-    "title": "l2hmc: Example",
-    "section": "Imports / Setup",
-    "text": "Imports / Setup\n#| tags: []\n! nvidia-smi | tail --lines -7\n#| execution: {iopub.execute_input: '2023-06-23T17:55:29.625997Z', iopub.status.busy: '2023-06-23T17:55:29.625355Z', iopub.status.idle: '2023-06-23T17:55:36.426583Z', shell.execute_reply: '2023-06-23T17:55:36.425961Z', shell.execute_reply.started: '2023-06-23T17:55:29.625976Z'}\n#| tags: []\n# automatically detect and reload local changes to modules\n%load_ext autoreload\n%autoreload 2\n%matplotlib widget\n\nimport os\nimport warnings\n\nos.environ['COLORTERM'] = 'truecolor'\n\nwarnings.filterwarnings('ignore')\n# --------------------------------------\n# BE SURE TO GRAB A FRESH GPU !\nos.environ['CUDA_VISIBLE_DEVICES'] = '2'\n!echo $CUDA_VISIBLE_DEVICES\n# --------------------------------------\n#| execution: {iopub.execute_input: '2023-06-23T17:55:36.428548Z', iopub.status.busy: '2023-06-23T17:55:36.427922Z', iopub.status.idle: '2023-06-23T17:55:36.702843Z', shell.execute_reply: '2023-06-23T17:55:36.702225Z', shell.execute_reply.started: '2023-06-23T17:55:36.428530Z'}\n#| tags: []\ndevices = os.environ.get('CUDA_VISIBLE_DEVICES', None)\nprint(devices)\n!getconf _NPROCESSORS_ONLN  # get number of availble CPUs\n#| execution: {iopub.execute_input: '2023-06-23T17:55:36.703921Z', iopub.status.busy: '2023-06-23T17:55:36.703700Z', iopub.status.idle: '2023-06-23T17:55:36.979382Z', shell.execute_reply: '2023-06-23T17:55:36.978760Z', shell.execute_reply.started: '2023-06-23T17:55:36.703904Z'}\n#| tags: []\nos.environ['TORCH_CPP_LOG_LEVEL'] = 'ERROR'\nos.environ['AUTOGRAPH_VERBOSITY'] = '10'\n!echo $CUDA_VISIBLE_DEVICES\n#| execution: {iopub.execute_input: '2023-06-23T17:55:36.980565Z', iopub.status.busy: '2023-06-23T17:55:36.980240Z', iopub.status.idle: '2023-06-23T17:55:51.889407Z', shell.execute_reply: '2023-06-23T17:55:51.889107Z', shell.execute_reply.started: '2023-06-23T17:55:36.980547Z'}\n#| tags: []\nfrom __future__ import absolute_import, print_function, annotations, division\nimport matplotlib.pyplot as plt\nimport seaborn as sns\n\nfrom IPython.display import set_matplotlib_formats\n\nfrom l2hmc.main import build_experiment\nfrom l2hmc.utils.rich import get_console\nfrom l2hmc.utils.plot_helpers import set_plot_style\n\nset_plot_style()\nplt.rcParams['grid.alpha'] = 0.8\nplt.rcParams['grid.color'] = '#404040'\nsns.set(rc={\"figure.dpi\":100, 'savefig.dpi':300})\nsns.set_context('notebook')\nsns.set_style(\"ticks\")\nset_matplotlib_formats('retina')\nplt.rcParams['figure.figsize'] = [12.4, 4.8]\n\nconsole = get_console()\nprint(console.is_jupyter)\nif console.is_jupyter:\n    console.is_jupyter = False\nprint(console.is_jupyter)\n#| execution: {iopub.execute_input: '2023-06-23T17:55:51.891183Z', iopub.status.busy: '2023-06-23T17:55:51.890729Z', iopub.status.idle: '2023-06-23T17:55:51.929480Z', shell.execute_reply: '2023-06-23T17:55:51.929290Z', shell.execute_reply.started: '2023-06-23T17:55:51.891167Z'}\n#| tags: []\nimport l2hmc\nl2hmc.__file__"
-  },
-  {
-    "objectID": "qmd/l2hmc-2DU1-alt.html#pytorch",
-    "href": "qmd/l2hmc-2DU1-alt.html#pytorch",
-    "title": "l2hmc: Example",
-    "section": "PyTorch",
-    "text": "PyTorch\n\nTraining\n#| execution: {iopub.execute_input: '2023-06-23T17:58:19.357429Z', iopub.status.busy: '2023-06-23T17:58:19.357149Z', iopub.status.idle: '2023-06-23T18:51:15.529944Z', shell.execute_reply: '2023-06-23T18:51:15.529298Z', shell.execute_reply.started: '2023-06-23T17:58:19.357413Z'}\n#| scrolled: true\n#| tags: []\noutputs['pytorch']['train'] = ptExpU1.trainer.train()\n    #nera=5,\n    #nepoch=2000,\n    #beta=[4.0, 4.25, 4.5, 4.75, 5.0],\n#)\n\n_ = ptExpU1.save_dataset(job_type='train', nchains=32)\n\n\nInference\n\nEvaluation\n#| execution: {iopub.execute_input: '2023-06-23T18:52:36.700835Z', iopub.status.busy: '2023-06-23T18:52:36.700439Z', iopub.status.idle: '2023-06-23T19:02:12.771274Z', shell.execute_reply: '2023-06-23T19:02:12.757752Z', shell.execute_reply.started: '2023-06-23T18:52:36.700817Z'}\n#| scrolled: true\n#| tags: []\noutputs['pytorch']['eval'] = ptExpU1.trainer.eval(\n    job_type='eval',\n    nprint=500,\n    nchains=128,\n    eval_steps=2000,\n)\n_ = ptExpU1.save_dataset(job_type='eval', nchains=32)\n\n\nHMC\n#| execution: {iopub.execute_input: '2023-06-23T19:02:12.861098Z', iopub.status.busy: '2023-06-23T19:02:12.860736Z', iopub.status.idle: '2023-06-23T19:04:52.573175Z', shell.execute_reply: '2023-06-23T19:04:52.572673Z', shell.execute_reply.started: '2023-06-23T19:02:12.861080Z'}\n#| scrolled: true\n#| tags: []\noutputs['pytorch']['hmc'] = ptExpU1.trainer.eval(\n    job_type='hmc',\n    nprint=500,\n    nchains=128,\n    eval_steps=2000,\n)\n_ = ptExpU1.save_dataset(job_type='hmc', nchains=32)"
-  },
-  {
-    "objectID": "qmd/l2hmc-2DU1-alt.html#tensorflow",
-    "href": "qmd/l2hmc-2DU1-alt.html#tensorflow",
-    "title": "l2hmc: Example",
-    "section": "TensorFlow",
-    "text": "TensorFlow\n\nTrain\n#| execution: {iopub.execute_input: '2023-06-23T19:04:52.742638Z', iopub.status.busy: '2023-06-23T19:04:52.742508Z', iopub.status.idle: '2023-06-23T19:31:22.805102Z', shell.execute_reply: '2023-06-23T19:31:22.804577Z', shell.execute_reply.started: '2023-06-23T19:04:52.742620Z'}\n#| scrolled: true\n#| tags: []\noutputs['tensorflow']['train'] = tfExpU1.trainer.train()\n#    nera=5,\n#    nepoch=2000,\n#    beta=[4.0, 4.25, 4.5, 4.75, 5.0],\n#)\n_ = tfExpU1.save_dataset(job_type='train', nchains=32)\n\n\nInference\n\nEvaluate\n#| execution: {iopub.execute_input: '2023-06-23T19:31:22.812150Z', iopub.status.busy: '2023-06-23T19:31:22.812028Z', iopub.status.idle: '2023-06-23T19:36:40.325620Z', shell.execute_reply: '2023-06-23T19:36:40.325083Z', shell.execute_reply.started: '2023-06-23T19:31:22.812134Z'}\n#| scrolled: true\n#| tags: []\noutputs['tensorflow']['eval'] = tfExpU1.trainer.eval(\n    job_type='eval',\n    nprint=500,\n    nchains=128,\n    eval_steps=2000,\n)\n_ = tfExpU1.save_dataset(job_type='eval', nchains=32)\n\n\nHMC\n#| execution: {iopub.execute_input: '2023-06-23T19:36:40.326972Z', iopub.status.busy: '2023-06-23T19:36:40.326685Z', iopub.status.idle: '2023-06-23T19:46:08.444425Z', shell.execute_reply: '2023-06-23T19:46:08.443653Z', shell.execute_reply.started: '2023-06-23T19:36:40.326954Z'}\n#| scrolled: true\n#| tags: []\noutputs['tensorflow']['hmc'] = tfExpU1.trainer.eval(\n    job_type='hmc',\n    nprint=500,\n    nchains=128,\n    eval_steps=2000,\n)\n_ = tfExpU1.save_dataset(job_type='hmc', nchains=32)"
-  },
-  {
-    "objectID": "qmd/l2hmc-2DU1-alt.html#tensorflow-results",
-    "href": "qmd/l2hmc-2DU1-alt.html#tensorflow-results",
-    "title": "l2hmc: Example",
-    "section": "TensorFlow Results",
-    "text": "TensorFlow Results\n#| execution: {iopub.execute_input: '2023-06-23T20:36:04.351646Z', iopub.status.busy: '2023-06-23T20:36:04.351281Z', iopub.status.idle: '2023-06-23T20:36:04.482539Z', shell.execute_reply: '2023-06-23T20:36:04.482121Z', shell.execute_reply.started: '2023-06-23T20:36:04.351630Z'}\n#| tags: []\nimport rich\n#| execution: {iopub.execute_input: '2023-06-23T20:36:05.721407Z', iopub.status.busy: '2023-06-23T20:36:05.721100Z', iopub.status.idle: '2023-06-23T20:36:06.270051Z', shell.execute_reply: '2023-06-23T20:36:06.269602Z', shell.execute_reply.started: '2023-06-23T20:36:05.721390Z'}\n#| tags: []\nsns.set_context('notebook')\nndraws = len(dsets['tf']['eval']['dQint'].draw)\ndrop = int(0.1 * ndraws)\nkeep = int(0.9 * ndraws)\n\ndqe = dsets['tf']['eval']['dQint'][:, -90:]\ndqh = dsets['tf']['hmc']['dQint'][:, -90:]\n\netot = dqe.astype(int).sum()\nhtot = dqh.astype(int).sum()\n\nfsize = plt.rcParams['figure.figsize']\nfigsize = (2.5 * fsize[0], fsize[1])\nfig, ax = plt.subplots(figsize=figsize, ncols=2)\n_ = dqe.astype(int).plot(ax=ax[0])\n_ = dqh.astype(int).plot(ax=ax[1])\n_ = ax[0].set_title(f'Eval, total: {etot.values}', fontsize='x-large');\n_ = ax[1].set_title(f'HMC, total: {htot.values}', fontsize='x-large');\n_ = fig.suptitle(fr'TensorFlow Improvement: {100*(etot / htot):3.0f}%', fontsize='x-large')\n\nconsole.print(f\"TensorFlow, EVAL\\n dQint.sum('chain'):\\n {dqe.astype(int).sum('chain').T}\")\nconsole.print(f\"dQint.sum(): {dqe.astype(int).sum().T}\")\nconsole.print(f\"TensorFlow, HMC\\n dQint.sum('chain'):\\n {dqh.astype(int).sum('chain').T}\")\nconsole.print(f\"dQint.sum(): {dqh.astype(int).sum().T}\")\n\nPyTorch Results\n#| execution: {iopub.execute_input: '2023-06-23T20:36:22.957194Z', iopub.status.busy: '2023-06-23T20:36:22.956847Z', iopub.status.idle: '2023-06-23T20:36:23.503873Z', shell.execute_reply: '2023-06-23T20:36:23.503418Z', shell.execute_reply.started: '2023-06-23T20:36:22.957178Z'}\n#| tags: []\nsns.set_context('notebook')\nndraws = len(dsets['pt']['eval']['dQint'].draw)\ndrop = int(0.1 * ndraws)\nkeep = int(0.9 * ndraws)\n\ndqe = dsets['pt']['eval']['dQint'][:, -90:]\ndqh = dsets['pt']['hmc']['dQint'][:, -90:]\n\netot = dqe.astype(int).sum()\nhtot = dqh.astype(int).sum()\n\nfsize = plt.rcParams['figure.figsize']\nfigsize = (2.5 * fsize[0], 0.8 * fsize[1])\nfig, ax = plt.subplots(figsize=figsize, ncols=2)\n_ = dqe.astype(int).plot(ax=ax[0])\n_ = dqh.astype(int).plot(ax=ax[1])\n_ = ax[0].set_title(f'Eval, total: {etot.values}', fontsize='x-large');\n_ = ax[1].set_title(f'HMC, total: {htot.values}', fontsize='x-large');\n_ = fig.suptitle(fr'PyTorch Improvement: {100*(etot / htot):3.0f}%', fontsize='x-large')\n\nconsole.print(60 * '-')\nconsole.print(f\"PyTorch, EVAL\\n dQint.sum('chain'):\\n {dqe.astype(int).sum('chain').T.values}\")\nconsole.print(f\"dQint.sum(): {dqe.astype(int).sum().T.values}\")\nconsole.print(60 * '-')\nconsole.print(f\"PyTorch, HMC\\n dQint.sum('chain'):\\n {dqh.astype(int).sum('chain').T.values}\")\nconsole.print(f\"dQint.sum(): {dqh.astype(int).sum().T.values}\")"
-  },
-  {
-    "objectID": "qmd/l2hmc-2DU1-alt.html#comparisons-1",
-    "href": "qmd/l2hmc-2DU1-alt.html#comparisons-1",
-    "title": "l2hmc: Example",
-    "section": "Comparisons",
-    "text": "Comparisons\n#| execution: {iopub.execute_input: '2023-06-23T20:36:29.465415Z', iopub.status.busy: '2023-06-23T20:36:29.465070Z', iopub.status.idle: '2023-06-23T20:36:30.957623Z', shell.execute_reply: '2023-06-23T20:36:30.957152Z', shell.execute_reply.started: '2023-06-23T20:36:29.465399Z'}\n#| tags: []\nimport matplotlib.pyplot as plt\nfrom l2hmc.utils.plot_helpers import set_plot_style, COLORS\n\nimport seaborn as sns\nset_plot_style()\nplt.rcParams['axes.linewidth'] = 2.0\nsns.set_context('notebook')\nfigsize = plt.rcParamsDefault['figure.figsize']\nplt.rcParams['figure.dpi'] = plt.rcParamsDefault['figure.dpi']\n\nfor idx in range(4):\n    fig, (ax, ax1) = plt.subplots(\n        ncols=2,\n        #nrows=4,\n        figsize=(3. * figsize[0], figsize[1]),\n    )\n    _ = ax.plot(\n        dsets['pt']['eval'].intQ[idx] + 5,  # .dQint.mean('chain')[100:],\n        color=COLORS['red'],\n        ls=':',\n        label='Trained',\n        lw=1.5,\n    );\n\n    _ = ax.plot(\n        dsets['pt']['hmc'].intQ[idx] - 5,  # .dQint.mean('chain')[100:],\n        ls='-',\n        label='HMC',\n        color='#666666',\n        zorder=5,\n        lw=2.0,\n    );\n\n    _ = ax1.plot(\n        dsets['tf']['eval'].intQ[idx] + 5,  # .dQint.mean('chain')[-100:],\n        color=COLORS['blue'],\n        ls=':',\n        label='Trained',\n        lw=1.5,\n\n    );\n    _ = ax1.plot(\n        dsets['tf']['hmc'].intQ[idx] - 5,  # .dQint.mean('chain')[-100:],\n        color='#666666',\n        ls='-',\n        label='HMC',\n        zorder=5,\n        lw=2.0,\n    );\n    _ = ax.set_title('PyTorch', fontsize='x-large')\n    _ = ax1.set_title('TensorFlow', fontsize='x-large')\n    #_ = ax1.set_ylim(ax.get_ylim())\n    _ = ax.grid(True, alpha=0.2)\n    _ = ax1.grid(True, alpha=0.2)\n    _ = ax.set_xlabel('MD Step', fontsize='large')\n    _ = ax1.set_xlabel('MD Step', fontsize='large')\n    _ = ax.set_ylabel('dQint', fontsize='large')\n    _ = ax.legend(loc='best', ncol=2, labelcolor='#939393')\n    _ = ax1.legend(loc='best', ncol=2, labelcolor='#939393')"
+    "text": "Documentation\n\n\n\n\n\n\nTODO\n\n\n\nComplete!\n\n\n\n\n\n\n Back to topCitationBibTeX citation:@misc{foreman2023,\n  author = {Foreman, Sam},\n  date = {2023-08-23},\n  url = {https://saforem2.github.io/l2hmc-qcd},\n  langid = {en}\n}\nFor attribution, please cite this work as:\nForeman, Sam. 2023. L2HMC. https://saforem2.github.io/l2hmc-qcd."
   }
 ]
