@@ -1,0 +1,1898 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.3.433">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="Sam Foreman">
+<meta name="dcterms.date" content="2023-09-06">
+
+<title>l2hmc-qcd - 4D SU(3) Model</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../favicon.svg" rel="icon" type="image/svg+xml">
+<script src="../site_libs/quarto-html/quarto.js"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap.min.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-dark.min.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/quarto-contrib/fontawesome6-0.1.0/all.css" rel="stylesheet">
+<link href="../site_libs/quarto-contrib/fontawesome6-0.1.0/latex-fontsize.css" rel="stylesheet">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 20,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script async="" src="https://www.googletagmanager.com/gtag/js?id=G-XVM2Y822Y1"></script>
+
+<script type="text/javascript">
+
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" integrity="sha512-c3Nl8+7g4LMSTdrm621y7kf9v3SDPnhxLNhcjFJbKECVnmZHTdo+IRO05sNLTH/D3vA6u1X32ehoLC7WFVdheg==" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js" integrity="sha512-bLT0Qm9VnAYZDflyKcBaQ2gg0hSYNQrJ8RilYldYQ1FxQYoCLtUjuuRuZo+fjqhx/qtq/1itJ0C2ejDxltZVFg==" crossorigin="anonymous"></script>
+<script type="application/javascript">define('jquery', [],function() {return window.jQuery;})</script>
+<link href="https://pvinis.github.io/iosevka-webfont/3.4.1/iosevka.css" rel="stylesheet">
+
+  <script>window.backupDefine = window.define; window.define = undefined;</script><script src="https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/katex.min.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", function () {
+ var mathElements = document.getElementsByClassName("math");
+ var macros = [];
+ for (var i = 0; i < mathElements.length; i++) {
+  var texText = mathElements[i].firstChild;
+  if (mathElements[i].tagName == "SPAN") {
+   katex.render(texText.data, mathElements[i], {
+    displayMode: mathElements[i].classList.contains('display'),
+    throwOnError: false,
+    macros: macros,
+    fleqn: false
+   });
+}}});
+  </script>
+  <script>window.define = window.backupDefine; window.backupDefine = undefined;</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.15.1/dist/katex.min.css">
+
+<link rel="stylesheet" href="../css/default.css">
+<link rel="stylesheet" href="../css/callouts.css">
+<meta property="og:title" content="l2hmc-qcd - 4D SU(3) Model">
+<meta property="og:image" content="https://saforem2.github.io/l2hmc-qcd/qmd/data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2ZpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYwIDYxLjEzNDc3NywgMjAxMC8wMi8xMi0xNzozMjowMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDo1N0NEMjA4MDI1MjA2ODExOTk0QzkzNTEzRjZEQTg1NyIgeG1wTU06RG9jdW1lbnRJRD0ieG1wLmRpZDozM0NDOEJGNEZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDozM0NDOEJGM0ZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wOkNyZWF0b3JUb29sPSJBZG9iZSBQaG90b3Nob3AgQ1M1IE1hY2ludG9zaCI+IDx4bXBNTTpEZXJpdmVkRnJvbSBzdFJlZjppbnN0YW5jZUlEPSJ4bXAuaWlkOkZDN0YxMTc0MDcyMDY4MTE5NUZFRDc5MUM2MUUwNEREIiBzdFJlZjpkb2N1bWVudElEPSJ4bXAuZGlkOjU3Q0QyMDgwMjUyMDY4MTE5OTRDOTM1MTNGNkRBODU3Ii8+IDwvcmRmOkRlc2NyaXB0aW9uPiA8L3JkZjpSREY+IDwveDp4bXBtZXRhPiA8P3hwYWNrZXQgZW5kPSJyIj8+84NovQAAAR1JREFUeNpiZEADy85ZJgCpeCB2QJM6AMQLo4yOL0AWZETSqACk1gOxAQN+cAGIA4EGPQBxmJA0nwdpjjQ8xqArmczw5tMHXAaALDgP1QMxAGqzAAPxQACqh4ER6uf5MBlkm0X4EGayMfMw/Pr7Bd2gRBZogMFBrv01hisv5jLsv9nLAPIOMnjy8RDDyYctyAbFM2EJbRQw+aAWw/LzVgx7b+cwCHKqMhjJFCBLOzAR6+lXX84xnHjYyqAo5IUizkRCwIENQQckGSDGY4TVgAPEaraQr2a4/24bSuoExcJCfAEJihXkWDj3ZAKy9EJGaEo8T0QSxkjSwORsCAuDQCD+QILmD1A9kECEZgxDaEZhICIzGcIyEyOl2RkgwAAhkmC+eAm0TAAAAABJRU5ErkJggg==">
+<meta property="og:site-name" content="l2hmc-qcd">
+</head>
+
+<body class="nav-fixed">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg navbar-dark ">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container">
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src=".././favicon.svg" alt="" class="navbar-logo">
+    </a>
+    <a class="navbar-brand" href="../index.html">
+    <span class="navbar-title">l2hmc-qcd</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="../qmd/examples.html" rel="" target="">
+ <span class="menu-text"><span class="red-text"><i class="fa-solid fa-book" aria-label="book"></i></span> Examples</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../qmd/slides.html" rel="" target="">
+ <span class="menu-text"><span class="blue-text"><i class="fa-solid fa-person-chalkboard" aria-label="person-chalkboard"></i></span> Slides</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/saforem2/l2hmc-qcd" rel="" target=""><i class="bi bi-github" role="img" aria-label="GitHub">
+</i> 
+ <span class="menu-text"></span></a>
+  </li>  
+</ul>
+            <div class="quarto-navbar-tools">
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="Toggle dark mode"><i class="bi"></i></a>
+</div>
+          </div> <!-- /navcollapse -->
+      </div> <!-- /container-fluid -->
+    </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<div class="quarto-title-block"><div><h1 class="title">4D <span class="math inline">SU(3)</span> Model</h1><button type="button" class="btn code-tools-button" id="quarto-code-tools-source" data-quarto-source-url="https://github.com/saforem2/l2hmc-qcd/blob/main/qmd/l2hmc-4DSU3.qmd"><i class="bi"></i></button></div></div>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    <div>
+    <div class="quarto-title-meta-heading"></div>
+    <div class="quarto-title-meta-contents">
+             <p><a href="https://samforeman.me">Sam Foreman</a> <a href="https://orcid.org/0000-0002-9981-0876" class="quarto-title-author-orcid"> <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2ZpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYwIDYxLjEzNDc3NywgMjAxMC8wMi8xMi0xNzozMjowMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDo1N0NEMjA4MDI1MjA2ODExOTk0QzkzNTEzRjZEQTg1NyIgeG1wTU06RG9jdW1lbnRJRD0ieG1wLmRpZDozM0NDOEJGNEZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDozM0NDOEJGM0ZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wOkNyZWF0b3JUb29sPSJBZG9iZSBQaG90b3Nob3AgQ1M1IE1hY2ludG9zaCI+IDx4bXBNTTpEZXJpdmVkRnJvbSBzdFJlZjppbnN0YW5jZUlEPSJ4bXAuaWlkOkZDN0YxMTc0MDcyMDY4MTE5NUZFRDc5MUM2MUUwNEREIiBzdFJlZjpkb2N1bWVudElEPSJ4bXAuZGlkOjU3Q0QyMDgwMjUyMDY4MTE5OTRDOTM1MTNGNkRBODU3Ii8+IDwvcmRmOkRlc2NyaXB0aW9uPiA8L3JkZjpSREY+IDwveDp4bXBtZXRhPiA8P3hwYWNrZXQgZW5kPSJyIj8+84NovQAAAR1JREFUeNpiZEADy85ZJgCpeCB2QJM6AMQLo4yOL0AWZETSqACk1gOxAQN+cAGIA4EGPQBxmJA0nwdpjjQ8xqArmczw5tMHXAaALDgP1QMxAGqzAAPxQACqh4ER6uf5MBlkm0X4EGayMfMw/Pr7Bd2gRBZogMFBrv01hisv5jLsv9nLAPIOMnjy8RDDyYctyAbFM2EJbRQw+aAWw/LzVgx7b+cwCHKqMhjJFCBLOzAR6+lXX84xnHjYyqAo5IUizkRCwIENQQckGSDGY4TVgAPEaraQr2a4/24bSuoExcJCfAEJihXkWDj3ZAKy9EJGaEo8T0QSxkjSwORsCAuDQCD+QILmD1A9kECEZgxDaEZhICIzGcIyEyOl2RkgwAAhkmC+eAm0TAAAAABJRU5ErkJggg=="></a></p>
+          </div>
+  </div>
+    
+    <div>
+    <div class="quarto-title-meta-heading"></div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">September 6, 2023</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+</header>
+
+<ul>
+<li><a href="https://saforem2.github.io/lattice23">Slides</a></li>
+</ul>
+<div class="cell" data-execution_count="1">
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> pathlib <span class="im">import</span> Path</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> typing <span class="im">import</span> Optional</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> lovely_tensors <span class="im">as</span> lt</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> matplotlib.pyplot <span class="im">as</span> plt</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> torch</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> yaml</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> l2hmc.group.su3.pytorch.group <span class="im">as</span> g</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> l2hmc <span class="im">import</span> get_logger</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> l2hmc.common <span class="im">import</span> grab_tensor, print_dict</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> l2hmc.configs <span class="im">import</span> dict_to_list_of_overrides, get_experiment</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> l2hmc.experiment.pytorch.experiment <span class="im">import</span> Experiment, evaluate  <span class="co"># noqa  # noqa</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> l2hmc.utils.dist <span class="im">import</span> setup_torch</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> l2hmc.utils.plot_helpers <span class="im">import</span> set_plot_style</span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>lt.monkey_patch()</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>os.environ[<span class="st">'CUDA_VISIBLE_DEVICES'</span>] <span class="op">=</span> <span class="st">'6'</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>os.environ[<span class="st">'COLORTERM'</span>] <span class="op">=</span> <span class="st">'truecolor;'</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>os.environ[<span class="st">'MASTER_PORT'</span>] <span class="op">=</span> <span class="st">'5433'</span></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a><span class="co"># os.environ['MPLBACKEND'] = 'module://matplotlib-backend-kitty'</span></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a><span class="co"># plt.switch_backend('module://matplotlib-backend-kitty')</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> enrich.style <span class="im">import</span> STYLES</span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> rich.theme <span class="im">import</span> Theme</span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> enrich.console <span class="im">import</span> Console</span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>log <span class="op">=</span> get_logger(<span class="va">__name__</span>)</span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>theme <span class="op">=</span> Theme(STYLES)</span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a><span class="co"># log = get_logger('ClimRR')</span></span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a>console <span class="op">=</span> Console(theme<span class="op">=</span>theme, log_path<span class="op">=</span><span class="va">False</span>, markup<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> console.is_jupyter:</span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a>    console.is_jupyter <span class="op">=</span> <span class="va">False</span></span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a>_ <span class="op">=</span> setup_torch(precision<span class="op">=</span><span class="st">'float64'</span>, backend<span class="op">=</span><span class="st">'DDP'</span>, seed<span class="op">=</span><span class="dv">4351</span>)</span>
+<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a>set_plot_style()</span>
+<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> l2hmc.utils.plot_helpers <span class="im">import</span> (  <span class="co"># noqa</span></span>
+<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a>    set_plot_style,</span>
+<span id="cb1-43"><a href="#cb1-43" aria-hidden="true" tabindex="-1"></a>    plot_scalar,</span>
+<span id="cb1-44"><a href="#cb1-44" aria-hidden="true" tabindex="-1"></a>    plot_chains,</span>
+<span id="cb1-45"><a href="#cb1-45" aria-hidden="true" tabindex="-1"></a>    plot_leapfrogs</span>
+<span id="cb1-46"><a href="#cb1-46" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">Using device: cpu
+</pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[2023-09-06 08:27:49,688] [INFO] [real_accelerator.py:133:get_accelerator] Setting ds_accelerator to mps (auto detect)
+[09/06/23 08:27:50][INFO][dist.py:226] - Caught MASTER_PORT:5433 from environment!
+[09/06/23 08:27:50][WARNING][dist.py:332] - Setting default dtype: float64
+[09/06/23 08:27:50][INFO][dist.py:338] - Global Rank: 0 / 0</code></pre>
+</div>
+</div>
+<div class="cell" data-execution_count="2">
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> savefig(fig: plt.Figure, fname: <span class="bu">str</span>, outdir: os.PathLike):</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    pngfile <span class="op">=</span> Path(outdir).joinpath(<span class="ss">f"pngs/</span><span class="sc">{</span>fname<span class="sc">}</span><span class="ss">.png"</span>)</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    svgfile <span class="op">=</span> Path(outdir).joinpath(<span class="ss">f"svgs/</span><span class="sc">{</span>fname<span class="sc">}</span><span class="ss">.svg"</span>)</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    pngfile.parent.mkdir(exist_ok<span class="op">=</span><span class="va">True</span>, parents<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    svgfile.parent.mkdir(exist_ok<span class="op">=</span><span class="va">True</span>, parents<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    fig.savefig(svgfile, transparent<span class="op">=</span><span class="va">True</span>, bbox_inches<span class="op">=</span><span class="st">'tight'</span>)</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    fig.savefig(pngfile, transparent<span class="op">=</span><span class="va">True</span>, bbox_inches<span class="op">=</span><span class="st">'tight'</span>, dpi<span class="op">=</span><span class="dv">300</span>)</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> plot_metrics(metrics: <span class="bu">dict</span>, title: Optional[<span class="bu">str</span>] <span class="op">=</span> <span class="va">None</span>, <span class="op">**</span>kwargs):</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    <span class="im">from</span> l2hmc.utils.rich <span class="im">import</span> is_interactive</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    <span class="im">from</span> l2hmc.configs <span class="im">import</span> QUARTO_OUTPUTS_DIR</span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    outdir <span class="op">=</span> Path(<span class="ss">f"</span><span class="sc">{</span>QUARTO_OUTPUTS_DIR<span class="sc">}</span><span class="ss">/plots-4dSU3/</span><span class="sc">{</span>title<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    outdir.mkdir(exist_ok<span class="op">=</span><span class="va">True</span>, parents<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> key, val <span class="kw">in</span> metrics.items():</span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>        fig, ax <span class="op">=</span> plot_metric(val, name<span class="op">=</span>key, <span class="op">**</span>kwargs)</span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> title <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span>:</span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>            ax.set_title(title)</span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>        log.info(<span class="ss">f"Saving </span><span class="sc">{</span>key<span class="sc">}</span><span class="ss"> to </span><span class="sc">{</span>outdir<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>        savefig(fig, <span class="ss">f"</span><span class="sc">{</span>key<span class="sc">}</span><span class="ss">"</span>, outdir<span class="op">=</span>outdir)</span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>        <span class="co"># fpath = outdir.joinpath(f"{key}")</span></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>        <span class="co"># plt.savefig(f"{fpath}.svg", bbox_inches='tight')</span></span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>        <span class="co"># plt.savefig(f"{fpath}.png", bbox_inches='tight', dpi=300)</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>        <span class="co"># log.info(f"Saving {title} {key} plot to {fpath}")</span></span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="kw">not</span> is_interactive():</span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>            plt.show()</span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> plot_metric(</span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a>        metric: torch.Tensor,</span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a>        name: Optional[<span class="bu">str</span>] <span class="op">=</span> <span class="va">None</span>,</span>
+<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a>        <span class="op">**</span>kwargs,</span>
+<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a>):</span>
+<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">len</span>(metric) <span class="op">&gt;</span> <span class="dv">0</span></span>
+<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="bu">isinstance</span>(metric[<span class="dv">0</span>], (<span class="bu">int</span>, <span class="bu">float</span>, <span class="bu">bool</span>, np.floating)):</span>
+<span id="cb3-36"><a href="#cb3-36" aria-hidden="true" tabindex="-1"></a>        y <span class="op">=</span> np.stack(metric)</span>
+<span id="cb3-37"><a href="#cb3-37" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> plot_scalar(y, ylabel<span class="op">=</span>name, <span class="op">**</span>kwargs)</span>
+<span id="cb3-38"><a href="#cb3-38" aria-hidden="true" tabindex="-1"></a>    element_shape <span class="op">=</span> metric[<span class="dv">0</span>].shape</span>
+<span id="cb3-39"><a href="#cb3-39" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="bu">len</span>(element_shape) <span class="op">==</span> <span class="dv">2</span>:</span>
+<span id="cb3-40"><a href="#cb3-40" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="bu">isinstance</span>(metric, torch.Tensor):</span>
+<span id="cb3-41"><a href="#cb3-41" aria-hidden="true" tabindex="-1"></a>            y <span class="op">=</span> grab_tensor(torch.stack(metric))</span>
+<span id="cb3-42"><a href="#cb3-42" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span>:</span>
+<span id="cb3-43"><a href="#cb3-43" aria-hidden="true" tabindex="-1"></a>            y <span class="op">=</span> np.stack(metric)</span>
+<span id="cb3-44"><a href="#cb3-44" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> plot_leapfrogs(y, ylabel<span class="op">=</span>name)</span>
+<span id="cb3-45"><a href="#cb3-45" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="bu">len</span>(element_shape) <span class="op">==</span> <span class="dv">1</span>:</span>
+<span id="cb3-46"><a href="#cb3-46" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="bu">isinstance</span>(metric, torch.Tensor):</span>
+<span id="cb3-47"><a href="#cb3-47" aria-hidden="true" tabindex="-1"></a>            y <span class="op">=</span> grab_tensor(torch.stack(metric))</span>
+<span id="cb3-48"><a href="#cb3-48" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span>:</span>
+<span id="cb3-49"><a href="#cb3-49" aria-hidden="true" tabindex="-1"></a>            y <span class="op">=</span> np.stack(metric)</span>
+<span id="cb3-50"><a href="#cb3-50" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> plot_chains(y, ylabel<span class="op">=</span>name, <span class="op">**</span>kwargs)</span>
+<span id="cb3-51"><a href="#cb3-51" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="bu">len</span>(element_shape) <span class="op">==</span> <span class="dv">0</span>:</span>
+<span id="cb3-52"><a href="#cb3-52" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="bu">isinstance</span>(metric, torch.Tensor):</span>
+<span id="cb3-53"><a href="#cb3-53" aria-hidden="true" tabindex="-1"></a>            y <span class="op">=</span> grab_tensor(torch.stack(metric))</span>
+<span id="cb3-54"><a href="#cb3-54" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span>:</span>
+<span id="cb3-55"><a href="#cb3-55" aria-hidden="true" tabindex="-1"></a>            y <span class="op">=</span> np.stack(metric)</span>
+<span id="cb3-56"><a href="#cb3-56" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> plot_scalar(y, ylabel<span class="op">=</span>name, <span class="op">**</span>kwargs)</span>
+<span id="cb3-57"><a href="#cb3-57" aria-hidden="true" tabindex="-1"></a>    <span class="cf">raise</span> <span class="pp">ValueError</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell" data-execution_count="3">
+<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> main():</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="im">from</span> l2hmc.experiment.pytorch.experiment <span class="im">import</span> train_step</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    set_plot_style()</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="im">from</span> l2hmc.configs <span class="im">import</span> CONF_DIR</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    su3conf <span class="op">=</span> Path(CONF_DIR).joinpath(<span class="st">'su3-min-cpu.yaml'</span>)</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> su3conf.is_file()</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    <span class="co"># su3conf = Path('su3-min-cpu.yaml')</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">with</span> su3conf.<span class="bu">open</span>(<span class="st">'r'</span>) <span class="im">as</span> stream:</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>        conf <span class="op">=</span> <span class="bu">dict</span>(yaml.safe_load(stream))</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    log.info(conf)</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    overrides <span class="op">=</span> dict_to_list_of_overrides(conf)</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    ptExpSU3 <span class="op">=</span> get_experiment(overrides<span class="op">=</span>[<span class="op">*</span>overrides], build_networks<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>    state <span class="op">=</span> ptExpSU3.trainer.dynamics.random_state(<span class="fl">6.0</span>)</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">isinstance</span>(state.x, torch.Tensor)</span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">isinstance</span>(state.beta, torch.Tensor)</span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">isinstance</span>(ptExpSU3, Experiment)</span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>    xhmc, history_hmc <span class="op">=</span> evaluate(</span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>        nsteps<span class="op">=</span><span class="dv">10</span>,</span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>        exp<span class="op">=</span>ptExpSU3,</span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>        beta<span class="op">=</span>state.beta,</span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>        x<span class="op">=</span>state.x,</span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>        eps<span class="op">=</span><span class="fl">0.1</span>,</span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>        nleapfrog<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>        job_type<span class="op">=</span><span class="st">'hmc'</span>,</span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>        nlog<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>        nprint<span class="op">=</span><span class="dv">2</span>,</span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>        grab<span class="op">=</span><span class="va">True</span></span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a>    xhmc <span class="op">=</span> ptExpSU3.trainer.dynamics.unflatten(xhmc)</span>
+<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a>    log.info(<span class="ss">f"checkSU(x_hmc): </span><span class="sc">{</span>g<span class="sc">.</span>checkSU(xhmc)<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a>    plot_metrics(history_hmc.history, title<span class="op">=</span><span class="st">'HMC'</span>, marker<span class="op">=</span><span class="st">'.'</span>)</span>
+<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a>    <span class="co"># ptExpSU3.trainer.dynamics.init_weights(</span></span>
+<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a>    <span class="co">#     method='uniform',</span></span>
+<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a>    <span class="co">#     min=-1e-16,</span></span>
+<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a>    <span class="co">#     max=1e-16,</span></span>
+<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a>    <span class="co">#     bias=True,</span></span>
+<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a>    <span class="co">#     # xeps=0.001,</span></span>
+<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a>    <span class="co">#     # veps=0.001,</span></span>
+<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a>    <span class="co"># )</span></span>
+<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a>    xeval, history_eval <span class="op">=</span> evaluate(</span>
+<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a>        nsteps<span class="op">=</span><span class="dv">10</span>,</span>
+<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a>        exp<span class="op">=</span>ptExpSU3,</span>
+<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a>        beta<span class="op">=</span><span class="fl">6.0</span>,</span>
+<span id="cb4-46"><a href="#cb4-46" aria-hidden="true" tabindex="-1"></a>        x<span class="op">=</span>state.x,</span>
+<span id="cb4-47"><a href="#cb4-47" aria-hidden="true" tabindex="-1"></a>        job_type<span class="op">=</span><span class="st">'eval'</span>,</span>
+<span id="cb4-48"><a href="#cb4-48" aria-hidden="true" tabindex="-1"></a>        nlog<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb4-49"><a href="#cb4-49" aria-hidden="true" tabindex="-1"></a>        nprint<span class="op">=</span><span class="dv">2</span>,</span>
+<span id="cb4-50"><a href="#cb4-50" aria-hidden="true" tabindex="-1"></a>        grab<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb4-51"><a href="#cb4-51" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb4-52"><a href="#cb4-52" aria-hidden="true" tabindex="-1"></a>    xeval <span class="op">=</span> ptExpSU3.trainer.dynamics.unflatten(xeval)</span>
+<span id="cb4-53"><a href="#cb4-53" aria-hidden="true" tabindex="-1"></a>    log.info(<span class="ss">f"checkSU(x_eval): </span><span class="sc">{</span>g<span class="sc">.</span>checkSU(xeval)<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb4-54"><a href="#cb4-54" aria-hidden="true" tabindex="-1"></a>    plot_metrics(history_eval.history, title<span class="op">=</span><span class="st">'Evaluate'</span>, marker<span class="op">=</span><span class="st">'.'</span>)</span>
+<span id="cb4-55"><a href="#cb4-55" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-56"><a href="#cb4-56" aria-hidden="true" tabindex="-1"></a>    history <span class="op">=</span> {}</span>
+<span id="cb4-57"><a href="#cb4-57" aria-hidden="true" tabindex="-1"></a>    x <span class="op">=</span> state.x</span>
+<span id="cb4-58"><a href="#cb4-58" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> step <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">20</span>):</span>
+<span id="cb4-59"><a href="#cb4-59" aria-hidden="true" tabindex="-1"></a>        log.info(<span class="ss">f'TRAIN STEP: </span><span class="sc">{</span>step<span class="sc">}</span><span class="ss">'</span>)</span>
+<span id="cb4-60"><a href="#cb4-60" aria-hidden="true" tabindex="-1"></a>        x, metrics <span class="op">=</span> ptExpSU3.trainer.train_step((x, state.beta))</span>
+<span id="cb4-61"><a href="#cb4-61" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (step <span class="op">&gt;</span> <span class="dv">0</span> <span class="kw">and</span> step <span class="op">%</span> <span class="dv">2</span> <span class="op">==</span> <span class="dv">0</span>):</span>
+<span id="cb4-62"><a href="#cb4-62" aria-hidden="true" tabindex="-1"></a>            print_dict(metrics, grab<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb4-63"><a href="#cb4-63" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (step <span class="op">&gt;</span> <span class="dv">0</span> <span class="kw">and</span> step <span class="op">%</span> <span class="dv">1</span> <span class="op">==</span> <span class="dv">0</span>):</span>
+<span id="cb4-64"><a href="#cb4-64" aria-hidden="true" tabindex="-1"></a>            <span class="cf">for</span> key, val <span class="kw">in</span> metrics.items():</span>
+<span id="cb4-65"><a href="#cb4-65" aria-hidden="true" tabindex="-1"></a>                <span class="cf">try</span>:</span>
+<span id="cb4-66"><a href="#cb4-66" aria-hidden="true" tabindex="-1"></a>                    history[key].append(val)</span>
+<span id="cb4-67"><a href="#cb4-67" aria-hidden="true" tabindex="-1"></a>                <span class="cf">except</span> <span class="pp">KeyError</span>:</span>
+<span id="cb4-68"><a href="#cb4-68" aria-hidden="true" tabindex="-1"></a>                    history[key] <span class="op">=</span> [val]</span>
+<span id="cb4-69"><a href="#cb4-69" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-70"><a href="#cb4-70" aria-hidden="true" tabindex="-1"></a>    x <span class="op">=</span> ptExpSU3.trainer.dynamics.unflatten(x)</span>
+<span id="cb4-71"><a href="#cb4-71" aria-hidden="true" tabindex="-1"></a>    log.info(<span class="ss">f"checkSU(x_train): </span><span class="sc">{</span>g<span class="sc">.</span>checkSU(x)<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb4-72"><a href="#cb4-72" aria-hidden="true" tabindex="-1"></a>    plot_metrics(history, title<span class="op">=</span><span class="st">'train'</span>, marker<span class="op">=</span><span class="st">'.'</span>)</span>
+<span id="cb4-73"><a href="#cb4-73" aria-hidden="true" tabindex="-1"></a>    <span class="co">#</span></span>
+<span id="cb4-74"><a href="#cb4-74" aria-hidden="true" tabindex="-1"></a>    <span class="co"># for step in range(20):</span></span>
+<span id="cb4-75"><a href="#cb4-75" aria-hidden="true" tabindex="-1"></a>    <span class="co">#     log.info(f"train step: {step}")</span></span>
+<span id="cb4-76"><a href="#cb4-76" aria-hidden="true" tabindex="-1"></a>    <span class="co">#     x, metrics = ptExpSU3.trainer.train_step((x, state.beta))</span></span>
+<span id="cb4-77"><a href="#cb4-77" aria-hidden="true" tabindex="-1"></a>    <span class="co">#     if step % 5 == 0:</span></span>
+<span id="cb4-78"><a href="#cb4-78" aria-hidden="true" tabindex="-1"></a>    <span class="co">#         print_dict(metrics, grab=True)</span></span>
+<span id="cb4-79"><a href="#cb4-79" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-80"><a href="#cb4-80" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> x, history</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell" data-execution_count="4">
+<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># main()</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> l2hmc.experiment.pytorch.experiment <span class="im">import</span> train_step</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>set_plot_style()</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> l2hmc.configs <span class="im">import</span> CONF_DIR</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>su3conf <span class="op">=</span> Path(CONF_DIR).joinpath(<span class="st">'su3-min-cpu.yaml'</span>)</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> su3conf.is_file()</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="co"># su3conf = Path('./conf/su3-min-cpu.yaml')</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> su3conf.<span class="bu">open</span>(<span class="st">'r'</span>) <span class="im">as</span> stream:</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    conf <span class="op">=</span> <span class="bu">dict</span>(yaml.safe_load(stream))</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>log.info(conf)</span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>overrides <span class="op">=</span> dict_to_list_of_overrides(conf)</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>ptExpSU3 <span class="op">=</span> get_experiment(overrides<span class="op">=</span>[<span class="op">*</span>overrides], build_networks<span class="op">=</span><span class="va">True</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[09/06/23 08:27:50][INFO][2091541093.py:12] - {'annealing_schedule': {'beta_final': 6.0, 'beta_init': 6.0}, 'backend': 'DDP', 'conv': 'none', 'dynamics': {'eps': 0.1, 'eps_fixed': True, 'group': 'SU3', 'latvolume': [1, 1, 1, 1], 'nchains': 4, 'nleapfrog': 1, 'use_separate_networks': False, 'use_split_xnets': False, 'verbose': True}, 'framework': 'pytorch', 'init_aim': False, 'init_wandb': False, 'learning_rate': {'clip_norm': 1.0, 'lr_init': 1e-05}, 'loss': {'charge_weight': 0.0, 'plaq_weight': 0.0, 'rmse_weight': 1.0, 'use_mixed_loss': False}, 'net_weights': {'v': {'q': 1.0, 's': 1.0, 't': 1.0}, 'x': {'q': 0.0, 's': 0.0, 't': 0.0}}, 'network': {'activation_fn': 'tanh', 'dropout_prob': 0.0, 'units': [1], 'use_batch_norm': False}, 'restore': False, 'save': False, 'steps': {'log': 1, 'nepoch': 10, 'nera': 1, 'print': 1, 'test': 50}, 'use_tb': False, 'use_wandb': False}
+[09/06/23 08:27:50][INFO][dist.py:226] - Caught MASTER_PORT:5433 from environment!
+[09/06/23 08:27:50][INFO][dist.py:226] - Caught MASTER_PORT:5433 from environment!
+[09/06/23 08:27:50][WARNING][trainer.py:437] - Using `torch.optim.Adam` optimizer
+[09/06/23 08:27:50][INFO][trainer.py:285] - num_params in model: 788
+[09/06/23 08:27:50][WARNING][trainer.py:251] - logging with freq 1 for wandb.watch</code></pre>
+</div>
+</div>
+<div class="cell" data-execution_count="5">
+<div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>state <span class="op">=</span> ptExpSU3.trainer.dynamics.random_state(<span class="fl">6.0</span>)</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">isinstance</span>(state.x, torch.Tensor)</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">isinstance</span>(state.beta, torch.Tensor)</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">isinstance</span>(ptExpSU3, Experiment)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell" data-execution_count="6">
+<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>xhmc, history_hmc <span class="op">=</span> evaluate(</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    nsteps<span class="op">=</span><span class="dv">10</span>,</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    exp<span class="op">=</span>ptExpSU3,</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    beta<span class="op">=</span>state.beta,</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    x<span class="op">=</span>state.x,</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>    eps<span class="op">=</span><span class="fl">0.1</span>,</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>    nleapfrog<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>    job_type<span class="op">=</span><span class="st">'hmc'</span>,</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>    nlog<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>    nprint<span class="op">=</span><span class="dv">2</span>,</span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>    grab<span class="op">=</span><span class="va">True</span></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>xhmc <span class="op">=</span> ptExpSU3.trainer.dynamics.unflatten(xhmc)</span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>log.info(<span class="ss">f"checkSU(x_hmc): </span><span class="sc">{</span>g<span class="sc">.</span>checkSU(xhmc)<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>plot_metrics(history_hmc.history, title<span class="op">=</span><span class="st">'HMC'</span>, marker<span class="op">=</span><span class="st">'.'</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[09/06/23 08:27:50][INFO][experiment.py:117] - Running 10 steps of hmc at beta=6.0000
+[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 0
+[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 1
+[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 2
+[09/06/23 08:27:50][INFO][common.py:97] - energy: torch.Size([2, 4]) torch.float64 
+[[-10.75791732 -12.34937625  -0.41675933  -1.53564322]
+ [-10.75124452 -12.3522306   -0.41267615  -1.54108594]]
+logprob: torch.Size([2, 4]) torch.float64 
+[[-10.75791732 -12.34937625  -0.41675933  -1.53564322]
+ [-10.75124452 -12.3522306   -0.41267615  -1.54108594]]
+logdet: torch.Size([2, 4]) torch.float64 
+[[0. 0. 0. 0.]
+ [0. 0. 0. 0.]]
+acc: torch.Size([4]) torch.float64 
+[0.99334941 1.         0.99592515 1.        ]
+sumlogdet: torch.Size([4]) torch.float64 
+[0. 0. 0. 0.]
+acc_mask: torch.Size([4]) torch.float32 
+[1. 1. 1. 1.]
+plaqs: torch.Size([4]) torch.float64 
+[0.16450298 0.30335925 0.08750178 0.11000818]
+sinQ: torch.Size([4]) torch.float64 
+[0.06377054 0.02936343 0.0290893  0.0471427 ]
+intQ: torch.Size([4]) torch.float64 
+[0.00363448 0.00167351 0.00165789 0.00268681]
+dQint: torch.Size([4]) torch.float64 
+[0.00063734 0.00026722 0.00153373 0.00079181]
+dQsin: torch.Size([4]) torch.float64 
+[0.01118282 0.00468872 0.02691084 0.01389309]
+loss: None None 
+-0.008486187067784774
+[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 3
+[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 4
+[09/06/23 08:27:50][INFO][common.py:97] - energy: torch.Size([2, 4]) torch.float64 
+[[-11.11456032 -17.6499957   -3.95552998  -6.53463898]
+ [-11.13603858 -17.671668    -3.9389084   -6.51679905]]
+logprob: torch.Size([2, 4]) torch.float64 
+[[-11.11456032 -17.6499957   -3.95552998  -6.53463898]
+ [-11.13603858 -17.671668    -3.9389084   -6.51679905]]
+logdet: torch.Size([2, 4]) torch.float64 
+[[0. 0. 0. 0.]
+ [0. 0. 0. 0.]]
+acc: torch.Size([4]) torch.float64 
+[1.         1.         0.9835158  0.98231826]
+sumlogdet: torch.Size([4]) torch.float64 
+[0. 0. 0. 0.]
+acc_mask: torch.Size([4]) torch.float32 
+[1. 1. 1. 1.]
+plaqs: torch.Size([4]) torch.float64 
+[0.25275746 0.399866   0.08094436 0.14319661]
+sinQ: torch.Size([4]) torch.float64 
+[0.06062536 0.00580304 0.05690804 0.03510997]
+intQ: torch.Size([4]) torch.float64 
+[0.00345523 0.00033073 0.00324337 0.00200103]
+dQint: torch.Size([4]) torch.float64 
+[6.94769306e-04 1.54302575e-05 1.45796993e-03 7.05322708e-06]
+dQsin: torch.Size([4]) torch.float64 
+[0.0121904  0.00027074 0.02558149 0.00012376]
+loss: None None 
+-0.007962121892379256
+[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 5
+[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 6
+[09/06/23 08:27:50][INFO][common.py:97] - energy: torch.Size([2, 4]) torch.float64 
+[[ -7.92357836 -18.88468089  -3.00365154  -4.94505522]
+ [ -7.96783894 -18.86501731  -2.98482073  -4.97272838]]
+logprob: torch.Size([2, 4]) torch.float64 
+[[ -7.92357836 -18.88468089  -3.00365154  -4.94505522]
+ [ -7.96783894 -18.86501731  -2.98482073  -4.97272838]]
+logdet: torch.Size([2, 4]) torch.float64 
+[[0. 0. 0. 0.]
+ [0. 0. 0. 0.]]
+acc: torch.Size([4]) torch.float64 
+[1.         0.98052848 0.98134538 1.        ]
+sumlogdet: torch.Size([4]) torch.float64 
+[0. 0. 0. 0.]
+acc_mask: torch.Size([4]) torch.float32 
+[1. 1. 1. 1.]
+plaqs: torch.Size([4]) torch.float64 
+[0.40639896 0.38496604 0.09990116 0.24746026]
+sinQ: torch.Size([4]) torch.float64 
+[ 0.04504223  0.00155452 -0.00443203  0.02472714]
+intQ: torch.Size([4]) torch.float64 
+[ 2.56709954e-03  8.85969084e-05 -2.52595510e-04  1.40927794e-03]
+dQint: torch.Size([4]) torch.float64 
+[7.55078122e-04 4.03034083e-04 2.18911031e-03 8.63609620e-05]
+dQsin: torch.Size([4]) torch.float64 
+[0.01324857 0.00707162 0.03841005 0.00151529]
+loss: None None 
+-0.009571223668505026
+[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 7
+[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 8
+[09/06/23 08:27:50][INFO][common.py:97] - energy: torch.Size([2, 4]) torch.float64 
+[[-13.98883304  -7.11601894  -9.48035637  -3.92143691]
+ [-13.99184124  -7.1014651   -9.49438875  -4.11672224]]
+logprob: torch.Size([2, 4]) torch.float64 
+[[-13.98883304  -7.11601894  -9.48035637  -3.92143691]
+ [-13.99184124  -7.1014651   -9.49438875  -4.11672224]]
+logdet: torch.Size([2, 4]) torch.float64 
+[[0. 0. 0. 0.]
+ [0. 0. 0. 0.]]
+acc: torch.Size([4]) torch.float64 
+[1.         0.98555155 1.         1.        ]
+sumlogdet: torch.Size([4]) torch.float64 
+[0. 0. 0. 0.]
+acc_mask: torch.Size([4]) torch.float32 
+[1. 1. 1. 1.]
+plaqs: torch.Size([4]) torch.float64 
+[0.4385061  0.34539504 0.04537868 0.37245688]
+sinQ: torch.Size([4]) torch.float64 
+[0.0153556  0.00315862 0.11135176 0.00892928]
+intQ: torch.Size([4]) torch.float64 
+[0.00087516 0.00018002 0.00634629 0.00050891]
+dQint: torch.Size([4]) torch.float64 
+[0.00082473 0.00022505 0.00010956 0.00055608]
+dQsin: torch.Size([4]) torch.float64 
+[0.01447065 0.00394877 0.00192226 0.00975699]
+loss: None None 
+-0.010424735653495517
+[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 9
+[09/06/23 08:27:50][INFO][2419635544.py:14] - checkSU(x_hmc): (tensor[4] f64 x∈[2.562e-16, 4.133e-16] μ=3.159e-16 σ=7.356e-17 [2.562e-16, 2.620e-16, 3.323e-16, 4.133e-16], tensor[4] f64 x∈[3.601e-16, 7.415e-16] μ=5.139e-16 σ=1.696e-16 [3.601e-16, 4.134e-16, 5.404e-16, 7.415e-16])
+[09/06/23 08:27:50][INFO][2088423886.py:19] - Saving energy to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[09/06/23 08:27:50][INFO][2088423886.py:19] - Saving logprob to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[09/06/23 08:27:51][INFO][2088423886.py:19] - Saving logdet to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[09/06/23 08:27:51][INFO][2088423886.py:19] - Saving acc to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[09/06/23 08:27:51][INFO][2088423886.py:19] - Saving sumlogdet to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[09/06/23 08:27:51][INFO][2088423886.py:19] - Saving acc_mask to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[09/06/23 08:27:51][INFO][2088423886.py:19] - Saving plaqs to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[09/06/23 08:27:52][INFO][2088423886.py:19] - Saving sinQ to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[09/06/23 08:27:52][INFO][2088423886.py:19] - Saving intQ to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[09/06/23 08:27:52][INFO][2088423886.py:19] - Saving dQint to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[09/06/23 08:27:52][INFO][2088423886.py:19] - Saving dQsin to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[09/06/23 08:27:53][INFO][2088423886.py:19] - Saving loss to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-7-output-2.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-7-output-3.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-7-output-4.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-7-output-5.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-7-output-6.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-7-output-7.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-7-output-8.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-7-output-9.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-7-output-10.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-7-output-11.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-7-output-12.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-7-output-13.png" class="img-fluid"></p>
+</div>
+</div>
+<div class="cell" data-execution_count="7">
+<div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ptExpSU3.trainer.dynamics.init_weights(</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="co">#     method='uniform',</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="co">#     min=-1e-16,</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="co">#     max=1e-16,</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="co">#     bias=True,</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="co">#     # xeps=0.001,</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="co">#     # veps=0.001,</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="co"># )</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>xeval, history_eval <span class="op">=</span> evaluate(</span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>    nsteps<span class="op">=</span><span class="dv">10</span>,</span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>    exp<span class="op">=</span>ptExpSU3,</span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a>    beta<span class="op">=</span><span class="fl">6.0</span>,</span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>    x<span class="op">=</span>state.x,</span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a>    job_type<span class="op">=</span><span class="st">'eval'</span>,</span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>    nlog<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>    nprint<span class="op">=</span><span class="dv">2</span>,</span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a>    grab<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a>xeval <span class="op">=</span> ptExpSU3.trainer.dynamics.unflatten(xeval)</span>
+<span id="cb10-20"><a href="#cb10-20" aria-hidden="true" tabindex="-1"></a>log.info(<span class="ss">f"checkSU(x_eval): </span><span class="sc">{</span>g<span class="sc">.</span>checkSU(xeval)<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb10-21"><a href="#cb10-21" aria-hidden="true" tabindex="-1"></a>plot_metrics(history_eval.history, title<span class="op">=</span><span class="st">'Evaluate'</span>, marker<span class="op">=</span><span class="st">'.'</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[09/06/23 08:27:54][INFO][experiment.py:117] - Running 10 steps of eval at beta=6.0000
+[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 0
+[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 1
+[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 2
+[09/06/23 08:27:54][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[[ -9.93909722 -11.71406924 -13.98390472  -6.91867768]
+ [ -9.64725014 -11.76741361 -13.84813463  -6.57255943]
+ [ -9.24332693 -11.64892261 -13.56752346  -6.14914933]]
+logprob: torch.Size([3, 4]) torch.float64 
+[[ -9.93909722 -11.71406924 -13.98390472  -6.91867768]
+ [ -9.57527769 -11.61717321 -13.6004816   -6.52241563]
+ [ -9.17429537 -11.68892811 -13.56843895  -6.15131339]]
+logdet: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.07197245 -0.1502404  -0.24765303 -0.0501438 ]
+ [-0.06903157  0.0400055   0.00091548  0.00216406]]
+sldf: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.07197245 -0.1502404  -0.24765303 -0.0501438 ]
+ [ 0.          0.          0.          0.        ]]
+sldb: torch.Size([3, 4]) torch.float64 
+[[0.         0.         0.         0.        ]
+ [0.         0.         0.         0.        ]
+ [0.00294088 0.1902459  0.24856851 0.05230786]]
+sld: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.07197245 -0.1502404  -0.24765303 -0.0501438 ]
+ [-0.06903157  0.0400055   0.00091548  0.00216406]]
+xeps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+veps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+acc: torch.Size([4]) torch.float64 
+[0.46542615 0.97517227 0.66003278 0.46423505]
+sumlogdet: torch.Size([4]) torch.float64 
+[-0.06903157  0.0400055   0.00091548  0.00216406]
+beta: torch.Size([]) torch.float64 
+6.0
+acc_mask: torch.Size([4]) torch.float32 
+[1. 1. 1. 1.]
+plaqs: torch.Size([4]) torch.float64 
+[0.16767915 0.37381953 0.37383779 0.20119684]
+sinQ: torch.Size([4]) torch.float64 
+[ 0.04301257  0.01916423  0.01386744 -0.01006018]
+intQ: torch.Size([4]) torch.float64 
+[ 0.00245142  0.00109223  0.00079035 -0.00057336]
+dQint: torch.Size([4]) torch.float64 
+[0.00119233 0.00094291 0.00155372 0.00095932]
+dQsin: torch.Size([4]) torch.float64 
+[0.0209205  0.01654419 0.02726158 0.01683214]
+loss: None None 
+-0.020710585677662853
+[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 3
+[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 4
+[09/06/23 08:27:54][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[[-12.85390515 -19.69124648 -23.34418961 -11.83338904]
+ [-12.61930827 -19.83006702 -23.39287265 -12.32972948]
+ [-12.22362162 -18.93555772 -22.24709415 -12.09553454]]
+logprob: torch.Size([3, 4]) torch.float64 
+[[-12.85390515 -19.69124648 -23.34418961 -11.83338904]
+ [-12.65387143 -19.71055885 -23.17380781 -12.2815458 ]
+ [-12.22896701 -18.91997701 -22.23396345 -12.07717473]]
+logdet: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.03456316 -0.11950817 -0.21906484 -0.04818368]
+ [ 0.00534539 -0.01558072 -0.01313071 -0.01835981]]
+sldf: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.03456316 -0.11950817 -0.21906484 -0.04818368]
+ [ 0.          0.          0.          0.        ]]
+sldb: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.          0.          0.          0.        ]
+ [-0.02921778  0.10392745  0.20593414  0.02982387]]
+sld: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.03456316 -0.11950817 -0.21906484 -0.04818368]
+ [ 0.00534539 -0.01558072 -0.01313071 -0.01835981]]
+xeps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+veps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+acc: torch.Size([4]) torch.float64 
+[0.53529454 0.46242566 0.32948444 1.        ]
+sumlogdet: torch.Size([4]) torch.float64 
+[ 0.00534539 -0.         -0.         -0.01835981]
+beta: torch.Size([]) torch.float64 
+6.0
+acc_mask: torch.Size([4]) torch.float32 
+[1. 0. 0. 1.]
+plaqs: torch.Size([4]) torch.float64 
+[0.30234966 0.55960731 0.69219294 0.31462515]
+sinQ: torch.Size([4]) torch.float64 
+[0.02246026 0.01034247 0.01407288 0.00475271]
+intQ: torch.Size([4]) torch.float64 
+[0.00128008 0.00058945 0.00080206 0.00027087]
+dQint: torch.Size([4]) torch.float64 
+[0.0017964  0.         0.         0.00236045]
+dQsin: torch.Size([4]) torch.float64 
+[0.03151961 0.         0.         0.04141642]
+loss: None None 
+-0.015773998192892276
+[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 5
+[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 6
+[09/06/23 08:27:54][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[[-19.55645935 -20.86462233 -20.90289315 -11.80938497]
+ [-19.27554945 -20.60377855 -20.79816694 -11.77715066]
+ [-18.96590202 -20.34010565 -20.641842   -11.43213333]]
+logprob: torch.Size([3, 4]) torch.float64 
+[[-19.55645935 -20.86462233 -20.90289315 -11.80938497]
+ [-19.31960696 -20.45738215 -20.56264778 -11.72755736]
+ [-18.97671809 -20.35406438 -20.61748015 -11.4626642 ]]
+logdet: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.04405751 -0.14639641 -0.23551916 -0.0495933 ]
+ [ 0.01081607  0.01395873 -0.02436185  0.03053087]]
+sldf: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.04405751 -0.14639641 -0.23551916 -0.0495933 ]
+ [ 0.          0.          0.          0.        ]]
+sldb: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.          0.          0.          0.        ]
+ [-0.03324145  0.16035514  0.21115731  0.08012417]]
+sld: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.04405751 -0.14639641 -0.23551916 -0.0495933 ]
+ [ 0.01081607  0.01395873 -0.02436185  0.03053087]]
+xeps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+veps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+acc: torch.Size([4]) torch.float64 
+[0.56004325 0.60016062 0.75170374 0.70700272]
+sumlogdet: torch.Size([4]) torch.float64 
+[ 0.01081607  0.01395873 -0.02436185  0.03053087]
+beta: torch.Size([]) torch.float64 
+6.0
+acc_mask: torch.Size([4]) torch.float32 
+[1. 1. 1. 1.]
+plaqs: torch.Size([4]) torch.float64 
+[0.50284475 0.55960731 0.58704547 0.23919369]
+sinQ: torch.Size([4]) torch.float64 
+[-0.01053072  0.01034247  0.01918416 -0.03898123]
+intQ: torch.Size([4]) torch.float64 
+[-0.00060018  0.00058945  0.00109337 -0.00222166]
+dQint: torch.Size([4]) torch.float64 
+[0.00135638 0.00120177 0.00227558 0.00031006]
+dQsin: torch.Size([4]) torch.float64 
+[0.02379895 0.02108615 0.03992728 0.00544025]
+loss: None None 
+-0.016508422822688693
+[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 7
+[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 8
+[09/06/23 08:27:54][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[[-18.07899101 -28.71248658 -13.48019371 -14.59335827]
+ [-17.76685303 -28.30437183 -12.76586787 -14.82013678]
+ [-17.05030815 -28.78619363 -11.86821313 -14.6282822 ]]
+logprob: torch.Size([3, 4]) torch.float64 
+[[-18.07899101 -28.71248658 -13.48019371 -14.59335827]
+ [-17.86336929 -28.37337191 -12.58082071 -14.75738913]
+ [-17.21060337 -28.90503573 -11.8680323  -14.61315147]]
+logdet: torch.Size([3, 4]) torch.float64 
+[[ 0.00000000e+00  0.00000000e+00  0.00000000e+00  0.00000000e+00]
+ [ 9.65162556e-02  6.90000737e-02 -1.85047158e-01 -6.27476486e-02]
+ [ 1.60295223e-01  1.18842098e-01 -1.80827316e-04 -1.51307243e-02]]
+sldf: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.09651626  0.06900007 -0.18504716 -0.06274765]
+ [ 0.          0.          0.          0.        ]]
+sldb: torch.Size([3, 4]) torch.float64 
+[[0.         0.         0.         0.        ]
+ [0.         0.         0.         0.        ]
+ [0.06377897 0.04984202 0.18486633 0.04761692]]
+sld: torch.Size([3, 4]) torch.float64 
+[[ 0.00000000e+00  0.00000000e+00  0.00000000e+00  0.00000000e+00]
+ [ 9.65162556e-02  6.90000737e-02 -1.85047158e-01 -6.27476486e-02]
+ [ 1.60295223e-01  1.18842098e-01 -1.80827316e-04 -1.51307243e-02]]
+xeps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+veps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+acc: torch.Size([4]) torch.float64 
+[0.41962759 1.         0.19945604 1.        ]
+sumlogdet: torch.Size([4]) torch.float64 
+[ 0.16029522  0.1188421  -0.         -0.01513072]
+beta: torch.Size([]) torch.float64 
+6.0
+acc_mask: torch.Size([4]) torch.float32 
+[1. 1. 0. 1.]
+plaqs: torch.Size([4]) torch.float64 
+[0.62270466 0.74549143 0.53797573 0.24602781]
+sinQ: torch.Size([4]) torch.float64 
+[ 0.01834668  0.00603678 -0.01653119 -0.05096747]
+intQ: torch.Size([4]) torch.float64 
+[ 0.00104564  0.00034406 -0.00094216 -0.0029048 ]
+dQint: torch.Size([4]) torch.float64 
+[0.00191687 0.00024381 0.         0.00046954]
+dQsin: torch.Size([4]) torch.float64 
+[0.03363338 0.0042779  0.         0.00823858]
+loss: None None 
+-0.01735800592796972
+[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 9
+[09/06/23 08:27:54][INFO][1629827420.py:20] - checkSU(x_eval): (tensor[4] f64 x∈[9.577e-14, 0.024] μ=0.009 σ=0.012 [0.024, 2.063e-13, 0.014, 9.577e-14], tensor[4] f64 x∈[1.790e-13, 0.034] μ=0.013 σ=0.016 [0.034, 3.935e-13, 0.016, 1.790e-13])
+[09/06/23 08:27:54][INFO][2088423886.py:19] - Saving energy to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[09/06/23 08:27:55][INFO][2088423886.py:19] - Saving logprob to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[09/06/23 08:27:55][INFO][2088423886.py:19] - Saving logdet to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[09/06/23 08:27:55][INFO][2088423886.py:19] - Saving sldf to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[09/06/23 08:27:55][INFO][2088423886.py:19] - Saving sldb to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[09/06/23 08:27:56][INFO][2088423886.py:19] - Saving sld to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[09/06/23 08:27:56][INFO][2088423886.py:19] - Saving xeps to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[09/06/23 08:27:56][INFO][2088423886.py:19] - Saving veps to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[09/06/23 08:27:56][INFO][2088423886.py:19] - Saving acc to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[09/06/23 08:27:57][INFO][2088423886.py:19] - Saving sumlogdet to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[09/06/23 08:27:57][INFO][2088423886.py:19] - Saving beta to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[09/06/23 08:27:57][INFO][2088423886.py:19] - Saving acc_mask to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[09/06/23 08:27:57][INFO][2088423886.py:19] - Saving plaqs to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[09/06/23 08:27:57][INFO][2088423886.py:19] - Saving sinQ to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[09/06/23 08:27:58][INFO][2088423886.py:19] - Saving intQ to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[09/06/23 08:27:58][INFO][2088423886.py:19] - Saving dQint to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[09/06/23 08:27:58][INFO][2088423886.py:19] - Saving dQsin to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[09/06/23 08:27:58][INFO][2088423886.py:19] - Saving loss to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-2.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-3.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-4.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-5.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-6.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-7.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-8.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-9.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-10.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-11.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-12.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-13.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-14.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-15.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-16.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-17.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-18.png" class="img-fluid"></p>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-19.png" class="img-fluid"></p>
+</div>
+</div>
+<div class="cell" data-execution_count="8">
+<div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>history <span class="op">=</span> {}</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>x <span class="op">=</span> state.x</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> step <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">20</span>):</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>    log.info(<span class="ss">f'TRAIN STEP: </span><span class="sc">{</span>step<span class="sc">}</span><span class="ss">'</span>)</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>    x, metrics <span class="op">=</span> ptExpSU3.trainer.train_step((x, state.beta))</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (step <span class="op">&gt;</span> <span class="dv">0</span> <span class="kw">and</span> step <span class="op">%</span> <span class="dv">2</span> <span class="op">==</span> <span class="dv">0</span>):</span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>        print_dict(metrics, grab<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (step <span class="op">&gt;</span> <span class="dv">0</span> <span class="kw">and</span> step <span class="op">%</span> <span class="dv">1</span> <span class="op">==</span> <span class="dv">0</span>):</span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> key, val <span class="kw">in</span> metrics.items():</span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>            <span class="cf">try</span>:</span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>                history[key].append(val)</span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>            <span class="cf">except</span> <span class="pp">KeyError</span>:</span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>                history[key] <span class="op">=</span> [val]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 0
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 1
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 2
+[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[[-20.11355156 -13.83759796  -4.51987377 -11.45297864]
+ [-19.63407248 -12.82094906  -3.89140218 -11.38944608]
+ [-18.91054695 -12.57901193  -3.60837652 -10.80563673]]
+logprob: torch.Size([3, 4]) torch.float64 
+[[-20.11355156 -13.83759796  -4.51987377 -11.45297864]
+ [-19.5349711  -12.66848527  -3.6937792  -11.31223158]
+ [-18.98136385 -12.5501776   -3.58081924 -10.80513544]]
+logdet: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.09910138 -0.15246379 -0.19762298 -0.0772145 ]
+ [ 0.07081689 -0.02883433 -0.02755728 -0.00050128]]
+sldf: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.09910138 -0.15246379 -0.19762298 -0.0772145 ]
+ [ 0.          0.          0.          0.        ]]
+sldb: torch.Size([3, 4]) torch.float64 
+[[0.         0.         0.         0.        ]
+ [0.         0.         0.         0.        ]
+ [0.16991827 0.12362946 0.17006571 0.07671321]]
+sld: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.09910138 -0.15246379 -0.19762298 -0.0772145 ]
+ [ 0.07081689 -0.02883433 -0.02755728 -0.00050128]]
+xeps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+veps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+acc: torch.Size([4]) torch.float64 
+[0.32232732 0.2759818  0.39099734 0.52317294]
+sumlogdet: torch.Size([4]) torch.float64 
+[ 0.07081689 -0.         -0.02755728 -0.00050128]
+beta: torch.Size([]) torch.float64 
+6.0
+acc_mask: torch.Size([4]) torch.float32 
+[1. 0. 1. 1.]
+loss: None None 
+-0.009001684302756496
+plaqs: torch.Size([4]) torch.float64 
+[0.36183972 0.43746352 0.02919545 0.2244051 ]
+sinQ: torch.Size([4]) torch.float64 
+[ 0.01845919 -0.00937014  0.00653818  0.03579483]
+intQ: torch.Size([4]) torch.float64 
+[ 0.00105205 -0.00053403  0.00037263  0.00204006]
+dQint: torch.Size([4]) torch.float64 
+[0.00068181 0.         0.00033711 0.001986  ]
+dQsin: torch.Size([4]) torch.float64 
+[0.01196306 0.         0.00591496 0.0348463 ]
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 3
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 4
+[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[[-16.99217625 -18.05099071 -10.04985909  -7.1340411 ]
+ [-16.61047626 -17.84035555  -9.68866118  -7.14912011]
+ [-16.28336399 -18.36191548  -9.14330041  -5.86613539]]
+logprob: torch.Size([3, 4]) torch.float64 
+[[-16.99217625 -18.05099071 -10.04985909  -7.1340411 ]
+ [-16.4708106  -17.6654387   -9.64363079  -7.10061592]
+ [-16.17915148 -18.35588077  -9.12314899  -5.81814653]]
+logdet: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.13966566 -0.17491685 -0.04503039 -0.04850419]
+ [-0.10421251 -0.0060347  -0.02015142 -0.04798886]]
+sldf: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.13966566 -0.17491685 -0.04503039 -0.04850419]
+ [ 0.          0.          0.          0.        ]]
+sldb: torch.Size([3, 4]) torch.float64 
+[[0.         0.         0.         0.        ]
+ [0.         0.         0.         0.        ]
+ [0.03545315 0.16888215 0.02487897 0.00051533]]
+sld: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.13966566 -0.17491685 -0.04503039 -0.04850419]
+ [-0.10421251 -0.0060347  -0.02015142 -0.04798886]]
+xeps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+veps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+acc: torch.Size([4]) torch.float64 
+[0.44351451 1.         0.39585389 0.26823426]
+sumlogdet: torch.Size([4]) torch.float64 
+[-0.10421251 -0.0060347  -0.         -0.        ]
+beta: torch.Size([]) torch.float64 
+6.0
+acc_mask: torch.Size([4]) torch.float32 
+[1. 1. 0. 0.]
+loss: None None 
+-0.014134476436103167
+plaqs: torch.Size([4]) torch.float64 
+[0.46996628 0.45118214 0.18011337 0.30434348]
+sinQ: torch.Size([4]) torch.float64 
+[ 0.03170589 -0.01147666  0.05118318 -0.00268528]
+intQ: torch.Size([4]) torch.float64 
+[ 0.00180702 -0.00065409  0.00291709 -0.00015304]
+dQint: torch.Size([4]) torch.float64 
+[0.00065855 0.00207145 0.         0.        ]
+dQsin: torch.Size([4]) torch.float64 
+[0.01155495 0.03634551 0.         0.        ]
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 5
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 6
+[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[[-22.17358114 -18.47427308  -2.95308721 -11.62559496]
+ [-21.83570903 -18.22818944  -2.4429929  -11.20037746]
+ [-21.81748065 -18.37604145  -2.70650275 -10.07465326]]
+logprob: torch.Size([3, 4]) torch.float64 
+[[-22.17358114 -18.47427308  -2.95308721 -11.62559496]
+ [-21.84417608 -18.06424191  -2.60692839 -11.12021881]
+ [-21.89172921 -18.39051785  -2.62673381 -10.08631078]]
+logdet: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.00846706 -0.16394753  0.16393549 -0.08015865]
+ [ 0.07424856  0.0144764  -0.07976894  0.01165751]]
+sldf: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.00846706 -0.16394753  0.16393549 -0.08015865]
+ [ 0.          0.          0.          0.        ]]
+sldb: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.          0.          0.          0.        ]
+ [ 0.0657815   0.17842393 -0.24370443  0.09181616]]
+sld: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.00846706 -0.16394753  0.16393549 -0.08015865]
+ [ 0.07424856  0.0144764  -0.07976894  0.01165751]]
+xeps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+veps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+acc: torch.Size([4]) torch.float64 
+[0.75438538 0.91965634 0.72155015 0.21453462]
+sumlogdet: torch.Size([4]) torch.float64 
+[ 0.07424856  0.0144764  -0.07976894  0.01165751]
+beta: torch.Size([]) torch.float64 
+6.0
+acc_mask: torch.Size([4]) torch.float32 
+[1. 1. 1. 1.]
+loss: None None 
+-0.019461443124629982
+plaqs: torch.Size([4]) torch.float64 
+[0.43455592 0.53410535 0.15486684 0.30434348]
+sinQ: torch.Size([4]) torch.float64 
+[-0.01746029  0.01216864  0.01077427 -0.00268528]
+intQ: torch.Size([4]) torch.float64 
+[-0.00099512  0.00069353  0.00061406 -0.00015304]
+dQint: torch.Size([4]) torch.float64 
+[0.0016496  0.00074394 0.00087095 0.0014133 ]
+dQsin: torch.Size([4]) torch.float64 
+[0.02894377 0.01305311 0.01528163 0.02479769]
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 7
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 8
+[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[[-28.94977982 -23.93414904  -5.02251262 -20.14381224]
+ [-28.26856486 -24.03288661  -4.19892196 -20.37397293]
+ [-27.78459946 -23.56989642  -3.56347647 -20.06837893]]
+logprob: torch.Size([3, 4]) torch.float64 
+[[-28.94977982 -23.93414904  -5.02251262 -20.14381224]
+ [-28.25995613 -23.85544268  -4.41858446 -20.21769226]
+ [-27.77851779 -23.59675098  -3.59362754 -20.09340966]]
+logdet: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.00860873 -0.17744392  0.2196625  -0.15628067]
+ [-0.00608167  0.02685456  0.03015107  0.02503073]]
+sldf: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.00860873 -0.17744392  0.2196625  -0.15628067]
+ [ 0.          0.          0.          0.        ]]
+sldb: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.          0.          0.          0.        ]
+ [ 0.00252705  0.20429848 -0.18951143  0.1813114 ]]
+sld: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.00860873 -0.17744392  0.2196625  -0.15628067]
+ [-0.00608167  0.02685456  0.03015107  0.02503073]]
+xeps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+veps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+acc: torch.Size([4]) torch.float64 
+[0.3099755  0.71362471 0.23957588 0.95084655]
+sumlogdet: torch.Size([4]) torch.float64 
+[-0.          0.          0.          0.02503073]
+beta: torch.Size([]) torch.float64 
+6.0
+acc_mask: torch.Size([4]) torch.float32 
+[0. 0. 0. 1.]
+loss: None None 
+-0.015584381253787876
+plaqs: torch.Size([4]) torch.float64 
+[0.7403035  0.65171197 0.31634181 0.47457693]
+sinQ: torch.Size([4]) torch.float64 
+[-0.00859781 -0.00165773 -0.00396142  0.00092218]
+intQ: torch.Size([4]) torch.float64 
+[-4.90016318e-04 -9.44793472e-05 -2.25773828e-04  5.25577319e-05]
+dQint: torch.Size([4]) torch.float64 
+[0.         0.         0.         0.00032025]
+dQsin: torch.Size([4]) torch.float64 
+[0.         0.         0.         0.00561914]
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 9
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 10
+[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[[-31.39076793 -27.31985011 -19.54217484 -21.1104468 ]
+ [-31.0614939  -27.06503105 -19.07066872 -21.3910664 ]
+ [-30.84961158 -26.95602155 -18.69349894 -20.00516103]]
+logprob: torch.Size([3, 4]) torch.float64 
+[[-31.39076793 -27.31985011 -19.54217484 -21.1104468 ]
+ [-31.06645234 -26.87717262 -19.24520362 -21.21648217]
+ [-30.82929486 -26.99061806 -18.65210819 -20.00045772]]
+logdet: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.00495844 -0.18785843  0.1745349  -0.17458422]
+ [-0.02031672  0.03459652 -0.04139075 -0.00470331]]
+sldf: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.00495844 -0.18785843  0.1745349  -0.17458422]
+ [ 0.          0.          0.          0.        ]]
+sldb: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.          0.          0.          0.        ]
+ [-0.02527516  0.22245494 -0.21592565  0.16988091]]
+sld: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.00495844 -0.18785843  0.1745349  -0.17458422]
+ [-0.02031672  0.03459652 -0.04139075 -0.00470331]]
+xeps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+veps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+acc: torch.Size([4]) torch.float64 
+[0.57036826 0.71947605 0.41062839 0.32956256]
+sumlogdet: torch.Size([4]) torch.float64 
+[-0.02031672  0.03459652 -0.04139075 -0.        ]
+beta: torch.Size([]) torch.float64 
+6.0
+acc_mask: torch.Size([4]) torch.float32 
+[1. 1. 1. 0.]
+loss: None None 
+-0.011982253415392767
+plaqs: torch.Size([4]) torch.float64 
+[0.7403035  0.65171197 0.45503328 0.62236101]
+sinQ: torch.Size([4]) torch.float64 
+[-0.00859781 -0.00165773 -0.00088107  0.01924983]
+intQ: torch.Size([4]) torch.float64 
+[-4.90016318e-04 -9.44793472e-05 -5.02151834e-05  1.09710862e-03]
+dQint: torch.Size([4]) torch.float64 
+[0.00043531 0.00061571 0.00043569 0.        ]
+dQsin: torch.Size([4]) torch.float64 
+[0.00763793 0.01080326 0.00764459 0.        ]
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 11
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 12
+[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[[-31.42781825 -21.38032064 -19.16557544 -24.26085164]
+ [-30.89428362 -21.22321069 -18.90945902 -23.55378881]
+ [-30.46921912 -20.86892045 -18.93287679 -23.36450964]]
+logprob: torch.Size([3, 4]) torch.float64 
+[[-31.42781825 -21.38032064 -19.16557544 -24.26085164]
+ [-30.88117485 -21.00988585 -19.11822465 -23.54366138]
+ [-30.55010401 -20.84704698 -19.01058406 -23.31072478]]
+logdet: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.01310877 -0.21332485  0.20876563 -0.01012743]
+ [ 0.08088489 -0.02187348  0.07770727 -0.05378486]]
+sldf: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.01310877 -0.21332485  0.20876563 -0.01012743]
+ [ 0.          0.          0.          0.        ]]
+sldb: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.          0.          0.          0.        ]
+ [ 0.09399365  0.19145137 -0.13105835 -0.04365743]]
+sld: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.01310877 -0.21332485  0.20876563 -0.01012743]
+ [ 0.08088489 -0.02187348  0.07770727 -0.05378486]]
+xeps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+veps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+acc: torch.Size([4]) torch.float64 
+[0.41573209 0.58668123 0.85642256 0.38669196]
+sumlogdet: torch.Size([4]) torch.float64 
+[ 0.08088489 -0.          0.07770727 -0.        ]
+beta: torch.Size([]) torch.float64 
+6.0
+acc_mask: torch.Size([4]) torch.float32 
+[1. 0. 1. 0.]
+loss: None None 
+-0.016004372395409854
+plaqs: torch.Size([4]) torch.float64 
+[0.84037172 0.65154716 0.42313337 0.73863172]
+sinQ: torch.Size([4]) torch.float64 
+[ 1.47285038e-03 -1.56397921e-03 -6.09823914e-03 -6.72724198e-05]
+intQ: torch.Size([4]) torch.float64 
+[ 8.39424059e-05 -8.91361261e-05 -3.47557954e-04 -3.83406818e-06]
+dQint: torch.Size([4]) torch.float64 
+[1.23274406e-05 0.00000000e+00 5.10271910e-04 0.00000000e+00]
+dQsin: torch.Size([4]) torch.float64 
+[0.0002163  0.         0.00895321 0.        ]
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 13
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 14
+[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[[-29.59240183 -21.94551736 -28.47707495 -20.59708329]
+ [-29.48303373 -21.10556806 -28.05877271 -20.58985545]
+ [-29.39854899 -20.73632654 -27.22089443 -19.77844503]]
+logprob: torch.Size([3, 4]) torch.float64 
+[[-29.59240183 -21.94551736 -28.47707495 -20.59708329]
+ [-29.40940421 -20.98154179 -28.17860182 -20.541757  ]
+ [-29.31460821 -20.72420952 -27.17276265 -19.77710774]]
+logdet: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.07362952 -0.12402627  0.11982911 -0.04809845]
+ [-0.08394078 -0.01211702 -0.04813178 -0.00133729]]
+sldf: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.07362952 -0.12402627  0.11982911 -0.04809845]
+ [ 0.          0.          0.          0.        ]]
+sldb: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.          0.          0.          0.        ]
+ [-0.01031126  0.11190925 -0.16796089  0.04676117]]
+sld: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.07362952 -0.12402627  0.11982911 -0.04809845]
+ [-0.08394078 -0.01211702 -0.04813178 -0.00133729]]
+xeps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+veps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+acc: torch.Size([4]) torch.float64 
+[0.75745313 0.2948443  0.27135909 0.44044242]
+sumlogdet: torch.Size([4]) torch.float64 
+[-0.08394078 -0.01211702 -0.04813178 -0.00133729]
+beta: torch.Size([]) torch.float64 
+6.0
+acc_mask: torch.Size([4]) torch.float32 
+[1. 1. 1. 1.]
+loss: None None 
+-0.012984717158635528
+plaqs: torch.Size([4]) torch.float64 
+[0.75491793 0.6547223  0.63304782 0.73863172]
+sinQ: torch.Size([4]) torch.float64 
+[ 3.85535809e-03 -1.41124889e-02 -1.46423245e-02 -6.72724198e-05]
+intQ: torch.Size([4]) torch.float64 
+[ 2.19729063e-04 -8.04315419e-04 -8.34512428e-04 -3.83406817e-06]
+dQint: torch.Size([4]) torch.float64 
+[0.00065824 0.00058615 0.00017334 0.00014198]
+dQsin: torch.Size([4]) torch.float64 
+[0.01154945 0.01028462 0.00304149 0.00249122]
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 15
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 16
+[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[[-27.90336074 -24.58447835 -27.70507628 -25.1095963 ]
+ [-27.4557147  -23.38939397 -26.86035304 -24.74188789]
+ [-26.76730611 -23.12311187 -26.13507215 -24.81611966]]
+logprob: torch.Size([3, 4]) torch.float64 
+[[-27.90336074 -24.58447835 -27.70507628 -25.1095963 ]
+ [-27.42721443 -23.25741435 -27.03208626 -24.69073936]
+ [-26.83629231 -23.14150881 -26.14979085 -24.84522864]]
+logdet: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.02850027 -0.13197962  0.17173322 -0.05114852]
+ [ 0.0689862   0.01839694  0.0147187   0.02910898]]
+sldf: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.02850027 -0.13197962  0.17173322 -0.05114852]
+ [ 0.          0.          0.          0.        ]]
+sldb: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.          0.          0.          0.        ]
+ [ 0.09748647  0.15037655 -0.15701452  0.0802575 ]]
+sld: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [-0.02850027 -0.13197962  0.17173322 -0.05114852]
+ [ 0.0689862   0.01839694  0.0147187   0.02910898]]
+xeps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+veps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+acc: torch.Size([4]) torch.float64 
+[0.34401554 0.23622524 0.21112911 0.76769124]
+sumlogdet: torch.Size([4]) torch.float64 
+[0.0689862  0.         0.0147187  0.02910898]
+beta: torch.Size([]) torch.float64 
+6.0
+acc_mask: torch.Size([4]) torch.float32 
+[1. 0. 1. 1.]
+loss: None None 
+-0.011869373548195221
+plaqs: torch.Size([4]) torch.float64 
+[0.82255532 0.72111137 0.69612456 0.72896623]
+sinQ: torch.Size([4]) torch.float64 
+[-0.00564947 -0.00444414 -0.01693866  0.00255894]
+intQ: torch.Size([4]) torch.float64 
+[-0.00032198 -0.00025329 -0.00096539  0.00014584]
+dQint: torch.Size([4]) torch.float64 
+[8.49293564e-05 0.00000000e+00 3.84992539e-04 3.15784764e-04]
+dQsin: torch.Size([4]) torch.float64 
+[0.00149017 0.         0.00675506 0.00554075]
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 17
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 18
+[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[[-28.74207541 -24.8965513  -32.81235279 -22.59228204]
+ [-27.98828099 -23.91465789 -32.28912627 -22.61626646]
+ [-27.23785728 -24.01606216 -31.51716178 -21.73978358]]
+logprob: torch.Size([3, 4]) torch.float64 
+[[-28.74207541 -24.8965513  -32.81235279 -22.59228204]
+ [-28.07501629 -23.97865766 -32.35996206 -22.61968433]
+ [-27.18635944 -23.93497767 -31.62224319 -21.75485085]]
+logdet: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.0867353   0.06399977  0.07083579  0.00341787]
+ [-0.05149783 -0.08108449  0.10508142  0.01506727]]
+sldf: torch.Size([3, 4]) torch.float64 
+[[0.         0.         0.         0.        ]
+ [0.0867353  0.06399977 0.07083579 0.00341787]
+ [0.         0.         0.         0.        ]]
+sldb: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.          0.          0.          0.        ]
+ [-0.13823313 -0.14508427  0.03424563  0.0116494 ]]
+sld: torch.Size([3, 4]) torch.float64 
+[[ 0.          0.          0.          0.        ]
+ [ 0.0867353   0.06399977  0.07083579  0.00341787]
+ [-0.05149783 -0.08108449  0.10508142  0.01506727]]
+xeps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+veps: torch.Size([3]) torch.float64 
+[0.1 0.1 0.1]
+acc: torch.Size([4]) torch.float64 
+[0.21103823 0.38229083 0.30418792 0.43282093]
+sumlogdet: torch.Size([4]) torch.float64 
+[-0.         -0.08108449  0.          0.01506727]
+beta: torch.Size([]) torch.float64 
+6.0
+acc_mask: torch.Size([4]) torch.float32 
+[0. 1. 0. 1.]
+loss: None None 
+-0.00985098143962743
+plaqs: torch.Size([4]) torch.float64 
+[0.85381281 0.70579842 0.80681173 0.75974167]
+sinQ: torch.Size([4]) torch.float64 
+[-0.00332841 -0.00489329 -0.01271997  0.00506889]
+intQ: torch.Size([4]) torch.float64 
+[-0.0001897  -0.00027888 -0.00072495  0.00028889]
+dQint: torch.Size([4]) torch.float64 
+[0.         0.00045467 0.         0.00140838]
+dQsin: torch.Size([4]) torch.float64 
+[0.         0.00797764 0.         0.02471136]
+[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 19</code></pre>
+</div>
+</div>
+<div class="cell" data-execution_count="9">
+<div class="sourceCode cell-code" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>x <span class="op">=</span> ptExpSU3.trainer.dynamics.unflatten(x)</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>log.info(<span class="ss">f"checkSU(x_train): </span><span class="sc">{</span>g<span class="sc">.</span>checkSU(x)<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="co"># plot_metrics(history, title='train', marker='.')</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[09/06/23 08:28:01][INFO][1630590238.py:2] - checkSU(x_train): (tensor[4] f64 x∈[3.838e-16, 0.018] μ=0.008 σ=0.009 [0.018, 0.014, 3.838e-16, 9.135e-13], tensor[4] f64 x∈[6.307e-16, 0.026] μ=0.011 σ=0.013 [0.026, 0.017, 6.307e-16, 1.818e-12])</code></pre>
+</div>
+</div>
+<div class="cell" data-execution_count="10">
+<div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(history.keys())</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">dict_keys(['energy', 'logprob', 'logdet', 'sldf', 'sldb', 'sld', 'xeps', 'veps', 'acc', 'sumlogdet', 'beta', 'acc_mask', 'loss', 'plaqs', 'sinQ', 'intQ', 'dQint', 'dQsin'])
+</pre>
+</div>
+</div>
+
+
+
+<a onclick="window.scrollTo(0, 0); return false;" role="button" id="quarto-back-to-top"><i class="bi bi-arrow-up"></i> Back to top</a><div id="quarto-appendix" class="default"><section class="quarto-appendix-contents"><h2 class="anchored quarto-appendix-heading">Citation</h2><div><div class="quarto-appendix-secondary-label">BibTeX citation:</div><pre class="sourceCode code-with-copy quarto-appendix-bibtex"><code class="sourceCode bibtex">@misc{foreman2023,
+  author = {Foreman, Sam},
+  title = {4D {\$SU(3)\$} {Model}},
+  date = {2023-09-06},
+  url = {https://saforem2.github.io/l2hmc-qcd},
+  langid = {en}
+}
+</code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre><div class="quarto-appendix-secondary-label">For attribution, please cite this work as:</div><div id="ref-foreman2023" class="csl-entry quarto-appendix-citeas" role="listitem">
+Foreman, Sam. 2023. <span>“4D $SU(3)$ Model.”</span> <em>L2HMC</em>. <a href="https://saforem2.github.io/l2hmc-qcd">https://saforem2.github.io/l2hmc-qcd</a>.
+</div></div></section></div></main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const disableStylesheet = (stylesheets) => {
+    for (let i=0; i < stylesheets.length; i++) {
+      const stylesheet = stylesheets[i];
+      stylesheet.rel = 'prefetch';
+    }
+  }
+  const enableStylesheet = (stylesheets) => {
+    for (let i=0; i < stylesheets.length; i++) {
+      const stylesheet = stylesheets[i];
+      stylesheet.rel = 'stylesheet';
+    }
+  }
+  const manageTransitions = (selector, allowTransitions) => {
+    const els = window.document.querySelectorAll(selector);
+    for (let i=0; i < els.length; i++) {
+      const el = els[i];
+      if (allowTransitions) {
+        el.classList.remove('notransition');
+      } else {
+        el.classList.add('notransition');
+      }
+    }
+  }
+  const toggleColorMode = (alternate) => {
+    // Switch the stylesheets
+    const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+    manageTransitions('#quarto-margin-sidebar .nav-link', false);
+    if (alternate) {
+      enableStylesheet(alternateStylesheets);
+      for (const sheetNode of alternateStylesheets) {
+        if (sheetNode.id === "quarto-bootstrap") {
+          toggleBodyColorMode(sheetNode);
+        }
+      }
+    } else {
+      disableStylesheet(alternateStylesheets);
+      toggleBodyColorPrimary();
+    }
+    manageTransitions('#quarto-margin-sidebar .nav-link', true);
+    // Switch the toggles
+    const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+    for (let i=0; i < toggles.length; i++) {
+      const toggle = toggles[i];
+      if (toggle) {
+        if (alternate) {
+          toggle.classList.add("alternate");     
+        } else {
+          toggle.classList.remove("alternate");
+        }
+      }
+    }
+    // Hack to workaround the fact that safari doesn't
+    // properly recolor the scrollbar when toggling (#1455)
+    if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+      manageTransitions("body", false);
+      window.scrollTo(0, 1);
+      setTimeout(() => {
+        window.scrollTo(0, 0);
+        manageTransitions("body", true);
+      }, 40);  
+    }
+  }
+  const isFileUrl = () => { 
+    return window.location.protocol === 'file:';
+  }
+  const hasAlternateSentinel = () => {  
+    let styleSentinel = getColorSchemeSentinel();
+    if (styleSentinel !== null) {
+      return styleSentinel === "alternate";
+    } else {
+      return false;
+    }
+  }
+  const setStyleSentinel = (alternate) => {
+    const value = alternate ? "alternate" : "default";
+    if (!isFileUrl()) {
+      window.localStorage.setItem("quarto-color-scheme", value);
+    } else {
+      localAlternateSentinel = value;
+    }
+  }
+  const getColorSchemeSentinel = () => {
+    if (!isFileUrl()) {
+      const storageValue = window.localStorage.getItem("quarto-color-scheme");
+      return storageValue != null ? storageValue : localAlternateSentinel;
+    } else {
+      return localAlternateSentinel;
+    }
+  }
+  let localAlternateSentinel = 'alternate';
+  // Dark / light mode switch
+  window.quartoToggleColorScheme = () => {
+    // Read the current dark / light value 
+    let toAlternate = !hasAlternateSentinel();
+    toggleColorMode(toAlternate);
+    setStyleSentinel(toAlternate);
+  };
+  // Ensure there is a toggle, if there isn't float one in the top right
+  if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+    const a = window.document.createElement('a');
+    a.classList.add('top-right');
+    a.classList.add('quarto-color-scheme-toggle');
+    a.href = "";
+    a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+    const i = window.document.createElement("i");
+    i.classList.add('bi');
+    a.appendChild(i);
+    window.document.body.appendChild(a);
+  }
+  // Switch to dark mode if need be
+  if (hasAlternateSentinel()) {
+    toggleColorMode(true);
+  } else {
+    toggleColorMode(false);
+  }
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const isCodeAnnotation = (el) => {
+    for (const clz of el.classList) {
+      if (clz.startsWith('code-annotation-')) {                     
+        return true;
+      }
+    }
+    return false;
+  }
+  const clipboard = new window.ClipboardJS('.code-copy-button', {
+    text: function(trigger) {
+      const codeEl = trigger.previousElementSibling.cloneNode(true);
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+  });
+  clipboard.on('success', function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  });
+  const viewSource = window.document.getElementById('quarto-view-source') ||
+                     window.document.getElementById('quarto-code-tools-source');
+  if (viewSource) {
+    const sourceUrl = viewSource.getAttribute("data-quarto-source-url");
+    viewSource.addEventListener("click", function(e) {
+      if (sourceUrl) {
+        // rstudio viewer pane
+        if (/\bcapabilities=\b/.test(window.location)) {
+          window.open(sourceUrl);
+        } else {
+          window.location.href = sourceUrl;
+        }
+      } else {
+        const modal = new bootstrap.Modal(document.getElementById('quarto-embedded-source-code-modal'));
+        modal.show();
+      }
+      return false;
+    });
+  }
+  function toggleCodeHandler(show) {
+    return function(e) {
+      const detailsSrc = window.document.querySelectorAll(".cell > details > .sourceCode");
+      for (let i=0; i<detailsSrc.length; i++) {
+        const details = detailsSrc[i].parentElement;
+        if (show) {
+          details.open = true;
+        } else {
+          details.removeAttribute("open");
+        }
+      }
+      const cellCodeDivs = window.document.querySelectorAll(".cell > .sourceCode");
+      const fromCls = show ? "hidden" : "unhidden";
+      const toCls = show ? "unhidden" : "hidden";
+      for (let i=0; i<cellCodeDivs.length; i++) {
+        const codeDiv = cellCodeDivs[i];
+        if (codeDiv.classList.contains(fromCls)) {
+          codeDiv.classList.remove(fromCls);
+          codeDiv.classList.add(toCls);
+        } 
+      }
+      return false;
+    }
+  }
+  const hideAllCode = window.document.getElementById("quarto-hide-all-code");
+  if (hideAllCode) {
+    hideAllCode.addEventListener("click", toggleCodeHandler(false));
+  }
+  const showAllCode = window.document.getElementById("quarto-show-all-code");
+  if (showAllCode) {
+    showAllCode.addEventListener("click", toggleCodeHandler(true));
+  }
+  function tippyHover(el, contentFn) {
+    const config = {
+      allowHTML: true,
+      content: contentFn,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start'
+    };
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      return note.innerHTML;
+    });
+  }
+      let selectedAnnoteEl;
+      const selectorForAnnotation = ( cell, annotation) => {
+        let cellAttr = 'data-code-cell="' + cell + '"';
+        let lineAttr = 'data-code-annotation="' +  annotation + '"';
+        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+        return selector;
+      }
+      const selectCodeLines = (annoteEl) => {
+        const doc = window.document;
+        const targetCell = annoteEl.getAttribute("data-target-cell");
+        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+        const lineIds = lines.map((line) => {
+          return targetCell + "-" + line;
+        })
+        let top = null;
+        let height = null;
+        let parent = null;
+        if (lineIds.length > 0) {
+            //compute the position of the single el (top and bottom and make a div)
+            const el = window.document.getElementById(lineIds[0]);
+            top = el.offsetTop;
+            height = el.offsetHeight;
+            parent = el.parentElement.parentElement;
+          if (lineIds.length > 1) {
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+            height = bottom - top;
+          }
+          if (top !== null && height !== null && parent !== null) {
+            // cook up a div (if necessary) and position it 
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            div.style.top = top - 2 + "px";
+            div.style.height = height + 4 + "px";
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            gutterDiv.style.top = top - 2 + "px";
+            gutterDiv.style.height = height + 4 + "px";
+          }
+          selectedAnnoteEl = annoteEl;
+        }
+      };
+      const unselectCodeLines = () => {
+        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+        elementsIds.forEach((elId) => {
+          const div = window.document.getElementById(elId);
+          if (div) {
+            div.remove();
+          }
+        });
+        selectedAnnoteEl = undefined;
+      };
+      // Attach click handler to the DT
+      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+      for (const annoteDlNode of annoteDls) {
+        annoteDlNode.addEventListener('click', (event) => {
+          const clickedEl = event.target;
+          if (clickedEl !== selectedAnnoteEl) {
+            unselectCodeLines();
+            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+            if (activeEl) {
+              activeEl.classList.remove('code-annotation-active');
+            }
+            selectCodeLines(clickedEl);
+            clickedEl.classList.add('code-annotation-active');
+          } else {
+            // Unselect the line
+            unselectCodeLines();
+            clickedEl.classList.remove('code-annotation-active');
+          }
+        });
+      }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+    <div class="nav-footer-left">
+      <ul class="footer-items list-unstyled">
+    <li class="nav-item">
+    <a class="nav-link" href="https://github.com/saforem2/l2hmc-qcd">l2hmc-qcd</a>
+  </li>  
+</ul>
+    </div>   
+    <div class="nav-footer-center">Copyright 2023, Sam Foreman<div class="toc-actions"><div><i class="bi bi-github"></i></div><div class="action-links"><p><a href="https://github.com/saforem2/l2hmc-qcd/blob/main/qmd/l2hmc-4DSU3.qmd" class="toc-action">View source</a></p><p><a href="https://github.com/saforem2/l2hmc-qcd/edit/main/qmd/l2hmc-4DSU3.qmd" class="toc-action">Edit this page</a></p><p><a href="https://github.com/saforem2/l2hmc-qcd/issues/new" class="toc-action">Report an issue</a></p></div></div></div>
+    <div class="nav-footer-right">
+      <ul class="footer-items list-unstyled">
+    <li class="nav-item">
+    <a class="nav-link" href="https://samforeman.me"><i class="fa-solid fa-home" aria-label="home"></i></a>
+  </li>  
+    <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/saforem2">
+      <i class="bi bi-github" role="img">
+</i> 
+    </a>
+  </li>  
+    <li class="nav-item compact">
+    <a class="nav-link" href="https://twitter.com/saforem2">
+      <i class="bi bi-twitter" role="img">
+</i> 
+    </a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="mailto:///foremans@anl.gov"><i class="fa-regular fa-paper-plane" aria-label="paper-plane"></i></a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="https://www.twitter.com/saforem2"><i class="fa-brands fa-twitter" aria-label="twitter"></i></a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="https://scholar.google.com/citations?user=vV_1zDwAAAAJ&amp;hl=en"></a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="https://orcid.org/0000-0002-9981-0876"></a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="https://www.last.fm/user/saforem2"><i class="fa-brands fa-lastfm" aria-label="lastfm"></i></a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="https://open.spotify.com/user/saforem2"><i class="fa-brands fa-spotify" aria-label="spotify"></i></a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="https://www.instagram.com/saforem2"><i class="fa-brands fa-instagram" aria-label="instagram"></i></a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="https://linkedin.com/in/saforem2"><i class="fa-brands fa-linkedin" aria-label="linkedin"></i></a>
+  </li>  
+</ul>
+    </div>
+  </div>
+</footer>
+
+
+
+</body></html>

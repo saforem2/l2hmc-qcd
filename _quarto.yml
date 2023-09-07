@@ -71,9 +71,16 @@ website:
         href: https://github.com/saforem2/l2hmc-qcd
         aria-label: GitHub
     left:
-      - href: qmd/l2hmc-2DU1.qmd
-        text: "Example: 2D U(1)"
+      - href: qmd/examples.qmd
+        text: "[{{< fa solid book >}}]{.red-text} Examples"
+      - href: qmd/slides.qmd
+        text: "[{{< fa solid person-chalkboard >}}]{.blue-text} Slides"
+      # - href: https://saforem2.github.io/lattice23
+      #   text: "Slides"
+      # - href: qmd/l2hmc-2DU1.qmd
+      #   text: "Example: 2D U(1)"
   sidebar: false
+## [{{< fa solid hourglass-end >}}]{.blue-text} Appendix
   # sidebar:
   #   style: "floating"
   #   search: true

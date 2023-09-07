@@ -13,7 +13,6 @@ execute:
    freeze: true
 ---
 
-
 ::: {style="text-align:center;"}
 
 ![](https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg)
