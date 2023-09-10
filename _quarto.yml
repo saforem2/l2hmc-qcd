@@ -38,16 +38,6 @@ project:
     - index.qmd
     - qmd/l2hmc-2DU1.qmd
     - qmd/*.qmd
-    # - qmd/GettingStarted/*.qmd
-    # - qmd/ClimRR/*.qmd
-    # - qmd/ClimRR/chicago-temp.qmd
-    # - qmd/ClimRR/definitions.qmd
-    # - qmd/setup.qmd
-    # - qmd/intro.qmd
-    # - qmd/ClimRR.qmd
-    # - qmd/chicago.qmd
-    # - qmd/iris.qmd
-    # - qmd/illinois.qmd
   type: website
   output-dir: "docs"
   preview:
@@ -67,14 +57,14 @@ website:
     background: "#222222"
     foregound: "#777777"
     right:
-      - icon: github
-        href: https://github.com/saforem2/l2hmc-qcd
-        aria-label: GitHub
-    left:
+    # left:
       - href: qmd/examples.qmd
         text: "[{{< fa solid book >}}]{.red-text} Examples"
       - href: qmd/slides.qmd
         text: "[{{< fa solid person-chalkboard >}}]{.blue-text} Slides"
+      - icon: github
+        href: https://github.com/saforem2/l2hmc-qcd
+        aria-label: GitHub
       # - href: https://saforem2.github.io/lattice23
       #   text: "Slides"
       # - href: qmd/l2hmc-2DU1.qmd
@@ -151,7 +141,7 @@ format:
     highlight-style: atom-one
     code-overflow: scroll
     code-fold: false
-    code-copy: true
+    code-copy: hover
     code-summary: " "
     code-tools:
       source: repo
