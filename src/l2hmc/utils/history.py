@@ -29,7 +29,7 @@ from l2hmc.configs import PROJECT_DIR
 # from l2hmc.common import get_timestamp
 from l2hmc.utils.plot_helpers import make_ridgeplots, set_plot_style, set_size, plot_combined, subplots, plot_dataset
 
-from utils.rich import is_interactive
+from l2hmc.utils.rich import is_interactive
 
 # TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray]
 TensorLike = Union[tf.Tensor, torch.Tensor, np.ndarray, list]

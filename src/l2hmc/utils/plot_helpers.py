@@ -64,6 +64,8 @@ COLORS = {
 }
 
 
+# ["#2196F3", "#EF5350", "#4CAF50", "#FFA726", "#AE81FF", "#ffeb3b", "#EC407A", "#009688", "#CFCFCF"]
+
 def set_plot_style(**kwargs):
     plt.style.use('default')
     plt.rcParams.update({
