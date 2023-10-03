@@ -12,6 +12,7 @@ import time
 from typing import Any, Optional, Tuple
 import warnings
 
+import opinionated
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -19,6 +20,10 @@ import seaborn as sns
 import xarray as xr
 # import torch
 # import tensorflow as tf
+
+import opinionated
+# from toolbox import set_plot_style
+from opinionated import STYLES
 
 from l2hmc.utils.rich import is_interactive
 # from l2hmc.utils.logger import get_pylogger
@@ -36,7 +41,6 @@ except (ImportError, ModuleNotFoundError):
 
 warnings.filterwarnings('ignore')
 
-
 # log = get_pylogger(__name__)
 # log = logging.getLogger(__name__)
 log = get_logger(__name__)
@@ -45,7 +49,7 @@ xplt = xr.plot  # type: ignore
 
 LW = plt.rcParams.get('axes.linewidth', 1.75)
 
-plt.rcParams['svg.fonttype'] = 'none'
+# plt.rcParams['svg.fonttype'] = 'none'
 
 FigAxes = Tuple[plt.Figure, plt.Axes]
 
@@ -66,8 +70,17 @@ COLORS = {
 
 # ["#2196F3", "#EF5350", "#4CAF50", "#FFA726", "#AE81FF", "#ffeb3b", "#EC407A", "#009688", "#CFCFCF"]
 
+
+# sns.set_context('talk')
+# set_plot_style()
+# matplotlib_inline.backend_inline.set_matplotlib_formats('svg')
+
+plt.style.use('default')
+# set_plot_style()
+
 def set_plot_style(**kwargs):
-    plt.style.use('default')
+    #plt.style.use('default')
+    #plt.style.use(opinionated.STYLES['opinionated_min'])
     plt.rcParams.update({
         'image.cmap': 'viridis',
         'savefig.transparent': True,
@@ -100,7 +113,7 @@ def set_plot_style(**kwargs):
         'text.color': '#838383',
         'grid.linestyle': '--',
         'grid.linewidth': 0.5,
-        'grid.alpha': 0.4,
+        'grid.alpha': 0.33,
         'xtick.color': 'none',
         'ytick.color': 'none',
         'xtick.labelcolor': '#838383',
@@ -112,9 +125,14 @@ def set_plot_style(**kwargs):
         'color',
         list(COLORS.values())
     )
-    plt.rcParams['axes.labelcolor'] = '#939393'
+    plt.rcParams['axes.labelcolor'] = '#838383'
     plt.rcParams.update(**kwargs)
-    plt.rcParams |= {'figure.figsize': [12.4, 4.8]}
+    # plt.rcParams |= {'figure.figsize': [12.4, 4.8]}
+    # plt.style.use(STYLES['opinionated_min'])
+    # plt.rcParams['ytick.labelsize'] = 14.0
+    # plt.rcParams['xtick.labelsize'] = 14.0
+    # plt.rcParams['grid.alpha'] = 0.4
+    # grid_color = plt.rcParams['grid.color']
     # if not is_interactive():
     #     figsize = plt.rcParamsDefault.get('figure.figsize', (4.5, 3))
     #     x = figsize[0]
@@ -136,6 +154,7 @@ def save_figure(fig: plt.Figure, fname: str, outdir: os.PathLike):
     pngdir.mkdir(exist_ok=True, parents=True)
     pngfile = pngdir.joinpath(f'{fname}.png')
     svgfile = Path(outdir).joinpath(f'{fname}.svg')
+
     _ = fig.savefig(pngfile, dpi=400, bbox_inches='tight')
     _ = fig.savefig(svgfile, dpi=400, bbox_inches='tight')
     with PLOTS_LOG.open('a') as f:
@@ -170,7 +189,7 @@ def measure_improvement(
     ehist = experiment.trainer.histories.get('eval', None)
     hhist = experiment.trainer.histories.get('hmc', None)
     improvement = 0.0
-    set_plot_style()
+    # set_plot_style()
     lw = plt.rcParams.get('axes.linewidth', 1.25)
     if ehist is not None and hhist is not None:
         edset = ehist.get_dataset()
@@ -808,99 +827,99 @@ def plot_history(
         )
 
 
-def plot_dataset(
-        dataset: xr.Dataset,
-        num_chains: Optional[int] = 8,
-        therm_frac: Optional[float] = 0.,
-        title: Optional[str] = None,
-        logfreq: Optional[int] = None,
-        outdir: Optional[os.PathLike] = None,
-        subplots_kwargs: Optional[dict[str, Any]] = None,
-        plot_kwargs: Optional[dict[str, Any]] = None,
-        ext: Optional[str] = 'png',
-        save_plots: bool = True,
-):
-    plot_kwargs = {} if plot_kwargs is None else plot_kwargs
-    subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
-
-    if outdir is None:
-        import os
-        tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
-        outdir = Path(os.getcwd()).joinpath('plots', f'plots-{tstamp}')
-        outdir.mkdir(exist_ok=True, parents=True)
-
-    _ = make_ridgeplots(
-        dataset,
-        outdir=outdir,
-        drop_nans=True,
-        drop_zeros=False,
-        num_chains=num_chains,
-        cmap='viridis',
-        save_plot=save_plots,
-    )
-
-    for idx, (key, val) in enumerate(dataset.data_vars.items()):
-        color = f'C{idx%9}'
-        plot_kwargs['color'] = color
-
-        fig, subfigs, ax = plot_metric(
-            val=val.values,
-            key=str(key),
-            title=title,
-            outdir=None,
-            logfreq=logfreq,
-            therm_frac=therm_frac,
-            num_chains=num_chains,
-            plot_kwargs=plot_kwargs,
-            subplots_kwargs=subplots_kwargs,
-        )
-        if fig is not None:
-            _ = sns.despine(fig, top=True, right=True, bottom=True, left=True)
-
-        _ = ax.grid(True, alpha=0.4)
-        if subfigs is not None:
-            # edgecolor = plt.rcParams['axes.edgecolor']
-            plt.rcParams['axes.edgecolor'] = plt.rcParams['axes.facecolor']
-            ax = subfigs[0].subplots(1, 1)
-            # ax = fig[1].subplots(constrained_layout=True)
-            cbar_kwargs = {
-                # 'location': 'top',
-                # 'orientation': 'horizontal',
-            }
-            im = val.plot(ax=ax, cbar_kwargs=cbar_kwargs)  # type:ignore
-            # ax.set_ylim(0, )
-            im.colorbar.set_label(f'{key}')                # type:ignore
-            _ = sns.despine(subfigs[0], top=True, right=True,
-                            left=True, bottom=True)
-        if outdir is not None:
-            dirs = {
-                'png': Path(outdir).joinpath("pngs/"),
-                'svg': Path(outdir).joinpath("svgs/"),
-            }
-            _ = [i.mkdir(exist_ok=True, parents=True) for i in dirs.values()]
-            # pngdir = Path(outdir).joinpath(f"pngs/")
-            # svgdir = Path(outdir).joinpath(f"svgs/")
-            # pfile = pngdir.joinpath(f"{key}.png")
-            # sfile = svgdir.joinpath(f"{key}.svg")
-            from l2hmc.configs import PROJECT_DIR
-            log.info(
-                f"Saving {key} plot to: "
-                f"{Path(outdir).resolve().relative_to(PROJECT_DIR)}"
-            )
-            for ext, d in dirs.items():
-                outfile = d.joinpath(f"{key}.{ext}")
-                # log.info(f"Saving {key}.ext to: {outfile}")
-                plt.savefig(outfile, dpi=400, bbox_inches='tight')
-            # outfile = Path(outdir).joinpath(f'{key}.{ext}')
-            # Path(outfile.parent).mkdir(exist_ok=True, parents=True)
-            # outfile = outfile.as_posix()
-        # if outfile is not None:
-        #     log.info(f'Saving figure to: {outfile}')
-        #     _ = plt.savefig(outfile, dpi=400, bbox_inches='tight')
-        # else:
-        #     _ = fig.savefig(outfile, dpi=400, bbox_inches='tight')
-
-    return dataset
+# def plot_dataset(
+#         dataset: xr.Dataset,
+#         num_chains: Optional[int] = 8,
+#         therm_frac: Optional[float] = 0.,
+#         title: Optional[str] = None,
+#         logfreq: Optional[int] = None,
+#         outdir: Optional[os.PathLike] = None,
+#         subplots_kwargs: Optional[dict[str, Any]] = None,
+#         plot_kwargs: Optional[dict[str, Any]] = None,
+#         ext: Optional[str] = 'png',
+#         save_plots: bool = True,
+# ):
+#     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
+#     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
+#
+#     if outdir is None:
+#         import os
+#         tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
+#         outdir = Path(os.getcwd()).joinpath('plots', f'plots-{tstamp}')
+#         outdir.mkdir(exist_ok=True, parents=True)
+#
+#     _ = make_ridgeplots(
+#         dataset,
+#         outdir=outdir,
+#         drop_nans=True,
+#         drop_zeros=False,
+#         num_chains=num_chains,
+#         cmap='viridis',
+#         save_plot=save_plots,
+#     )
+#
+#     for idx, (key, val) in enumerate(dataset.data_vars.items()):
+#         color = f'C{idx%9}'
+#         plot_kwargs['color'] = color
+#
+#         fig, subfigs, ax = plot_metric(
+#             val=val.values,
+#             key=str(key),
+#             title=title,
+#             outdir=None,
+#             logfreq=logfreq,
+#             therm_frac=therm_frac,
+#             num_chains=num_chains,
+#             plot_kwargs=plot_kwargs,
+#             subplots_kwargs=subplots_kwargs,
+#         )
+#         if fig is not None:
+#             _ = sns.despine(fig, top=True, right=True, bottom=True, left=True)
+#
+#         # _ = ax.grid(True, alpha=0.4)
+#         if subfigs is not None:
+#             # edgecolor = plt.rcParams['axes.edgecolor']
+#             plt.rcParams['axes.edgecolor'] = plt.rcParams['axes.facecolor']
+#             ax = subfigs[0].subplots(1, 1)
+#             # ax = fig[1].subplots(constrained_layout=True)
+#             cbar_kwargs = {
+#                 # 'location': 'top',
+#                 # 'orientation': 'horizontal',
+#             }
+#             im = val.plot(ax=ax, cbar_kwargs=cbar_kwargs)  # type:ignore
+#             # ax.set_ylim(0, )
+#             im.colorbar.set_label(f'{key}')                # type:ignore
+#             _ = sns.despine(subfigs[0], top=True, right=True,
+#                             left=True, bottom=True)
+#         if outdir is not None:
+#             dirs = {
+#                 'png': Path(outdir).joinpath("pngs/"),
+#                 'svg': Path(outdir).joinpath("svgs/"),
+#             }
+#             _ = [i.mkdir(exist_ok=True, parents=True) for i in dirs.values()]
+#             # pngdir = Path(outdir).joinpath(f"pngs/")
+#             # svgdir = Path(outdir).joinpath(f"svgs/")
+#             # pfile = pngdir.joinpath(f"{key}.png")
+#             # sfile = svgdir.joinpath(f"{key}.svg")
+#             from l2hmc.configs import PROJECT_DIR
+#             log.info(
+#                 f"Saving {key} plot to: "
+#                 f"{Path(outdir).resolve().relative_to(PROJECT_DIR)}"
+#             )
+#             for ext, d in dirs.items():
+#                 outfile = d.joinpath(f"{key}.{ext}")
+#                 # log.info(f"Saving {key}.ext to: {outfile}")
+#                 plt.savefig(outfile, dpi=400, bbox_inches='tight')
+#             # outfile = Path(outdir).joinpath(f'{key}.{ext}')
+#             # Path(outfile.parent).mkdir(exist_ok=True, parents=True)
+#             # outfile = outfile.as_posix()
+#         # if outfile is not None:
+#         #     log.info(f'Saving figure to: {outfile}')
+#         #     _ = plt.savefig(outfile, dpi=400, bbox_inches='tight')
+#         # else:
+#         #     _ = fig.savefig(outfile, dpi=400, bbox_inches='tight')
+#
+#     return dataset
 
 
 def make_ridgeplots(
