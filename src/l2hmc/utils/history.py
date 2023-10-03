@@ -27,7 +27,14 @@ from l2hmc.common import grab_tensor
 from l2hmc.configs import MonteCarloStates, Steps
 from l2hmc.configs import PROJECT_DIR
 # from l2hmc.common import get_timestamp
-from l2hmc.utils.plot_helpers import make_ridgeplots, set_plot_style, set_size, plot_combined, subplots, plot_dataset
+from l2hmc.common import plot_dataset
+from l2hmc.utils.plot_helpers import (
+    make_ridgeplots,
+    set_plot_style,
+    set_size,
+    plot_combined,
+    subplots
+)
 
 from l2hmc.utils.rich import is_interactive
 
