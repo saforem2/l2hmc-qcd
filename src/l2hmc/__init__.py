@@ -11,7 +11,7 @@ import torch
 from mpi4py import MPI
 # from rich.logging import RichHandler
 # from l2hmc.utils.enrich import EnRichHandler
-from enrich.logging import RichHandler
+from enrich.handler import RichHandler
 import tqdm
 from rich import print
 
