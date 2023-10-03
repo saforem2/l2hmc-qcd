@@ -13,7 +13,8 @@ from collections import namedtuple
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Counter, Dict, List, Optional, Sequence
+from typing import Any, Counter, Dict, List, Optional, Sequence, Callable
+import torch
 
 from hydra.core.config_store import ConfigStore
 import numpy as np
@@ -739,16 +740,6 @@ class ExperimentConfig(BaseConfig):
             nepoch=self.steps.nepoch,
         )
 
-    def load_ds_config1(self, fpath: Optional[os.PathLike]) -> dict:
-        fname = self.ds_config_path if fpath is None else fpath
-        assert fname is not None
-        cpath = Path(fname)
-        ds_config = {}
-        if cpath.is_file():
-            pass
-
-        return ds_config
-
     def load_ds_config(self, fpath: Optional[os.PathLike] = None) -> dict:
         fname = self.ds_config_path if fpath is None else fpath
         assert fname is not None
@@ -911,21 +902,20 @@ class Annealear:
         if drop is not None:
             if isinstance(drop, int):
                 # If passed as an int, we should interpret as num to drop
-                if drop > 1:
-                    y = y[drop:]
-                    if x is not None:
-                        x = x[drop:]
-                else:
+                if drop <= 1:
                     raise ValueError('Expected `drop` to be an int > 1')
+                # if drop > 1:
+                y = y[drop:]
+                if x is not None:
+                    x = x[drop:]
             elif isinstance(drop, float):
                 # If passed as a float, we should interpret as a percentage
-                if drop < 1.:
-                    frac = drop * len(y)
-                    y = y[frac:]
-                    if x is not None:
-                        x = x[frac:]
-                else:
-                    raise ValueError('Expected `drop` to be a float < 1.')
+                if drop <= 1.:
+                    raise ValueError('Expected `drop` to be a float > 1.')
+                frac = drop * len(y)
+                y = y[frac:]
+                if x is not None:
+                    x = x[frac:]
             else:
                 raise ValueError(
                     'Expected drop to be one of `int` or `float`.'
@@ -973,20 +963,18 @@ class Annealear:
         if new_best < self._prev_best or avg_slope < 0:
             # Loss has improved from previous best, return new_beta (increase)
             return new_beta
-        else:
-            # Loss has NOT improved from previous best
-            current_beta_count = Counter(self.betas).get(current_beta)
-            if (
-                    current_beta_count is not None
-                    and isinstance(current_beta_count, int)
-                    and current_beta_count > self.patience
-            ):
-                # If we've exhausted our patience
-                # at the current_beta, return prev_beta (decrease)
-                return prev_beta
-
-            # If we're still being patient, return current_beta (no change)
-            return current_beta
+        # Loss has NOT improved from previous best
+        current_beta_count = Counter(self.betas).get(current_beta)
+        if (
+                current_beta_count is not None
+                and isinstance(current_beta_count, int)
+                and current_beta_count > self.patience
+        ):
+            # If we've exhausted our patience
+            # at the current_beta, return prev_beta (decrease)
+            return prev_beta
+        # If we're still being patient, return current_beta (no change)
+        return current_beta
 
 
 def get_config(overrides: Optional[list[str]] = None):
@@ -1033,6 +1021,111 @@ def get_experiment(
         raise ValueError(
             f'Unexpected value for `cfg.framework: {cfg.framework}'
         )
+
+
+@dataclass
+class DiffusionConfig:
+    """
+    Diffusion Config.
+
+    Args:
+        - `log_likelihood_fn`: Callable[[torch.Tensor], torch.Tensor]:
+            - Your log-likelihood function to be sampled. Must be defined in
+              terms of a 1D parameter array `x` and a number of dimensions
+              `dim`. Some example log-likelihood functions are provided in the
+              examples folder.
+        - `dim`: int
+            - Number of dimensions of the likelihood function
+        - `low_bound`: torch.Tensor
+            - Array of lower bounds on each parameter
+        - `high_bound`: torch.Tensor
+            - Array of upper bounds on each parameter
+        - `initial_samples`: torch.Tensor
+            - Array of samples to be used as the starting point for the
+              algorithm. For a likelihood function with widely separated modes,
+              several samples from each mode must be supplied here to allow the
+              diffusion model to jump between them. For functions with just one
+              mode, it is not necessary to provide anything more than an
+              initial sample as a starting point. See the examples folder for
+              more details.
+        - `retrains`: int
+            - Number of times to retrain the diffusion model. More retrains
+              will improve the performance at the cost of increased runtime.
+        - `samples_per_retrain`:
+            - Number of diffusion samples to generate before retraining the
+              diffusion model.
+                  - `num_samples_total = retrains * samples_per_retrain`
+        - `outdir`: os.PathLike
+            - Where to save results
+        - `nsteps`: int (default = 20)
+            - Number of noising steps in the forward / reverse diffusion
+              process.
+                - If the diffusion model is failing to closely reproduce the
+                  target, try increasing.
+                - If training is too slow, try decreasing.
+        - `sigma`: float (default = 0.05)
+            - Width of the pure Metropolis-Hastings Gaussian Proposal.
+                - If algorithm stuck in local minima or not exploring enough of
+                  parameter space, try increasing.
+        - `diffusion_prob`: float (default = 0.5)
+            - Probability of drawing from the diffusion model. Higher values
+              are generally preferred for multi-modal functions where jumping
+              between modes with the diffusion samples is required.
+        - `bins`: int (default = 20)
+            - Number of bins used in 1D histograms of each parameter to
+              calculate the Q proposal function weights. If diffusion
+              acceptance rate remains very low over many samples, try
+              increasing this value for greater resolution in the Q factor
+              calculation, though doing so will increase retrain time.
+        - `noise_width` (default = 0.05)`
+            - Width of noise after performing forward diffusion process. If
+              diffusion model is failing to reproduce sharp modes of the target
+              distribution (check "diffusion_check.pdf" in the relevant
+              outdir), try reducing this value.
+        - `beta_1`: float
+            - How much noise to add in the first step of the forward diffusion
+              process. We use a linear variance schedule, increasing from
+              `beta_1` to `beta_2`. If diffusion model is failing to reproduce
+              sharp modes of the target distribution (check
+              "diffusion_check.pdf" in the relevant outdir), try increasing
+              this value.
+        - `beta_2`: float
+            - How much noise to add at the last step of the forward diffusion
+              process. We use a linear variance schedule, increasing from
+              `beta_1` to `beta_2`. If diffusion model is failing to reproduce
+              sharp modes of the target distribution (check
+              "diffusion_check.pdf" in the relevant outdir), try increasing
+              this value.
+        - `plot_initial`: bool
+            - Whether to plot diffusion_check.pdf in the outdir.
+    """
+    log_likelihood_fn: Callable[[torch.Tensor], torch.Tensor]
+    # xshape: Sequence[int]
+    dim: int  # x.flatten().shape[0]
+    # while (
+    #            θ[j] < low_bound[j]
+    #            or θ'[j] > high_bound[j]
+    # ):
+    #      θ'[j] = θ[j] + norm(0, σ[j])
+    low_bound: torch.Tensor             # shape = (dim,)
+    high_bound: torch.Tensor            # shape = (dim,)
+    initial_samples: torch.Tensor     # shape = (dim,)
+    train_iters: int             # num times to retrain diffusion model.
+    samples_per_retrain: int  # num samples to generate before retraining
+    outdir: os.PathLike         # where to save results
+    # NOTE:
+    # - if Diffusion model failing to reproduce target, increase nsteps
+    # - if training too slow, try decreasing nsteps
+    nsteps: int = 20     # num noising steps in f/b diffusion process
+    # NOTE:
+    # - if A(x'|x) too low, try reducing sigma
+    # - if algorithm stuck in local min or not exploring well, try increasing
+    sigma: float = 0.3  # width of the MH Gaussian Proposal
+    # NOTE:
+    # - Higher values are generally preferred for multi-modal functions where
+    #    jumping between modes with the diffusion samples is required
+    diffusion_prob: float = 0.5  # prob. of drawing from diffusion model
+    bins: int = 20  # Number of bins used in 1D Histogram of each param
 
 
 defaults = [
