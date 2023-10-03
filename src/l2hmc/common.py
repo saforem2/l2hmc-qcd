@@ -29,7 +29,7 @@ from l2hmc.configs import State
 from l2hmc.utils.plot_helpers import (
     make_ridgeplots,
     plot_dataArray,
-    set_plot_style
+    # set_plot_style
 )
 from l2hmc.utils.rich import get_console, is_interactive
 
@@ -674,6 +674,22 @@ def save_figure(
     return fig
 
 
+def savefig(
+        fname: str,
+        outdir: os.PathLike,
+        tstamp: Optional[bool] = True,
+):
+    outdir = Path(outdir)
+    if tstamp:
+        fname = f"{fname}-{get_timestamp('%Y-%m-%d-%H%M%S')}"
+    print(f"Saving {fname} to {outdir}")
+    for ext in {"png", "svg"}:
+        edir = Path(outdir).joinpath(f"{ext}s")
+        edir.mkdir(exist_ok=True, parents=True)
+        outfile = Path(edir).joinpath(f"{fname}.{ext}")
+        plt.savefig(outfile, dpi=450, bbox_inches='tight')
+
+
 def make_dataset(metrics: dict) -> xr.Dataset:
     dset = {}
     for key, val in metrics.items():
@@ -726,10 +742,13 @@ def plot_dataset(
         job_type: Optional[str] = None,
         save_plots: bool = True,
 ) -> None:
-    outdir = Path(outdir) if outdir is not None else Path(os.getcwd())
+    tstamp = get_timestamp()
+    outdir = Path(outdir) if outdir is not None else (
+        Path(os.getcwd()).joinpath(f"{tstamp}")
+    )
     outdir.mkdir(exist_ok=True, parents=True)
-    job_type = job_type if job_type is not None else f'job-{get_timestamp()}'
-    set_plot_style()
+    job_type = job_type if job_type is not None else f'job-{tstamp}'
+    # set_plot_style()
 
     _ = make_ridgeplots(
         dataset,
@@ -859,7 +878,7 @@ def save_and_analyze_data(
         else ': '.join([jstr, f'{framework}'])
     )
 
-    set_plot_style()
+    # set_plot_style()
     dataset = analyze_dataset(dataset,
                               run=run,
                               arun=arun,
