@@ -11,25 +11,73 @@ editor:
    render-on-save: true
 execute:
    freeze: true
+author: ""
+date: ""
+# title: "l2hmc-qcd"
+site-url: https://saforem2.github.io/l2hmc-qcd
+# author: ""
+# listing:
+#   - id: sample-listings
+#     contents:
+#       - "../qmd/**/*.qmd"
+#       - "./qmd/posts.qmd"
+#       - "./qmd/diffusion/diffusion.qmd"
+#       - "./qmd/slides.qmd"
+#       - "./qmd/l2hmc-2DU1.qmd"
+#       - "./qmd/l2hmc-4DSU3.qmd"
+# #       - "!../qmd/dsblog.qmd"
+#     type: table
+#     sort: "date desc"
+listing:
+  - id: listings
+    contents:
+      # - "../qmd/**/*.qmd"
+      - "qmd/posts.qmd"
+      - "qmd/diffusion/diffusion.qmd"
+      - "qmd/diffusion-alt/diffusion.qmd"
+      - "qmd/slides.qmd"
+      - "qmd/l2hmc-2DU1.qmd"
+      - "qmd/l2hmc-4DSU3.qmd"
+    # contents:
+    #   - "!../l2hmc-qcd/qmd/old/*.qmd"
+    #   # - "../l2hmc-qcd/qmd/**/*.qmd"
+    #   # - "../l2hmc-qcd/qmd/**/*.qmd"
+    #   - "qmd/posts.qmd"
+    #   - "qmd/diffusion/diffusion.qmd"
+    #   - "diffusion-alt/diffusion.qmd"
+    #   - "qmd/slides.qmd"
+    #   - "qmd/l2hmc-2DU1.qmd"
+    #   - "qmd/l2hmc-4DSU3.qmd"
+    type: table
+    sort: "date desc"
 ---
+
+:::: {.columns style="display: flex; align-items: flex-start;"}
+
+::: {.column width="60%"}
 
 ::: {style="text-align:center;"}
 
 ![](https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg)
 
-<a href="https://hits.seeyoufarm.com"><img alt="hits" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fsaforem2%2Fl2hmc-qcd&count_bg=%2300CCFF&title_bg=%23555555&icon=&icon_color=%23111111&title=👋&edge_flat=false"></a>    
+<a href="https://hits.seeyoufarm.com"><img alt="hits" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fsaforem2%2Fl2hmc-qcd&count_bg=%2300CCFF&title_bg=%23555555&icon=&icon_color=%23111111&title=👋&edge_flat=false"></a>  
 <a href="https://github.com/saforem2/l2hmc-qcd/"><img alt="l2hmc-qcd" src="https://img.shields.io/badge/-l2hmc--qcd-252525?style=flat&logo=github&labelColor=gray"></a> <a href="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd"><img alt="codefactor" src="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge"></a>
 <br>
-<a href="https://arxiv.org/abs/2112.01582"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg"></a> <a href="https://arxiv.org/abs/2105.03418"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg"></a> 
+<a href="https://arxiv.org/abs/2112.01582"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg"></a> <a href="https://arxiv.org/abs/2105.03418"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg"></a>
 <br>
-<a href="https://hydra.cc"><img alt="hydra" src="https://img.shields.io/badge/Config-Hydra-89b8cd"></a> <a href="https://pytorch.org/get-started/locally/"><img alt="pyTorch" src="https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&logoColor=white"></a> <a href="https://www.tensorflow.org"><img alt="tensorflow" src="https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white"></a> 
+<a href="https://hydra.cc"><img alt="hydra" src="https://img.shields.io/badge/Config-Hydra-89b8cd"></a> <a href="https://pytorch.org/get-started/locally/"><img alt="pyTorch" src="https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&logoColor=white"></a> <a href="https://www.tensorflow.org"><img alt="tensorflow" src="https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white"></a>
 <br>
 [<img src="https://raw.githubusercontent.com/wandb/assets/main/wandb-github-badge-28.svg" alt="Weights & Biases monitoring" height=20>](https://wandb.ai/l2hmc-qcd/l2hmc-qcd)
 
 :::
 
+:::
 
-<details closed><summary><b>Contents</b></summary>
+::: {.column width="40%"}
+
+::: {.callout-tip collapse="false" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="[{{< fa solid list-ol >}} Contents]{.dim-text}"}
+
+<!-- <details closed><summary><b>Contents</b></summary> -->
 
 - [Overview](#overview)
   * [Papers 📚, Slides 📊, etc.](https://github.com/saforem2/l2hmc-qcd/#training--experimenting)
@@ -43,7 +91,13 @@ execute:
     + [Dynamics / Network](#dynamics---network)
       - [Network Architecture](#network-architecture)
 
-</details>
+<!-- </details> -->
+
+:::
+
+:::
+
+::::
 
 # Overview
 
@@ -204,7 +258,7 @@ simulations in lattice QCD (specifically, a 2D U(1) lattice gauge theory model)
 can be found in [arXiv:2105.03418](https://arxiv.org/abs/2105.03418).
 
 <div align="center">
- <img src="assets/l2hmc_poster.jpeg" alt="l2hmc-qcd poster" width="90%" />
+ <img src="assets/l2hmc_poster.jpeg" alt="l2hmc-qcd poster" width="100%" />
 </div>
 
 ## Organization
@@ -213,21 +267,24 @@ can be found in [arXiv:2105.03418](https://arxiv.org/abs/2105.03418).
 
 For a given target distribution, π(x), the `Dynamics` object
 ([`src/l2hmc/dynamics/`](src/l2hmc/dynamics)) implements methods for generating
-proposal configurations (x' ~ π) using the generalized leapfrog update.
+proposal configurations ($x^{\prime} \sim \pi$) using the generalized leapfrog update.
 
 
 This generalized leapfrog update takes as input a buffer of lattice
-configurations `x` and generates a proposal configuration `x' = Dynamics(x)` by
+configurations `x` and generates a proposal configuration $x^{\prime}=$ `Dynamics(x)` by
 evolving generalized L2HMC dynamics.
 
 
 #### Network Architecture
 
-An illustration of the `leapfrog layer` updating `(x, v) --> (x', v')` can be seen below.
 
-<div align="center">
- <img src="assets/lflayer.png" alt="leapfrog layer" width=800/>
-</div>
+
+::: {#fig-lflayer width="75%;"}
+
+![](./assets/lflayer.png)
+
+An illustration of the `leapfrog layer` updating `(x, v) --> (x', v')` can be seen below.
+:::
 
 
 ## Contact
@@ -235,6 +292,16 @@ An illustration of the `leapfrog layer` updating `(x, v) --> (x', v')` can be se
 ***Code author:*** Sam Foreman
 
 ***Pull requests and issues should be directed to:*** [saforem2](http://github.com/saforem2)
+
+
+## Posts
+
+<!-- ::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: rgba(red(var(--green-text)), green(var(--green-text)), blue(var(--green-text)), 0.075)))!important;" title="[{{< bi signpost-split >}}]{.green-text} Posts"} -->
+
+::: {#listings}
+:::
+
+<!-- ::: -->
 
 ## Citation
 
@@ -266,3 +333,9 @@ If you use this code or found this work interesting, please cite our work along 
 > This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357.<br>
 > This work describes objective technical results and analysis.<br>
 > Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government.
+
+
+<p align="center">
+<a href="https://hits.seeyoufarm.com"><img align="center" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fsaforem2.github.io/l2hmc-qcd/&count_bg=%2300CCFF&title_bg=%23303030&icon=&icon_color=%23E7E7E7&title=hits&edge_flat=false"/></a>
+</p>
+

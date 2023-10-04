@@ -1,18 +1,36 @@
+# citation:
+#    type: article
+#    container-title: "L2HMC"
+#    url: https://saforem2.github.io/l2hmc-qcd
+#
 citation:
-   type: article
-   container-title: "L2HMC"
+   author: Sam Foreman
+   type: webpage
+   # published: today
+   # year: 2023
+   # date: today
+   title: "l2hmc-qcd"
    url: https://saforem2.github.io/l2hmc-qcd
+site-url: https://saforem2.github.io/l2hmc-qcd
+google-scholar: true
+citeproc: true
 author:
-  - name: Sam Foreman
-    # id: sf
-    url: https://samforeman.me
-    orcid: 0000-0002-9981-0876
-    email: foremans@anl.gov
-    # affiliation: 
-    #   - name: Argonne National Laboratory
-    #     city: Chicago
-    #     state: IL
-    #     url: https://alcf.anl.gov
+  # name: Sam Foreman
+  name: "Sam Foreman [[{{< ai orcid >}}]{.orcid-green}](https://orcid.org/0000-0002-9981-0876)"
+  url: https://samforeman.me
+  # orcid: 0000-0002-9981-0876
+  email: foremans@anl.gov
+# author:
+#   - name: Sam Foreman
+#     # id: sf
+#     url: https://samforeman.me
+#     orcid: 0000-0002-9981-0876
+#     email: foremans@anl.gov
+#     # affiliation: 
+#     #   - name: Argonne National Laboratory
+#     #     city: Chicago
+#     #     state: IL
+#     #     url: https://alcf.anl.gov
 date: today
 # toc: true
 author-title: ""
@@ -29,20 +47,40 @@ bibliography: references.bib
 # highlight-style:
 #   dark: dracula
 #   light: dracula-light
-
 execute:
-  keep-ipynb: true
-  freeze: auto
+  freeze: true
+  # keep-ipynb: true
 project:
-  render:
-    - index.qmd
-    - qmd/l2hmc-2DU1.qmd
-    - qmd/*.qmd
   type: website
   output-dir: "docs"
   preview:
-    port: 4203
+    port: 4702
+  render:
+    - "index.qmd"
+    - "./qmd/posts.qmd"
+    - "./qmd/diffusion/diffusion.qmd"
+    - "./qmd/slides.qmd"
+    - "./qmd/l2hmc-2DU1.qmd"
+    - "./qmd/l2hmc-4DSU3.qmd"
+    - "./qmd/diffusion-alt/diffusion.qmd"
+    # - "./qmd/**/*.qmd"
+    # - "./qmd/*.qmd"
+      #- "!./qmd/*old*/**"
+      #- "!./qmd/old/*.qmd"
+      #- "./qmd/diffusion.qmd"
+      #- "./qmd/diffusion1.qmd"
+    # - "!./qmd/diffusion/old/*.qmd"
+    # - "./qmd/diffusion/*.qmd"
+    # - "./qmd/diffusion/diffusion-2dU1.qmd"
+    # - "!qmd/diffusion.qmd"
+    # - "qmd/diffusion-new.ipynb"
+    # - qmd/l2hmc-2DU1.qmd
+    # - qmd/diffusers.qmd
+    # - "../qmd/*.qmd"
+  resources:
+    - "./resources/diffusion-2dU1-Copy1.html"
 website:
+  # twitter-card: true
   open-graph: true
   repo-url: https://github.com/saforem2/l2hmc-qcd
   repo-actions: [source, edit, issue]
@@ -51,17 +89,35 @@ website:
   title: "l2hmc-qcd"
   site-url: "https://saforem2.github.io/l2hmc-qcd"
   favicon: "favicon.svg"
-  back-to-top-navigation: true
+  # back-to-top-navigation: true
+  description: "L2HMC-QCD Project Site"
+  twitter-card: true
+    # image: "./assets/thumbnail.png"
+    # site: "@saforem2"
+    # creator: "@saforem2"
+  # page-navigation: true
+  # title: "Sam Foreman"
+  # site-url: "https://saforem2.github.io"
+  # favicon: "./favicon.svg"
+  # back-to-top-navigation: true
+  # reader-mode: true
+  sidebar: false
   navbar:
     logo: "./favicon.svg"
     background: "#222222"
     foregound: "#777777"
-    right:
+    left:
     # left:
-      - href: qmd/examples.qmd
-        text: "[{{< fa solid book >}}]{.red-text} Examples"
-      - href: qmd/slides.qmd
-        text: "[{{< fa solid person-chalkboard >}}]{.blue-text} Slides"
+      - href: "./qmd/posts.qmd"
+        text: "[{{< bi signpost-split >}}]{.red-text} Posts"
+      # - href: "./qmd/examples.qmd"
+      #   text: "[{{< bi newspaper >}}]{.green-text} Examples"
+      - href: "./qmd/slides.qmd"
+        text: "[{{< bi easel >}}]{.green-text} Talks"
+      # - href: "../qmd/projects.qmd"
+      # - href: qmd/slides.qmd
+      #   text: "[{{< fa solid person-chalkboard >}}]{.blue-text} Slides"
+    right:
       - icon: github
         href: https://github.com/saforem2/l2hmc-qcd
         aria-label: GitHub
@@ -69,7 +125,7 @@ website:
       #   text: "Slides"
       # - href: qmd/l2hmc-2DU1.qmd
       #   text: "Example: 2D U(1)"
-  sidebar: false
+  # sidebar: false
 ## [{{< fa solid hourglass-end >}}]{.blue-text} Appendix
   # sidebar:
   #   style: "floating"
