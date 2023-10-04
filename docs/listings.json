@@ -1,0 +1,23 @@
+[
+  {
+    "listing": "/index.html",
+    "items": [
+      "/qmd/posts.html",
+      "/qmd/diffusion/diffusion.html",
+      "/qmd/diffusion-alt/diffusion.html",
+      "/qmd/slides.html",
+      "/qmd/l2hmc-2DU1.html",
+      "/qmd/l2hmc-4DSU3.html"
+    ]
+  },
+  {
+    "listing": "/qmd/posts.html",
+    "items": [
+      "/qmd/diffusion/diffusion.html",
+      "/qmd/diffusion-alt/diffusion.html",
+      "/qmd/slides.html",
+      "/qmd/l2hmc-2DU1.html",
+      "/qmd/l2hmc-4DSU3.html"
+    ]
+  }
+]

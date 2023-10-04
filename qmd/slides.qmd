@@ -1,0 +1,54 @@
+---
+title: "Recent Talks"
+callout-appearance: simple
+title-block-banner: false
+# https://www.anl.gov/sites/www/files/2021-09/CPA_RESIZE_Climate%20Resilience%20Images_01_1920x1080.jpg
+editor:
+   render-on-save: true
+execute:
+   freeze: true
+author:
+  # name: Sam Foreman
+  name: "Sam Foreman [[{{< ai orcid >}}]{.orcid-green}](https://orcid.org/0000-0002-9981-0876)"
+  url: https://samforeman.me
+  # orcid: 0000-0002-9981-0876
+  email: foremans@anl.gov
+  # affiliation: Argonne National Laboratory
+  # affiliation-url: https://alcf.anl.gov/about/people/sam-foreman
+citation:
+   author: Sam Foreman
+   type: webpage
+   title: "Slides"
+   url: https://saforem2.github.io/l2hmc-qcd/qmd/slides.html
+---
+
+::: {.callout title="[{{< fa solid person-chalkboard size=fa-lg >}}]{style='color:#A9A9B3;'} $\hspace{2pt}$ [**MLMC: Machine Learning Monte Carlo**](https://saforem2.github.io/lattice23) @ [Lattice 2023](https://indico.fnal.gov/event/57249/contributions/271305/) (07/2023)" collapse="true" style="width:100%;"}
+
+<!-- - [**MLMC: Machine Learning Monte Carlo**](https://saforem2.github.io/lattice23), at [Lattice 2023](https://mlmc2022.github.io/), July 2023 -->
+    
+<iframe src="https://saforem2.github.io/lattice23/" title="MLMC: Machine Learning Monte Carlo" width="100%" align="center" height="512" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen style="border-radius:0.25rem;border:none;align:center;">
+    <p>Your browser does not support iframes.</p>
+  </iframe>
+
+:::
+
+::: {.callout title="[{{< fa solid person-chalkboard size=fa-lg >}}]{style='color:#A9A9B3;'} $\hspace{2pt}$ [**Generative Modeling and Efficient Sampling**](https://saforem2.github.io/lqcd-pasc23/) @ [PASC23](https://pasc23.pasc-conference.org/) (07/2023)" collapse="true" style="width:100%;"}
+
+<!-- ::: {.callout-important title="Recent Talks" collapse="true" style="width: 100%;"} -->
+<!-- - [**Generative Modeling and Efficient Sampling**](https://saforem2.github.io/lqcd-pasc23/), at [PASC23](https://pasc23.pasc-conference.org/), July 2023  -->
+    
+<iframe src="https://saforem2.github.io/lqcd-pasc23/" title="Generative Modeling and Efficient Sampling" width="100%" align="center" height="512" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen style="border-radius:0.25rem;border:none;align:center;">
+    <p>Your browser does not support iframes.</p>
+  </iframe>
+
+:::
+
+::: {.callout title="[{{< fa solid person-chalkboard size=fa-lg >}}]{style='color:#A9A9B3;'} $\hspace{2pt}$ [**Efficient Sampling for Lattice Gauge Theory**](https://saforem2.github.io/deep-fridays) @ [Deep Fridays @ U. Bologna](https://www.cs.unibo.it/~asperti/deep_fridays.html) (04/2023)" collapse="true" style="width:100%;"}
+
+<!-- - [**Efficient Sampling for Lattice Gauge Theory**](https://saforem2.github.io/deep-fridays), at [Deep Fridays @ U. Bologna](https://www.cs.unibo.it/~asperti/deep_fridays.html), April 2023 -->
+    
+<iframe src="https://saforem2.github.io/deep-fridays/" title="Efficient Sampling for Lattice Gauge Theory" width="100%" align="center" height="512" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen style="border-radius:0.25rem;border:none;align:center;">
+    <p>Your browser does not support iframes.</p>
+  </iframe>
+
+:::

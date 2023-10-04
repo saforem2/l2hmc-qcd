@@ -1,0 +1,1246 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="242.832969pt" height="344.94pt" viewBox="0 0 242.832969 344.94" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2023-09-19T14:27:44.342056</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.8.0, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 344.94 
+L 242.832969 344.94 
+L 242.832969 0 
+L 0 0 
+L 0 344.94 
+z
+" style="fill: none"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 16.791484 55.71 
+L 226.041484 55.71 
+L 226.041484 7.2 
+L 16.791484 7.2 
+L 16.791484 55.71 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_1">
+    <g id="xtick_1"/>
+    <g id="xtick_2"/>
+    <g id="xtick_3"/>
+    <g id="xtick_4"/>
+    <g id="xtick_5"/>
+   </g>
+   <g id="matplotlib.axis_2"/>
+   <g id="line2d_1">
+    <path d="M 16.791484 55.71 
+L 226.041484 55.71 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_1">
+    <!-- 0 -->
+    <g style="fill: #471164" transform="translate(16.791484 54.14025) scale(0.12 -0.12)">
+     <defs>
+      <path id="RobotoCondensed-Bold-30" d="M 2941 1881 
+Q 2941 938 2598 437 
+Q 2256 -63 1622 -63 
+Q 994 -63 651 423 
+Q 309 909 297 1816 
+L 297 2675 
+Q 297 3616 637 4114 
+Q 978 4613 1615 4613 
+Q 2253 4613 2593 4119 
+Q 2934 3625 2941 2709 
+L 2941 1881 
+z
+M 2053 2803 
+Q 2053 3341 1947 3609 
+Q 1841 3878 1616 3878 
+Q 1194 3878 1178 2894 
+L 1178 1759 
+Q 1178 1209 1286 940 
+Q 1394 672 1622 672 
+Q 1838 672 1942 923 
+Q 2047 1175 2053 1694 
+L 2053 2803 
+z
+" transform="scale(0.015625)"/>
+     </defs>
+     <use xlink:href="#RobotoCondensed-Bold-30"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_2">
+   <g id="patch_3">
+    <path d="M 16.791484 67.8375 
+L 226.041484 67.8375 
+L 226.041484 19.3275 
+L 16.791484 19.3275 
+L 16.791484 67.8375 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_3">
+    <g id="xtick_6"/>
+    <g id="xtick_7"/>
+    <g id="xtick_8"/>
+    <g id="xtick_9"/>
+    <g id="xtick_10"/>
+   </g>
+   <g id="matplotlib.axis_4"/>
+   <g id="line2d_2">
+    <path d="M 16.791484 67.8375 
+L 226.041484 67.8375 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_2">
+    <!-- 1 -->
+    <g style="fill: #471164" transform="translate(16.791484 66.26775) scale(0.12 -0.12)">
+     <defs>
+      <path id="RobotoCondensed-Bold-31" d="M 2244 0 
+L 1356 0 
+L 1356 3475 
+L 491 3141 
+L 491 3878 
+L 2150 4556 
+L 2244 4556 
+L 2244 0 
+z
+" transform="scale(0.015625)"/>
+     </defs>
+     <use xlink:href="#RobotoCondensed-Bold-31"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_3">
+   <g id="patch_4">
+    <path d="M 16.791484 79.965 
+L 226.041484 79.965 
+L 226.041484 31.455 
+L 16.791484 31.455 
+L 16.791484 79.965 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_5">
+    <g id="xtick_11"/>
+    <g id="xtick_12"/>
+    <g id="xtick_13"/>
+    <g id="xtick_14"/>
+    <g id="xtick_15"/>
+   </g>
+   <g id="matplotlib.axis_6"/>
+   <g id="line2d_3">
+    <path d="M 16.791484 79.965 
+L 226.041484 79.965 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_3">
+    <!-- 2 -->
+    <g style="fill: #471164" transform="translate(16.791484 78.39525) scale(0.12 -0.12)">
+     <defs>
+      <path id="RobotoCondensed-Bold-32" d="M 2978 0 
+L 297 0 
+L 297 625 
+L 1528 2191 
+Q 1763 2516 1873 2761 
+Q 1984 3006 1984 3231 
+Q 1984 3534 1879 3706 
+Q 1775 3878 1578 3878 
+Q 1363 3878 1236 3678 
+Q 1109 3478 1109 3116 
+L 222 3116 
+Q 222 3534 395 3881 
+Q 569 4228 883 4420 
+Q 1197 4613 1594 4613 
+Q 2203 4613 2539 4277 
+Q 2875 3941 2875 3322 
+Q 2875 2938 2689 2542 
+Q 2503 2147 2016 1569 
+L 1431 734 
+L 2978 734 
+L 2978 0 
+z
+" transform="scale(0.015625)"/>
+     </defs>
+     <use xlink:href="#RobotoCondensed-Bold-32"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_4">
+   <g id="patch_5">
+    <path d="M 16.791484 92.0925 
+L 226.041484 92.0925 
+L 226.041484 43.5825 
+L 16.791484 43.5825 
+L 16.791484 92.0925 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_7">
+    <g id="xtick_16"/>
+    <g id="xtick_17"/>
+    <g id="xtick_18"/>
+    <g id="xtick_19"/>
+    <g id="xtick_20"/>
+   </g>
+   <g id="matplotlib.axis_8"/>
+   <g id="line2d_4">
+    <path d="M 16.791484 92.0925 
+L 226.041484 92.0925 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_4">
+    <!-- 3 -->
+    <g style="fill: #471164" transform="translate(16.791484 90.52275) scale(0.12 -0.12)">
+     <defs>
+      <path id="RobotoCondensed-Bold-33" d="M 1084 2678 
+L 1513 2678 
+Q 1756 2678 1870 2848 
+Q 1984 3019 1984 3303 
+Q 1984 3575 1867 3726 
+Q 1750 3878 1553 3878 
+Q 1369 3878 1251 3734 
+Q 1134 3591 1134 3372 
+L 250 3372 
+Q 250 3728 414 4011 
+Q 578 4294 873 4453 
+Q 1169 4613 1528 4613 
+Q 2156 4613 2512 4266 
+Q 2869 3919 2869 3316 
+Q 2869 3006 2708 2742 
+Q 2547 2478 2284 2338 
+Q 2606 2200 2764 1925 
+Q 2922 1650 2922 1275 
+Q 2922 669 2536 303 
+Q 2150 -63 1522 -63 
+Q 938 -63 573 298 
+Q 209 659 209 1247 
+L 1094 1247 
+Q 1094 1003 1222 837 
+Q 1350 672 1547 672 
+Q 1775 672 1908 840 
+Q 2041 1009 2041 1291 
+Q 2041 1963 1519 1966 
+L 1084 1966 
+L 1084 2678 
+z
+" transform="scale(0.015625)"/>
+     </defs>
+     <use xlink:href="#RobotoCondensed-Bold-33"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_5">
+   <g id="patch_6">
+    <path d="M 16.791484 104.22 
+L 226.041484 104.22 
+L 226.041484 55.71 
+L 16.791484 55.71 
+L 16.791484 104.22 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_9">
+    <g id="xtick_21"/>
+    <g id="xtick_22"/>
+    <g id="xtick_23"/>
+    <g id="xtick_24"/>
+    <g id="xtick_25"/>
+   </g>
+   <g id="matplotlib.axis_10"/>
+   <g id="line2d_5">
+    <path d="M 16.791484 104.22 
+L 226.041484 104.22 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_5">
+    <!-- 4 -->
+    <g style="fill: #471164" transform="translate(16.791484 102.65025) scale(0.12 -0.12)">
+     <defs>
+      <path id="RobotoCondensed-Bold-34" d="M 2628 1719 
+L 3016 1719 
+L 3016 984 
+L 2628 984 
+L 2628 0 
+L 1744 0 
+L 1744 984 
+L 238 984 
+L 197 1556 
+L 1741 4550 
+L 2628 4550 
+L 2628 1719 
+z
+M 1056 1719 
+L 1744 1719 
+L 1744 3241 
+L 1725 3206 
+L 1056 1719 
+z
+" transform="scale(0.015625)"/>
+     </defs>
+     <use xlink:href="#RobotoCondensed-Bold-34"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_6">
+   <g id="patch_7">
+    <path d="M 16.791484 116.3475 
+L 226.041484 116.3475 
+L 226.041484 67.8375 
+L 16.791484 67.8375 
+L 16.791484 116.3475 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_11">
+    <g id="xtick_26"/>
+    <g id="xtick_27"/>
+    <g id="xtick_28"/>
+    <g id="xtick_29"/>
+    <g id="xtick_30"/>
+   </g>
+   <g id="matplotlib.axis_12"/>
+   <g id="line2d_6">
+    <path d="M 16.791484 116.3475 
+L 226.041484 116.3475 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_6">
+    <!-- 5 -->
+    <g style="fill: #471164" transform="translate(16.791484 114.77775) scale(0.12 -0.12)">
+     <defs>
+      <path id="RobotoCondensed-Bold-35" d="M 388 2238 
+L 613 4550 
+L 2816 4550 
+L 2816 3794 
+L 1338 3794 
+L 1256 2819 
+Q 1513 2991 1784 2991 
+Q 2347 2991 2651 2591 
+Q 2956 2191 2956 1459 
+Q 2956 775 2593 356 
+Q 2231 -63 1625 -63 
+Q 1266 -63 959 107 
+Q 653 278 476 581 
+Q 300 884 297 1269 
+L 1172 1269 
+Q 1194 984 1312 828 
+Q 1431 672 1619 672 
+Q 1838 672 1956 883 
+Q 2075 1094 2075 1513 
+Q 2075 1906 1933 2106 
+Q 1791 2306 1534 2306 
+Q 1284 2306 1147 2134 
+L 1091 2056 
+L 388 2238 
+z
+" transform="scale(0.015625)"/>
+     </defs>
+     <use xlink:href="#RobotoCondensed-Bold-35"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_7">
+   <g id="patch_8">
+    <path d="M 16.791484 128.475 
+L 226.041484 128.475 
+L 226.041484 79.965 
+L 16.791484 79.965 
+L 16.791484 128.475 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_13">
+    <g id="xtick_31"/>
+    <g id="xtick_32"/>
+    <g id="xtick_33"/>
+    <g id="xtick_34"/>
+    <g id="xtick_35"/>
+   </g>
+   <g id="matplotlib.axis_14"/>
+   <g id="line2d_7">
+    <path d="M 16.791484 128.475 
+L 226.041484 128.475 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_7">
+    <!-- 6 -->
+    <g style="fill: #471164" transform="translate(16.791484 126.90525) scale(0.12 -0.12)">
+     <defs>
+      <path id="RobotoCondensed-Bold-36" d="M 2406 4597 
+L 2406 3847 
+L 2356 3847 
+Q 1859 3844 1567 3548 
+Q 1275 3253 1213 2722 
+Q 1497 3047 1925 3047 
+Q 2419 3047 2714 2625 
+Q 3009 2203 3009 1500 
+Q 3009 1053 2840 693 
+Q 2672 334 2367 135 
+Q 2063 -63 1678 -63 
+Q 1059 -63 686 434 
+Q 313 931 313 1772 
+L 313 2100 
+Q 313 2853 548 3418 
+Q 784 3984 1229 4289 
+Q 1675 4594 2269 4597 
+L 2406 4597 
+z
+M 1647 2316 
+Q 1478 2316 1364 2209 
+Q 1250 2103 1194 1947 
+L 1194 1628 
+Q 1194 1147 1322 909 
+Q 1450 672 1659 672 
+Q 1872 672 2000 901 
+Q 2128 1131 2128 1491 
+Q 2128 1856 1995 2086 
+Q 1863 2316 1647 2316 
+z
+" transform="scale(0.015625)"/>
+     </defs>
+     <use xlink:href="#RobotoCondensed-Bold-36"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_8">
+   <g id="patch_9">
+    <path d="M 16.791484 140.6025 
+L 226.041484 140.6025 
+L 226.041484 92.0925 
+L 16.791484 92.0925 
+L 16.791484 140.6025 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_15">
+    <g id="xtick_36"/>
+    <g id="xtick_37"/>
+    <g id="xtick_38"/>
+    <g id="xtick_39"/>
+    <g id="xtick_40"/>
+   </g>
+   <g id="matplotlib.axis_16"/>
+   <g id="line2d_8">
+    <path d="M 16.791484 140.6025 
+L 226.041484 140.6025 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_8">
+    <!-- 7 -->
+    <g style="fill: #471164" transform="translate(16.791484 139.03275) scale(0.12 -0.12)">
+     <defs>
+      <path id="RobotoCondensed-Bold-37" d="M 2966 4041 
+L 1528 0 
+L 594 0 
+L 2038 3816 
+L 213 3816 
+L 213 4550 
+L 2966 4550 
+L 2966 4041 
+z
+" transform="scale(0.015625)"/>
+     </defs>
+     <use xlink:href="#RobotoCondensed-Bold-37"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_9">
+   <g id="patch_10">
+    <path d="M 16.791484 152.73 
+L 226.041484 152.73 
+L 226.041484 104.22 
+L 16.791484 104.22 
+L 16.791484 152.73 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_17">
+    <g id="xtick_41"/>
+    <g id="xtick_42"/>
+    <g id="xtick_43"/>
+    <g id="xtick_44"/>
+    <g id="xtick_45"/>
+   </g>
+   <g id="matplotlib.axis_18"/>
+   <g id="line2d_9">
+    <path d="M 16.791484 152.73 
+L 226.041484 152.73 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_9">
+    <!-- 8 -->
+    <g style="fill: #471164" transform="translate(16.791484 151.16025) scale(0.12 -0.12)">
+     <defs>
+      <path id="RobotoCondensed-Bold-38" d="M 2847 3341 
+Q 2847 3009 2706 2753 
+Q 2566 2497 2319 2344 
+Q 2600 2184 2762 1904 
+Q 2925 1625 2925 1247 
+Q 2925 641 2575 289 
+Q 2225 -63 1622 -63 
+Q 1019 -63 662 289 
+Q 306 641 306 1247 
+Q 306 1625 468 1906 
+Q 631 2188 916 2344 
+Q 666 2497 525 2753 
+Q 384 3009 384 3341 
+Q 384 3938 718 4275 
+Q 1053 4613 1616 4613 
+Q 2184 4613 2515 4272 
+Q 2847 3931 2847 3341 
+z
+M 1622 672 
+Q 1822 672 1930 842 
+Q 2038 1013 2038 1316 
+Q 2038 1619 1925 1791 
+Q 1813 1963 1616 1963 
+Q 1419 1963 1305 1791 
+Q 1191 1619 1191 1316 
+Q 1191 1013 1305 842 
+Q 1419 672 1622 672 
+z
+M 1966 3294 
+Q 1966 3559 1880 3718 
+Q 1794 3878 1616 3878 
+Q 1447 3878 1359 3723 
+Q 1272 3569 1272 3294 
+Q 1272 3025 1359 2861 
+Q 1447 2697 1622 2697 
+Q 1797 2697 1881 2861 
+Q 1966 3025 1966 3294 
+z
+" transform="scale(0.015625)"/>
+     </defs>
+     <use xlink:href="#RobotoCondensed-Bold-38"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_10">
+   <g id="patch_11">
+    <path d="M 16.791484 164.8575 
+L 226.041484 164.8575 
+L 226.041484 116.3475 
+L 16.791484 116.3475 
+L 16.791484 164.8575 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_19">
+    <g id="xtick_46"/>
+    <g id="xtick_47"/>
+    <g id="xtick_48"/>
+    <g id="xtick_49"/>
+    <g id="xtick_50"/>
+   </g>
+   <g id="matplotlib.axis_20"/>
+   <g id="line2d_10">
+    <path d="M 16.791484 164.8575 
+L 226.041484 164.8575 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_10">
+    <!-- 9 -->
+    <g style="fill: #471164" transform="translate(16.791484 163.28775) scale(0.12 -0.12)">
+     <defs>
+      <path id="RobotoCondensed-Bold-39" d="M 2013 1759 
+Q 1731 1472 1397 1472 
+Q 878 1472 579 1889 
+Q 281 2306 281 3003 
+Q 281 3453 450 3826 
+Q 619 4200 920 4406 
+Q 1222 4613 1594 4613 
+Q 1978 4613 2278 4384 
+Q 2578 4156 2743 3729 
+Q 2909 3303 2909 2759 
+L 2909 2438 
+Q 2909 1275 2398 620 
+Q 1888 -34 950 -47 
+L 859 -47 
+L 859 716 
+L 919 716 
+Q 1438 719 1698 984 
+Q 1959 1250 2013 1759 
+z
+M 1622 2166 
+Q 1878 2166 2025 2516 
+L 2025 2922 
+Q 2025 3369 1903 3623 
+Q 1781 3878 1588 3878 
+Q 1397 3878 1280 3626 
+Q 1163 3375 1163 3013 
+Q 1163 2619 1284 2392 
+Q 1406 2166 1622 2166 
+z
+" transform="scale(0.015625)"/>
+     </defs>
+     <use xlink:href="#RobotoCondensed-Bold-39"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_11">
+   <g id="patch_12">
+    <path d="M 16.791484 176.985 
+L 226.041484 176.985 
+L 226.041484 128.475 
+L 16.791484 128.475 
+L 16.791484 176.985 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_21">
+    <g id="xtick_51"/>
+    <g id="xtick_52"/>
+    <g id="xtick_53"/>
+    <g id="xtick_54"/>
+    <g id="xtick_55"/>
+   </g>
+   <g id="matplotlib.axis_22"/>
+   <g id="line2d_11">
+    <path d="M 16.791484 176.985 
+L 226.041484 176.985 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_11">
+    <!-- 10 -->
+    <g style="fill: #471164" transform="translate(16.791484 175.41525) scale(0.12 -0.12)">
+     <use xlink:href="#RobotoCondensed-Bold-31"/>
+     <use xlink:href="#RobotoCondensed-Bold-30" x="50.585938"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_12">
+   <g id="patch_13">
+    <path d="M 16.791484 189.1125 
+L 226.041484 189.1125 
+L 226.041484 140.6025 
+L 16.791484 140.6025 
+L 16.791484 189.1125 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_23">
+    <g id="xtick_56"/>
+    <g id="xtick_57"/>
+    <g id="xtick_58"/>
+    <g id="xtick_59"/>
+    <g id="xtick_60"/>
+   </g>
+   <g id="matplotlib.axis_24"/>
+   <g id="line2d_12">
+    <path d="M 16.791484 189.1125 
+L 226.041484 189.1125 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_12">
+    <!-- 11 -->
+    <g style="fill: #471164" transform="translate(16.791484 187.54275) scale(0.12 -0.12)">
+     <use xlink:href="#RobotoCondensed-Bold-31"/>
+     <use xlink:href="#RobotoCondensed-Bold-31" x="50.585938"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_13">
+   <g id="patch_14">
+    <path d="M 16.791484 201.24 
+L 226.041484 201.24 
+L 226.041484 152.73 
+L 16.791484 152.73 
+L 16.791484 201.24 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_25">
+    <g id="xtick_61"/>
+    <g id="xtick_62"/>
+    <g id="xtick_63"/>
+    <g id="xtick_64"/>
+    <g id="xtick_65"/>
+   </g>
+   <g id="matplotlib.axis_26"/>
+   <g id="line2d_13">
+    <path d="M 16.791484 201.24 
+L 226.041484 201.24 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_13">
+    <!-- 12 -->
+    <g style="fill: #471164" transform="translate(16.791484 199.67025) scale(0.12 -0.12)">
+     <use xlink:href="#RobotoCondensed-Bold-31"/>
+     <use xlink:href="#RobotoCondensed-Bold-32" x="50.585938"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_14">
+   <g id="patch_15">
+    <path d="M 16.791484 213.3675 
+L 226.041484 213.3675 
+L 226.041484 164.8575 
+L 16.791484 164.8575 
+L 16.791484 213.3675 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_27">
+    <g id="xtick_66"/>
+    <g id="xtick_67"/>
+    <g id="xtick_68"/>
+    <g id="xtick_69"/>
+    <g id="xtick_70"/>
+   </g>
+   <g id="matplotlib.axis_28"/>
+   <g id="line2d_14">
+    <path d="M 16.791484 213.3675 
+L 226.041484 213.3675 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_14">
+    <!-- 13 -->
+    <g style="fill: #471164" transform="translate(16.791484 211.79775) scale(0.12 -0.12)">
+     <use xlink:href="#RobotoCondensed-Bold-31"/>
+     <use xlink:href="#RobotoCondensed-Bold-33" x="50.585938"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_15">
+   <g id="patch_16">
+    <path d="M 16.791484 225.495 
+L 226.041484 225.495 
+L 226.041484 176.985 
+L 16.791484 176.985 
+L 16.791484 225.495 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_29">
+    <g id="xtick_71"/>
+    <g id="xtick_72"/>
+    <g id="xtick_73"/>
+    <g id="xtick_74"/>
+    <g id="xtick_75"/>
+   </g>
+   <g id="matplotlib.axis_30"/>
+   <g id="line2d_15">
+    <path d="M 16.791484 225.495 
+L 226.041484 225.495 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_15">
+    <!-- 14 -->
+    <g style="fill: #471164" transform="translate(16.791484 223.92525) scale(0.12 -0.12)">
+     <use xlink:href="#RobotoCondensed-Bold-31"/>
+     <use xlink:href="#RobotoCondensed-Bold-34" x="50.585938"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_16">
+   <g id="patch_17">
+    <path d="M 16.791484 237.6225 
+L 226.041484 237.6225 
+L 226.041484 189.1125 
+L 16.791484 189.1125 
+L 16.791484 237.6225 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_31">
+    <g id="xtick_76"/>
+    <g id="xtick_77"/>
+    <g id="xtick_78"/>
+    <g id="xtick_79"/>
+    <g id="xtick_80"/>
+   </g>
+   <g id="matplotlib.axis_32"/>
+   <g id="line2d_16">
+    <path d="M 16.791484 237.6225 
+L 226.041484 237.6225 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_16">
+    <!-- 15 -->
+    <g style="fill: #471164" transform="translate(16.791484 236.05275) scale(0.12 -0.12)">
+     <use xlink:href="#RobotoCondensed-Bold-31"/>
+     <use xlink:href="#RobotoCondensed-Bold-35" x="50.585938"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_17">
+   <g id="patch_18">
+    <path d="M 16.791484 249.75 
+L 226.041484 249.75 
+L 226.041484 201.24 
+L 16.791484 201.24 
+L 16.791484 249.75 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_33">
+    <g id="xtick_81"/>
+    <g id="xtick_82"/>
+    <g id="xtick_83"/>
+    <g id="xtick_84"/>
+    <g id="xtick_85"/>
+   </g>
+   <g id="matplotlib.axis_34"/>
+   <g id="line2d_17">
+    <path d="M 16.791484 249.75 
+L 226.041484 249.75 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_17">
+    <!-- 16 -->
+    <g style="fill: #471164" transform="translate(16.791484 248.18025) scale(0.12 -0.12)">
+     <use xlink:href="#RobotoCondensed-Bold-31"/>
+     <use xlink:href="#RobotoCondensed-Bold-36" x="50.585938"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_18">
+   <g id="patch_19">
+    <path d="M 16.791484 261.8775 
+L 226.041484 261.8775 
+L 226.041484 213.3675 
+L 16.791484 213.3675 
+L 16.791484 261.8775 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_35">
+    <g id="xtick_86"/>
+    <g id="xtick_87"/>
+    <g id="xtick_88"/>
+    <g id="xtick_89"/>
+    <g id="xtick_90"/>
+   </g>
+   <g id="matplotlib.axis_36"/>
+   <g id="line2d_18">
+    <path d="M 16.791484 261.8775 
+L 226.041484 261.8775 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_18">
+    <!-- 17 -->
+    <g style="fill: #471164" transform="translate(16.791484 260.30775) scale(0.12 -0.12)">
+     <use xlink:href="#RobotoCondensed-Bold-31"/>
+     <use xlink:href="#RobotoCondensed-Bold-37" x="50.585938"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_19">
+   <g id="patch_20">
+    <path d="M 16.791484 274.005 
+L 226.041484 274.005 
+L 226.041484 225.495 
+L 16.791484 225.495 
+L 16.791484 274.005 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_37">
+    <g id="xtick_91"/>
+    <g id="xtick_92"/>
+    <g id="xtick_93"/>
+    <g id="xtick_94"/>
+    <g id="xtick_95"/>
+   </g>
+   <g id="matplotlib.axis_38"/>
+   <g id="line2d_19">
+    <path d="M 16.791484 274.005 
+L 226.041484 274.005 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_19">
+    <!-- 18 -->
+    <g style="fill: #471164" transform="translate(16.791484 272.43525) scale(0.12 -0.12)">
+     <use xlink:href="#RobotoCondensed-Bold-31"/>
+     <use xlink:href="#RobotoCondensed-Bold-38" x="50.585938"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_20">
+   <g id="patch_21">
+    <path d="M 16.791484 286.1325 
+L 226.041484 286.1325 
+L 226.041484 237.6225 
+L 16.791484 237.6225 
+L 16.791484 286.1325 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_39">
+    <g id="xtick_96"/>
+    <g id="xtick_97"/>
+    <g id="xtick_98"/>
+    <g id="xtick_99"/>
+    <g id="xtick_100"/>
+   </g>
+   <g id="matplotlib.axis_40"/>
+   <g id="line2d_20">
+    <path d="M 16.791484 286.1325 
+L 226.041484 286.1325 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_20">
+    <!-- 19 -->
+    <g style="fill: #471164" transform="translate(16.791484 284.56275) scale(0.12 -0.12)">
+     <use xlink:href="#RobotoCondensed-Bold-31"/>
+     <use xlink:href="#RobotoCondensed-Bold-39" x="50.585938"/>
+    </g>
+   </g>
+  </g>
+  <g id="axes_21">
+   <g id="patch_22">
+    <path d="M 16.791484 298.26 
+L 226.041484 298.26 
+L 226.041484 249.75 
+L 16.791484 249.75 
+L 16.791484 298.26 
+z
+" style="fill: none"/>
+   </g>
+   <g id="matplotlib.axis_41">
+    <g id="xtick_101">
+     <g id="text_21">
+      <!-- 0.00 -->
+      <g style="fill: #838383" transform="translate(7.2 316.01) scale(0.11 -0.11)">
+       <defs>
+        <path id="RobotoCondensed-Regular-30" d="M 2797 1941 
+Q 2797 934 2503 435 
+Q 2209 -63 1581 -63 
+Q 972 -63 672 415 
+Q 372 894 359 1853 
+L 359 2634 
+Q 359 3631 654 4122 
+Q 950 4613 1575 4613 
+Q 2191 4613 2486 4147 
+Q 2781 3681 2797 2738 
+L 2797 1941 
+z
+M 2244 2731 
+Q 2244 3453 2084 3795 
+Q 1925 4138 1575 4138 
+Q 1234 4138 1075 3802 
+Q 916 3466 909 2788 
+L 909 1850 
+Q 909 1131 1075 770 
+Q 1241 409 1581 409 
+Q 1919 409 2078 750 
+Q 2238 1091 2244 1791 
+L 2244 2731 
+z
+" transform="scale(0.015625)"/>
+        <path id="RobotoCondensed-Regular-2e" d="M 450 303 
+Q 450 453 539 553 
+Q 628 653 806 653 
+Q 984 653 1076 553 
+Q 1169 453 1169 303 
+Q 1169 159 1076 62 
+Q 984 -34 806 -34 
+Q 628 -34 539 62 
+Q 450 159 450 303 
+z
+" transform="scale(0.015625)"/>
+       </defs>
+       <use xlink:href="#RobotoCondensed-Regular-30"/>
+       <use xlink:href="#RobotoCondensed-Regular-2e" x="49.365234"/>
+       <use xlink:href="#RobotoCondensed-Regular-30" x="75.683594"/>
+       <use xlink:href="#RobotoCondensed-Regular-30" x="125.048828"/>
+      </g>
+     </g>
+    </g>
+    <g id="xtick_102">
+     <g id="text_22">
+      <!-- 0.25 -->
+      <g style="fill: #838383" transform="translate(59.5125 316.01) scale(0.11 -0.11)">
+       <defs>
+        <path id="RobotoCondensed-Regular-32" d="M 2909 0 
+L 366 0 
+L 366 416 
+L 1663 2134 
+Q 1956 2531 2070 2786 
+Q 2184 3041 2184 3325 
+Q 2184 3688 2015 3913 
+Q 1847 4138 1572 4138 
+Q 1225 4138 1036 3898 
+Q 847 3659 847 3209 
+L 294 3209 
+Q 294 3838 637 4225 
+Q 981 4613 1572 4613 
+Q 2116 4613 2428 4280 
+Q 2741 3947 2741 3394 
+Q 2741 2719 2038 1797 
+L 1025 472 
+L 2909 472 
+L 2909 0 
+z
+" transform="scale(0.015625)"/>
+        <path id="RobotoCondensed-Regular-35" d="M 591 2281 
+L 788 4550 
+L 2766 4550 
+L 2766 4016 
+L 1253 4016 
+L 1147 2775 
+Q 1428 2972 1753 2972 
+Q 2284 2972 2587 2559 
+Q 2891 2147 2891 1450 
+Q 2891 744 2561 340 
+Q 2231 -63 1656 -63 
+Q 1144 -63 822 271 
+Q 500 606 453 1197 
+L 972 1197 
+Q 1019 806 1195 607 
+Q 1372 409 1656 409 
+Q 1978 409 2159 689 
+Q 2341 969 2341 1444 
+Q 2341 1891 2145 2172 
+Q 1950 2453 1619 2453 
+Q 1344 2453 1178 2309 
+L 1031 2163 
+L 591 2281 
+z
+" transform="scale(0.015625)"/>
+       </defs>
+       <use xlink:href="#RobotoCondensed-Regular-30"/>
+       <use xlink:href="#RobotoCondensed-Regular-2e" x="49.365234"/>
+       <use xlink:href="#RobotoCondensed-Regular-32" x="75.683594"/>
+       <use xlink:href="#RobotoCondensed-Regular-35" x="125.048828"/>
+      </g>
+     </g>
+    </g>
+    <g id="xtick_103">
+     <g id="text_23">
+      <!-- 0.50 -->
+      <g style="fill: #838383" transform="translate(111.825 316.01) scale(0.11 -0.11)">
+       <use xlink:href="#RobotoCondensed-Regular-30"/>
+       <use xlink:href="#RobotoCondensed-Regular-2e" x="49.365234"/>
+       <use xlink:href="#RobotoCondensed-Regular-35" x="75.683594"/>
+       <use xlink:href="#RobotoCondensed-Regular-30" x="125.048828"/>
+      </g>
+     </g>
+    </g>
+    <g id="xtick_104">
+     <g id="text_24">
+      <!-- 0.75 -->
+      <g style="fill: #838383" transform="translate(164.1375 316.01) scale(0.11 -0.11)">
+       <defs>
+        <path id="RobotoCondensed-Regular-37" d="M 2875 4225 
+L 1309 0 
+L 731 0 
+L 2294 4075 
+L 266 4075 
+L 266 4550 
+L 2875 4550 
+L 2875 4225 
+z
+" transform="scale(0.015625)"/>
+       </defs>
+       <use xlink:href="#RobotoCondensed-Regular-30"/>
+       <use xlink:href="#RobotoCondensed-Regular-2e" x="49.365234"/>
+       <use xlink:href="#RobotoCondensed-Regular-37" x="75.683594"/>
+       <use xlink:href="#RobotoCondensed-Regular-35" x="125.048828"/>
+      </g>
+     </g>
+    </g>
+    <g id="xtick_105">
+     <g id="text_25">
+      <!-- 1.00 -->
+      <g style="fill: #838383" transform="translate(216.45 316.01) scale(0.11 -0.11)">
+       <defs>
+        <path id="RobotoCondensed-Regular-31" d="M 2013 0 
+L 1456 0 
+L 1456 3853 
+L 500 3425 
+L 500 3950 
+L 1925 4572 
+L 2013 4572 
+L 2013 0 
+z
+" transform="scale(0.015625)"/>
+       </defs>
+       <use xlink:href="#RobotoCondensed-Regular-31"/>
+       <use xlink:href="#RobotoCondensed-Regular-2e" x="49.365234"/>
+       <use xlink:href="#RobotoCondensed-Regular-30" x="75.683594"/>
+       <use xlink:href="#RobotoCondensed-Regular-30" x="125.048828"/>
+      </g>
+     </g>
+    </g>
+    <g id="text_26">
+     <!-- logdet -->
+     <g style="fill: #bdbdbd" transform="translate(195.634609 335.244375) scale(0.12 -0.12)">
+      <defs>
+       <path id="RobotoCondensed-Bold-6c" d="M 1250 0 
+L 363 0 
+L 363 4800 
+L 1250 4800 
+L 1250 0 
+z
+" transform="scale(0.015625)"/>
+       <path id="RobotoCondensed-Bold-6f" d="M 219 1800 
+Q 219 2569 581 3006 
+Q 944 3444 1584 3444 
+Q 2231 3444 2593 3006 
+Q 2956 2569 2956 1794 
+L 2956 1578 
+Q 2956 806 2597 371 
+Q 2238 -63 1591 -63 
+Q 941 -63 580 373 
+Q 219 809 219 1584 
+L 219 1800 
+z
+M 1106 1578 
+Q 1106 672 1591 672 
+Q 2038 672 2072 1428 
+L 2075 1800 
+Q 2075 2263 1947 2486 
+Q 1819 2709 1584 2709 
+Q 1359 2709 1232 2486 
+Q 1106 2263 1106 1800 
+L 1106 1578 
+z
+" transform="scale(0.015625)"/>
+       <path id="RobotoCondensed-Bold-67" d="M 216 1794 
+Q 216 2625 516 3034 
+Q 816 3444 1356 3444 
+Q 1816 3444 2066 3081 
+L 2100 3381 
+L 2897 3381 
+L 2897 0 
+Q 2897 -647 2534 -989 
+Q 2172 -1331 1494 -1331 
+Q 1216 -1331 909 -1220 
+Q 603 -1109 453 -938 
+L 750 -325 
+Q 875 -456 1075 -539 
+Q 1275 -622 1453 -622 
+Q 1750 -622 1879 -480 
+Q 2009 -338 2013 -22 
+L 2013 269 
+Q 1759 -63 1353 -63 
+Q 813 -63 517 357 
+Q 222 778 216 1544 
+L 216 1794 
+z
+M 1100 1572 
+Q 1100 1103 1222 889 
+Q 1344 675 1609 675 
+Q 1881 675 2013 872 
+L 2013 2488 
+Q 1875 2703 1616 2703 
+Q 1353 2703 1226 2487 
+Q 1100 2272 1100 1794 
+L 1100 1572 
+z
+" transform="scale(0.015625)"/>
+       <path id="RobotoCondensed-Bold-64" d="M 203 1794 
+Q 203 2625 484 3034 
+Q 766 3444 1303 3444 
+Q 1694 3444 1953 3106 
+L 1953 4800 
+L 2844 4800 
+L 2844 0 
+L 2041 0 
+L 2000 344 
+Q 1728 -63 1300 -63 
+Q 769 -63 489 343 
+Q 209 750 203 1538 
+L 203 1794 
+z
+M 1091 1572 
+Q 1091 1072 1197 873 
+Q 1303 675 1556 675 
+Q 1819 675 1953 909 
+L 1953 2453 
+Q 1822 2703 1559 2703 
+Q 1316 2703 1203 2506 
+Q 1091 2309 1091 1806 
+L 1091 1572 
+z
+" transform="scale(0.015625)"/>
+       <path id="RobotoCondensed-Bold-65" d="M 1688 -63 
+Q 1006 -63 625 343 
+Q 244 750 244 1506 
+L 244 1775 
+Q 244 2575 594 3009 
+Q 944 3444 1597 3444 
+Q 2234 3444 2556 3036 
+Q 2878 2628 2884 1828 
+L 2884 1394 
+L 1125 1394 
+Q 1144 1019 1291 845 
+Q 1438 672 1744 672 
+Q 2188 672 2484 975 
+L 2831 441 
+Q 2669 216 2359 76 
+Q 2050 -63 1688 -63 
+z
+M 1131 2013 
+L 2016 2013 
+L 2016 2094 
+Q 2009 2397 1915 2553 
+Q 1822 2709 1590 2709 
+Q 1359 2709 1254 2543 
+Q 1150 2378 1131 2013 
+z
+" transform="scale(0.015625)"/>
+       <path id="RobotoCondensed-Bold-74" d="M 1350 4213 
+L 1350 3381 
+L 1803 3381 
+L 1803 2716 
+L 1350 2716 
+L 1350 1038 
+Q 1350 838 1404 763 
+Q 1459 688 1616 688 
+Q 1744 688 1825 709 
+L 1819 22 
+Q 1594 -63 1331 -63 
+Q 475 -63 466 919 
+L 466 2716 
+L 75 2716 
+L 75 3381 
+L 466 3381 
+L 466 4213 
+L 1350 4213 
+z
+" transform="scale(0.015625)"/>
+      </defs>
+      <use xlink:href="#RobotoCondensed-Bold-6c"/>
+      <use xlink:href="#RobotoCondensed-Bold-6f" x="25.195312"/>
+      <use xlink:href="#RobotoCondensed-Bold-67" x="74.951172"/>
+      <use xlink:href="#RobotoCondensed-Bold-64" x="125.244141"/>
+      <use xlink:href="#RobotoCondensed-Bold-65" x="174.804688"/>
+      <use xlink:href="#RobotoCondensed-Bold-74" x="222.65625"/>
+     </g>
+    </g>
+   </g>
+   <g id="matplotlib.axis_42"/>
+   <g id="line2d_21">
+    <path d="M 16.791484 298.26 
+L 226.041484 298.26 
+" style="fill: none; stroke: #471164; stroke-opacity: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="text_27">
+    <!-- 20 -->
+    <g style="fill: #471164" transform="translate(16.791484 296.69025) scale(0.12 -0.12)">
+     <use xlink:href="#RobotoCondensed-Bold-32"/>
+     <use xlink:href="#RobotoCondensed-Bold-30" x="50.585938"/>
+    </g>
+   </g>
+  </g>
+ </g>
+</svg>

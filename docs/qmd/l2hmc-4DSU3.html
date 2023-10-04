@@ -2,12 +2,12 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.3.433">
+<meta name="generator" content="quarto-1.3.450">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="author" content="Sam Foreman">
-<meta name="dcterms.date" content="2023-09-06">
+<meta name="author" content="Sam Foreman ">
+<meta name="dcterms.date" content="2023-10-04">
 
 <title>l2hmc-qcd - 4D SU(3) Model</title>
 <style>
@@ -80,6 +80,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/bootstrap/bootstrap-dark.min.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
 <link href="../site_libs/quarto-contrib/fontawesome6-0.1.0/all.css" rel="stylesheet">
 <link href="../site_libs/quarto-contrib/fontawesome6-0.1.0/latex-fontsize.css" rel="stylesheet">
+<link href="../site_libs/quarto-contrib/academicons-1.9.2/all.css" rel="stylesheet">
+<link href="../site_libs/quarto-contrib/academicons-1.9.2/size.css" rel="stylesheet">
+<link href="../site_libs/quarto-contrib/bootstrap-icons-1.9.1/all.css" rel="stylesheet">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -134,8 +137,31 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 <link rel="stylesheet" href="../css/default.css">
 <link rel="stylesheet" href="../css/callouts.css">
 <meta property="og:title" content="l2hmc-qcd - 4D SU(3) Model">
-<meta property="og:image" content="https://saforem2.github.io/l2hmc-qcd/qmd/data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2ZpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYwIDYxLjEzNDc3NywgMjAxMC8wMi8xMi0xNzozMjowMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDo1N0NEMjA4MDI1MjA2ODExOTk0QzkzNTEzRjZEQTg1NyIgeG1wTU06RG9jdW1lbnRJRD0ieG1wLmRpZDozM0NDOEJGNEZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDozM0NDOEJGM0ZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wOkNyZWF0b3JUb29sPSJBZG9iZSBQaG90b3Nob3AgQ1M1IE1hY2ludG9zaCI+IDx4bXBNTTpEZXJpdmVkRnJvbSBzdFJlZjppbnN0YW5jZUlEPSJ4bXAuaWlkOkZDN0YxMTc0MDcyMDY4MTE5NUZFRDc5MUM2MUUwNEREIiBzdFJlZjpkb2N1bWVudElEPSJ4bXAuZGlkOjU3Q0QyMDgwMjUyMDY4MTE5OTRDOTM1MTNGNkRBODU3Ii8+IDwvcmRmOkRlc2NyaXB0aW9uPiA8L3JkZjpSREY+IDwveDp4bXBtZXRhPiA8P3hwYWNrZXQgZW5kPSJyIj8+84NovQAAAR1JREFUeNpiZEADy85ZJgCpeCB2QJM6AMQLo4yOL0AWZETSqACk1gOxAQN+cAGIA4EGPQBxmJA0nwdpjjQ8xqArmczw5tMHXAaALDgP1QMxAGqzAAPxQACqh4ER6uf5MBlkm0X4EGayMfMw/Pr7Bd2gRBZogMFBrv01hisv5jLsv9nLAPIOMnjy8RDDyYctyAbFM2EJbRQw+aAWw/LzVgx7b+cwCHKqMhjJFCBLOzAR6+lXX84xnHjYyqAo5IUizkRCwIENQQckGSDGY4TVgAPEaraQr2a4/24bSuoExcJCfAEJihXkWDj3ZAKy9EJGaEo8T0QSxkjSwORsCAuDQCD+QILmD1A9kECEZgxDaEZhICIzGcIyEyOl2RkgwAAhkmC+eAm0TAAAAABJRU5ErkJggg==">
+<meta property="og:image" content="https://saforem2.github.io/l2hmc-qcd/qmd/l2hmc-4DSU3_files/figure-html/cell-7-output-2.png">
 <meta property="og:site-name" content="l2hmc-qcd">
+<meta property="og:image:height" content="869">
+<meta property="og:image:width" content="1149">
+<meta name="twitter:title" content="l2hmc-qcd - 4D SU(3) Model">
+<meta name="twitter:image" content="https://saforem2.github.io/l2hmc-qcd/qmd/l2hmc-4DSU3_files/figure-html/cell-7-output-2.png">
+<meta name="twitter:image-height" content="869">
+<meta name="twitter:image-width" content="1149">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="citation_title" content="l2hmc-qcd">
+<meta name="citation_author" content="Sam Foreman">
+<meta name="citation_publication_date" content="2023-10-04">
+<meta name="citation_cover_date" content="2023-10-04">
+<meta name="citation_year" content="2023">
+<meta name="citation_online_date" content="2023-10-04">
+<meta name="citation_fulltext_html_url" content="https://saforem2.github.io/l2hmc-qcd">
+<meta name="citation_language" content="en">
+<meta name="citation_reference" content="citation_title=The climate risk &amp;amp;amp; resilience portal (ClimRR) metadata and data dictionary;,citation_author=C. Burdi;,citation_author=Wall. T Branham;,citation_publication_date=2023;,citation_cover_date=2023;,citation_year=2023;,citation_fulltext_html_url=https://dub.sh/ClimRR-Metadata;">
+<meta name="citation_reference" content="citation_title=Progress on (g-2)_\mu from lattice QCD;,citation_author=Hartmut Wittig;,citation_publication_date=2023;,citation_cover_date=2023;,citation_year=2023;,citation_fulltext_html_url=https://arxiv.org/abs/2306.04165;">
+<meta name="citation_reference" content="citation_title=Hybrid Monte Carlo;,citation_author=S. Duane;,citation_author=A. D. Kennedy;,citation_author=B. J. Pendleton;,citation_author=D. Roweth;,citation_publication_date=1987;,citation_cover_date=1987;,citation_year=1987;,citation_doi=10.1016/0370-2693(87)91197-X;,citation_volume=195;,citation_journal_title=Phys. Lett. B;">
+<meta name="citation_reference" content="citation_title=Snowmass 2021 Computational Frontier CompF03 Topical Group Report: Machine Learning;,citation_author=Phiala Shanahan;,citation_author=others;,citation_publication_date=2022-09;,citation_cover_date=2022-09;,citation_year=2022;,citation_fulltext_html_url=https://arxiv.org/abs/2209.07559;">
+<meta name="citation_reference" content="citation_title=Applications of Machine Learning to Lattice Quantum Field Theory;,citation_author=Denis Boyda;,citation_author=others;,citation_publication_date=2022-02;,citation_cover_date=2022-02;,citation_year=2022;,citation_fulltext_html_url=https://arxiv.org/abs/2202.05838;,citation_conference_title=Snowmass 2021;">
+<meta name="citation_reference" content="citation_title=HMC with Normalizing Flows;,citation_author=Sam Foreman;,citation_author=Taku Izubuchi;,citation_author=Luchang Jin;,citation_author=Xiao-Yong Jin;,citation_author=James C. Osborn;,citation_author=Akio Tomiya;,citation_publication_date=2022;,citation_cover_date=2022;,citation_year=2022;,citation_fulltext_html_url=https://arxiv.org/abs/2112.01586;,citation_doi=10.22323/1.396.0073;,citation_volume=LATTICE2021;,citation_journal_title=PoS;">
+<meta name="citation_reference" content="citation_title=LeapfrogLayers: A Trainable Framework for Effective Topological Sampling;,citation_author=Sam Foreman;,citation_author=Xiao-Yong Jin;,citation_author=James C. Osborn;,citation_publication_date=2022;,citation_cover_date=2022;,citation_year=2022;,citation_fulltext_html_url=https://arxiv.org/abs/2112.01582;,citation_doi=10.22323/1.396.0508;,citation_volume=LATTICE2021;,citation_journal_title=PoS;">
+<meta name="citation_reference" content="citation_title=Deep Learning Hamiltonian Monte Carlo;,citation_author=Sam Foreman;,citation_author=Xiao-Yong Jin;,citation_author=James C. Osborn;,citation_publication_date=2021-05;,citation_cover_date=2021-05;,citation_year=2021;,citation_fulltext_html_url=https://arxiv.org/abs/2105.03418;,citation_conference_title=9th International Conference on Learning Representations;">
 </head>
 
 <body class="nav-fixed">
@@ -159,12 +185,12 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
           <div class="collapse navbar-collapse" id="navbarCollapse">
             <ul class="navbar-nav navbar-nav-scroll me-auto">
   <li class="nav-item">
-    <a class="nav-link" href="../qmd/examples.html" rel="" target="">
- <span class="menu-text"><span class="red-text"><i class="fa-solid fa-book" aria-label="book"></i></span> Examples</span></a>
+    <a class="nav-link" href="../qmd/posts.html" rel="" target="">
+ <span class="menu-text"><span class="red-text"><i class="bi-signpost-split " style="" role="img" aria-hidden="true"></i></span> Posts</span></a>
   </li>  
   <li class="nav-item">
     <a class="nav-link" href="../qmd/slides.html" rel="" target="">
- <span class="menu-text"><span class="blue-text"><i class="fa-solid fa-person-chalkboard" aria-label="person-chalkboard"></i></span> Slides</span></a>
+ <span class="menu-text"><span class="green-text"><i class="bi-easel " style="" role="img" aria-hidden="true"></i></span> Talks</span></a>
   </li>  
 </ul>
             <ul class="navbar-nav navbar-nav-scroll ms-auto">
@@ -203,14 +229,14 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
     <div>
     <div class="quarto-title-meta-heading"></div>
     <div class="quarto-title-meta-contents">
-             <p><a href="https://samforeman.me">Sam Foreman</a> <a href="https://orcid.org/0000-0002-9981-0876" class="quarto-title-author-orcid"> <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2ZpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYwIDYxLjEzNDc3NywgMjAxMC8wMi8xMi0xNzozMjowMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDo1N0NEMjA4MDI1MjA2ODExOTk0QzkzNTEzRjZEQTg1NyIgeG1wTU06RG9jdW1lbnRJRD0ieG1wLmRpZDozM0NDOEJGNEZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDozM0NDOEJGM0ZGNTcxMUUxODdBOEVCODg2RjdCQ0QwOSIgeG1wOkNyZWF0b3JUb29sPSJBZG9iZSBQaG90b3Nob3AgQ1M1IE1hY2ludG9zaCI+IDx4bXBNTTpEZXJpdmVkRnJvbSBzdFJlZjppbnN0YW5jZUlEPSJ4bXAuaWlkOkZDN0YxMTc0MDcyMDY4MTE5NUZFRDc5MUM2MUUwNEREIiBzdFJlZjpkb2N1bWVudElEPSJ4bXAuZGlkOjU3Q0QyMDgwMjUyMDY4MTE5OTRDOTM1MTNGNkRBODU3Ii8+IDwvcmRmOkRlc2NyaXB0aW9uPiA8L3JkZjpSREY+IDwveDp4bXBtZXRhPiA8P3hwYWNrZXQgZW5kPSJyIj8+84NovQAAAR1JREFUeNpiZEADy85ZJgCpeCB2QJM6AMQLo4yOL0AWZETSqACk1gOxAQN+cAGIA4EGPQBxmJA0nwdpjjQ8xqArmczw5tMHXAaALDgP1QMxAGqzAAPxQACqh4ER6uf5MBlkm0X4EGayMfMw/Pr7Bd2gRBZogMFBrv01hisv5jLsv9nLAPIOMnjy8RDDyYctyAbFM2EJbRQw+aAWw/LzVgx7b+cwCHKqMhjJFCBLOzAR6+lXX84xnHjYyqAo5IUizkRCwIENQQckGSDGY4TVgAPEaraQr2a4/24bSuoExcJCfAEJihXkWDj3ZAKy9EJGaEo8T0QSxkjSwORsCAuDQCD+QILmD1A9kECEZgxDaEZhICIzGcIyEyOl2RkgwAAhkmC+eAm0TAAAAABJRU5ErkJggg=="></a></p>
+             <p><a href="https://samforeman.me">Sam Foreman </a><a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a> </p>
           </div>
   </div>
     
     <div>
     <div class="quarto-title-meta-heading"></div>
     <div class="quarto-title-meta-contents">
-      <p class="date">September 6, 2023</p>
+      <p class="date">October 4, 2023</p>
     </div>
   </div>
   
@@ -275,10 +301,11 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 </pre>
 </div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[2023-09-06 08:27:49,688] [INFO] [real_accelerator.py:133:get_accelerator] Setting ds_accelerator to mps (auto detect)
-[09/06/23 08:27:50][INFO][dist.py:226] - Caught MASTER_PORT:5433 from environment!
-[09/06/23 08:27:50][WARNING][dist.py:332] - Setting default dtype: float64
-[09/06/23 08:27:50][INFO][dist.py:338] - Global Rank: 0 / 0</code></pre>
+<pre><code>Failed to download font: Source Sans Pro, skipping!
+Failed to download font: Titillium WebRoboto Condensed, skipping!
+[10/04/23 08:06:53][INFO][dist.py:226] - Caught MASTER_PORT:5433 from environment!
+[10/04/23 08:06:53][WARNING][dist.py:332] - Setting default dtype: float64
+[10/04/23 08:06:53][INFO][dist.py:338] - Global Rank: 0 / 0</code></pre>
 </div>
 </div>
 <div class="cell" data-execution_count="2">
@@ -438,12 +465,15 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 <span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>overrides <span class="op">=</span> dict_to_list_of_overrides(conf)</span>
 <span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>ptExpSU3 <span class="op">=</span> get_experiment(overrides<span class="op">=</span>[<span class="op">*</span>overrides], build_networks<span class="op">=</span><span class="va">True</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[09/06/23 08:27:50][INFO][2091541093.py:12] - {'annealing_schedule': {'beta_final': 6.0, 'beta_init': 6.0}, 'backend': 'DDP', 'conv': 'none', 'dynamics': {'eps': 0.1, 'eps_fixed': True, 'group': 'SU3', 'latvolume': [1, 1, 1, 1], 'nchains': 4, 'nleapfrog': 1, 'use_separate_networks': False, 'use_split_xnets': False, 'verbose': True}, 'framework': 'pytorch', 'init_aim': False, 'init_wandb': False, 'learning_rate': {'clip_norm': 1.0, 'lr_init': 1e-05}, 'loss': {'charge_weight': 0.0, 'plaq_weight': 0.0, 'rmse_weight': 1.0, 'use_mixed_loss': False}, 'net_weights': {'v': {'q': 1.0, 's': 1.0, 't': 1.0}, 'x': {'q': 0.0, 's': 0.0, 't': 0.0}}, 'network': {'activation_fn': 'tanh', 'dropout_prob': 0.0, 'units': [1], 'use_batch_norm': False}, 'restore': False, 'save': False, 'steps': {'log': 1, 'nepoch': 10, 'nera': 1, 'print': 1, 'test': 50}, 'use_tb': False, 'use_wandb': False}
-[09/06/23 08:27:50][INFO][dist.py:226] - Caught MASTER_PORT:5433 from environment!
-[09/06/23 08:27:50][INFO][dist.py:226] - Caught MASTER_PORT:5433 from environment!
-[09/06/23 08:27:50][WARNING][trainer.py:437] - Using `torch.optim.Adam` optimizer
-[09/06/23 08:27:50][INFO][trainer.py:285] - num_params in model: 788
-[09/06/23 08:27:50][WARNING][trainer.py:251] - logging with freq 1 for wandb.watch</code></pre>
+<pre><code>[10/04/23 08:06:54][INFO][2091541093.py:12] - {'annealing_schedule': {'beta_final': 6.0, 'beta_init': 6.0}, 'backend': 'DDP', 'conv': 'none', 'dynamics': {'eps': 0.1, 'eps_fixed': True, 'group': 'SU3', 'latvolume': [1, 1, 1, 1], 'nchains': 4, 'nleapfrog': 1, 'use_separate_networks': False, 'use_split_xnets': False, 'verbose': True}, 'framework': 'pytorch', 'init_aim': False, 'init_wandb': False, 'learning_rate': {'clip_norm': 1.0, 'lr_init': 1e-05}, 'loss': {'charge_weight': 0.0, 'plaq_weight': 0.0, 'rmse_weight': 1.0, 'use_mixed_loss': False}, 'net_weights': {'v': {'q': 1.0, 's': 1.0, 't': 1.0}, 'x': {'q': 0.0, 's': 0.0, 't': 0.0}}, 'network': {'activation_fn': 'tanh', 'dropout_prob': 0.0, 'units': [1], 'use_batch_norm': False}, 'restore': False, 'save': False, 'steps': {'log': 1, 'nepoch': 10, 'nera': 1, 'print': 1, 'test': 50}, 'use_tb': False, 'use_wandb': False}
+[10/04/23 08:06:54][INFO][experiment.py:251] - Creating outputs/2023-10-04-080654/pytorch/train
+[10/04/23 08:06:54][INFO][experiment.py:251] - Creating outputs/2023-10-04-080654/pytorch/eval
+[10/04/23 08:06:54][INFO][experiment.py:251] - Creating outputs/2023-10-04-080654/pytorch/hmc
+[10/04/23 08:06:54][INFO][dist.py:226] - Caught MASTER_PORT:5433 from environment!
+[10/04/23 08:06:54][INFO][dist.py:226] - Caught MASTER_PORT:5433 from environment!
+[10/04/23 08:06:54][WARNING][trainer.py:437] - Using `torch.optim.Adam` optimizer
+[10/04/23 08:06:54][INFO][trainer.py:284] - num_params in model: 788
+[10/04/23 08:06:54][WARNING][trainer.py:250] - logging with freq 1 for wandb.watch</code></pre>
 </div>
 </div>
 <div class="cell" data-execution_count="5">
@@ -469,11 +499,11 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 <span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>log.info(<span class="ss">f"checkSU(x_hmc): </span><span class="sc">{</span>g<span class="sc">.</span>checkSU(xhmc)<span class="sc">}</span><span class="ss">"</span>)</span>
 <span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>plot_metrics(history_hmc.history, title<span class="op">=</span><span class="st">'HMC'</span>, marker<span class="op">=</span><span class="st">'.'</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[09/06/23 08:27:50][INFO][experiment.py:117] - Running 10 steps of hmc at beta=6.0000
-[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 0
-[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 1
-[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 2
-[09/06/23 08:27:50][INFO][common.py:97] - energy: torch.Size([2, 4]) torch.float64 
+<pre><code>[10/04/23 08:06:54][INFO][experiment.py:117] - Running 10 steps of hmc at beta=6.0000
+[10/04/23 08:06:54][INFO][experiment.py:121] - STEP: 0
+[10/04/23 08:06:54][INFO][experiment.py:121] - STEP: 1
+[10/04/23 08:06:54][INFO][experiment.py:121] - STEP: 2
+[10/04/23 08:06:54][INFO][common.py:97] - energy: torch.Size([2, 4]) torch.float64 
 [[-10.75791732 -12.34937625  -0.41675933  -1.53564322]
  [-10.75124452 -12.3522306   -0.41267615  -1.54108594]]
 logprob: torch.Size([2, 4]) torch.float64 
@@ -500,9 +530,9 @@ dQsin: torch.Size([4]) torch.float64
 [0.01118282 0.00468872 0.02691084 0.01389309]
 loss: None None 
 -0.008486187067784774
-[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 3
-[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 4
-[09/06/23 08:27:50][INFO][common.py:97] - energy: torch.Size([2, 4]) torch.float64 
+[10/04/23 08:06:54][INFO][experiment.py:121] - STEP: 3
+[10/04/23 08:06:54][INFO][experiment.py:121] - STEP: 4
+[10/04/23 08:06:54][INFO][common.py:97] - energy: torch.Size([2, 4]) torch.float64 
 [[-11.11456032 -17.6499957   -3.95552998  -6.53463898]
  [-11.13603858 -17.671668    -3.9389084   -6.51679905]]
 logprob: torch.Size([2, 4]) torch.float64 
@@ -529,9 +559,9 @@ dQsin: torch.Size([4]) torch.float64
 [0.0121904  0.00027074 0.02558149 0.00012376]
 loss: None None 
 -0.007962121892379256
-[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 5
-[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 6
-[09/06/23 08:27:50][INFO][common.py:97] - energy: torch.Size([2, 4]) torch.float64 
+[10/04/23 08:06:54][INFO][experiment.py:121] - STEP: 5
+[10/04/23 08:06:54][INFO][experiment.py:121] - STEP: 6
+[10/04/23 08:06:54][INFO][common.py:97] - energy: torch.Size([2, 4]) torch.float64 
 [[ -7.92357836 -18.88468089  -3.00365154  -4.94505522]
  [ -7.96783894 -18.86501731  -2.98482073  -4.97272838]]
 logprob: torch.Size([2, 4]) torch.float64 
@@ -558,9 +588,9 @@ dQsin: torch.Size([4]) torch.float64
 [0.01324857 0.00707162 0.03841005 0.00151529]
 loss: None None 
 -0.009571223668505026
-[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 7
-[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 8
-[09/06/23 08:27:50][INFO][common.py:97] - energy: torch.Size([2, 4]) torch.float64 
+[10/04/23 08:06:54][INFO][experiment.py:121] - STEP: 7
+[10/04/23 08:06:54][INFO][experiment.py:121] - STEP: 8
+[10/04/23 08:06:54][INFO][common.py:97] - energy: torch.Size([2, 4]) torch.float64 
 [[-13.98883304  -7.11601894  -9.48035637  -3.92143691]
  [-13.99184124  -7.1014651   -9.49438875  -4.11672224]]
 logprob: torch.Size([2, 4]) torch.float64 
@@ -587,20 +617,20 @@ dQsin: torch.Size([4]) torch.float64
 [0.01447065 0.00394877 0.00192226 0.00975699]
 loss: None None 
 -0.010424735653495517
-[09/06/23 08:27:50][INFO][experiment.py:121] - STEP: 9
-[09/06/23 08:27:50][INFO][2419635544.py:14] - checkSU(x_hmc): (tensor[4] f64 x∈[2.562e-16, 4.133e-16] μ=3.159e-16 σ=7.356e-17 [2.562e-16, 2.620e-16, 3.323e-16, 4.133e-16], tensor[4] f64 x∈[3.601e-16, 7.415e-16] μ=5.139e-16 σ=1.696e-16 [3.601e-16, 4.134e-16, 5.404e-16, 7.415e-16])
-[09/06/23 08:27:50][INFO][2088423886.py:19] - Saving energy to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
-[09/06/23 08:27:50][INFO][2088423886.py:19] - Saving logprob to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
-[09/06/23 08:27:51][INFO][2088423886.py:19] - Saving logdet to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
-[09/06/23 08:27:51][INFO][2088423886.py:19] - Saving acc to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
-[09/06/23 08:27:51][INFO][2088423886.py:19] - Saving sumlogdet to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
-[09/06/23 08:27:51][INFO][2088423886.py:19] - Saving acc_mask to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
-[09/06/23 08:27:51][INFO][2088423886.py:19] - Saving plaqs to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
-[09/06/23 08:27:52][INFO][2088423886.py:19] - Saving sinQ to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
-[09/06/23 08:27:52][INFO][2088423886.py:19] - Saving intQ to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
-[09/06/23 08:27:52][INFO][2088423886.py:19] - Saving dQint to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
-[09/06/23 08:27:52][INFO][2088423886.py:19] - Saving dQsin to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
-[09/06/23 08:27:53][INFO][2088423886.py:19] - Saving loss to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC</code></pre>
+[10/04/23 08:06:54][INFO][experiment.py:121] - STEP: 9
+[10/04/23 08:06:54][INFO][2419635544.py:14] - checkSU(x_hmc): (tensor[4] f64 x∈[2.562e-16, 4.133e-16] μ=3.159e-16 σ=7.356e-17 [2.562e-16, 2.620e-16, 3.323e-16, 4.133e-16], tensor[4] f64 x∈[3.601e-16, 7.415e-16] μ=5.139e-16 σ=1.696e-16 [3.601e-16, 4.134e-16, 5.404e-16, 7.415e-16])
+[10/04/23 08:06:54][INFO][2088423886.py:19] - Saving energy to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[10/04/23 08:06:54][INFO][2088423886.py:19] - Saving logprob to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[10/04/23 08:06:55][INFO][2088423886.py:19] - Saving logdet to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[10/04/23 08:06:55][INFO][2088423886.py:19] - Saving acc to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[10/04/23 08:06:55][INFO][2088423886.py:19] - Saving sumlogdet to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[10/04/23 08:06:55][INFO][2088423886.py:19] - Saving acc_mask to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[10/04/23 08:06:56][INFO][2088423886.py:19] - Saving plaqs to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[10/04/23 08:06:56][INFO][2088423886.py:19] - Saving sinQ to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[10/04/23 08:06:56][INFO][2088423886.py:19] - Saving intQ to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[10/04/23 08:06:56][INFO][2088423886.py:19] - Saving dQint to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[10/04/23 08:06:57][INFO][2088423886.py:19] - Saving dQsin to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC
+[10/04/23 08:06:57][INFO][2088423886.py:19] - Saving loss to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/HMC</code></pre>
 </div>
 <div class="cell-output cell-output-display">
 <p><img src="l2hmc-4DSU3_files/figure-html/cell-7-output-2.png" class="img-fluid"></p>
@@ -662,11 +692,11 @@ loss: None None
 <span id="cb10-20"><a href="#cb10-20" aria-hidden="true" tabindex="-1"></a>log.info(<span class="ss">f"checkSU(x_eval): </span><span class="sc">{</span>g<span class="sc">.</span>checkSU(xeval)<span class="sc">}</span><span class="ss">"</span>)</span>
 <span id="cb10-21"><a href="#cb10-21" aria-hidden="true" tabindex="-1"></a>plot_metrics(history_eval.history, title<span class="op">=</span><span class="st">'Evaluate'</span>, marker<span class="op">=</span><span class="st">'.'</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[09/06/23 08:27:54][INFO][experiment.py:117] - Running 10 steps of eval at beta=6.0000
-[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 0
-[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 1
-[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 2
-[09/06/23 08:27:54][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+<pre><code>[10/04/23 08:06:58][INFO][experiment.py:117] - Running 10 steps of eval at beta=6.0000
+[10/04/23 08:06:58][INFO][experiment.py:121] - STEP: 0
+[10/04/23 08:06:59][INFO][experiment.py:121] - STEP: 1
+[10/04/23 08:06:59][INFO][experiment.py:121] - STEP: 2
+[10/04/23 08:06:59][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
 [[ -9.93909722 -11.71406924 -13.98390472  -6.91867768]
  [ -9.64725014 -11.76741361 -13.84813463  -6.57255943]
  [ -9.24332693 -11.64892261 -13.56752346  -6.14914933]]
@@ -714,9 +744,9 @@ dQsin: torch.Size([4]) torch.float64
 [0.0209205  0.01654419 0.02726158 0.01683214]
 loss: None None 
 -0.020710585677662853
-[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 3
-[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 4
-[09/06/23 08:27:54][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[10/04/23 08:06:59][INFO][experiment.py:121] - STEP: 3
+[10/04/23 08:06:59][INFO][experiment.py:121] - STEP: 4
+[10/04/23 08:06:59][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
 [[-12.85390515 -19.69124648 -23.34418961 -11.83338904]
  [-12.61930827 -19.83006702 -23.39287265 -12.32972948]
  [-12.22362162 -18.93555772 -22.24709415 -12.09553454]]
@@ -764,9 +794,9 @@ dQsin: torch.Size([4]) torch.float64
 [0.03151961 0.         0.         0.04141642]
 loss: None None 
 -0.015773998192892276
-[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 5
-[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 6
-[09/06/23 08:27:54][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[10/04/23 08:06:59][INFO][experiment.py:121] - STEP: 5
+[10/04/23 08:06:59][INFO][experiment.py:121] - STEP: 6
+[10/04/23 08:06:59][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
 [[-19.55645935 -20.86462233 -20.90289315 -11.80938497]
  [-19.27554945 -20.60377855 -20.79816694 -11.77715066]
  [-18.96590202 -20.34010565 -20.641842   -11.43213333]]
@@ -814,9 +844,9 @@ dQsin: torch.Size([4]) torch.float64
 [0.02379895 0.02108615 0.03992728 0.00544025]
 loss: None None 
 -0.016508422822688693
-[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 7
-[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 8
-[09/06/23 08:27:54][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[10/04/23 08:06:59][INFO][experiment.py:121] - STEP: 7
+[10/04/23 08:06:59][INFO][experiment.py:121] - STEP: 8
+[10/04/23 08:06:59][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
 [[-18.07899101 -28.71248658 -13.48019371 -14.59335827]
  [-17.76685303 -28.30437183 -12.76586787 -14.82013678]
  [-17.05030815 -28.78619363 -11.86821313 -14.6282822 ]]
@@ -864,26 +894,26 @@ dQsin: torch.Size([4]) torch.float64
 [0.03363338 0.0042779  0.         0.00823858]
 loss: None None 
 -0.01735800592796972
-[09/06/23 08:27:54][INFO][experiment.py:121] - STEP: 9
-[09/06/23 08:27:54][INFO][1629827420.py:20] - checkSU(x_eval): (tensor[4] f64 x∈[9.577e-14, 0.024] μ=0.009 σ=0.012 [0.024, 2.063e-13, 0.014, 9.577e-14], tensor[4] f64 x∈[1.790e-13, 0.034] μ=0.013 σ=0.016 [0.034, 3.935e-13, 0.016, 1.790e-13])
-[09/06/23 08:27:54][INFO][2088423886.py:19] - Saving energy to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
-[09/06/23 08:27:55][INFO][2088423886.py:19] - Saving logprob to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
-[09/06/23 08:27:55][INFO][2088423886.py:19] - Saving logdet to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
-[09/06/23 08:27:55][INFO][2088423886.py:19] - Saving sldf to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
-[09/06/23 08:27:55][INFO][2088423886.py:19] - Saving sldb to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
-[09/06/23 08:27:56][INFO][2088423886.py:19] - Saving sld to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
-[09/06/23 08:27:56][INFO][2088423886.py:19] - Saving xeps to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
-[09/06/23 08:27:56][INFO][2088423886.py:19] - Saving veps to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
-[09/06/23 08:27:56][INFO][2088423886.py:19] - Saving acc to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
-[09/06/23 08:27:57][INFO][2088423886.py:19] - Saving sumlogdet to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
-[09/06/23 08:27:57][INFO][2088423886.py:19] - Saving beta to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
-[09/06/23 08:27:57][INFO][2088423886.py:19] - Saving acc_mask to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
-[09/06/23 08:27:57][INFO][2088423886.py:19] - Saving plaqs to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
-[09/06/23 08:27:57][INFO][2088423886.py:19] - Saving sinQ to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
-[09/06/23 08:27:58][INFO][2088423886.py:19] - Saving intQ to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
-[09/06/23 08:27:58][INFO][2088423886.py:19] - Saving dQint to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
-[09/06/23 08:27:58][INFO][2088423886.py:19] - Saving dQsin to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
-[09/06/23 08:27:58][INFO][2088423886.py:19] - Saving loss to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate</code></pre>
+[10/04/23 08:06:59][INFO][experiment.py:121] - STEP: 9
+[10/04/23 08:06:59][INFO][1629827420.py:20] - checkSU(x_eval): (tensor[4] f64 x∈[9.577e-14, 0.024] μ=0.009 σ=0.012 [0.024, 2.063e-13, 0.014, 9.577e-14], tensor[4] f64 x∈[1.790e-13, 0.034] μ=0.013 σ=0.016 [0.034, 3.935e-13, 0.016, 1.790e-13])
+[10/04/23 08:06:59][INFO][2088423886.py:19] - Saving energy to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[10/04/23 08:06:59][INFO][2088423886.py:19] - Saving logprob to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[10/04/23 08:06:59][INFO][2088423886.py:19] - Saving logdet to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[10/04/23 08:06:59][INFO][2088423886.py:19] - Saving sldf to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[10/04/23 08:07:00][INFO][2088423886.py:19] - Saving sldb to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[10/04/23 08:07:00][INFO][2088423886.py:19] - Saving sld to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[10/04/23 08:07:00][INFO][2088423886.py:19] - Saving xeps to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[10/04/23 08:07:01][INFO][2088423886.py:19] - Saving veps to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[10/04/23 08:07:01][INFO][2088423886.py:19] - Saving acc to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[10/04/23 08:07:01][INFO][2088423886.py:19] - Saving sumlogdet to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[10/04/23 08:07:01][INFO][2088423886.py:19] - Saving beta to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[10/04/23 08:07:01][INFO][2088423886.py:19] - Saving acc_mask to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[10/04/23 08:07:02][INFO][2088423886.py:19] - Saving plaqs to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[10/04/23 08:07:02][INFO][2088423886.py:19] - Saving sinQ to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[10/04/23 08:07:02][INFO][2088423886.py:19] - Saving intQ to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[10/04/23 08:07:02][INFO][2088423886.py:19] - Saving dQint to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[10/04/23 08:07:03][INFO][2088423886.py:19] - Saving dQsin to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate
+[10/04/23 08:07:03][INFO][2088423886.py:19] - Saving loss to /Users/samforeman/projects/saforem2/l2hmc-qcd/qmd/outputs/plots-4dSU3/Evaluate</code></pre>
 </div>
 <div class="cell-output cell-output-display">
 <p><img src="l2hmc-4DSU3_files/figure-html/cell-8-output-2.png" class="img-fluid"></p>
@@ -955,10 +985,10 @@ loss: None None
 <span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>            <span class="cf">except</span> <span class="pp">KeyError</span>:</span>
 <span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>                history[key] <span class="op">=</span> [val]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 0
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 1
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 2
-[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+<pre><code>[10/04/23 08:07:05][INFO][2642635469.py:4] - TRAIN STEP: 0
+[10/04/23 08:07:05][INFO][2642635469.py:4] - TRAIN STEP: 1
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 2
+[10/04/23 08:07:06][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
 [[-20.11355156 -13.83759796  -4.51987377 -11.45297864]
  [-19.63407248 -12.82094906  -3.89140218 -11.38944608]
  [-18.91054695 -12.57901193  -3.60837652 -10.80563673]]
@@ -1006,9 +1036,9 @@ dQint: torch.Size([4]) torch.float64
 [0.00068181 0.         0.00033711 0.001986  ]
 dQsin: torch.Size([4]) torch.float64 
 [0.01196306 0.         0.00591496 0.0348463 ]
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 3
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 4
-[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 3
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 4
+[10/04/23 08:07:06][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
 [[-16.99217625 -18.05099071 -10.04985909  -7.1340411 ]
  [-16.61047626 -17.84035555  -9.68866118  -7.14912011]
  [-16.28336399 -18.36191548  -9.14330041  -5.86613539]]
@@ -1056,9 +1086,9 @@ dQint: torch.Size([4]) torch.float64
 [0.00065855 0.00207145 0.         0.        ]
 dQsin: torch.Size([4]) torch.float64 
 [0.01155495 0.03634551 0.         0.        ]
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 5
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 6
-[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 5
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 6
+[10/04/23 08:07:06][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
 [[-22.17358114 -18.47427308  -2.95308721 -11.62559496]
  [-21.83570903 -18.22818944  -2.4429929  -11.20037746]
  [-21.81748065 -18.37604145  -2.70650275 -10.07465326]]
@@ -1106,9 +1136,9 @@ dQint: torch.Size([4]) torch.float64
 [0.0016496  0.00074394 0.00087095 0.0014133 ]
 dQsin: torch.Size([4]) torch.float64 
 [0.02894377 0.01305311 0.01528163 0.02479769]
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 7
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 8
-[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 7
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 8
+[10/04/23 08:07:06][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
 [[-28.94977982 -23.93414904  -5.02251262 -20.14381224]
  [-28.26856486 -24.03288661  -4.19892196 -20.37397293]
  [-27.78459946 -23.56989642  -3.56347647 -20.06837893]]
@@ -1156,9 +1186,9 @@ dQint: torch.Size([4]) torch.float64
 [0.         0.         0.         0.00032025]
 dQsin: torch.Size([4]) torch.float64 
 [0.         0.         0.         0.00561914]
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 9
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 10
-[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 9
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 10
+[10/04/23 08:07:06][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
 [[-31.39076793 -27.31985011 -19.54217484 -21.1104468 ]
  [-31.0614939  -27.06503105 -19.07066872 -21.3910664 ]
  [-30.84961158 -26.95602155 -18.69349894 -20.00516103]]
@@ -1206,9 +1236,9 @@ dQint: torch.Size([4]) torch.float64
 [0.00043531 0.00061571 0.00043569 0.        ]
 dQsin: torch.Size([4]) torch.float64 
 [0.00763793 0.01080326 0.00764459 0.        ]
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 11
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 12
-[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 11
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 12
+[10/04/23 08:07:06][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
 [[-31.42781825 -21.38032064 -19.16557544 -24.26085164]
  [-30.89428362 -21.22321069 -18.90945902 -23.55378881]
  [-30.46921912 -20.86892045 -18.93287679 -23.36450964]]
@@ -1256,9 +1286,9 @@ dQint: torch.Size([4]) torch.float64
 [1.23274406e-05 0.00000000e+00 5.10271910e-04 0.00000000e+00]
 dQsin: torch.Size([4]) torch.float64 
 [0.0002163  0.         0.00895321 0.        ]
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 13
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 14
-[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 13
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 14
+[10/04/23 08:07:06][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
 [[-29.59240183 -21.94551736 -28.47707495 -20.59708329]
  [-29.48303373 -21.10556806 -28.05877271 -20.58985545]
  [-29.39854899 -20.73632654 -27.22089443 -19.77844503]]
@@ -1306,9 +1336,9 @@ dQint: torch.Size([4]) torch.float64
 [0.00065824 0.00058615 0.00017334 0.00014198]
 dQsin: torch.Size([4]) torch.float64 
 [0.01154945 0.01028462 0.00304149 0.00249122]
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 15
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 16
-[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 15
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 16
+[10/04/23 08:07:06][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
 [[-27.90336074 -24.58447835 -27.70507628 -25.1095963 ]
  [-27.4557147  -23.38939397 -26.86035304 -24.74188789]
  [-26.76730611 -23.12311187 -26.13507215 -24.81611966]]
@@ -1356,9 +1386,9 @@ dQint: torch.Size([4]) torch.float64
 [8.49293564e-05 0.00000000e+00 3.84992539e-04 3.15784764e-04]
 dQsin: torch.Size([4]) torch.float64 
 [0.00149017 0.         0.00675506 0.00554075]
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 17
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 18
-[09/06/23 08:28:01][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 17
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 18
+[10/04/23 08:07:06][INFO][common.py:97] - energy: torch.Size([3, 4]) torch.float64 
 [[-28.74207541 -24.8965513  -32.81235279 -22.59228204]
  [-27.98828099 -23.91465789 -32.28912627 -22.61626646]
  [-27.23785728 -24.01606216 -31.51716178 -21.73978358]]
@@ -1406,7 +1436,7 @@ dQint: torch.Size([4]) torch.float64
 [0.         0.00045467 0.         0.00140838]
 dQsin: torch.Size([4]) torch.float64 
 [0.         0.00797764 0.         0.02471136]
-[09/06/23 08:28:01][INFO][2642635469.py:4] - TRAIN STEP: 19</code></pre>
+[10/04/23 08:07:06][INFO][2642635469.py:4] - TRAIN STEP: 19</code></pre>
 </div>
 </div>
 <div class="cell" data-execution_count="9">
@@ -1414,7 +1444,7 @@ dQsin: torch.Size([4]) torch.float64
 <span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>log.info(<span class="ss">f"checkSU(x_train): </span><span class="sc">{</span>g<span class="sc">.</span>checkSU(x)<span class="sc">}</span><span class="ss">"</span>)</span>
 <span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="co"># plot_metrics(history, title='train', marker='.')</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[09/06/23 08:28:01][INFO][1630590238.py:2] - checkSU(x_train): (tensor[4] f64 x∈[3.838e-16, 0.018] μ=0.008 σ=0.009 [0.018, 0.014, 3.838e-16, 9.135e-13], tensor[4] f64 x∈[6.307e-16, 0.026] μ=0.011 σ=0.013 [0.026, 0.017, 6.307e-16, 1.818e-12])</code></pre>
+<pre><code>[10/04/23 08:07:06][INFO][1630590238.py:2] - checkSU(x_train): (tensor[4] f64 x∈[3.838e-16, 0.018] μ=0.008 σ=0.009 [0.018, 0.014, 3.838e-16, 9.135e-13], tensor[4] f64 x∈[6.307e-16, 0.026] μ=0.011 σ=0.013 [0.026, 0.017, 6.307e-16, 1.818e-12])</code></pre>
 </div>
 </div>
 <div class="cell" data-execution_count="10">
@@ -1427,15 +1457,15 @@ dQsin: torch.Size([4]) torch.float64
 
 
 
-<a onclick="window.scrollTo(0, 0); return false;" role="button" id="quarto-back-to-top"><i class="bi bi-arrow-up"></i> Back to top</a><div id="quarto-appendix" class="default"><section class="quarto-appendix-contents"><h2 class="anchored quarto-appendix-heading">Citation</h2><div><div class="quarto-appendix-secondary-label">BibTeX citation:</div><pre class="sourceCode code-with-copy quarto-appendix-bibtex"><code class="sourceCode bibtex">@misc{foreman2023,
+<div id="quarto-appendix" class="default"><section class="quarto-appendix-contents"><h2 class="anchored quarto-appendix-heading">Citation</h2><div><div class="quarto-appendix-secondary-label">BibTeX citation:</div><pre class="sourceCode code-with-copy quarto-appendix-bibtex"><code class="sourceCode bibtex">@online{foreman2023,
   author = {Foreman, Sam},
   title = {4D {\$SU(3)\$} {Model}},
-  date = {2023-09-06},
-  url = {https://saforem2.github.io/l2hmc-qcd},
+  date = {2023-10-04},
+  url = {https://saforem2.github.io/l2hmc-qcd/qmd/l2hmc-4DSU3.html},
   langid = {en}
 }
 </code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre><div class="quarto-appendix-secondary-label">For attribution, please cite this work as:</div><div id="ref-foreman2023" class="csl-entry quarto-appendix-citeas" role="listitem">
-Foreman, Sam. 2023. <span>“4D $SU(3)$ Model.”</span> <em>L2HMC</em>. <a href="https://saforem2.github.io/l2hmc-qcd">https://saforem2.github.io/l2hmc-qcd</a>.
+Foreman, Sam. 2023. <span>“4D $SU(3)$ Model.”</span> October 4, 2023. <a href="https://saforem2.github.io/l2hmc-qcd/qmd/l2hmc-4DSU3.html">https://saforem2.github.io/l2hmc-qcd/qmd/l2hmc-4DSU3.html</a>.
 </div></div></section></div></main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
 window.document.addEventListener("DOMContentLoaded", function (event) {
@@ -1871,10 +1901,10 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
     <a class="nav-link" href="https://www.twitter.com/saforem2"><i class="fa-brands fa-twitter" aria-label="twitter"></i></a>
   </li>  
     <li class="nav-item">
-    <a class="nav-link" href="https://scholar.google.com/citations?user=vV_1zDwAAAAJ&amp;hl=en"></a>
+    <a class="nav-link" href="https://scholar.google.com/citations?user=vV_1zDwAAAAJ&amp;hl=en"><i class="ai  ai-google-scholar"></i></a>
   </li>  
     <li class="nav-item">
-    <a class="nav-link" href="https://orcid.org/0000-0002-9981-0876"></a>
+    <a class="nav-link" href="https://orcid.org/0000-0002-9981-0876"><i class="ai  ai-orcid"></i></a>
   </li>  
     <li class="nav-item">
     <a class="nav-link" href="https://www.last.fm/user/saforem2"><i class="fa-brands fa-lastfm" aria-label="lastfm"></i></a>

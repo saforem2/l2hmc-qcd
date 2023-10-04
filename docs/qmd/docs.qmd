@@ -1,0 +1,53 @@
+---
+# jupyter: climrr
+callout-appearance: simple
+title-block-banner: false
+# https://www.anl.gov/sites/www/files/2021-09/CPA_RESIZE_Climate%20Resilience%20Images_01_1920x1080.jpg
+editor:
+   render-on-save: true
+execute:
+   freeze: true
+# format:
+  # html:
+  #   # page-layout: full
+  #   grid:
+  #     sidebar-width: 200px
+  #     body-width: 850px
+  #     margin-width: 450px
+# published-title: ""
+# reference-location: margin
+# citation-location: margin
+# title: "Intro to HPC: Climate Analysis"
+# title-block-banner: false
+# title-block-banner: "#2196F3"
+# jolla trestles solana marquee broadside
+# author:
+#   - name: Sam Foreman
+#     id: sf
+#     url: https://samforeman.me
+#     orcid: 0000-0002-9981-0876
+#     email: foremans@anl.gov
+#     affiliation: 
+#       - name: Argonne National Laboratory
+#         city: Chicago
+#         state: IL
+#         url: https://alcf.anl.gov
+# about:
+#    links:
+#       - icon: github
+#         href: https://github.com/saforem2/quarto-examples
+#       - icon: twitter
+#         href: https://twitter.com/saforem2
+#    template: solana
+#    image: https://www.anl.gov/sites/www/files/2021-09/CPA_RESIZE_Climate%20Resilience%20Images_01_1920x1080.jpg
+#    image-width: 10em
+#    image-shape: rounded
+---
+
+# Documentation
+
+::: {.callout-tip title="TODO"}
+
+Complete!
+
+:::

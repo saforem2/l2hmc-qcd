@@ -1,0 +1,19 @@
+---
+title: "Posts"
+listing:
+  - id: listings
+    contents:
+      - "../qmd/**/*.qmd"
+    type: table
+    sort: "date desc"
+---
+
+## External Links
+
+- [$U(1)$ Model in `2D`](./l2hmc-2DU1.qmd)
+- [$SU(3)$ Model in `4D`](./l2hmc-4DSU3.qmd)
+
+::: {#listings}
+:::
+
+Learn more about Quarto [here](https://www.quarto.com).

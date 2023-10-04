@@ -1,0 +1,41 @@
+---
+title: "Posts"
+# title: MCMC + Diffusion Sampling
+callout-appearance: simple
+author:
+  # name: Sam Foreman
+  name: "Sam Foreman [[{{< ai orcid >}}]{.orcid-green}](https://orcid.org/0000-0002-9981-0876)"
+  url: https://samforeman.me
+  # orcid: 0000-0002-9981-0876
+  email: foremans@anl.gov
+citation:
+   author: Sam Foreman
+   type: webpage
+   title: "Posts"
+   url: https://saforem2.github.io/l2hmc-qcd/qmd/posts.html
+title-block-banner: false
+# https://www.anl.gov/sites/www/files/2021-09/CPA_RESIZE_Climate%20Resilience%20Images_01_1920x1080.jpg
+listing:
+  - id: listings
+    contents:
+      # - "../qmd/**/*.qmd"
+      - "../qmd/posts.qmd"
+      - "../qmd/diffusion/diffusion.qmd"
+      - "../qmd/diffusion-alt/diffusion.qmd"
+      - "../qmd/slides.qmd"
+      - "../qmd/l2hmc-2DU1.qmd"
+      - "../qmd/l2hmc-4DSU3.qmd"
+#       - "!../qmd/dsblog.qmd"
+    type: table
+    sort: "date desc"
+---
+
+## External Links
+
+- [$U(1)$ Model in `2D`](./l2hmc-2DU1.qmd)
+- [$SU(3)$ Model in `4D`](./l2hmc-4DSU3.qmd)
+
+::: {#listings}
+:::
+
+Learn more about Quarto [here](https://www.quarto.com).

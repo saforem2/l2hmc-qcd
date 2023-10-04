@@ -2,12 +2,11 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.3.433">
+<meta name="generator" content="quarto-1.3.450">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="author" content="Sam Foreman">
-<meta name="dcterms.date" content="2023-09-08">
+<meta name="author" content="">
 
 <title>l2hmc-qcd</title>
 <style>
@@ -67,6 +66,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="./">
 <link href="./favicon.svg" rel="icon" type="image/svg+xml">
+<script src="site_libs/quarto-listing/list.min.js"></script>
+<script src="site_libs/quarto-listing/quarto-listing.js"></script>
 <script src="site_libs/quarto-html/quarto.js"></script>
 <script src="site_libs/quarto-html/popper.min.js"></script>
 <script src="site_libs/quarto-html/tippy.umd.min.js"></script>
@@ -80,6 +81,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="site_libs/bootstrap/bootstrap-dark.min.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
 <link href="site_libs/quarto-contrib/fontawesome6-0.1.0/all.css" rel="stylesheet">
 <link href="site_libs/quarto-contrib/fontawesome6-0.1.0/latex-fontsize.css" rel="stylesheet">
+<link href="site_libs/quarto-contrib/academicons-1.9.2/all.css" rel="stylesheet">
+<link href="site_libs/quarto-contrib/academicons-1.9.2/size.css" rel="stylesheet">
+<link href="site_libs/quarto-contrib/bootstrap-icons-1.9.1/all.css" rel="stylesheet">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -100,6 +104,35 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     "search-label": "Search"
   }
 }</script>
+<script>
+
+  window.document.addEventListener("DOMContentLoaded", function (_event) {
+    const listingTargetEl = window.document.querySelector('#listing-listings .list');
+    if (!listingTargetEl) {
+      // No listing discovered, do not attach.
+      return; 
+    }
+
+    const options = {
+      valueNames: ['listing-date','listing-title','listing-author',{ data: ['index'] },{ data: ['categories'] },{ data: ['listing-date-sort'] },{ data: ['listing-title-sort'] }],
+      
+      searchColumns: ["listing-date","listing-title","listing-author"],
+    };
+
+    window['quarto-listings'] = window['quarto-listings'] || {};
+    window['quarto-listings']['listing-listings'] = new List('listing-listings', options);
+
+    if (window['quarto-listing-loaded']) {
+      window['quarto-listing-loaded']();
+    }
+  });
+
+  window.addEventListener('hashchange',() => {
+    if (window['quarto-listing-loaded']) {
+      window['quarto-listing-loaded']();
+    }
+  })
+  </script>
 <script async="" src="https://www.googletagmanager.com/gtag/js?id=G-XVM2Y822Y1"></script>
 
 <script type="text/javascript">
@@ -134,6 +167,22 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 <meta property="og:description" content="">
 <meta property="og:image" content="https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg">
 <meta property="og:site-name" content="l2hmc-qcd">
+<meta name="twitter:title" content="">
+<meta name="twitter:description" content="">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="citation_title" content="l2hmc-qcd">
+<meta name="citation_author" content="Sam Foreman">
+<meta name="citation_fulltext_html_url" content="https://saforem2.github.io/l2hmc-qcd">
+<meta name="citation_language" content="en">
+<meta name="citation_reference" content="citation_title=The climate risk &amp;amp;amp; resilience portal (ClimRR) metadata and data dictionary;,citation_author=C. Burdi;,citation_author=Wall. T Branham;,citation_publication_date=2023;,citation_cover_date=2023;,citation_year=2023;,citation_fulltext_html_url=https://dub.sh/ClimRR-Metadata;">
+<meta name="citation_reference" content="citation_title=Progress on (g-2)_\mu from lattice QCD;,citation_author=Hartmut Wittig;,citation_publication_date=2023;,citation_cover_date=2023;,citation_year=2023;,citation_fulltext_html_url=https://arxiv.org/abs/2306.04165;">
+<meta name="citation_reference" content="citation_title=Hybrid Monte Carlo;,citation_author=S. Duane;,citation_author=A. D. Kennedy;,citation_author=B. J. Pendleton;,citation_author=D. Roweth;,citation_publication_date=1987;,citation_cover_date=1987;,citation_year=1987;,citation_doi=10.1016/0370-2693(87)91197-X;,citation_volume=195;,citation_journal_title=Phys. Lett. B;">
+<meta name="citation_reference" content="citation_title=Snowmass 2021 Computational Frontier CompF03 Topical Group Report: Machine Learning;,citation_author=Phiala Shanahan;,citation_author=others;,citation_publication_date=2022-09;,citation_cover_date=2022-09;,citation_year=2022;,citation_fulltext_html_url=https://arxiv.org/abs/2209.07559;">
+<meta name="citation_reference" content="citation_title=Applications of Machine Learning to Lattice Quantum Field Theory;,citation_author=Denis Boyda;,citation_author=others;,citation_publication_date=2022-02;,citation_cover_date=2022-02;,citation_year=2022;,citation_fulltext_html_url=https://arxiv.org/abs/2202.05838;,citation_conference_title=Snowmass 2021;">
+<meta name="citation_reference" content="citation_title=HMC with Normalizing Flows;,citation_author=Sam Foreman;,citation_author=Taku Izubuchi;,citation_author=Luchang Jin;,citation_author=Xiao-Yong Jin;,citation_author=James C. Osborn;,citation_author=Akio Tomiya;,citation_publication_date=2022;,citation_cover_date=2022;,citation_year=2022;,citation_fulltext_html_url=https://arxiv.org/abs/2112.01586;,citation_doi=10.22323/1.396.0073;,citation_volume=LATTICE2021;,citation_journal_title=PoS;">
+<meta name="citation_reference" content="citation_title=LeapfrogLayers: A Trainable Framework for Effective Topological Sampling;,citation_author=Sam Foreman;,citation_author=Xiao-Yong Jin;,citation_author=James C. Osborn;,citation_publication_date=2022;,citation_cover_date=2022;,citation_year=2022;,citation_fulltext_html_url=https://arxiv.org/abs/2112.01582;,citation_doi=10.22323/1.396.0508;,citation_volume=LATTICE2021;,citation_journal_title=PoS;">
+<meta name="citation_reference" content="citation_title=Deep Learning Hamiltonian Monte Carlo;,citation_author=Sam Foreman;,citation_author=Xiao-Yong Jin;,citation_author=James C. Osborn;,citation_publication_date=2021-05;,citation_cover_date=2021-05;,citation_year=2021;,citation_fulltext_html_url=https://arxiv.org/abs/2105.03418;,citation_conference_title=9th International Conference on Learning Representations;">
 </head>
 
 <body class="nav-fixed">
@@ -155,15 +204,17 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
   <span class="navbar-toggler-icon"></span>
 </button>
           <div class="collapse navbar-collapse" id="navbarCollapse">
-            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
   <li class="nav-item">
-    <a class="nav-link" href="./qmd/examples.html" rel="" target="">
- <span class="menu-text"><span class="red-text"><i class="fa-solid fa-book" aria-label="book"></i></span> Examples</span></a>
+    <a class="nav-link" href="./qmd/posts.html" rel="" target="">
+ <span class="menu-text"><span class="red-text"><i class="bi-signpost-split " style="" role="img" aria-hidden="true"></i></span> Posts</span></a>
   </li>  
   <li class="nav-item">
     <a class="nav-link" href="./qmd/slides.html" rel="" target="">
- <span class="menu-text"><span class="blue-text"><i class="fa-solid fa-person-chalkboard" aria-label="person-chalkboard"></i></span> Slides</span></a>
+ <span class="menu-text"><span class="green-text"><i class="bi-easel " style="" role="img" aria-hidden="true"></i></span> Talks</span></a>
   </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
   <li class="nav-item compact">
     <a class="nav-link" href="https://github.com/saforem2/l2hmc-qcd" rel="" target=""><i class="bi bi-github" role="img" aria-label="GitHub">
 </i> 
@@ -204,6 +255,7 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
   <li><a href="#dynamics-network" id="toc-dynamics-network" class="nav-link" data-scroll-target="#dynamics-network">Dynamics / Network</a></li>
   </ul></li>
   <li><a href="#contact" id="toc-contact" class="nav-link" data-scroll-target="#contact">Contact</a></li>
+  <li><a href="#posts" id="toc-posts" class="nav-link" data-scroll-target="#posts">Posts</a></li>
   <li><a href="#citation" id="toc-citation" class="nav-link" data-scroll-target="#citation">Citation</a></li>
   <li><a href="#acknowledgement" id="toc-acknowledgement" class="nav-link" data-scroll-target="#acknowledgement">Acknowledgement</a></li>
   </ul></li>
@@ -215,15 +267,27 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 
 
 
+<div class="columns" style="display: flex; align-items: flex-start;">
+<div class="column" style="width:60%;">
 <div style="text-align:center;">
 <p><img src="https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg" class="img-fluid"></p>
 <p><a href="https://hits.seeyoufarm.com"><img alt="hits" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fsaforem2%2Fl2hmc-qcd&amp;count_bg=%2300CCFF&amp;title_bg=%23555555&amp;icon=&amp;icon_color=%23111111&amp;title=👋&amp;edge_flat=false"></a><br>
 <a href="https://github.com/saforem2/l2hmc-qcd/"><img alt="l2hmc-qcd" src="https://img.shields.io/badge/-l2hmc--qcd-252525?style=flat&amp;logo=github&amp;labelColor=gray"></a> <a href="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd"><img alt="codefactor" src="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge"></a> <br> <a href="https://arxiv.org/abs/2112.01582"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg"></a> <a href="https://arxiv.org/abs/2105.03418"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg"></a> <br> <a href="https://hydra.cc"><img alt="hydra" src="https://img.shields.io/badge/Config-Hydra-89b8cd"></a> <a href="https://pytorch.org/get-started/locally/"><img alt="pyTorch" src="https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&amp;logoColor=white"></a> <a href="https://www.tensorflow.org"><img alt="tensorflow" src="https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&amp;logo=TensorFlow&amp;logoColor=white"></a> <br> <a href="https://wandb.ai/l2hmc-qcd/l2hmc-qcd"><img src="https://raw.githubusercontent.com/wandb/assets/main/wandb-github-badge-28.svg" alt="Weights &amp; Biases monitoring" height="20"></a></p>
 </div>
-<details closed="">
-<summary>
-<b>Contents</b>
-</summary>
+</div><div class="column" style="width:40%;">
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="[{{< fa solid list-ol >}} Contents]{.dim-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="true" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="dim-text"><i class="fa-solid fa-list-ol" aria-label="list-ol"></i> Contents</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse show">
+<div class="callout-body-container callout-body">
+<!-- <details closed><summary><b>Contents</b></summary> -->
 <ul>
 <li><a href="#overview">Overview</a>
 <ul>
@@ -247,7 +311,12 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 </ul></li>
 </ul></li>
 </ul>
-</details>
+<!-- </details> -->
+</div>
+</div>
+</div>
+</div>
+</div>
 <section id="overview" class="level1">
 <h1>Overview</h1>
 <section id="papers-slides-etc." class="level2">
@@ -298,7 +367,7 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 <section id="installation" class="level1">
 <h1>Installation</h1>
 <div class="callout callout-style-simple callout-warning callout-titled" title="Warning" style="width:100%!important;">
-<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="true" aria-label="Toggle callout">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="true" aria-label="Toggle callout">
 <div class="callout-icon-container">
 <i class="callout-icon"></i>
 </div>
@@ -307,7 +376,7 @@ Warning
 </div>
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
-<div id="callout-1" class="callout-1-contents callout-collapse collapse show">
+<div id="callout-2" class="callout-2-contents callout-collapse collapse show">
 <div class="callout-body-container callout-body">
 <p>It is recommended to install <em>inside</em> an existing virtual environment<br> (ideally one with <code>tensorflow, pytorch [horovod,deepspeed]</code> already installed)</p>
 </div>
@@ -380,19 +449,21 @@ Warning
 <p><strong>Goal:</strong> Use L2HMC to <strong>efficiently</strong> generate <em>gauge configurations</em> for calculating observables in lattice QCD.</p>
 <p>A detailed description of the (ongoing) work to apply this algorithm to simulations in lattice QCD (specifically, a 2D U(1) lattice gauge theory model) can be found in <a href="https://arxiv.org/abs/2105.03418">arXiv:2105.03418</a>.</p>
 <div data-align="center">
-<p><img src="assets/l2hmc_poster.jpeg" alt="l2hmc-qcd poster" width="90%"></p>
+<p><img src="assets/l2hmc_poster.jpeg" alt="l2hmc-qcd poster" width="100%"></p>
 </div>
 <section id="organization" class="level2">
 <h2 class="anchored" data-anchor-id="organization">Organization</h2>
 <section id="dynamics-network" class="level3">
 <h3 class="anchored" data-anchor-id="dynamics-network">Dynamics / Network</h3>
-<p>For a given target distribution, π(x), the <code>Dynamics</code> object (<a href="src/l2hmc/dynamics"><code>src/l2hmc/dynamics/</code></a>) implements methods for generating proposal configurations (x’ ~ π) using the generalized leapfrog update.</p>
-<p>This generalized leapfrog update takes as input a buffer of lattice configurations <code>x</code> and generates a proposal configuration <code>x' = Dynamics(x)</code> by evolving generalized L2HMC dynamics.</p>
+<p>For a given target distribution, π(x), the <code>Dynamics</code> object (<a href="src/l2hmc/dynamics"><code>src/l2hmc/dynamics/</code></a>) implements methods for generating proposal configurations (<span class="math inline">x^{\prime} \sim \pi</span>) using the generalized leapfrog update.</p>
+<p>This generalized leapfrog update takes as input a buffer of lattice configurations <code>x</code> and generates a proposal configuration <span class="math inline">x^{\prime}=</span> <code>Dynamics(x)</code> by evolving generalized L2HMC dynamics.</p>
 <section id="network-architecture" class="level4">
 <h4 class="anchored" data-anchor-id="network-architecture">Network Architecture</h4>
-<p>An illustration of the <code>leapfrog layer</code> updating <code>(x, v) --&gt; (x', v')</code> can be seen below.</p>
-<div data-align="center">
-<p><img src="assets/lflayer.png" alt="leapfrog layer" width="800/"></p>
+<div id="fig-lflayer" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="./assets/lflayer.png" class="img-fluid figure-img"></p>
+<figcaption class="figure-caption">Figure&nbsp;1: An illustration of the <code>leapfrog layer</code> updating <code>(x, v) --&gt; (x', v')</code> can be seen below.</figcaption>
+</figure>
 </div>
 </section>
 </section>
@@ -401,6 +472,181 @@ Warning
 <h2 class="anchored" data-anchor-id="contact">Contact</h2>
 <p><strong><em>Code author:</em></strong> Sam Foreman</p>
 <p><strong><em>Pull requests and issues should be directed to:</em></strong> <a href="http://github.com/saforem2">saforem2</a></p>
+</section>
+<section id="posts" class="level2">
+<h2 class="anchored" data-anchor-id="posts">Posts</h2>
+<!-- ::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: rgba(red(var(--green-text)), green(var(--green-text)), blue(var(--green-text)), 0.075)))!important;" title="[]{.green-text} Posts"} -->
+<div id="listing-listings" class="quarto-listing quarto-listing-container-table">
+<div class="listing-actions-group">
+   <div class="input-group input-group-sm quarto-listing-sort">
+     <span class="input-group-text"><i class="bi bi-sort-down"></i></span>
+     <select id="listing-listings-sort" class="form-select" aria-label="Order By" onchange="window['quarto-listings']['listing-listings'].sort(this.options[this.selectedIndex].value, { order: this.options[this.selectedIndex].getAttribute('data-direction')})">
+       <option value="" disabled="" selected="" hidden="">Order By</option>
+       <option value="index" data-direction="asc">Default</option>
+         <option value="listing-date-sort" data-direction="asc">
+          Date - Oldest
+        </option>
+         <option value="listing-date-sort" data-direction="desc">
+          Date - Newest
+        </option>
+         <option value="listing-title-sort" data-direction="asc">
+          Title
+        </option>
+         <option value="listing-author" data-direction="asc">
+          Author
+        </option>
+     </select>
+  </div>
+    <div class="input-group input-group-sm quarto-listing-filter">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input type="text" class="search form-control" placeholder="Filter">
+    </div>
+</div>
+
+<table class="quarto-listing-table table">
+<thead>
+<tr>
+<th>
+<a class="sort" data-sort="listing-date-sort" onclick="if (this.classList.contains('sort-asc')) { this.classList.add('sort-desc'); this.classList.remove('sort-asc') } else { this.classList.add('sort-asc'); this.classList.remove('sort-desc')} return false;">Date</a>
+</th>
+<th>
+<a class="sort" data-sort="listing-title-sort" onclick="if (this.classList.contains('sort-asc')) { this.classList.add('sort-desc'); this.classList.remove('sort-asc') } else { this.classList.add('sort-asc'); this.classList.remove('sort-desc')} return false;">Title</a>
+</th>
+<th>
+<a class="sort" data-sort="listing-author" onclick="if (this.classList.contains('sort-asc')) { this.classList.add('sort-desc'); this.classList.remove('sort-asc') } else { this.classList.add('sort-asc'); this.classList.remove('sort-desc')} return false;">Author</a>
+</th>
+</tr>
+</thead>
+<tbody class="list">
+<tr data-index="0" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1695407925854" data-listing-date-modified-sort="NaN" data-listing-filename-sort="posts.qmd">
+<td>
+<span class="listing-date">Oct 4, 2023</span>
+</td>
+<td>
+<span class="listing-title">undefined</span>
+</td>
+<td>
+<span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
+</td>
+</tr>
+<tr data-index="1" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1696425358594" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="1" data-listing-title-sort="Posts" data-listing-filename-sort="posts.qmd">
+<td>
+<span class="listing-date">Oct 4, 2023</span>
+</td>
+<td>
+<a href="./qmd/posts.html" class="title listing-title">Posts</a>
+</td>
+<td>
+<span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
+</td>
+</tr>
+<tr data-index="2" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1695407549770" data-listing-date-modified-sort="NaN" data-listing-filename-sort="diffusion.qmd">
+<td>
+<span class="listing-date">Oct 4, 2023</span>
+</td>
+<td>
+<span class="listing-title">undefined</span>
+</td>
+<td>
+<span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
+</td>
+</tr>
+<tr data-index="3" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1696424852883" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="37" data-listing-title-sort="MCMC + Diffusion Sampling" data-listing-filename-sort="diffusion.qmd">
+<td>
+<span class="listing-date">Oct 4, 2023</span>
+</td>
+<td>
+<a href="./qmd/diffusion/diffusion.html" class="title listing-title">MCMC + Diffusion Sampling</a>
+</td>
+<td>
+<span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
+</td>
+</tr>
+<tr data-index="4" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1696423926990" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="34" data-listing-title-sort="Denoising Diffusion Probabilistic Models" data-listing-filename-sort="diffusion.qmd">
+<td>
+<span class="listing-date">Oct 4, 2023</span>
+</td>
+<td>
+<a href="./qmd/diffusion-alt/diffusion.html" class="title listing-title">Denoising Diffusion Probabilistic Models</a>
+</td>
+<td>
+<span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
+</td>
+</tr>
+<tr data-index="5" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1694002343657" data-listing-date-modified-sort="NaN" data-listing-filename-sort="slides.qmd">
+<td>
+<span class="listing-date">Oct 4, 2023</span>
+</td>
+<td>
+<span class="listing-title">undefined</span>
+</td>
+<td>
+<span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
+</td>
+</tr>
+<tr data-index="6" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1696425383010" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="1" data-listing-title-sort="Recent Talks" data-listing-filename-sort="slides.qmd">
+<td>
+<span class="listing-date">Oct 4, 2023</span>
+</td>
+<td>
+<a href="./qmd/slides.html" class="title listing-title">Recent Talks</a>
+</td>
+<td>
+<span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
+</td>
+</tr>
+<tr data-index="7" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1695218524643" data-listing-date-modified-sort="NaN" data-listing-filename-sort="l2hmc-2DU1.qmd">
+<td>
+<span class="listing-date">Oct 4, 2023</span>
+</td>
+<td>
+<span class="listing-title">undefined</span>
+</td>
+<td>
+<span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
+</td>
+</tr>
+<tr data-index="8" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1696424833802" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="33" data-listing-title-sort="2D $U(1)$ Example" data-listing-filename-sort="l2hmc-2DU1.qmd">
+<td>
+<span class="listing-date">Oct 4, 2023</span>
+</td>
+<td>
+<a href="./qmd/l2hmc-2DU1.html" class="title listing-title">2D <span class="math inline">U(1)</span> Example</a>
+</td>
+<td>
+<span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
+</td>
+</tr>
+<tr data-index="9" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1694006847669" data-listing-date-modified-sort="NaN" data-listing-filename-sort="l2hmc-4DSU3.qmd">
+<td>
+<span class="listing-date">Oct 4, 2023</span>
+</td>
+<td>
+<span class="listing-title">undefined</span>
+</td>
+<td>
+<span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
+</td>
+</tr>
+<tr data-index="10" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1696424809974" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="8" data-listing-title-sort="4D $SU(3)$ Model" data-listing-filename-sort="l2hmc-4DSU3.qmd">
+<td>
+<span class="listing-date">Oct 4, 2023</span>
+</td>
+<td>
+<a href="./qmd/l2hmc-4DSU3.html" class="title listing-title">4D <span class="math inline">SU(3)</span> Model</a>
+</td>
+<td>
+<span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
+</td>
+</tr>
+</tbody>
+
+</table>
+<div class="listing-no-matching d-none">
+No matching items
+</div>
+</div>
+<!-- ::: -->
 </section>
 <section id="citation" class="level2">
 <h2 class="anchored" data-anchor-id="citation">Citation</h2>
@@ -425,19 +671,23 @@ Warning
 <blockquote class="blockquote">
 <p><strong>Note</strong><br> This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357.<br> This work describes objective technical results and analysis.<br> Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government.</p>
 </blockquote>
+<p align="center">
+<a href="https://hits.seeyoufarm.com"><img align="center" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fsaforem2.github.io/l2hmc-qcd/&amp;count_bg=%2300CCFF&amp;title_bg=%23303030&amp;icon=&amp;icon_color=%23E7E7E7&amp;title=hits&amp;edge_flat=false"></a>
+</p>
+
 
 
 </section>
 </section>
 
-<a onclick="window.scrollTo(0, 0); return false;" role="button" id="quarto-back-to-top"><i class="bi bi-arrow-up"></i> Back to top</a><div id="quarto-appendix" class="default"><section class="quarto-appendix-contents"><h2 class="anchored quarto-appendix-heading">Citation</h2><div><div class="quarto-appendix-secondary-label">BibTeX citation:</div><pre class="sourceCode code-with-copy quarto-appendix-bibtex"><code class="sourceCode bibtex">@misc{foreman2023,
+<div id="quarto-appendix" class="default"><section class="quarto-appendix-contents"><h2 class="anchored quarto-appendix-heading">Citation</h2><div><div class="quarto-appendix-secondary-label">BibTeX citation:</div><pre class="sourceCode code-with-copy quarto-appendix-bibtex"><code class="sourceCode bibtex">@online{foreman,
   author = {Foreman, Sam},
-  date = {2023-09-08},
+  title = {L2hmc-Qcd},
   url = {https://saforem2.github.io/l2hmc-qcd},
   langid = {en}
 }
-</code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre><div class="quarto-appendix-secondary-label">For attribution, please cite this work as:</div><div id="ref-foreman2023" class="csl-entry quarto-appendix-citeas" role="listitem">
-Foreman, Sam. 2023. <em>L2HMC</em>. <a href="https://saforem2.github.io/l2hmc-qcd">https://saforem2.github.io/l2hmc-qcd</a>.
+</code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre><div class="quarto-appendix-secondary-label">For attribution, please cite this work as:</div><div id="ref-foreman" class="csl-entry quarto-appendix-citeas" role="listitem">
+Foreman, Sam. n.d. <span>“L2hmc-Qcd.”</span> <a href="https://saforem2.github.io/l2hmc-qcd">https://saforem2.github.io/l2hmc-qcd</a>.
 </div></div></section></div></main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
 window.document.addEventListener("DOMContentLoaded", function (event) {
@@ -873,10 +1123,10 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
     <a class="nav-link" href="https://www.twitter.com/saforem2"><i class="fa-brands fa-twitter" aria-label="twitter"></i></a>
   </li>  
     <li class="nav-item">
-    <a class="nav-link" href="https://scholar.google.com/citations?user=vV_1zDwAAAAJ&amp;hl=en"></a>
+    <a class="nav-link" href="https://scholar.google.com/citations?user=vV_1zDwAAAAJ&amp;hl=en"><i class="ai  ai-google-scholar"></i></a>
   </li>  
     <li class="nav-item">
-    <a class="nav-link" href="https://orcid.org/0000-0002-9981-0876"></a>
+    <a class="nav-link" href="https://orcid.org/0000-0002-9981-0876"><i class="ai  ai-orcid"></i></a>
   </li>  
     <li class="nav-item">
     <a class="nav-link" href="https://www.last.fm/user/saforem2"><i class="fa-brands fa-lastfm" aria-label="lastfm"></i></a>

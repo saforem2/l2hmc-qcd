@@ -1,29 +1,77 @@
 ---
-# jupyter: climrr
+title: "2D $U(1)$ Example"
+# author:
+#   name: "[Sam Foreman]{style='font-size:1.0rem;'}"
+#   url: https://samforeman.me
+#   # orcid: 0000-0002-9981-0876
+#   email: foremans@anl.gov
+#
+author:
+  # name: Sam Foreman
+  name: "Sam Foreman [[{{< ai orcid >}}]{.orcid-green}](https://orcid.org/0000-0002-9981-0876)"
+  url: https://samforeman.me
+  # orcid: 0000-0002-9981-0876
+  email: foremans@anl.gov
+  # affiliation: Argonne National Laboratory
+  # affiliation-url: https://alcf.anl.gov/about/people/sam-foreman
+citation:
+   author: Sam Foreman
+   type: webpage
+   title: "2D $U(1)$ Model"
+   url: https://saforem2.github.io/l2hmc-qcd/qmd/l2hmc-4DSU3.html
+# citation:
+#    author: Sam Foreman
+#    type: webpage
+#    title: "Personal Website"
+#    url: https://saforem2.github.io
 callout-appearance: simple
 title-block-banner: false
 # https://www.anl.gov/sites/www/files/2021-09/CPA_RESIZE_Climate%20Resilience%20Images_01_1920x1080.jpg
 editor:
    render-on-save: true
-# viewport: width=device-width, initial-scale=1.0
-# execute:
-# jupyter:
-#   kernelspec:
-#     display_name: 2023-04-26 \[l2hmc-qcd\] (ThetaGPU)
-#     language: python
-#     name: 2023-04-26
-#   language_info:
-#     codemirror_mode:
-#       name: ipython
-#       version: 3
-#     file_extension: .py
-#     mimetype: text/x-python
-#     name: python
-#     nbconvert_exporter: python
-#     pygments_lexer: ipython3
-#     version: 3.10.8
-#   nbformat: 4
-#   nbformat_minor: 5
+format:
+  html:
+    callout-appearance: simple
+    code-link: true
+    code-line-numbers: false
+    toc: true
+    self-contained: false
+    toc-location: right
+    # grid:
+    #   body-width: 1150px
+    fig-responsive: true
+    anchor-sections: true
+    highlight-style: atom-one
+    code-overflow: scroll
+    # code-fold: false
+    code-copy: true
+    code-summary: " "
+    code-tools:
+      source: repo
+      toggle: true
+      caption: none
+    html-math-method: katex
+    css:
+      - ../css/default.css
+      - ../css/callouts.css
+      - ../css/profile.css
+    theme: 
+      dark:
+        - ../css/syntax-dark.scss
+        - ../css/dark.scss 
+        - ../css/common.scss
+      light:
+        - ../css/syntax-light.scss
+        - ../css/light.scss
+        - ../css/common.scss
+    # smooth-scroll: true
+    citations-hover: true
+    footnotes-hover: true
+    header-includes: |
+      <link href="https://pvinis.github.io/iosevka-webfont/3.4.1/iosevka.css" rel="stylesheet" />
+  # gfm:
+  #   author: Sam Foreman
+  #   output-file: "README.md"
 ---
 
 # `l2hmc-qcd`: 2D $U(1)$ Example
