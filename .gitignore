@@ -12,6 +12,11 @@ src/l2hmc/feature_sourcery/
 src/l2hmc/notebooks/.jukit/
 src/l2hmc/notebooks/detached
 
+*.jukit*
+*.virtual_documents*
+*_extensions*
+*_freeze*
+
 **.venv**
 /**venv**/**
 poetry.lock
