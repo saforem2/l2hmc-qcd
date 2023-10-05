@@ -25,14 +25,14 @@
     "href": "index.html#running-at-alcf",
     "title": "",
     "section": "Running at ALCF",
-    "text": "Running at ALCF\nFor running with distributed training on ALCF systems, we provide a complete src/l2hmc/train.sh script which should run without issues on either Polaris or ThetaGPU @ ALCF."
+    "text": "Running at ALCF\nFor running with distributed training on ALCF systems, we provide a complete src/l2hmc/train.sh script which should run without issues on either Polaris or ThetaGPU @ ALCF.\n\nALCF:\n# Polaris --------------------------------\nif [[ \"$(hostname)==x3*\" ]]; then\n  MACHINE=\"Polaris\"\n  CONDA_DATE=\"2023-10-02\"\n# thetaGPU -------------------------------\nelif  [[ \"$(hostname)==thetagpu*\" ]]; then\n  MACHINE=\"thetaGPU\"\n  CONDA_DATE=\"2023-01-11\"\nelse\n  echo \"Unknown machine\"\n  exit 1\nfi\n# Setup conda + build virtual env -----------------------------------------\nmodule load \"conda/${CONDA_DATE}\"\nconda activate base\ngit clone https://github.com/saforem2/l2hmc-qcd\ncd l2hmc-qcd\nmkdir -p \"venvs/${MACHINE}/${CONDA_DATE}\"\npython3 -m venv \"venvs/${MACHINE}/${CONDA_DATE}\" --system-site-packages\nsource \"venvs/${MACHINE}/${CONDA_DATE}/bin/activate\"\npython3 -m pip install --upgrade pip setuptools wheel\n# Install `l2hmc` ----------\npython3 -m pip install -e .\n# Train ----------------------------------------------------------------------\ncd src/l2hmc\n./bin/train.sh mode=test framework=pytorch backend=deepspeed seed=\"${RANDOM}\""
   },
   {
     "objectID": "index.html#organization",
     "href": "index.html#organization",
     "title": "",
     "section": "Organization",
-    "text": "Organization\n\nDynamics / Network\nFor a given target distribution, π(x), the Dynamics object (src/l2hmc/dynamics/) implements methods for generating proposal configurations (x^{\\prime} \\sim \\pi) using the generalized leapfrog update.\nThis generalized leapfrog update takes as input a buffer of lattice configurations x and generates a proposal configuration x^{\\prime}= Dynamics(x) by evolving generalized L2HMC dynamics.\n\nNetwork Architecture\n\n\n\nFigure 1: An illustration of the leapfrog layer updating (x, v) --&gt; (x', v') can be seen below."
+    "text": "Organization\n\n\n\nLattice Dynamics\n\n\n\nFigure 1: A 2D view of the lattice, with an elementary plaquette, U_{\\mu\\nu}(x) illustrated.\n\n\nFor a given target distribution, \\pi(U) the Dynamics object (src/l2hmc/dynamics/) implements methods for generating proposal configurations\nU_{0} \\rightarrow U_{1} \\rightarrow \\cdots \\rightarrow U_{n} \\sim \\pi(U)\nusing the generalized leapfrog update, as shown to the right in Figure 2.\nThis generalized leapfrog update takes as input a buffer of lattice configurations U1 and generates a proposal configuration:\n\nU^{\\prime}= Dynamics(U)\n\nby evolving the generalized L2HMC dynamics.\n\n\n\nNetwork Architecture\nWe use networks with identical architectures, \\Gamma^{\\pm}2, \\Lambda^{\\pm}3 to update our momenta P and links U, respectively.\n\n\n\nFigure 2: An illustration of the leapfrog layer updating (P, U) \\rightarrow (P', U')."
   },
   {
     "objectID": "index.html#contact",
@@ -74,7 +74,7 @@
     "href": "qmd/slides.html",
     "title": "Recent Talks",
     "section": "",
-    "text": "\\hspace{2pt} MLMC: Machine Learning Monte Carlo @ Lattice 2023 (07/2023)\n\n\n\n\n\n\n\n&lt;p&gt;\nYour browser does not support iframes.\n&lt;/p&gt;\n\n\n\n\n\n\n\n\n\n\n \\hspace{2pt} Generative Modeling and Efficient Sampling @ PASC23 (07/2023)\n\n\n\n\n\n\n\n\n&lt;p&gt;\nYour browser does not support iframes.\n&lt;/p&gt;\n\n\n\n\n\n\n\n\n\n\n \\hspace{2pt} Efficient Sampling for Lattice Gauge Theory @ Deep Fridays @ U. Bologna (04/2023)\n\n\n\n\n\n\n\n&lt;p&gt;\nYour browser does not support iframes.\n&lt;/p&gt;\n\n\n\n\n\n\n\n Back to topCitationBibTeX citation:@misc{foreman2023,\n  author = {Foreman, Sam},\n  title = {Recent {Talks}},\n  date = {2023-10-03},\n  url = {https://saforem2.github.io/l2hmc-qcd},\n  langid = {en}\n}\nFor attribution, please cite this work as:\nForeman, Sam. 2023. “Recent Talks.” L2HMC. https://saforem2.github.io/l2hmc-qcd."
+    "text": "\\hspace{2pt} MLMC: Machine Learning Monte Carlo @ Lattice 2023 (07/2023)\n\n\n\n\n\n\n\n&lt;p&gt;\nYour browser does not support iframes.\n&lt;/p&gt;\n\n\n\n\n\n\n\n\n\n\n \\hspace{2pt} Generative Modeling and Efficient Sampling @ PASC23 (07/2023)\n\n\n\n\n\n\n\n\n&lt;p&gt;\nYour browser does not support iframes.\n&lt;/p&gt;\n\n\n\n\n\n\n\n\n\n\n \\hspace{2pt} Efficient Sampling for Lattice Gauge Theory @ Deep Fridays @ U. Bologna (04/2023)\n\n\n\n\n\n\n\n&lt;p&gt;\nYour browser does not support iframes.\n&lt;/p&gt;\n\n\n\n\n\n\n\nCitationBibTeX citation:@online{foreman2023,\n  author = {Foreman, Sam},\n  title = {Slides},\n  date = {2023-10-04},\n  url = {https://saforem2.github.io/l2hmc-qcd/qmd/slides.html},\n  langid = {en}\n}\nFor attribution, please cite this work as:\nForeman, Sam. 2023. “Slides.” October 4, 2023. https://saforem2.github.io/l2hmc-qcd/qmd/slides.html."
   },
   {
     "objectID": "qmd/posts.html",
@@ -250,5 +250,47 @@
     "title": "l2hmc-qcd",
     "section": "",
     "text": "Contents\n\n\n\n\n\n\n\nOverview\n\nPapers 📚, Slides 📊, etc.\nBackground\n\nInstallation\nTraining\n\nConfiguration Management\nRunning @ ALCF\n\nDetails\n\nOrganization\n\nDynamics / Network\n\nNetwork Architecture"
+  },
+  {
+    "objectID": "index.html#footnotes",
+    "href": "index.html#footnotes",
+    "title": "",
+    "section": "Footnotes",
+    "text": "Footnotes\n\n\nA good way to do this is on top of a conda environment, e.g.:\nbash   conda activate base;  # with either {pytorch, tensorflow}   mkdir venv   python3 -m venv venv --system-site-packages   source venv/bin/activate   # for development addons:   # python3 -m pip install -e \".[dev]\"   python3 -m pip install -e .↩︎\nNote that throughout the code, we refer to the link variables as x and the conjugate momenta as v.↩︎\nreferred to as vNet for the network used to update v↩︎\nreferred to as xNet for the network used to update x↩︎"
+  },
+  {
+    "objectID": "index.html#lattice-dynamics",
+    "href": "index.html#lattice-dynamics",
+    "title": "",
+    "section": "Lattice Dynamics",
+    "text": "Lattice Dynamics\n\n\n\nFigure 1: A 2D view of the lattice, with an elementary plaquette, U_{\\mu\\nu}(x) illustrated.\n\n\nGoal: Use L2HMC to efficiently generate gauge configurations for calculating observables in lattice QCD.\nA detailed description of the (ongoing) work to apply this algorithm to simulations in lattice QCD (specifically, a 2D U(1) lattice gauge theory model) can be found in arXiv:2105.03418.\nFor a given target distribution, \\pi(U) the Dynamics object (src/l2hmc/dynamics/) implements methods for generating proposal configurations\nU_{0} \\rightarrow U_{1} \\rightarrow \\cdots \\rightarrow U_{n} \\sim \\pi(U)\nusing the generalized leapfrog update, as shown to the right in Figure 2.\nThis generalized leapfrog update takes as input a buffer of lattice configurations U2 and generates a proposal configuration:\n\nU^{\\prime}= Dynamics(U)\n\nby evolving the generalized L2HMC dynamics."
+  },
+  {
+    "objectID": "index.html#network-architecture",
+    "href": "index.html#network-architecture",
+    "title": "",
+    "section": "Network Architecture",
+    "text": "Network Architecture\nWe use networks with identical architectures, \\Gamma^{\\pm}3, \\Lambda^{\\pm}4 to update our momenta P and links U, respectively.\n\n\n\nFigure 2: An illustration of the leapfrog layer updating (P, U) \\rightarrow (P', U')."
+  },
+  {
+    "objectID": "index.html#l2hmc",
+    "href": "index.html#l2hmc",
+    "title": "",
+    "section": "L2HMC",
+    "text": "L2HMC\nGoal: Use L2HMC to efficiently generate gauge configurations for calculating observables in lattice QCD.\nA detailed description of the (ongoing) work to apply this algorithm to simulations in lattice QCD (specifically, a 2D U(1) lattice gauge theory model) can be found in arXiv:2105.03418."
+  },
+  {
+    "objectID": "index.html#configuring-your-experiment",
+    "href": "index.html#configuring-your-experiment",
+    "title": "",
+    "section": "Configuring your Experiment",
+    "text": "Configuring your Experiment\nThis project uses hydra for configuration management and supports distributed training for both PyTorch and TensorFlow.\nIn particular, we support the following combinations of framework + backend for distributed training:\n\nTensorFlow (+ Horovod for distributed training)\nPyTorch +\n\nDDP\nHorovod\nDeepSpeed\n\n\nThe main entry point is src/l2hmc/main.py, which contains the logic for running an end-to-end Experiment.\nAn Experiment consists of the following sub-tasks:\n\nTraining\nEvaluation\nHMC (for comparison and to measure model improvement)"
+  },
+  {
+    "objectID": "index.html#running-an-experiment",
+    "href": "index.html#running-an-experiment",
+    "title": "",
+    "section": "Running an Experiment",
+    "text": "Running an Experiment\nAll configuration options can be dynamically overridden via the CLI at runtime, and we can specify our desired framework and backend combination via:\npython3 main.py mode=debug framework=pytorch backend=deepspeed precision=fp16\nto run a (non-distributed) Experiment with pytorch + deepspeed with fp16 precision.\nThe l2hmc/conf/config.yaml contains a brief explanation of each of the various parameter options, and values can be overriden either by modifying the config.yaml file, or directly through the command line, e.g.\ncd src/l2hmc\n./train.sh mode=debug framework=pytorch &gt; train.log 2&gt;&1 &\ntail -f train.log $(tail -1 logs/latest)\nAdditional information about various configuration options can be found in:\n\nsrc/l2hmc/configs.py: Contains implementations of the (concrete python objects) that are adjustable for our experiment.\nsrc/l2hmc/conf/config.yaml: Starting point with default configuration options for a generic Experiment.\n\nfor more information on how this works I encourage you to read Hydra’s Documentation Page.\n\nRunning at ALCF\nFor running with distributed training on ALCF systems, we provide a complete src/l2hmc/train.sh script which should run without issues on either Polaris or ThetaGPU @ ALCF.\n\nALCF:\n# Polaris --------------------------------\nif [[ \"$(hostname)==x3*\" ]]; then\n  MACHINE=\"Polaris\"\n  CONDA_DATE=\"2023-10-02\"\n# thetaGPU -------------------------------\nelif  [[ \"$(hostname)==thetagpu*\" ]]; then\n  MACHINE=\"thetaGPU\"\n  CONDA_DATE=\"2023-01-11\"\nelse\n  echo \"Unknown machine\"\n  exit 1\nfi\n# Setup conda + build virtual env -----------------------------------------\nmodule load \"conda/${CONDA_DATE}\"\nconda activate base\ngit clone https://github.com/saforem2/l2hmc-qcd\ncd l2hmc-qcd\nmkdir -p \"venvs/${MACHINE}/${CONDA_DATE}\"\npython3 -m venv \"venvs/${MACHINE}/${CONDA_DATE}\" --system-site-packages\nsource \"venvs/${MACHINE}/${CONDA_DATE}/bin/activate\"\npython3 -m pip install --upgrade pip setuptools wheel\n# Install `l2hmc` ----------\npython3 -m pip install -e .\n# Train ----------------------------------------------------------------------\ncd src/l2hmc\n./bin/train.sh mode=test framework=pytorch backend=deepspeed seed=\"${RANDOM}\""
   }
 ]

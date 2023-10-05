@@ -1,10 +1,10 @@
 ---
 callout-appearance: simple
-format:
-   html:
-      toc: true
-      grid:
-         body-width: 1150px
+# format:
+#    html:
+#       toc: true
+#       grid:
+#          body-width: 1150px
 title-block-banner: false
 sidebar: false
 editor:
@@ -50,6 +50,53 @@ listing:
     #   - "qmd/l2hmc-4DSU3.qmd"
     type: table
     sort: "date desc"
+format:
+#    html:
+#       toc: true
+#       grid:
+#          body-width: 1150px
+  html:
+    toc: true
+    callout-appearance: simple
+    code-link: true
+    code-line-numbers: false
+    # toc: true
+    # self-contained: false
+    toc-location: right
+    grid:
+      body-width: 1150px
+    fig-responsive: true
+    anchor-sections: true
+    highlight-style: atom-one
+    code-overflow: scroll
+    # code-fold: false
+    code-copy: true
+    code-summary: " "
+    code-tools:
+      source: repo
+      toggle: true
+      caption: none
+    html-math-method: katex
+    css:
+      - ../css/default.css
+      - ../css/callouts.css
+      - ../css/profile.css
+    theme: 
+      dark:
+        - ../css/syntax-dark.scss
+        - ../css/dark.scss 
+        - ../css/common.scss
+      light:
+        - ../css/syntax-light.scss
+        - ../css/light.scss
+        - ../css/common.scss
+    # smooth-scroll: true
+    citations-hover: true
+    footnotes-hover: true
+    header-includes: |
+      <link href="https://pvinis.github.io/iosevka-webfont/3.4.1/iosevka.css" rel="stylesheet" />
+  gfm:
+    output-file: "l2hmc.md"
 ---
 
 :::: {.columns style="display: flex; align-items: flex-start;"}
@@ -146,10 +193,23 @@ Broadly, given an *analytically* described target distribution, π(x), L2HMC pro
 
 ::: {.callout-warning title="Warning" collapse="false" style="width:100%!important;"}
 
-It is recommended to install _inside_ an existing virtual environment<br>
- (ideally one with `tensorflow, pytorch [horovod,deepspeed]` already installed)
+It is recommended to use / install `l2hmc` into a virtual environment[^venvs]<br>
+ <!-- (ideally one with either`pytorch [horovod,deepspeed], ` already installed) -->
 
 :::
+
+[^venvs]:
+  A good way to do this is on top of a `conda` environment, e.g.:  
+  ```bash
+  conda activate base;  # with either {pytorch, tensorflow}
+  mkdir venv
+  python3 -m venv venv --system-site-packages
+  source venv/bin/activate
+  # for development addons:
+  # python3 -m pip install -e ".[dev]"
+  python3 -m pip install -e .
+  ```
+
 
 <details open><summary><b>From source (RECOMMENDED)</b></summary>
 
@@ -185,9 +245,9 @@ python3 -c 'import l2hmc ; print(l2hmc.__file__)'
 # output: /path/to/l2hmc-qcd/src/l2hmc/__init__.py
 ```
 
-# Training
+# Running the Code
 
-## Configuration Management
+## Configuring your `Experiment`
 
 This project uses [`hydra`](https://hydra.cc) for configuration management and
 supports distributed training for both PyTorch and TensorFlow.
@@ -208,6 +268,9 @@ An [`Experiment`](./src/l2hmc/experiment/) consists of the following sub-tasks:
 1. Training
 2. Evaluation
 3. HMC (for comparison and to measure model improvement)
+
+
+## Running an `Experiment`
 
 **All** configuration options can be dynamically overridden via the CLI at runtime, 
 and we can specify our desired `framework` and `backend` combination via:
@@ -241,51 +304,118 @@ for more information on how this works I encourage you to read [Hydra's
 Documentation Page](https://hydra.cc).
 
 
-## Running at ALCF
+### Running at ALCF
 
 For running with distributed training on ALCF systems, we provide a complete
 [`src/l2hmc/train.sh`](./src/l2hmc/train.sh) 
 script which should run without issues on either Polaris or ThetaGPU @ ALCF.
 
+- ALCF:
+  ```bash
+  # Polaris --------------------------------
+  if [[ "$(hostname)==x3*" ]]; then
+    MACHINE="Polaris"
+    CONDA_DATE="2023-10-02"
+  # thetaGPU -------------------------------
+  elif  [[ "$(hostname)==thetagpu*" ]]; then
+    MACHINE="thetaGPU"
+    CONDA_DATE="2023-01-11"
+  else
+    echo "Unknown machine"
+    exit 1
+  fi
+  # Setup conda + build virtual env -----------------------------------------
+  module load "conda/${CONDA_DATE}"
+  conda activate base
+  git clone https://github.com/saforem2/l2hmc-qcd
+  cd l2hmc-qcd
+  mkdir -p "venvs/${MACHINE}/${CONDA_DATE}"
+  python3 -m venv "venvs/${MACHINE}/${CONDA_DATE}" --system-site-packages
+  source "venvs/${MACHINE}/${CONDA_DATE}/bin/activate"
+  python3 -m pip install --upgrade pip setuptools wheel
+  # Install `l2hmc` ----------
+  python3 -m pip install -e .
+  # Train ----------------------------------------------------------------------
+  cd src/l2hmc
+  ./bin/train.sh mode=test framework=pytorch backend=deepspeed seed="${RANDOM}"
+  ```
 
 # Details
 
-**Goal:** Use L2HMC to **efficiently** generate _gauge configurations_ for
-calculating observables in lattice QCD.
+:::: {.columns}
 
-A detailed description of the (ongoing) work to apply this algorithm to
-simulations in lattice QCD (specifically, a 2D U(1) lattice gauge theory model)
-can be found in [arXiv:2105.03418](https://arxiv.org/abs/2105.03418).
+::: {.column width="50%" style="padding-right: 1%;"}
 
-<div align="center">
- <img src="assets/l2hmc_poster.jpeg" alt="l2hmc-qcd poster" width="100%" />
-</div>
+## Lattice Dynamics
 
-## Organization
+::: {#fig-lattice style="text-align:center;"}
 
-### Dynamics / Network
+![](./assets/u1lattice-horizontal.light.svg)
 
-For a given target distribution, π(x), the `Dynamics` object
-([`src/l2hmc/dynamics/`](src/l2hmc/dynamics)) implements methods for generating
-proposal configurations ($x^{\prime} \sim \pi$) using the generalized leapfrog update.
+A 2D view of the lattice, with an elementary plaquette, $U_{\mu\nu}(x)$ illustrated.
 
-
-This generalized leapfrog update takes as input a buffer of lattice
-configurations `x` and generates a proposal configuration $x^{\prime}=$ `Dynamics(x)` by
-evolving generalized L2HMC dynamics.
-
-
-#### Network Architecture
-
-
-
-::: {#fig-lflayer width="75%;"}
-
-![](./assets/lflayer.png)
-
-An illustration of the `leapfrog layer` updating `(x, v) --> (x', v')` can be seen below.
 :::
 
+**Goal**: Use L2HMC to efficiently generate gauge configurations for calculating observables in lattice QCD.
+
+A detailed description of the (ongoing) work to apply this algorithm to simulations in lattice QCD (specifically, a 2D U(1) lattice gauge theory model) can be found in arXiv:2105.03418.
+
+For a given target distribution, $\pi(U)$ the `Dynamics` object
+([`src/l2hmc/dynamics/`](src/l2hmc/dynamics)) implements methods for generating
+proposal configurations
+
+$$U_{0} \rightarrow U_{1} \rightarrow \cdots \rightarrow U_{n} \sim \pi(U)$$
+
+using the generalized leapfrog
+update, as shown to the right in @fig-lflayer.
+
+This generalized leapfrog update takes as input a buffer of lattice
+configurations `U`[^notation] and generates a proposal configuration:  
+
+::: {style="text-align: center;"}
+
+$U^{\prime}=$ `Dynamics(U)`
+
+:::
+
+by evolving the generalized L2HMC dynamics.
+
+[^notation]: Note that throughout the code, we refer to the link variables as
+  `x` and the conjugate momenta as `v`.
+
+:::
+
+::: {.column width="50%" style="padding-left: 1%;"}
+
+## Network Architecture
+
+We use networks with identical architectures, $\Gamma^{\pm}$[^vnet],
+$\Lambda^{\pm}$[^xnet] to update our momenta $P$ and links $U$, respectively.
+
+[^vnet]: referred to as `vNet` for the network used to update `v`
+
+[^xnet]: referred to as `xNet` for the network used to update `x`
+
+::: {#fig-lflayer}
+
+[![](./assets/leapfrog-layer-4D-SU3-vertical.light.svg)]{width="85%"}
+
+An illustration of the `leapfrog layer` updating $(P, U) \rightarrow (P', U')$.
+:::
+
+:::
+
+
+::::
+
+
+::: {#fig-poster}
+
+
+![](assets/l2hmc_poster.jpeg)
+
+Overview of the L2HMC algorithm
+:::
 
 ## Contact
 

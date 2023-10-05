@@ -103,7 +103,8 @@ website:
   # reader-mode: true
   sidebar: false
   navbar:
-    logo: "./favicon.svg"
+    # logo: "./favicon.svg"
+    logo: "./assets/logo-crop.svg"
     background: "#222222"
     foregound: "#777777"
     left:

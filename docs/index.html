@@ -163,12 +163,13 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 
 <link rel="stylesheet" href="css/default.css">
 <link rel="stylesheet" href="css/callouts.css">
+<link rel="stylesheet" href="../css/default.css">
+<link rel="stylesheet" href="../css/callouts.css">
+<link rel="stylesheet" href="../css/profile.css">
 <meta property="og:title" content="">
-<meta property="og:description" content="">
 <meta property="og:image" content="https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg">
 <meta property="og:site-name" content="l2hmc-qcd">
 <meta name="twitter:title" content="">
-<meta name="twitter:description" content="">
 <meta name="twitter:image" content="https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="citation_title" content="l2hmc-qcd">
@@ -193,7 +194,7 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container">
     <a href="./index.html" class="navbar-brand navbar-brand-logo">
-    <img src="././favicon.svg" alt="" class="navbar-logo">
+    <img src="././assets/logo-crop.svg" alt="" class="navbar-logo">
     </a>
     <a class="navbar-brand" href="./index.html">
     <span class="navbar-title">l2hmc-qcd</span>
@@ -243,24 +244,23 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
   <li><a href="#background" id="toc-background" class="nav-link" data-scroll-target="#background">Background</a></li>
   </ul></li>
   <li><a href="#installation" id="toc-installation" class="nav-link" data-scroll-target="#installation">Installation</a></li>
-  <li><a href="#training" id="toc-training" class="nav-link" data-scroll-target="#training">Training</a>
+  <li><a href="#running-the-code" id="toc-running-the-code" class="nav-link" data-scroll-target="#running-the-code">Running the Code</a>
   <ul class="collapse">
-  <li><a href="#configuration-management" id="toc-configuration-management" class="nav-link" data-scroll-target="#configuration-management">Configuration Management</a></li>
+  <li><a href="#configuring-your-experiment" id="toc-configuring-your-experiment" class="nav-link" data-scroll-target="#configuring-your-experiment">Configuring your <code>Experiment</code></a></li>
+  <li><a href="#running-an-experiment" id="toc-running-an-experiment" class="nav-link" data-scroll-target="#running-an-experiment">Running an <code>Experiment</code></a>
+  <ul class="collapse">
   <li><a href="#running-at-alcf" id="toc-running-at-alcf" class="nav-link" data-scroll-target="#running-at-alcf">Running at ALCF</a></li>
+  </ul></li>
   </ul></li>
   <li><a href="#details" id="toc-details" class="nav-link" data-scroll-target="#details">Details</a>
   <ul class="collapse">
-  <li><a href="#organization" id="toc-organization" class="nav-link" data-scroll-target="#organization">Organization</a>
-  <ul class="collapse">
-  <li><a href="#dynamics-network" id="toc-dynamics-network" class="nav-link" data-scroll-target="#dynamics-network">Dynamics / Network</a></li>
-  </ul></li>
   <li><a href="#contact" id="toc-contact" class="nav-link" data-scroll-target="#contact">Contact</a></li>
   <li><a href="#posts" id="toc-posts" class="nav-link" data-scroll-target="#posts">Posts</a></li>
   <li><a href="#citation" id="toc-citation" class="nav-link" data-scroll-target="#citation">Citation</a></li>
   <li><a href="#acknowledgement" id="toc-acknowledgement" class="nav-link" data-scroll-target="#acknowledgement">Acknowledgement</a></li>
   </ul></li>
   </ul>
-<div class="toc-actions"><div><i class="bi bi-github"></i></div><div class="action-links"><p><a href="https://github.com/saforem2/l2hmc-qcd/blob/main/index.qmd" class="toc-action">View source</a></p><p><a href="https://github.com/saforem2/l2hmc-qcd/edit/main/index.qmd" class="toc-action">Edit this page</a></p><p><a href="https://github.com/saforem2/l2hmc-qcd/issues/new" class="toc-action">Report an issue</a></p></div></div></nav>
+<div class="toc-actions"><div><i class="bi bi-github"></i></div><div class="action-links"><p><a href="https://github.com/saforem2/l2hmc-qcd/blob/main/index.qmd" class="toc-action">View source</a></p><p><a href="https://github.com/saforem2/l2hmc-qcd/edit/main/index.qmd" class="toc-action">Edit this page</a></p><p><a href="https://github.com/saforem2/l2hmc-qcd/issues/new" class="toc-action">Report an issue</a></p></div></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="l2hmc.md"><i class="bi bi-file-code"></i>Github (GFM)</a></li></ul></div></nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content"><div class="quarto-title-block"><div class="quarto-title-tools-only"><h1></h1><button type="button" class="btn code-tools-button" id="quarto-code-tools-source" data-quarto-source-url="https://github.com/saforem2/l2hmc-qcd/blob/main/index.qmd"><i class="bi"></i></button></div></div>
@@ -378,7 +378,7 @@ Warning
 </div>
 <div id="callout-2" class="callout-2-contents callout-collapse collapse show">
 <div class="callout-body-container callout-body">
-<p>It is recommended to install <em>inside</em> an existing virtual environment<br> (ideally one with <code>tensorflow, pytorch [horovod,deepspeed]</code> already installed)</p>
+<p>It is recommended to use / install <code>l2hmc</code> into a virtual environment<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a><br> <!-- (ideally one with either`pytorch [horovod,deepspeed], ` already installed) --></p>
 </div>
 </div>
 </div>
@@ -403,10 +403,10 @@ Warning
 <div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> <span class="at">-c</span> <span class="st">'import l2hmc ; print(l2hmc.__file__)'</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="co"># output: /path/to/l2hmc-qcd/src/l2hmc/__init__.py</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details></section>
-<section id="training" class="level1">
-<h1>Training</h1>
-<section id="configuration-management" class="level2">
-<h2 class="anchored" data-anchor-id="configuration-management">Configuration Management</h2>
+<section id="running-the-code" class="level1">
+<h1>Running the Code</h1>
+<section id="configuring-your-experiment" class="level2">
+<h2 class="anchored" data-anchor-id="configuring-your-experiment">Configuring your <code>Experiment</code></h2>
 <p>This project uses <a href="https://hydra.cc"><code>hydra</code></a> for configuration management and supports distributed training for both PyTorch and TensorFlow.</p>
 <p>In particular, we support the following combinations of <code>framework</code> + <code>backend</code> for distributed training:</p>
 <ul>
@@ -425,6 +425,9 @@ Warning
 <li>Evaluation</li>
 <li>HMC (for comparison and to measure model improvement)</li>
 </ol>
+</section>
+<section id="running-an-experiment" class="level2">
+<h2 class="anchored" data-anchor-id="running-an-experiment">Running an <code>Experiment</code></h2>
 <p><strong>All</strong> configuration options can be dynamically overridden via the CLI at runtime, and we can specify our desired <code>framework</code> and <code>backend</code> combination via:</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> main.py mode=debug framework=pytorch backend=deepspeed precision=fp16</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p>to run a (non-distributed) Experiment with <code>pytorch + deepspeed</code> with <code>fp16</code> precision.</p>
@@ -438,36 +441,83 @@ Warning
 <li><a href="./src/l2hmc/conf/config.yaml"><code>src/l2hmc/conf/config.yaml</code></a>: Starting point with default configuration options for a generic <code>Experiment</code>.</li>
 </ul>
 <p>for more information on how this works I encourage you to read <a href="https://hydra.cc">Hydra’s Documentation Page</a>.</p>
-</section>
-<section id="running-at-alcf" class="level2">
-<h2 class="anchored" data-anchor-id="running-at-alcf">Running at ALCF</h2>
+<section id="running-at-alcf" class="level3">
+<h3 class="anchored" data-anchor-id="running-at-alcf">Running at ALCF</h3>
 <p>For running with distributed training on ALCF systems, we provide a complete <a href="./src/l2hmc/train.sh"><code>src/l2hmc/train.sh</code></a> script which should run without issues on either Polaris or ThetaGPU @ ALCF.</p>
+<ul>
+<li><p>ALCF:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Polaris --------------------------------</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="kw">[[</span> <span class="st">"</span><span class="va">$(</span><span class="fu">hostname</span><span class="va">)</span><span class="st">==x3*"</span> <span class="kw">]];</span> <span class="cf">then</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>  <span class="va">MACHINE</span><span class="op">=</span><span class="st">"Polaris"</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>  <span class="va">CONDA_DATE</span><span class="op">=</span><span class="st">"2023-10-02"</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="co"># thetaGPU -------------------------------</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="cf">elif</span>  <span class="kw">[[</span> <span class="st">"</span><span class="va">$(</span><span class="fu">hostname</span><span class="va">)</span><span class="st">==thetagpu*"</span> <span class="kw">]];</span> <span class="cf">then</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>  <span class="va">MACHINE</span><span class="op">=</span><span class="st">"thetaGPU"</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>  <span class="va">CONDA_DATE</span><span class="op">=</span><span class="st">"2023-01-11"</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="cf">else</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>  <span class="bu">echo</span> <span class="st">"Unknown machine"</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>  <span class="bu">exit</span> 1</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a><span class="cf">fi</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a><span class="co"># Setup conda + build virtual env -----------------------------------------</span></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a><span class="ex">module</span> load <span class="st">"conda/</span><span class="va">${CONDA_DATE}</span><span class="st">"</span></span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a><span class="ex">conda</span> activate base</span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/saforem2/l2hmc-qcd</span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> l2hmc-qcd</span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a><span class="fu">mkdir</span> <span class="at">-p</span> <span class="st">"venvs/</span><span class="va">${MACHINE}</span><span class="st">/</span><span class="va">${CONDA_DATE}</span><span class="st">"</span></span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> <span class="at">-m</span> venv <span class="st">"venvs/</span><span class="va">${MACHINE}</span><span class="st">/</span><span class="va">${CONDA_DATE}</span><span class="st">"</span> <span class="at">--system-site-packages</span></span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> <span class="st">"venvs/</span><span class="va">${MACHINE}</span><span class="st">/</span><span class="va">${CONDA_DATE}</span><span class="st">/bin/activate"</span></span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> <span class="at">-m</span> pip install <span class="at">--upgrade</span> pip setuptools wheel</span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a><span class="co"># Install `l2hmc` ----------</span></span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> <span class="at">-m</span> pip install <span class="at">-e</span> .</span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a><span class="co"># Train ----------------------------------------------------------------------</span></span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> src/l2hmc</span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a><span class="ex">./bin/train.sh</span> mode=test framework=pytorch backend=deepspeed seed=<span class="st">"</span><span class="va">${RANDOM}</span><span class="st">"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div></li>
+</ul>
+</section>
 </section>
 </section>
 <section id="details" class="level1">
 <h1>Details</h1>
-<p><strong>Goal:</strong> Use L2HMC to <strong>efficiently</strong> generate <em>gauge configurations</em> for calculating observables in lattice QCD.</p>
-<p>A detailed description of the (ongoing) work to apply this algorithm to simulations in lattice QCD (specifically, a 2D U(1) lattice gauge theory model) can be found in <a href="https://arxiv.org/abs/2105.03418">arXiv:2105.03418</a>.</p>
-<div data-align="center">
-<p><img src="assets/l2hmc_poster.jpeg" alt="l2hmc-qcd poster" width="100%"></p>
+<div class="columns">
+<div class="column" style="padding-right: 1%;">
+<section id="lattice-dynamics" class="level2">
+<h2 class="anchored" data-anchor-id="lattice-dynamics">Lattice Dynamics</h2>
+<div id="fig-lattice" class="quarto-figure quarto-figure-center anchored" style="text-align:center;">
+<figure class="figure">
+<p><img src="./assets/u1lattice-horizontal.light.svg" class="img-fluid figure-img"></p>
+<figcaption class="figure-caption">Figure&nbsp;1: A 2D view of the lattice, with an elementary plaquette, <span class="math inline">U_{\mu\nu}(x)</span> illustrated.</figcaption>
+</figure>
 </div>
-<section id="organization" class="level2">
-<h2 class="anchored" data-anchor-id="organization">Organization</h2>
-<section id="dynamics-network" class="level3">
-<h3 class="anchored" data-anchor-id="dynamics-network">Dynamics / Network</h3>
-<p>For a given target distribution, π(x), the <code>Dynamics</code> object (<a href="src/l2hmc/dynamics"><code>src/l2hmc/dynamics/</code></a>) implements methods for generating proposal configurations (<span class="math inline">x^{\prime} \sim \pi</span>) using the generalized leapfrog update.</p>
-<p>This generalized leapfrog update takes as input a buffer of lattice configurations <code>x</code> and generates a proposal configuration <span class="math inline">x^{\prime}=</span> <code>Dynamics(x)</code> by evolving generalized L2HMC dynamics.</p>
-<section id="network-architecture" class="level4">
-<h4 class="anchored" data-anchor-id="network-architecture">Network Architecture</h4>
+<p><strong>Goal</strong>: Use L2HMC to efficiently generate gauge configurations for calculating observables in lattice QCD.</p>
+<p>A detailed description of the (ongoing) work to apply this algorithm to simulations in lattice QCD (specifically, a 2D U(1) lattice gauge theory model) can be found in arXiv:2105.03418.</p>
+<p>For a given target distribution, <span class="math inline">\pi(U)</span> the <code>Dynamics</code> object (<a href="src/l2hmc/dynamics"><code>src/l2hmc/dynamics/</code></a>) implements methods for generating proposal configurations</p>
+<p><span class="math display">U_{0} \rightarrow U_{1} \rightarrow \cdots \rightarrow U_{n} \sim \pi(U)</span></p>
+<p>using the generalized leapfrog update, as shown to the right in <a href="#fig-lflayer">Figure&nbsp;2</a>.</p>
+<p>This generalized leapfrog update takes as input a buffer of lattice configurations <code>U</code><a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a> and generates a proposal configuration:</p>
+<div style="text-align: center;">
+<p><span class="math inline">U^{\prime}=</span> <code>Dynamics(U)</code></p>
+</div>
+<p>by evolving the generalized L2HMC dynamics.</p>
+</section>
+</div><div class="column" style="padding-left: 1%;">
+<section id="network-architecture" class="level2">
+<h2 class="anchored" data-anchor-id="network-architecture">Network Architecture</h2>
+<p>We use networks with identical architectures, <span class="math inline">\Gamma^{\pm}</span><a href="#fn3" class="footnote-ref" id="fnref3" role="doc-noteref"><sup>3</sup></a>, <span class="math inline">\Lambda^{\pm}</span><a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a> to update our momenta <span class="math inline">P</span> and links <span class="math inline">U</span>, respectively.</p>
 <div id="fig-lflayer" class="quarto-figure quarto-figure-center anchored">
 <figure class="figure">
-<p><img src="./assets/lflayer.png" class="img-fluid figure-img"></p>
-<figcaption class="figure-caption">Figure&nbsp;1: An illustration of the <code>leapfrog layer</code> updating <code>(x, v) --&gt; (x', v')</code> can be seen below.</figcaption>
+<p><span width="85%"><img src="./assets/leapfrog-layer-4D-SU3-vertical.light.svg" class="img-fluid figure-img"></span></p>
+<figcaption class="figure-caption">Figure&nbsp;2: An illustration of the <code>leapfrog layer</code> updating <span class="math inline">(P, U) \rightarrow (P', U')</span>.</figcaption>
 </figure>
 </div>
 </section>
-</section>
-</section>
+</div>
+</div>
+<div id="fig-poster" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="assets/l2hmc_poster.jpeg" class="img-fluid figure-img"></p>
+<figcaption class="figure-caption">Figure&nbsp;3: Overview of the L2HMC algorithm</figcaption>
+</figure>
+</div>
 <section id="contact" class="level2">
 <h2 class="anchored" data-anchor-id="contact">Contact</h2>
 <p><strong><em>Code author:</em></strong> Sam Foreman</p>
@@ -651,20 +701,20 @@ No matching items
 <section id="citation" class="level2">
 <h2 class="anchored" data-anchor-id="citation">Citation</h2>
 <p>If you use this code or found this work interesting, please cite our work along with the original paper:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode bibtex code-with-copy"><code class="sourceCode bibtex"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="va">@misc</span>{<span class="ot">foreman2021deep</span>,</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>      <span class="dt">title</span>={Deep Learning Hamiltonian Monte Carlo}, </span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>      <span class="dt">author</span>={Sam Foreman and Xiao-Yong Jin and James C. Osborn},</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">year</span>={2021},</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">eprint</span>={2105.03418},</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">archivePrefix</span>={arXiv},</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>      <span class="dt">primaryClass</span>={hep-lat}</span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="sourceCode" id="cb7"><pre class="sourceCode bibtex code-with-copy"><code class="sourceCode bibtex"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="va">@article</span>{<span class="ot">levy2017generalizing</span>,</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">title</span>={Generalizing Hamiltonian Monte Carlo with Neural Networks},</span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">author</span>={Levy, Daniel and Hoffman, Matthew D. and Sohl-Dickstein, Jascha},</span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">journal</span>={arXiv preprint arXiv:1711.09268},</span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">year</span>={2017}</span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode bibtex code-with-copy"><code class="sourceCode bibtex"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="va">@misc</span>{<span class="ot">foreman2021deep</span>,</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>      <span class="dt">title</span>={Deep Learning Hamiltonian Monte Carlo}, </span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>      <span class="dt">author</span>={Sam Foreman and Xiao-Yong Jin and James C. Osborn},</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">year</span>={2021},</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">eprint</span>={2105.03418},</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">archivePrefix</span>={arXiv},</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>      <span class="dt">primaryClass</span>={hep-lat}</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode bibtex code-with-copy"><code class="sourceCode bibtex"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="va">@article</span>{<span class="ot">levy2017generalizing</span>,</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">title</span>={Generalizing Hamiltonian Monte Carlo with Neural Networks},</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">author</span>={Levy, Daniel and Hoffman, Matthew D. and Sohl-Dickstein, Jascha},</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">journal</span>={arXiv preprint arXiv:1711.09268},</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">year</span>={2017}</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </section>
 <section id="acknowledgement" class="level2">
 <h2 class="anchored" data-anchor-id="acknowledgement">Acknowledgement</h2>
@@ -680,7 +730,17 @@ No matching items
 </section>
 </section>
 
-<div id="quarto-appendix" class="default"><section class="quarto-appendix-contents"><h2 class="anchored quarto-appendix-heading">Citation</h2><div><div class="quarto-appendix-secondary-label">BibTeX citation:</div><pre class="sourceCode code-with-copy quarto-appendix-bibtex"><code class="sourceCode bibtex">@online{foreman,
+
+<div id="quarto-appendix" class="default"><section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes"><h2 class="anchored quarto-appendix-heading">Footnotes</h2>
+
+<ol>
+<li id="fn1"><p>A good way to do this is on top of a <code>conda</code> environment, e.g.:<br>
+<code>bash   conda activate base;  # with either {pytorch, tensorflow}   mkdir venv   python3 -m venv venv --system-site-packages   source venv/bin/activate   # for development addons:   # python3 -m pip install -e ".[dev]"   python3 -m pip install -e .</code><a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn2"><p>Note that throughout the code, we refer to the link variables as <code>x</code> and the conjugate momenta as <code>v</code>.<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn3"><p>referred to as <code>vNet</code> for the network used to update <code>v</code><a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn4"><p>referred to as <code>xNet</code> for the network used to update <code>x</code><a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section><section class="quarto-appendix-contents"><h2 class="anchored quarto-appendix-heading">Citation</h2><div><div class="quarto-appendix-secondary-label">BibTeX citation:</div><pre class="sourceCode code-with-copy quarto-appendix-bibtex"><code class="sourceCode bibtex">@online{foreman,
   author = {Foreman, Sam},
   title = {L2hmc-Qcd},
   url = {https://saforem2.github.io/l2hmc-qcd},
