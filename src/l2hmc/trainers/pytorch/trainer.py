@@ -14,7 +14,6 @@ import time
 from typing import Any, Callable, Optional, Sequence
 
 import aim
-from aim import Distribution
 import deepspeed
 from enrich.logging import RichHandler as EnRichHandler
 from hydra.utils import instantiate
@@ -231,7 +230,7 @@ class Trainer(BaseTrainer):
             self.optimizer = self._optimizer
             self.dynamics_engine = DDP(
                 self.dynamics,
-                find_unused_parameters=True
+                # find_unused_parameters=True
             )
             if self._dtype != torch.float64:
                 self.grad_scaler = GradScaler()
@@ -819,6 +818,7 @@ class Trainer(BaseTrainer):
             #     if dQdict is not None:
             #         wandb.run.log(dQdict, commit=False)
         if arun is not None:
+            from aim import Distribution
             kwargs = {
                 'step': step,
                 'job_type': job_type,
