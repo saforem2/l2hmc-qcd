@@ -601,7 +601,7 @@ def save_logs(
     tfile.parent.mkdir(exist_ok=True, parents=True)
 
     data = {}
-    console = get_console(record=True)
+    # console = get_console(record=True)
     if tables is not None:
         for idx, table in tables.items():
             if idx == 0:
@@ -609,21 +609,21 @@ def save_logs(
             else:
                 data = table_to_dict(table, data)
 
-            console.print(table)
-            html = console.export_html(clear=False)
-            text = console.export_text()
-            from rich.markup import escape
-            try:
-                with open(hfile.as_posix(), 'a') as f:
-                    f.write(html)
-            except Exception as exc:
-                log.exception(exc)
-
-            try:
-                with open(tfile, 'a') as f:
-                    f.write(escape(text))
-            except Exception as exc:
-                log.exception(exc)
+            # console.print(table)
+            # html = console.export_html(clear=False)
+            # text = console.export_text()
+            # from rich.markup import escape
+            # try:
+            #     with open(hfile.as_posix(), 'a') as f:
+            #         f.write(html)
+            # except Exception as exc:
+            #     log.exception(exc)
+            #
+            # try:
+            #     with open(tfile, 'a') as f:
+            #         f.write(escape(text))
+            # except Exception as exc:
+            #     log.exception(exc)
 
         df = pd.DataFrame.from_dict(data)
         dfile = Path(logdir).joinpath(f'{job_type}_table.csv')
