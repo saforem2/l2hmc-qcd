@@ -37,7 +37,7 @@ thetaGPU220701() {
 thetaGPU230426() {
   module load conda/2023-01-11
   conda activate base
-  conda activate /lus/grand/projects/datascience/foremans/locations/thetaGPU/miniconda3/envs/2023-04-26
+  # conda activate /lus/grand/projects/datascience/foremans/locations/thetaGPU/miniconda3/envs/2023-04-26
 }
 
 setupConda() {
@@ -81,7 +81,7 @@ setupThetaGPU() {
     # module load conda/2022-07-01 ; conda activate base
     # thetaGPU220701
     thetaGPU230426
-    VENV_DIR="${ROOT}/venvs/thetaGPU/2023-04-26"
+    VENV_DIR="${ROOT}/venvs/thetaGPU/2023-01-11"
     venvSetup "$VENV_DIR"
     # -- MPI / Comms Setup ----------------------------------
     echo "HOSTFILE: ${HOSTFILE}"
@@ -120,9 +120,9 @@ setupPolaris()  {
     # -----------------------------------------------
     # module load conda/2022-09-08; conda activate base
     # VENV_DIR="${ROOT}/venvs/polaris/2022-09-08"
-    module load conda/2023-01-10-unstable
+    module load conda/2023-10-04
     conda activate base
-    VENV_DIR="${ROOT}/venvs/polaris/2023-01-10"
+    VENV_DIR="${ROOT}/venvs/polaris/2023-10-04"
     venvSetup "$VENV_DIR"
     # -----------------------------------------------
     NRANKS=$(wc -l < "${PBS_NODEFILE}")
