@@ -13,7 +13,6 @@ from typing import Any, Callable, Optional, Union, Sequence
 
 import wandb
 import aim
-from aim import Distribution
 import horovod.tensorflow as hvd
 import numpy as np
 from omegaconf import DictConfig
@@ -455,6 +454,7 @@ class Trainer(BaseTrainer):
             if dQdict is not None:
                 run.log(dQdict, commit=True)
         if arun is not None:
+            from aim import Distribution
             kwargs = {
                 'step': step,
                 'job_type': job_type,
@@ -1035,7 +1035,7 @@ class Trainer(BaseTrainer):
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
                 # if (should_print(epoch) or should_log(epoch)):
-                if should_log(epoch):
+                if should_log(epoch) or should_print(epoch):
                     record = {
                         'era': era,
                         'epoch': epoch,
@@ -1059,7 +1059,6 @@ class Trainer(BaseTrainer):
                     )
                     rows[self._gstep] = avgs
                     summaries.append(summary)
-
                     table = self.update_table(
                         table=table,
                         step=epoch,
