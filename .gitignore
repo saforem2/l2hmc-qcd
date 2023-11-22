@@ -1,6 +1,9 @@
 ## --------------------------------
 ## USER-DEFINED .gitignore below
 ## --------------------------------
+*.DS_Store
+*._.DS_Store
+*venvs*
 .sourcery.yaml
 plots-4dSU3/
 .qmd/
