@@ -23,7 +23,7 @@ import json
 import hydra
 from typing import Optional
 from omegaconf.dictconfig import DictConfig
-from l2hmc import get_logger
+# from l2hmc import get_logger
 
 # sys.setdefaultencoding('utf8')
 
@@ -31,20 +31,20 @@ from l2hmc import get_logger
 comm = MPI.COMM_WORLD
 
 # from l2hmc import logger
-# logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 # log = get_logger(__name__)
 # log = logging.getLogger()
 # _ = get_logger('root').setLevel(logging.INFO)
 # _ = get_logger('wandb').setLevel(logging.CRITICAL)
-_ = get_logger('aim').setLevel(logging.CRITICAL)
-_ = get_logger('filelock').setLevel(logging.CRITICAL)
-_ = get_logger('matplotlib').setLevel(logging.CRITICAL)
-_ = get_logger('PIL.PngImagePlugin').setLevel(logging.CRITICAL)
-_ = get_logger('graphviz._tools').setLevel(logging.CRITICAL)
-_ = get_logger('graphviz').setLevel(logging.CRITICAL)
-_ = get_logger('deepspeed').setLevel(logging.INFO)
+_ = logging.getLogger('aim').setLevel(logging.CRITICAL)
+_ = logging.getLogger('filelock').setLevel(logging.CRITICAL)
+_ = logging.getLogger('matplotlib').setLevel(logging.CRITICAL)
+_ = logging.getLogger('PIL.PngImagePlugin').setLevel(logging.CRITICAL)
+_ = logging.getLogger('graphviz._tools').setLevel(logging.CRITICAL)
+_ = logging.getLogger('graphviz').setLevel(logging.CRITICAL)
+_ = logging.getLogger('deepspeed').setLevel(logging.INFO)
 
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
 
 
 def get_experiment(
@@ -87,6 +87,9 @@ def get_experiment(
 def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
     from l2hmc.utils.plot_helpers import set_plot_style
     set_plot_style()
+    import matplotlib.pyplot as plt
+    import opinionated
+    plt.style.use(opinionated.STYLES['opinionated_min'])
     # --- [0.] Setup ------------------------------------------------------
     if overrides is not None:
         from l2hmc.configs import get_config

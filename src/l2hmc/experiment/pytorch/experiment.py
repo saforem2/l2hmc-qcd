@@ -5,7 +5,7 @@ Implements ptExperiment, a pytorch-specific subclass of the
 Experiment base class.
 """
 from __future__ import absolute_import, annotations, division, print_function
-# import logging
+import logging
 # import os
 from os import PathLike
 from pathlib import Path
@@ -32,8 +32,8 @@ from l2hmc.utils.dist import setup_torch_distributed
 from l2hmc.utils.rich import get_console
 from l2hmc.common import print_dict
 
-# log = logging.getLogger(__name__)
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# log = get_logger(__name__)
 
 
 Tensor = torch.Tensor

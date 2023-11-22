@@ -20,10 +20,13 @@ from hydra.core.config_store import ConfigStore
 import numpy as np
 from omegaconf import DictConfig
 import l2hmc.utils.dist as udist
+import logging
 
-from l2hmc import get_logger
+logger = logging.getLogger(__name__)
 
-logger = get_logger(__name__)
+# from l2hmc import get_logger
+
+# logger = get_logger(__name__)
 
 
 # -- Configure useful Paths -----------------------

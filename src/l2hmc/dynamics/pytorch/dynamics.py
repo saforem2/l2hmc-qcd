@@ -5,7 +5,7 @@ Pytorch implementation of Dynamics object for training L2HMC sampler.
 """
 from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass
-# import logging
+import logging
 from math import pi as PI
 import os
 from pathlib import Path
@@ -16,7 +16,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from l2hmc import get_logger
+# from l2hmc import get_logger
 import l2hmc.configs as cfgs
 from l2hmc.group.u1.pytorch.group import U1Phase
 from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
@@ -25,8 +25,8 @@ from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
 from l2hmc.network.pytorch.network import NetworkFactory, dummy_network
 
 
-# log = logging.getLogger(__name__)
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# log = get_logger(__name__)
 
 TWO_PI = 2. * PI
 

@@ -6,6 +6,7 @@ Contains implementation of StepTimer to automatically track timing data.
 from __future__ import absolute_import, annotations, division, print_function
 import time
 from typing import Optional
+import logging
 
 import numpy as np
 import os
@@ -16,10 +17,11 @@ import pandas as pd
 import functools
 import datetime
 
-from l2hmc import get_logger
+# from l2hmc import get_logger
 from l2hmc.common import get_timestamp
 
-log = get_logger(__name__)
+# log = get_logger(__name__)
+log = logging.getLogger(__name__)
 
 
 def log_execution_and_time(function):

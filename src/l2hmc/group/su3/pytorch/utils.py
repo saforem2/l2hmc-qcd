@@ -6,14 +6,16 @@ from __future__ import absolute_import, annotations, division, print_function
 from math import pi as PI
 from typing import Optional, Sequence
 from typing import Callable
+import logging
 
 import numpy as np
 import torch
 # from l2hmc.group.pytorch.logm import charpoly3x3, su3_to_eigs, log3x3
 
-from l2hmc import get_logger, DEVICE
+from l2hmc import DEVICE
 
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# log = get_logger(__name__)
 
 Array = np.array
 Tensor = torch.Tensor

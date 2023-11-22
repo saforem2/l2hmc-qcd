@@ -29,9 +29,9 @@ from l2hmc.network.factory import BaseNetworkFactory
 
 
 # log = get_pylogger(__name__)
-from l2hmc import get_logger
-log = get_logger(__name__)
-# log = logging.getLogger(__name__)
+# from l2hmc import get_logger
+# log = get_logger(__name__)
+log = logging.getLogger(__name__)
 
 Tensor = torch.Tensor
 

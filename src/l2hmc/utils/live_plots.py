@@ -21,8 +21,8 @@ from l2hmc.utils.rich import is_interactive
 _ = mplstyle.use('fast')
 
 
-# log = logging.getLogger(__name__)
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# log = get_logger(__name__)
 
 mplog = logging.getLogger('matplotlib')
 mplog.setLevel('CRITICAL')

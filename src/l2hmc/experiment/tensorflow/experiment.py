@@ -6,7 +6,7 @@ a subclass of the base `l2hmc/Experiment` object.
 """
 from __future__ import absolute_import, division, print_function, annotations
 import os
-# import logging
+import logging
 
 from omegaconf import DictConfig
 
@@ -29,9 +29,9 @@ from l2hmc.experiment.experiment import BaseExperiment
 
 # log = logging.getLogger(__name__)
 # log = get_pylogger(__name__)
-# log = logging.getLogger(__name__)
-from l2hmc import get_logger
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# from l2hmc import get_logger
+# log = get_logger(__name__)
 
 # GLOBAL_RANK = hvd.rank()
 RANK = hvd.rank()

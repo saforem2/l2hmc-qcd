@@ -4,13 +4,14 @@ Contains various utilities for tracking / logging metrics in TensorBoard / W&B
 """
 from __future__ import absolute_import, annotations, division, print_function
 from typing import Optional, Union
+import logging
 
 import numpy as np
 import torch
 from torch import nn
 from torch.utils.tensorboard.writer import SummaryWriter
 import wandb
-from l2hmc import get_logger
+# from l2hmc import get_logger
 
 from l2hmc.common import grab_tensor
 from l2hmc.utils.history import StopWatch
@@ -20,7 +21,8 @@ Array = np.ndarray
 Scalar = Union[float, int, bool, np.floating]
 ArrayLike = Union[Tensor, Array, Scalar]
 
-log = get_logger(__name__)
+# log = get_logger(__name__)
+log = logging.getLogger(__name__)
 
 
 def log_dict(

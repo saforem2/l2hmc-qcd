@@ -15,6 +15,7 @@ from typing import Any, Callable, Optional, Sequence
 
 import aim
 import deepspeed
+import logging
 from enrich.logging import RichHandler as EnRichHandler
 from hydra.utils import instantiate
 import numpy as np
@@ -31,7 +32,7 @@ from torch.cuda.amp.grad_scaler import GradScaler
 from torch.optim.lr_scheduler import LambdaLR
 import wandb
 
-from l2hmc import get_logger
+# from l2hmc import get_logger
 from l2hmc.common import ScalarLike, get_timestamp, print_dict
 from l2hmc.configs import CHECKPOINTS_DIR, ExperimentConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
@@ -57,8 +58,8 @@ from l2hmc.utils.step_timer import StepTimer
 # else:
 # from tqdm.auto import trange
 
-# log = logging.getLogger(__name__)
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# log = get_logger(__name__)
 lh = log.handlers if len(log.handlers) > 0 else []
 
 console = get_console()

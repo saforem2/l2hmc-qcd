@@ -11,11 +11,11 @@ from typing import Optional, Callable
 from mpi4py import MPI
 
 # from l2hmc.utils.logger import get_pylogger
-from l2hmc import get_logger
-log = get_logger(__name__)
-# import logging
+# from l2hmc import get_logger
+# log = get_logger(__name__)
+import logging
 #
-# log = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 BACKENDS = [

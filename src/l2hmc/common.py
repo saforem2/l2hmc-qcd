@@ -5,7 +5,7 @@ Contains methods intended to be shared across frameworks.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import datetime
-# import logging
+import logging
 import os
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -22,7 +22,7 @@ import torch
 import wandb
 import xarray as xr
 
-from l2hmc import get_logger
+# from l2hmc import get_logger
 from l2hmc.configs import AnnealingSchedule, Steps
 from l2hmc.configs import OUTPUTS_DIR
 from l2hmc.configs import State
@@ -35,8 +35,8 @@ from l2hmc.utils.rich import get_console, is_interactive
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 
-# log = logging.getLogger(__name__)
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# log = get_logger(__name__)
 
 # TensorLike = Union[
 #     tf.Tensor,

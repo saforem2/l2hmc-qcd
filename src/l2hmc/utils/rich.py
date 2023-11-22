@@ -15,6 +15,7 @@ from typing import Optional
 from typing import Any
 from typing import Generator
 
+import logging
 from enrich.style import STYLES
 from enrich.console import Console
 from enrich.logging import RichHandler
@@ -42,12 +43,12 @@ from rich.table import Table
 from rich.table import Table
 import rich.tree
 
-from l2hmc import get_logger
+# from l2hmc import get_logger
 
 # from l2hmc.configs import Steps
 
 
-# log = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 # WIDTH = max(150, int(os.environ.get('COLUMNS', 150)))
 size = shutil.get_terminal_size()
@@ -558,7 +559,8 @@ BEAT_TIME = 0.008
 
 COLORS = ["cyan", "magenta", "red", "green", "blue", "purple"]
 
-log = get_logger(__name__)
+# log = get_logger(__name__)
+log = logging.getLogger(__name__)
 handlers = log.handlers
 if (
         len(handlers) > 0

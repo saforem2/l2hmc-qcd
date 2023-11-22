@@ -7,9 +7,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import yaml
+import logging
 
 import l2hmc.group.su3.pytorch.group as g
-from l2hmc import get_logger
+# from l2hmc import get_logger
 from l2hmc.common import grab_tensor, print_dict
 from l2hmc.configs import dict_to_list_of_overrides, get_experiment
 from l2hmc.experiment.pytorch.experiment import Experiment, evaluate  # noqa  # noqa
@@ -24,7 +25,8 @@ os.environ['MASTER_PORT'] = '5433'
 # os.environ['MPLBACKEND'] = 'module://matplotlib-backend-kitty'
 # plt.switch_backend('module://matplotlib-backend-kitty')
 
-log = get_logger(__name__)
+# log = get_logger(__name__)
+log = logging.getLogger(__Name__)
 
 _ = setup_torch(precision='float64', backend='DDP', seed=4351)
 

@@ -15,9 +15,9 @@ from l2hmc.configs import flatten_dict
 
 
 # log = get_pylogger(__name__)
-from l2hmc import get_logger
-log = get_logger(__name__)
-# log = logging.getLogger(__name__)
+# from l2hmc import get_logger
+# log = get_logger(__name__)
+log = logging.getLogger(__name__)
 
 Layer = tf.keras.layers.Layer
 Model = tf.keras.models.Model

@@ -5,7 +5,7 @@ Contains implementation of Experiment object, defined by a static config.
 """
 from __future__ import absolute_import, annotations, division, print_function
 from abc import ABC, abstractmethod
-# import logging
+import logging
 import os
 from pathlib import Path
 from typing import Optional, Any
@@ -28,9 +28,9 @@ from l2hmc.utils.step_timer import StepTimer
 # import l2hmc.utils.plot_helpers as hplt
 
 # log = get_pylogger(__name__)
-# log = logging.getLogger(__name__)
-from l2hmc import get_logger
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# from l2hmc import get_logger
+# log = get_logger(__name__)
 
 
 # def get_logger(rank: int) -> logging.Logger:

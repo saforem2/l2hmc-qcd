@@ -5,7 +5,7 @@ Contains helpers for plotting.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import datetime
-# import logging
+import logging
 import os
 from pathlib import Path
 import time
@@ -28,7 +28,7 @@ from opinionated import STYLES
 from l2hmc.utils.rich import is_interactive
 # from l2hmc.utils.logger import get_pylogger
 # import logging
-from l2hmc import get_logger
+# from l2hmc import get_logger
 try:
     import matplotx
     MATPLOTX = True
@@ -42,8 +42,8 @@ except (ImportError, ModuleNotFoundError):
 warnings.filterwarnings('ignore')
 
 # log = get_pylogger(__name__)
-# log = logging.getLogger(__name__)
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# log = get_logger(__name__)
 
 xplt = xr.plot  # type: ignore
 
@@ -155,10 +155,13 @@ def save_figure(fig: plt.Figure, fname: str, outdir: os.PathLike):
     pngfile = pngdir.joinpath(f'{fname}.png')
     svgfile = Path(outdir).joinpath(f'{fname}.svg')
 
-    _ = fig.savefig(pngfile, dpi=400, bbox_inches='tight')
-    _ = fig.savefig(svgfile, dpi=400, bbox_inches='tight')
-    with PLOTS_LOG.open('a') as f:
-        f.write(f'{fname}: {svgfile.as_posix()}\n')
+    try:
+        _ = fig.savefig(pngfile, dpi=400, bbox_inches='tight')
+        _ = fig.savefig(svgfile, dpi=400, bbox_inches='tight')
+        with PLOTS_LOG.open('a') as f:
+            f.write(f'{fname}: {svgfile.as_posix()}\n')
+    except Exception as exc:
+        log.exception(exc)
 
 
 def savefig(fig: plt.Figure, outfile: os.PathLike):

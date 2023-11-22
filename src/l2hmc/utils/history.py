@@ -22,7 +22,8 @@ import wandb
 import xarray as xr
 
 import l2hmc.utils.plot_helpers as hplt
-from l2hmc import get_logger
+import logging
+# from l2hmc import get_logger
 from l2hmc.common import grab_tensor
 from l2hmc.configs import MonteCarloStates, Steps
 from l2hmc.configs import PROJECT_DIR
@@ -47,9 +48,9 @@ TF_FLOAT = tf.dtypes.as_dtype(tf.keras.backend.floatx())
 Scalar = Union[float, int, np.floating, bool]
 # Scalar = TF_FLOAT | PT_FLOAT | np.floating | int | bool
 
-# log = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
-log = get_logger(__name__)
+# log = get_logger(__name__)
 
 xplt = xr.plot  # type:ignore
 LW = plt.rcParams.get('axes.linewidth', 1.75)
