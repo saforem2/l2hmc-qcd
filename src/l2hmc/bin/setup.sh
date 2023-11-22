@@ -35,7 +35,7 @@ thetaGPU220701() {
 }
 
 thetaGPU230426() {
-  module load conda/2023-01-11
+  module load conda/2023-04-26
   conda activate base
   # conda activate /lus/grand/projects/datascience/foremans/locations/thetaGPU/miniconda3/envs/2023-04-26
 }
@@ -81,7 +81,7 @@ setupThetaGPU() {
     # module load conda/2022-07-01 ; conda activate base
     # thetaGPU220701
     thetaGPU230426
-    VENV_DIR="${ROOT}/venvs/thetaGPU/2023-01-11"
+    VENV_DIR="${ROOT}/venvs/thetaGPU/2023-04-26"
     venvSetup "$VENV_DIR"
     # -- MPI / Comms Setup ----------------------------------
     echo "HOSTFILE: ${HOSTFILE}"
