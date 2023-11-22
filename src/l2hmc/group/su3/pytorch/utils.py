@@ -160,9 +160,7 @@ def norm2(
         x = x.abs()
     n = x.square()
     if exclude is None:
-        if len(axis) == 0:
-            return n
-        return n.sum(tuple(axis))
+        return n if len(axis) == 0 else n.sum(tuple(axis))
     return n.sum([i for i in range(len(n.shape)) if i not in exclude])
 
 

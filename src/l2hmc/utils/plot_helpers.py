@@ -3,6 +3,7 @@ plot_helpers.py
 
 Contains helpers for plotting.
 """
+
 from __future__ import absolute_import, annotations, division, print_function
 import datetime
 import logging
@@ -32,7 +33,7 @@ from l2hmc.utils.rich import is_interactive
 try:
     import matplotx
     MATPLOTX = True
-except (ImportError, ModuleNotFoundError):
+except ImportError:
     MATPLOTX = False
 
 
@@ -144,9 +145,7 @@ def set_plot_style(**kwargs):
 def get_timestamp(fstr=None):
     """Get formatted timestamp."""
     now = datetime.datetime.now()
-    if fstr is None:
-        return now.strftime('%Y-%m-%d-%H%M%S')
-    return now.strftime(fstr)
+    return now.strftime('%Y-%m-%d-%H%M%S') if fstr is None else now.strftime(fstr)
 
 
 def save_figure(fig: plt.Figure, fname: str, outdir: os.PathLike):
@@ -262,7 +261,7 @@ def plot_arr(
         metric: list,
         name: Optional[str] = None,
 ) -> FigAxes:
-    assert len(metric) > 0
+    assert metric
     y = np.stack(metric)
     if isinstance(metric[0], (int, float, bool, np.floating)):
         return plot_scalar(y, ylabel=name)
@@ -290,11 +289,7 @@ def plot_scalar(
     if x is None:
         x = np.arange(len(y))
 
-    if fig_axes is None:
-        fig, ax = subplots()
-    else:
-        fig, ax = fig_axes
-
+    fig, ax = subplots() if fig_axes is None else fig_axes
     _ = ax.plot(x, y, label=label, **kwargs)
     if xlabel is not None:
         _ = ax.set_xlabel(xlabel)
@@ -327,11 +322,7 @@ def plot_chains(
     if x is None:
         x = np.arange(y.shape[0])
 
-    if fig_axes is None:
-        fig, ax = subplots()
-    else:
-        fig, ax = fig_axes
-
+    fig, ax = subplots() if fig_axes is None else fig_axes
     if label is not None:
         label = f'{label}, avg: {y.mean():4.3g}'
 
@@ -376,11 +367,7 @@ def plot_leapfrogs(
 ) -> FigAxes:
     assert len(y.shape) == 3
 
-    if fig_axes is None:
-        fig, ax = subplots()
-    else:
-        fig, ax = fig_axes
-
+    fig, ax = subplots() if fig_axes is None else fig_axes
     if x is None:
         x = np.arange(y.shape[0])
 

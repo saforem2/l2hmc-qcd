@@ -182,10 +182,7 @@ class BaseHistory:
         if isinstance(metric, (Scalar, np.ndarray)):
             return metric
 
-        if (
-            isinstance(metric, tf.Tensor)
-            or isinstance(metric, torch.Tensor)
-        ):
+        if isinstance(metric, (tf.Tensor, torch.Tensor)):
             return grab_tensor(metric)
 
         if isinstance(metric, list):
@@ -324,39 +321,27 @@ class BaseHistory:
             for idx in range(min(num_chains, len(val.chain))):
                 ax0.plot(steps, val.values[idx, :], lw=1., alpha=0.7, color=color)
 
+        elif len(val.shape) == 1:
+            fig, ax = plt.subplots(**subplots_kwargs)
+            assert isinstance(ax, plt.Axes)
+            ax.plot(steps, val.values, **plot_kwargs)
+            axes = ax
+        elif len(val.shape) == 3:
+            fig, ax = plt.subplots(**subplots_kwargs)
+            assert isinstance(ax, plt.Axes)
+            cmap = plt.get_cmap('viridis')
+            # nlf = arr.shape[1]
+            nlf = val.leapfrog
+            for idx in range(nlf):
+                y = val[:, idx, :].mean('chain')
+                pkwargs = {
+                    'color': cmap(idx / nlf),
+                    'label': f'{idx}',
+                }
+                ax.plot(steps, y, **pkwargs)
+            axes = ax
         else:
-            if len(val.shape) == 1:
-                fig, ax = plt.subplots(**subplots_kwargs)
-                assert isinstance(ax, plt.Axes)
-                ax.plot(steps, val.values, **plot_kwargs)
-                axes = ax
-            elif len(val.shape) == 3:
-                fig, ax = plt.subplots(**subplots_kwargs)
-                assert isinstance(ax, plt.Axes)
-                cmap = plt.get_cmap('viridis')
-                # nlf = arr.shape[1]
-                nlf = val.leapfrog
-                for idx in range(nlf):
-                    y = val[:, idx, :].mean('chain')
-                    pkwargs = {
-                        'color': cmap(idx / nlf),
-                        'label': f'{idx}',
-                    }
-                    ax.plot(steps, y, **pkwargs)
-                axes = ax
-            else:
-                raise ValueError('Unexpected shape encountered')
-
-            # ax.set_ylabel(key)
-
-            # if num_chains > 0 and len(val.chain) > 1:
-            #     lw = LW / 2.
-            #     for idx in range(min(num_chains, len(val.chain))):
-            #         # ax = subfigs[0].subplots(1, 1)
-            #         # plot values of invidual chains, arr[:, idx]
-            #         # where arr[:, idx].shape = [ndraws, 1]
-            #         ax.plot(steps, val.values[idx, :],
-            #                 alpha=0.5, lw=lw/2., **plot_kwargs)
+            raise ValueError('Unexpected shape encountered')
 
         matplotx.line_labels()
         ax.set_xlabel('draw')

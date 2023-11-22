@@ -230,12 +230,11 @@ class Dynamics(nn.Module):
         """Build networks."""
         split = self.config.use_split_xnets
         n = self.nlf if self.config.use_separate_networks else 1
-        networks = network_factory.build_networks(
+        return network_factory.build_networks(
             n,
             split,
             group=self.g,
         )
-        return networks
 
     def _build_xnet(
             self,
@@ -256,8 +255,6 @@ class Dynamics(nn.Module):
         """Build networks."""
         split = self.config.use_split_xnets
         n = self.nlf if self.config.use_separate_networks else 1
-        # return networks
-        pass
 
     @torch.no_grad()
     def _init_weight(
@@ -623,11 +620,11 @@ class Dynamics(nn.Module):
         x, beta = inputs
         x = x.to(self._device)  # .to(self._dtype)
         beta = beta.to(self._device)  # .to(self._dtype)
-        if self.config.merge_directions:
-            outputs = self.apply_transition_fb(inputs)
-        else:
-            outputs = self.apply_transition(inputs)
-        return outputs
+        return (
+            self.apply_transition_fb(inputs)
+            if self.config.merge_directions
+            else self.apply_transition(inputs)
+        )
 
     def flatten(self, x: Tensor) -> Tensor:
         return x.reshape(x.shape[0], -1)
@@ -1077,10 +1074,9 @@ class Dynamics(nn.Module):
             log.warning('Complex sumlogdet! Taking norm...?')
             sumlogdet = sumlogdet.norm()
         dh = h_init - h_prop + sumlogdet
-        prob = torch.exp(
+        return torch.exp(
             torch.minimum(dh, torch.zeros_like(dh, device=dh.device))
         ).to(state_init.x.device)
-        return prob
 
     @staticmethod
     def _get_accept_masks(px: Tensor) -> tuple[Tensor, Tensor]:
@@ -1134,9 +1130,7 @@ class Dynamics(nn.Module):
         if self.config.use_separate_networks:
             xnet = self.xnet.get_submodule(str(step))
             if self.config.use_split_xnets:
-                if first:
-                    return xnet.get_submodule('first')
-                return xnet.get_submodule('second')
+                return xnet.get_submodule('first') if first else xnet.get_submodule('second')
             return xnet
         return self.xnet
 

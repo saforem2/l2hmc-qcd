@@ -96,9 +96,7 @@ def log_step(
 
 def check_tag(tag: str) -> str:
     tags = tag.split('/')
-    if len(tags) > 2 and (tags[0] == tags[1]):
-        return '/'.join(tags[1:])
-    return tag
+    return '/'.join(tags[1:]) if len(tags) > 2 and (tags[0] == tags[1]) else tag
 
 
 def log_item(
@@ -163,9 +161,7 @@ def as_tensor(
         x = torch.nan_to_num(x)
     if isinstance(x, list):
         x = torch.stack(x)
-    if grab:
-        return grab_tensor(x)
-    return x
+    return grab_tensor(x) if grab else x
 
 
 def log_params_and_grads(
@@ -197,7 +193,6 @@ def log_params_and_grads(
         log.critical(
             'Failed to `wandb.log(grads)` '
         )
-        pass
 
 
 def update_summaries(

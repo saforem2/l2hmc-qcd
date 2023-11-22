@@ -341,10 +341,7 @@ class Experiment(BaseExperiment):
             # rich: Optional[bool] = None,
     ):
         jobdir = self.get_jobdir(job_type='train')
-        writer = None
-        if self._rank == 0:
-            writer = self.get_summary_writer()
-
+        writer = self.get_summary_writer() if self._rank == 0 else None
         # console = get_console(record=True)
         # self.trainer.set_console(console)
         tstart = time.time()
@@ -422,7 +419,7 @@ class Experiment(BaseExperiment):
         if not self.trainer._is_orchestrator:
             return None
 
-        assert job_type in ['eval', 'hmc']
+        assert job_type in {'eval', 'hmc'}
         jobdir = self.get_jobdir(job_type)
         writer = self.get_summary_writer()
         console = get_console(record=True)

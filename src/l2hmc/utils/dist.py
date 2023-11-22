@@ -260,13 +260,13 @@ def setup_torch_distributed(
         rank = dsetup['rank']
         local_rank = dsetup['local_rank']
 
-    elif be in ['deepspeed', 'ds']:
+    elif be in {'deepspeed', 'ds'}:
         init_deepspeed()
         size = get_world_size()
         rank = get_rank()
         local_rank = get_local_rank()
 
-    elif be in ['horovod', 'hvd']:
+    elif be in {'horovod', 'hvd'}:
         import horovod.torch as hvd
         _ = None if hvd.is_initialized() else hvd.init()
         rank = hvd.rank()
