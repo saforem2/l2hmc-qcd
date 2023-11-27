@@ -12,6 +12,9 @@
 # MAIN="${DIR}/main.py"
 # PARENT=$(dirname "$DIR")
 # ROOT=$(dirname "$PARENT")
+#
+TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
+HOST=$(hostname)
 
 # Resolve path to current file
 SOURCE=${BASH_SOURCE[0]}
@@ -22,158 +25,209 @@ while [ -L "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symli
 done
 DIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
 PARENT=$(dirname "${DIR}")
-MAIN="${PARENT}/main.py"
+MAIN="${PARENT}/__main__.py"
 GRANDPARENT=$(dirname "${PARENT}")
 ROOT=$(dirname "${GRANDPARENT}")
-
+MAIN="$PARENT/__main__.py"
+SETUP_SCRIPT="$DIR/setup.sh"
+TRAIN_SCRIPT="$DIR/train.sh"
 NCPUS=$(getconf _NPROCESSORS_ONLN)
 
-thetaGPU220701() {
-  module load conda/2022-07-01 ; conda activate base
-  conda activate \
-    /lus/grand/projects/datascience/foremans/locations/thetaGPU/miniconda3/envs/2022-07-01
+
+function join_by {
+    local d=${1-} f=${2-};
+    if shift 2; then
+        printf %s "$f" "${@/#/$d}"
+    fi
 }
 
-thetaGPU230426() {
-  module load conda/2023-04-26
-  conda activate base
-  # conda activate /lus/grand/projects/datascience/foremans/locations/thetaGPU/miniconda3/envs/2023-04-26
+function pprint() {
+    OUTPUT="$*"
+    echo "┌─────────────────────────────────────────────────────────────────────┐"
+    echo "│ [setup.sh]:  ${OUTPUT[*]}"
+    echo "└─────────────────────────────────────────────────────────────────────┘"
+}
+function loadCondaEnv() {
+    if [[ "${CONDA_EXE}" ]]; then
+        echo "Already inside ${CONDA_EXE}, exiting!"
+    else
+        MODULE_STR="$1"
+        module load "conda/${MODULE_STR}"
+        conda activate base
+    fi
 }
 
-setupConda() {
-  CONDA_DATE="$1"
-  module load "conda/${CONDA_DATE}"
-  conda activate base
-  echo "Using: $(which python3)"
+function setupVenv() {
+    VENV_DIR="$1"
+    if [[ -d "${VENV_DIR}" ]]; then
+        echo "Found venv at: ${VENV_DIR}"
+        source "${VENV_DIR}/bin/activate"
+    else
+        echo "Skipping setupVenv() on $(hostname)"
+    fi
 }
 
-setupCondaCustom() {
-  CONDA_PATH="$2"
-  conda activate "$CONDA_PATH"
-  echo "Using $(which python3)"
-}
-
-
-venvSetup() {
-  VENV_DIR="$1"
-  if [[ -f "${VENV_DIR}/bin/activate" ]]; then
-    echo "Found venv at ${VENV_DIR}"
-    source "${VENV_DIR}/bin/activate"
-  else
-    echo "No venv found"
-    mkdir -p "${VENV_DIR}"
-    echo "Making new venv at ${VENV_DIR}"
-    python3 -m venv "${VENV_DIR}" --system-site-packages
-    source "${VENV_DIR}/bin/activate"
-    python3 -m pip install --upgrade pip setuptools wheel
-    python3 -m pip install -e "${ROOT}[dev]"
-  fi
+function setupPython() {
+    local conda_date=$1
+    local venv_path=$2
+    if [[ "${CONDA_EXE}" ]]; then
+        echo "Caught CONDA_EXE: ${CONDA_EXE}"
+    else
+        loadCondaEnv "${conda_date}"
+    fi
+    if [[ "${VIRTUAL_ENV}" ]]; then
+        echo "Caught VIRTUAL_ENV: ${VIRTUAL_ENV}"
+    else
+        setupVenv "${venv_path}"
+    fi
 }
 
 # ┏━━━━━━━━━━┓
 # ┃ ThetaGPU ┃
 # ┗━━━━━━━━━━┛
-setupThetaGPU() {
-  if [[ $(hostname) == theta* ]]; then
-    export MACHINE="ThetaGPU"
-    HOSTFILE="${COBALT_NODEFILE}"
-    export NVME_PATH="/raid/scratch/"
-    # module load conda/2022-07-01 ; conda activate base
-    # thetaGPU220701
-    thetaGPU230426
-    VENV_DIR="${ROOT}/venvs/thetaGPU/2023-04-26"
-    venvSetup "$VENV_DIR"
-    # -- MPI / Comms Setup ----------------------------------
-    echo "HOSTFILE: ${HOSTFILE}"
-    echo "COBALT_NODEFILE: ${COBALT_NODEFILE}"
-    NHOSTS=$(wc -l < "${COBALT_NODEFILE}")
-    NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
-    NGPUS=$((NHOSTS * NGPU_PER_RANK))
-    MPI_COMMAND=$(which mpirun)
-    MPI_DEFAULTS="\
-      --verbose \
-      --hostfile ${HOSTFILE} \
-      -x CFLAGS \
-      -x LDFLAGS \
-      -x PYTHONUSERBASE \
-      -x http_proxy \
-      -x https_proxy \
-      -x PATH \
-      -x LD_LIBRARY_PATH"
-    MPI_ELASTIC="\
-      -n ${NGPUS} \
-      -npernode ${NGPU_PER_RANK}"
-  else
-    echo "Unexpected hostname: $(hostname)"
-  fi
+function setupThetaGPU() {
+    if [[ $(hostname) == theta* ]]; then
+        export MACHINE="ThetaGPU"
+        export NVME_PATH="/raid/scratch/"
+        HOSTFILE=${HOSTFILE:-${COBALT_NODEFILE}}
+        CONDA_DATE="2023-01-11"
+        VENV_DIR="${ROOT}/venvs/${MACHINE}/${CONDA_DATE}"
+        setupPython "${CONDA_DATE}" "${VENV_DIR}"
+        NHOSTS=$(wc -l < "${HOSTFILE}")
+        NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
+        NGPUS=$((NHOSTS * NGPU_PER_HOST))
+        LAUNCH="mpirun -n $NGPUS -N $NGPU_PER_HOST --hostfile $HOSTFILE -x PATH -x LD_LIBRARY_PATH"
+    else
+        echo "[setupThetaGPU]: Unexpected hostname $(hostname)"
+    fi
 }
 
-# ┏━━━━━━━━━┓
-# ┃ Polaris ┃
-# ┗━━━━━━━━━┛
-setupPolaris()  {
-  if [[ $(hostname) == x* ]]; then
-    export MACHINE="Polaris"
-    HOSTFILE="${PBS_NODEFILE}"
-    export IBV_FORK_SAFE=1
-    export NVME_PATH="/local/scratch/"
-    # -----------------------------------------------
-    # module load conda/2022-09-08; conda activate base
-    # VENV_DIR="${ROOT}/venvs/polaris/2022-09-08"
-    module load conda/2023-10-04
-    conda activate base
-    VENV_DIR="${ROOT}/venvs/polaris/2023-10-04"
-    venvSetup "$VENV_DIR"
-    # -----------------------------------------------
-    NRANKS=$(wc -l < "${PBS_NODEFILE}")
-    NGPU_PER_RANK=$(nvidia-smi -L | wc -l)
-    NGPUS=$((NHOSTS * NGPU_PER_RANK))
-    MPI_COMMAND=$(which mpiexec)
-    # -----------------------------------------------
-    MPI_DEFAULTS="\
-      --envall \
-      --verbose \
-      --hostfile ${HOSTFILE}"
-    MPI_ELASTIC="\
-      -n ${NGPUS} \
-      --ppn ${NGPU_PER_RANK}"
-  else
-    echo "Unexpected hostname: $(hostname)"
-  fi
+# ┏━━━━━━━━━━┓
+# ┃ ThetaGPU ┃
+# ┗━━━━━━━━━━┛
+function setupPolaris() {
+    if [[ $(hostname) == x3* ]]; then
+        export MACHINE="polaris"
+        export NVME_PATH="/raid/scratch/"
+        HOSTFILE=${HOSTFILE:-${PBS_NODEFILE}}
+        CONDA_DATE="2023-10-04"
+        VENV_DIR="${ROOT}/venvs/${MACHINE}/${CONDA_DATE}"
+        setupPython "${CONDA_DATE}" "${VENV_DIR}"
+        NHOSTS=$(wc -l < "${HOSTFILE}")
+        NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
+        NGPUS=$((NHOSTS * NGPU_PER_HOST))
+        LAUNCH="mpiexec --verbose --envall -n $NGPUS -ppn $NGPU_PER_HOST --hostfile ${HOSTFILE}"
+        # alias mpilaunch="$(which mpiexec) --verbose --envall -n $NGPUS -ppn $NGPU_PER_HOST --hostfile ${HOSTFILE}"
+        # alias mpilaunch="${LAUNCH}"
+    else
+        echo "[setupPolaris]: Unexpected hostname $(hostname)"
+    fi
 }
 
+# ┏━━━━━━━┓
+# ┃ NERSC ┃
+# ┗━━━━━━━┛
+function setupPerlmutter() {
+    if [[ $(hostname) == login* || $(hostname) == nid* ]]; then
+        export MACHINE="Perlmutter"
+        SLURM_NODES=$(scontrol show hostname "${SLURM_NODELIST}")
+        SLURM_NODEFILE="${HOME}/.slurm-nodefile"
+        printf "%s\n" "${SLURM_NODES[@]}" > "${SLURM_NODEFILE}"
+        export HOSTFILE="${HOSTFILE:-${SLURM_NODEFILE}}"
+        [ "$SLURM_JOB_ID" ] \
+            && echo "Caught SLURM_JOB_ID: ${SLURM_JOB_ID}" \
+            || echo "!!!!!! Running without SLURM allocation !!!!!!!!"
+        module load libfabric cudatoolkit pytorch/2.0.1
+        export NODELIST="${SLURM_NODELIST:-$(hostname)}"
+        export NHOSTS="${SLURM_NNODES:-1}"
+        export NGPU_PER_HOST="${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}"
+        export NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
+        LAUNCH="srun -N ${NHOSTS} -n ${NGPUS} -l u"
+    else
+        echo "[setupPerlmutter]: Unexpected hostname $(hostname)"
+    fi
+}
 
-setupJob() {
-  # ---- Environment settings -----------------------------------------------
-  export OMP_NUM_THREADS=$NCPUS
-  export WIDTH=$COLUMNS
-  export COLUMNS=$COLUMNS
-  echo "WIDTH: ${COLUMNS}"
-  export NCCL_DEBUG=ERROR
-  export MACHINE="${MACHINE}"
-  export CFLAGS="-I${CONDA_PREFIX}/include/"
-  export LDFLAGS="-L${CONDA_PREFIX}/lib/"
-  export WANDB_CACHE_DIR="${ROOT}/.cache/wandb"
-  export TORCH_EXTENSIONS_DIR="${ROOT}/.cache/torch_extensions"
-  mkdir -p "${ROOT}/.cache/{wandb,torch_extensions}"
-  # export KMP_SETTINGS=TRUE
-  # export OMPI_MCA_opal_cuda_support=TRUE
-  # export KMP_AFFINITY='granularity=fine,verbose,compact,1,0'
-  # export PATH="${CONDA_PREFIX}/bin:${PATH}"
-  export TF_ENABLE_AUTO_MIXED_PRECISION=1
-  # export TF_XLA_FLAGS="--tf_xla_auto_jit=2 --tf_xla_enable_xla_devices"
-  export NVME_PATH="${NVME_PATH}"
-  export MPI_DEFAULTS="${MPI_DEFAULTS}"
-  export MPI_ELASTIC="${MPI_ELASTIC}"
-  export MPI_COMMAND="${MPI_COMMAND}"
-  PYTHON_EXECUTABLE="$(which python3)"
-  export PYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}"
-  echo "USING PYTHON: $(which python3)"
-  echo "CFLAGS: ${CFLAGS}"
-  echo "LDFLAGS: ${LDFLAGS}"
-  # -------------------------------
-  # CONSTRUCT EXECUTABLE TO BE RAN
-  # -------------------------------
-  EXEC="${MPI_COMMAND} ${MPI_DEFAULTS} ${MPI_ELASTIC} $(which python3) ${MAIN}"
-  export EXEC="$EXEC"
+function setupLogs() {
+    LOGDIR="${PARENT}/logs"
+    LOGFILE="${LOGDIR}/${TSTAMP}-${HOST}_ngpu${NGPUS}_ncpu${NCPUS}.log"
+    export LOGDIR="${LOGDIR}"
+    export LOGFILE=$LOGFILE
+    if [ ! -d "${LOGDIR}" ]; then
+        mkdir -p "${LOGDIR}"
+    fi
+    echo "Writing to logfile: ${LOGFILE}"
+    # Keep track of latest logfile for easy access
+    echo "$LOGFILE" >> "${LOGDIR}/latest"
+}
+
+function printJobInfo() {
+    ARGS=$*
+    HOSTS_ARR=$(cat "${HOSTFILE:-$(hostname)}")
+    # if [[ "${HOSTFILE}" ]]; then
+    #     HOSTS_ARR=$(cat "${HOSTFILE}")
+    #     HOSTS=$(join_by ' ' "${HOSTS_ARR}")
+    # elif [[ "${SLURM_NODELIST}" ]]; then
+    #     HOSTS="${SLURM_NODELIST}"
+    # else
+    #     echo "[printJobInfo][WARNING]: HOSTFILE not set, using resources on localhost!"
+    #     HOSTS=$(hostname)
+    # fi
+    echo "┌─────────────────────────────────────────────────────────────────────"  #┐"
+    echo "│ [setup.sh]: Job started at: ${TSTAMP} on ${HOST} by ${USER}"
+    echo "│ [setup.sh]: Job running in: ${DIR}"
+    echo "└─────────────────────────────────────────────────────────────────────"  #┘"
+    echo "┌─────────────────────────────────────────────────────────────────────"  #┐"
+    echo "│ [setup.sh]: DIR=${DIR}"
+    echo "│ [setup.sh]: MAIN=${MAIN}"
+    echo "│ [setup.sh]: SETUP_SCRIPT=${SETUP_SCRIPT}"
+    echo "│ [setup.sh]: TRAIN_SCRIPT=${TRAIN_SCRIPT}"
+    echo "│ [setup.sh]: PARENT=${PARENT}"
+    echo "│ [setup.sh]: ROOT=${ROOT}"
+    echo "│ [setup.sh]: LOGDIR=${LOGDIR}"
+    echo "│ [setup.sh]: LOGFILE=${LOGFILE}"
+    echo "└─────────────────────────────────────────────────────────────────────"  #┘"
+    # echo "┌─────────────────────────────────────────────────────────────────────"  # ┐"
+    # echo "│ [setup.sh]: [Hosts][${HOSTFILE}]: "
+    # echo "│ [setup.sh]:   ${HOSTS[*]}"
+    # echo "└──────────────────────────────────────────────────────────────────┘"
+    echo "┌─────────────────────────────────────────────────────────────────────"  # ┐"
+    echo "│ [setup.sh]: HOSTS: "
+    echo "│   $(join_by ', ' $HOSTS_ARR)"
+    echo "│ [setup.sh]: Using ${NHOSTS} hosts from ${HOSTFILE}"
+    echo "│ [setup.sh]: With ${NGPU_PER_HOST} GPUs per host"
+    echo "│ [setup.sh]: For a total of: ${NGPUS} GPUs"
+    echo "└─────────────────────────────────────────────────────────────────────"  #┘"
+    echo "┌─────────────────────────────────────────────────────────────────────"  #┐"
+    echo "│ [setup.sh]: Using python: $(which python3)"
+    echo "│ [setup.sh]: ARGS: ${ARGS[*]}"
+    echo "│ [setup.sh]: LAUNCH: ${LAUNCH} python3 ${MAIN} ${ARGS[*]}"
+    echo "└─────────────────────────────────────────────────────────────────────"  #┘"
+    echo "┌─────────────────────────────────────────────────────────────────────"  #┐"
+    echo "│ [setup.sh]: Writing logs to ${LOGFILE}"
+    echo '│ [setup.sh]: To view output: `tail -f $(tail -1 logs/latest)`'  # noqa
+    echo "│ [setup.sh]: Latest logfile: $(tail -1 ./logs/latest)"
+    echo "│ [setup.sh]: tail -f $(tail -1 logs/latest)"
+    echo "└─────────────────────────────────────────────────────────────────────"  #┘"
+    echo -e "\n"
+}
+
+function setupJob() {
+    if [[ $(hostname) == x3* ]]; then
+        setupPolaris
+    elif [[ $(hostname) == thetagpu* ]]; then
+        setupThetaGPU
+    elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then
+        setupPelmutter
+        HOSTS="${SLURM_NODELIST}"
+    else
+        echo "[setupJob]: Unexpected hostname $(hostname)"
+        exit 1
+    fi
+    export NHOSTS
+    export NGPU_PER_HOST
+    export NGPUS
+    export HOSTFILE
+    export LAUNCH
+    setupLogs
 }
