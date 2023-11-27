@@ -22,6 +22,8 @@ os.environ['PYTHONIOENCODING'] = 'utf-8'
 RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
 
+log = logging.getLogger(__name__)
+
 
 # # Check that MPS is available
 # if (
