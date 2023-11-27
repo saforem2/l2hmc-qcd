@@ -19,7 +19,7 @@ import torch
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from l2hmc.utils.history import BaseHistory
-from l2hmc import get_logger
+# from l2hmc import get_logger
 from l2hmc.configs import NetWeights
 from l2hmc.configs import ExperimentConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics as ptDynamics
@@ -38,7 +38,7 @@ log = logging.getLogger(__name__)
 
 Tensor = torch.Tensor
 
-from l2hmc.trainers.pytorch.trainer import Trainer
+# from l2hmc.trainers.pytorch.trainer import Trainer
 
 def train_step(
         x: torch.Tensor,
