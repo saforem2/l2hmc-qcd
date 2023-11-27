@@ -154,13 +154,13 @@ def save_figure(fig: plt.Figure, fname: str, outdir: os.PathLike):
     pngfile = pngdir.joinpath(f'{fname}.png')
     svgfile = Path(outdir).joinpath(f'{fname}.svg')
 
-    try:
-        _ = fig.savefig(pngfile, dpi=400, bbox_inches='tight')
-        _ = fig.savefig(svgfile, dpi=400, bbox_inches='tight')
-        with PLOTS_LOG.open('a') as f:
-            f.write(f'{fname}: {svgfile.as_posix()}\n')
-    except Exception as exc:
-        log.exception(exc)
+    # try:
+    _ = fig.savefig(pngfile, dpi=400, bbox_inches='tight')
+    _ = fig.savefig(svgfile, dpi=400, bbox_inches='tight')
+    with PLOTS_LOG.open('a') as f:
+        f.write(f'{fname}: {svgfile.as_posix()}\n')
+    # except Exception as exc:
+    #     log.exception(exc)
 
 
 def savefig(fig: plt.Figure, outfile: os.PathLike):
@@ -191,8 +191,12 @@ def measure_improvement(
     ehist = experiment.trainer.histories.get('eval', None)
     hhist = experiment.trainer.histories.get('hmc', None)
     improvement = 0.0
-    # set_plot_style()
-    lw = plt.rcParams.get('axes.linewidth', 1.25)
+    set_plot_style()
+    # lw = plt.rcParams.get('axes.linewidth', 1.25)
+    import opinionated
+    plt.style.use(opinionated.STYLES['opinionated_min'])
+    lw = 1.25
+    lw_bold = 1.5 * lw
     if ehist is not None and hhist is not None:
         edset = ehist.get_dataset()
         hdset = hhist.get_dataset()
@@ -202,12 +206,12 @@ def measure_improvement(
         _ = ax.plot(
             dQint_eval,
             label='Trained',
-            lw=1.25 * lw,
+            lw=lw_bold,
             color=COLORS['blue'],
         )
         _ = ax.axhline(
             y=dQint_eval.values.mean(),
-            lw=1.25 * lw,
+            lw=lw_bold,
             color=COLORS['blue'],
             ls=':',
             label=f'avg:{dQint_eval.values.mean():.3f}'
@@ -221,7 +225,7 @@ def measure_improvement(
         )
         _ = ax.axhline(
             y=dQint_hmc.values.mean(),
-            lw=1.25 * lw,
+            lw=lw_bold,
             color=COLORS['red'],
             ls=':',
             label=f'avg:{dQint_hmc.values.mean():.3f}'
@@ -239,7 +243,6 @@ def measure_improvement(
             framealpha=0.1,
             ncol=2,
             labelcolor='#bdbdbd',
-            # shadow=True
         )
         if title is not None:
             _ = ax.set_title(title)
@@ -252,7 +255,10 @@ def measure_improvement(
         with open(txtfile, 'w') as f:
             f.write(f'{improvement:.8f}')
 
-        save_figure(fig, fname='model_improvement', outdir=outdir)
+        try:
+            save_figure(fig, fname='model_improvement', outdir=outdir)
+        except:
+            import pudb; pudb.set_trace()
 
     return improvement
 
