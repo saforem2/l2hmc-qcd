@@ -13,7 +13,7 @@ from __future__ import (
 )
 import logging
 import os
-import sys
+# import sys
 
 import time
 from pathlib import Path
@@ -56,7 +56,8 @@ def get_experiment(
     os.environ['RUNDIR'] = os.getcwd()
     if framework in ['tf', 'tensorflow']:
         cfg.framework = 'tensorflow'
-        from l2hmc.utils.dist import setup_tensorflow
+        # from l2hmc.utils.dist import setup_tensorflow
+        from ezpz import setup_tensorflow
         _ = setup_tensorflow(cfg.precision)
         from l2hmc.experiment.tensorflow.experiment import Experiment
         experiment = Experiment(
@@ -68,7 +69,8 @@ def get_experiment(
 
     elif framework in ['pt', 'pytorch', 'torch']:
         cfg.framework = 'pytorch'
-        from l2hmc.utils.dist import setup_torch
+        # from l2hmc.utils.dist import setup_torch
+        from ezpz import setup_torch
         _ = setup_torch(
             seed=cfg.seed,
             # precision=cfg.precision,
@@ -134,13 +136,48 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
         _ = ex.evaluate(job_type='hmc', nchains=nchains_eval)
         log.info(f'HMC took: {time.time() - hstart:.5f}s')
         from l2hmc.utils.plot_helpers import measure_improvement
+        # try:
         improvement = measure_improvement(
             experiment=ex,
             title=f'{ex.config.framework}',
         )
+        # except ValueError:
+        #     import pudb; pudb.set_trace()
         # improvement = comm.gather(improvement, root=0)
         if ex.config.init_wandb and wandb.run is not None:
             wandb.run.log({'model_improvement': improvement})
+            # wandb.save(base_path=os.getcwd())
+            # logfile = Path(os.getcwd()).joinpath('__main__.log')
+            # if logfile.is_file():
+            # log.info(f'Uploading {os.getcwd()} to wandb.')
+            # wandb.run.upload_file(logfile.as_posix())
+            # dirs_ = {
+            #     '.hydra',
+            #     'eval',
+            #     'train',
+            #     'hmc',
+            #     'network_diagrams',
+            #     'pngs',
+            # }
+            # files_ = {
+            #     '__main__.log',
+            #     'plots.txt'
+            #     'model_improvement.svg',
+            #     'model_improvement.txt',
+            # }
+            # files = {rundir.joinpath(i) for i in files_}
+            # dirs = {rundir.joinpath(i) for i in dirs_}
+            # for f in files:
+            #     if f.is_file():
+            #         log.info(f'Uploading {f.as_posix()} to wandb')
+            #         artifact.add_file(f.as_posix())
+            # for d in dirs:
+            #     if d.is_dir():
+            #         log.info(f'Uploading {d.as_posix()} to wandb')
+            #         artifact.add_dir(d)
+
+            # else:
+            #     log.info(f'Unable to find {logfile.as_posix()}')
             # if ex.run is not None and ex.run is wandb.run:
         log.critical(f'Model improvement: {improvement:.8f}')
         if wandb.run is not None:
@@ -172,26 +209,56 @@ def main(cfg: DictConfig):
     output = run(cfg)
     fw = cfg.get('framework', None)
     be = cfg.get('backend', None)
+    comm.Barrier()
     if (
             str(fw).lower() in {'pt', 'torch', 'pytorch'}
             and str(be).lower() == 'ddp'
     ):
         from l2hmc.utils.dist import cleanup
         cleanup()
+    if wandb.run is not None:
+        artifact = wandb.Artifact('logdir', type='directory')
+        rundir = Path(os.getcwd())
+        dirs_ = ('pngs', 'network_diagrams', '.hydra')
+        files_ = (
+            '__main__.log',
+            'model_improvement.svg',
+            'model_improvement.txt',
+            'plots.txt',
+        )
+        for file in files_:
+            if (fpath := rundir.joinpath(file)).is_file():
+                log.info(f'Adding {file} to W&B artifact...')
+                artifact.add_file(fpath.as_posix())
+        for dir_ in dirs_:
+            if (dpath := rundir.joinpath(dir_)).is_dir():
+                log.info(f'Adding {dir_} to W&B artifact...')
+                artifact.add_dir(dpath.as_posix())
+        # files = [rundir.joinpath(i) for i in files_]
+        # dirs = [rundir.joinpath(i) for i in dirs_]
+        # log.info(f'Uploading {rundir.as_posix()} to wandb')
+        # artifact.add_dir(local_path=rundir.as_posix())
+        # artifact.remove(rundir.joinpath('wandb').as_posix())
+        log.info(f'Logging {artifact} to  W&B')
+        wandb.run.log_artifact(artifact)
     return output
 
 
 if __name__ == '__main__':
-    import warnings
-    warnings.filterwarnings('ignore')
+    import sys
+    # import warnings
+    # warnings.filterwarnings('ignore')
     import wandb
-    wandb.require(experiment='service')
+    from ezpz import get_rank
+    # wandb.require(experiment='service')
     start = time.time()
     outdir = main()
     end = time.time()
     log.info(f'Run completed in: {end - start:4.4f} s')
     if outdir is not None:
         log.info(f'Run located in: {outdir}')
-    # if wandb.run is not None:
-    #     wandb.finish(0)
-    sys.exit(0)
+    if wandb.run is not None:
+        wandb.finish(0)
+    # if get_rank() == 0:
+    #     os._exit(0)
+    # sys.exit(0)
