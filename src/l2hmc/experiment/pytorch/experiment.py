@@ -163,8 +163,8 @@ class Experiment(BaseExperiment):
             log.warning(
                 f'Initialize WandB from {self._rank}:{self._local_rank}'
             )
-            run = super()._init_wandb()
-            assert run is wandb.run
+            run = super()._init_wandb() if wandb.run is None else wandb.run
+            # assert run is wandb.run
             # run.watch(
             #     self.trainer.dynamics.networks,
             #     log='all',

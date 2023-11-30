@@ -60,7 +60,7 @@
     "href": "index.html#posts",
     "title": "",
     "section": "Posts",
-    "text": "Posts\n\n\n\n   \n     \n     \n       Order By\n       Default\n         \n          Date - Oldest\n        \n         \n          Date - Newest\n        \n         \n          Title\n        \n         \n          Author\n        \n     \n  \n    \n      \n      \n    \n\n\n\n\n\n\nDate\n\n\nTitle\n\n\nAuthor\n\n\n\n\n\n\nOct 4, 2023\n\n\nundefined\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\nPosts\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\nundefined\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\nMCMC + Diffusion Sampling\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\nDenoising Diffusion Probabilistic Models\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\nundefined\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\nRecent Talks\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\nundefined\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\n2D U(1) Example\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\nundefined\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\n4D SU(3) Model\n\n\nSam Foreman \n\n\n\n\n\n\nNo matching items"
+    "text": "Posts\n\n\n\n   \n     \n     \n       Order By\n       Default\n         \n          Date - Oldest\n        \n         \n          Date - Newest\n        \n         \n          Title\n        \n         \n          Author\n        \n     \n  \n    \n      \n      \n    \n\n\n\n\n\n\nDate\n\n\nTitle\n\n\nAuthor\n\n\n\n\n\n\nOct 19, 2023\n\n\nundefined\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\nPosts\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\nundefined\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\nMCMC + Diffusion Sampling\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\nDenoising Diffusion Probabilistic Models\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\nundefined\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\nRecent Talks\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\nundefined\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\n2D U(1) Example\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\nundefined\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\n4D SU(3) Model\n\n\nSam Foreman \n\n\n\n\n\n\nNo matching items"
   },
   {
     "objectID": "qmd/l2hmc-4DSU3.html",
@@ -81,14 +81,14 @@
     "href": "qmd/posts.html",
     "title": "Posts",
     "section": "",
-    "text": "U(1) Model in 2D\nSU(3) Model in 4D\n\n\n\n   \n     \n     \n       Order By\n       Default\n         \n          Date - Oldest\n        \n         \n          Date - Newest\n        \n         \n          Title\n        \n         \n          Author\n        \n     \n  \n    \n      \n      \n    \n\n\n\n\n\n\nDate\n\n\nTitle\n\n\nAuthor\n\n\n\n\n\n\nOct 4, 2023\n\n\nMCMC + Diffusion Sampling\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\nDenoising Diffusion Probabilistic Models\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\nRecent Talks\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\n2D U(1) Example\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\n4D SU(3) Model\n\n\nSam Foreman \n\n\n\n\n\n\nNo matching items\n\n\nLearn more about Quarto here."
+    "text": "U(1) Model in 2D\nSU(3) Model in 4D\n\n\n\n   \n     \n     \n       Order By\n       Default\n         \n          Date - Oldest\n        \n         \n          Date - Newest\n        \n         \n          Title\n        \n         \n          Author\n        \n     \n  \n    \n      \n      \n    \n\n\n\n\n\n\nDate\n\n\nTitle\n\n\nAuthor\n\n\n\n\n\n\nOct 19, 2023\n\n\nMCMC + Diffusion Sampling\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\nDenoising Diffusion Probabilistic Models\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\nRecent Talks\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\n2D U(1) Example\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\n4D SU(3) Model\n\n\nSam Foreman \n\n\n\n\n\n\nNo matching items\n\n\nLearn more about Quarto here."
   },
   {
     "objectID": "qmd/posts.html#external-links",
     "href": "qmd/posts.html#external-links",
     "title": "Posts",
     "section": "",
-    "text": "U(1) Model in 2D\nSU(3) Model in 4D\n\n\n\n   \n     \n     \n       Order By\n       Default\n         \n          Date - Oldest\n        \n         \n          Date - Newest\n        \n         \n          Title\n        \n         \n          Author\n        \n     \n  \n    \n      \n      \n    \n\n\n\n\n\n\nDate\n\n\nTitle\n\n\nAuthor\n\n\n\n\n\n\nOct 4, 2023\n\n\nMCMC + Diffusion Sampling\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\nDenoising Diffusion Probabilistic Models\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\nRecent Talks\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\n2D U(1) Example\n\n\nSam Foreman \n\n\n\n\nOct 4, 2023\n\n\n4D SU(3) Model\n\n\nSam Foreman \n\n\n\n\n\n\nNo matching items\n\n\nLearn more about Quarto here."
+    "text": "U(1) Model in 2D\nSU(3) Model in 4D\n\n\n\n   \n     \n     \n       Order By\n       Default\n         \n          Date - Oldest\n        \n         \n          Date - Newest\n        \n         \n          Title\n        \n         \n          Author\n        \n     \n  \n    \n      \n      \n    \n\n\n\n\n\n\nDate\n\n\nTitle\n\n\nAuthor\n\n\n\n\n\n\nOct 19, 2023\n\n\nMCMC + Diffusion Sampling\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\nDenoising Diffusion Probabilistic Models\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\nRecent Talks\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\n2D U(1) Example\n\n\nSam Foreman \n\n\n\n\nOct 19, 2023\n\n\n4D SU(3) Model\n\n\nSam Foreman \n\n\n\n\n\n\nNo matching items\n\n\nLearn more about Quarto here."
   },
   {
     "objectID": "qmd/diffusion/diffusion.html",
@@ -102,7 +102,7 @@
     "href": "qmd/diffusion/diffusion.html#imports--setup",
     "title": "MCMC + Diffusion Sampling",
     "section": "Imports / Setup",
-    "text": "Imports / Setup\n\nfrom __future__ import absolute_import, print_function, annotations, division\nfrom dataclasses import dataclass\n\nimport sys\nimport os\nimport math\nimport numpy as np\nimport scipy\nimport time\nfrom random import randrange\nimport matplotlib.pyplot as plt\nimport seaborn as sns\nimport numpy as np\n\n\nfrom ezpz.dist import setup_torch\n\nport = np.random.randint(5000, 6000)\nprint(f\"Using port: {port}\")\n\nRANK = setup_torch(\n    backend=\"DDP\",\n    port=f\"{port}\"\n)\n\n    Using port: 5561\n\n\nUsing DDP for distributed training\n\n\n\nGlobal Rank: 0 / 0\n\n\n\n\n%matplotlib inline\nimport matplotlib_inline\nmatplotlib_inline.backend_inline.set_matplotlib_formats('svg')\n\nfrom l2hmc.main import build_experiment\nfrom l2hmc.utils.rich import get_console\nfrom l2hmc.utils.plot_helpers import set_plot_style\n\nimport opinionated\nfrom l2hmc.diffusion.diffusion import PureMH, MH_Diffusion\nfrom l2hmc.utils.plot_helpers import set_plot_style\n\nfrom pandas.io.formats import style\nimport scipy\nimport time\nfrom random import randrange\nfrom l2hmc.diffusion.diffusion import PureMH, MH_Diffusion\n\nset_plot_style()\nconsole = get_console()\nprint(console.is_jupyter)\nif console.is_jupyter:\n    console.is_jupyter = False\nprint(console.is_jupyter)\n\nUsing device: cpu\n\n\n\nFailed to download font: Source Sans Pro, skipping! Failed to download font: Titillium WebRoboto Condensed, skipping!\n\n\nTrue\n\n\n\nFalse\n\n\n\nplt.style.use(opinionated.STYLES['opinionated_min'])\nsns.set_context('notebook')"
+    "text": "Imports / Setup\n\nfrom __future__ import absolute_import, print_function, annotations, division\nfrom dataclasses import dataclass\n\nimport sys\nimport os\nimport math\nimport numpy as np\nimport scipy\nimport time\nfrom random import randrange\nimport matplotlib.pyplot as plt\nimport seaborn as sns\nimport numpy as np\n\n\nfrom ezpz.dist import setup_torch\n\nport = np.random.randint(5000, 6000)\nprint(f\"Using port: {port}\")\n\nRANK = setup_torch(\n    backend=\"DDP\",\n    port=f\"{port}\"\n)\n\n\n    Using port: 5561\n\n\nUsing DDP for distributed training\n\n\n\nGlobal Rank: 0 / 0\n\n\n:::\n\n%matplotlib inline\nimport matplotlib_inline\nmatplotlib_inline.backend_inline.set_matplotlib_formats('svg')\n\nfrom l2hmc.main import build_experiment\nfrom l2hmc.utils.rich import get_console\nfrom l2hmc.utils.plot_helpers import set_plot_style\n\nimport opinionated\nfrom l2hmc.diffusion.diffusion import PureMH, MH_Diffusion\nfrom l2hmc.utils.plot_helpers import set_plot_style\n\nfrom pandas.io.formats import style\nimport scipy\nimport time\nfrom random import randrange\nfrom l2hmc.diffusion.diffusion import PureMH, MH_Diffusion\n\nset_plot_style()\nconsole = get_console()\nprint(console.is_jupyter)\nif console.is_jupyter:\n    console.is_jupyter = False\nprint(console.is_jupyter)\n\nUsing device: cpu\n\n\n\nFailed to download font: Source Sans Pro, skipping! Failed to download font: Titillium WebRoboto Condensed, skipping!\n\n\nTrue\n\n\n\nFalse\n\n\n\nplt.style.use(opinionated.STYLES['opinionated_min'])\nsns.set_context('notebook')"
   },
   {
     "objectID": "qmd/diffusion/diffusion.html#2d-u1",
@@ -247,9 +247,9 @@
   {
     "objectID": "index.html",
     "href": "index.html",
-    "title": "l2hmc-qcd",
+    "title": "",
     "section": "",
-    "text": "Contents\n\n\n\n\n\n\n\nOverview\n\nPapers 📚, Slides 📊, etc.\nBackground\n\nInstallation\nTraining\n\nConfiguration Management\nRunning @ ALCF\n\nDetails\n\nOrganization\n\nDynamics / Network\n\nNetwork Architecture"
+    "text": "::: {style=“display: flex; align-items: flex-start;”}"
   },
   {
     "objectID": "index.html#footnotes",
@@ -284,7 +284,7 @@
     "href": "index.html#configuring-your-experiment",
     "title": "",
     "section": "Configuring your Experiment",
-    "text": "Configuring your Experiment\nThis project uses hydra for configuration management and supports distributed training for both PyTorch and TensorFlow.\nIn particular, we support the following combinations of framework + backend for distributed training:\n\nTensorFlow (+ Horovod for distributed training)\nPyTorch +\n\nDDP\nHorovod\nDeepSpeed\n\n\nThe main entry point is src/l2hmc/main.py, which contains the logic for running an end-to-end Experiment.\nAn Experiment consists of the following sub-tasks:\n\nTraining\nEvaluation\nHMC (for comparison and to measure model improvement)"
+    "text": "Configuring your Experiment"
   },
   {
     "objectID": "index.html#running-an-experiment",
@@ -292,5 +292,26 @@
     "title": "",
     "section": "Running an Experiment",
     "text": "Running an Experiment\nAll configuration options can be dynamically overridden via the CLI at runtime, and we can specify our desired framework and backend combination via:\npython3 main.py mode=debug framework=pytorch backend=deepspeed precision=fp16\nto run a (non-distributed) Experiment with pytorch + deepspeed with fp16 precision.\nThe l2hmc/conf/config.yaml contains a brief explanation of each of the various parameter options, and values can be overriden either by modifying the config.yaml file, or directly through the command line, e.g.\ncd src/l2hmc\n./train.sh mode=debug framework=pytorch &gt; train.log 2&gt;&1 &\ntail -f train.log $(tail -1 logs/latest)\nAdditional information about various configuration options can be found in:\n\nsrc/l2hmc/configs.py: Contains implementations of the (concrete python objects) that are adjustable for our experiment.\nsrc/l2hmc/conf/config.yaml: Starting point with default configuration options for a generic Experiment.\n\nfor more information on how this works I encourage you to read Hydra’s Documentation Page.\n\nRunning at ALCF\nFor running with distributed training on ALCF systems, we provide a complete src/l2hmc/train.sh script which should run without issues on either Polaris or ThetaGPU @ ALCF.\n\nALCF:\n# Polaris --------------------------------\nif [[ \"$(hostname)==x3*\" ]]; then\n  MACHINE=\"Polaris\"\n  CONDA_DATE=\"2023-10-02\"\n# thetaGPU -------------------------------\nelif  [[ \"$(hostname)==thetagpu*\" ]]; then\n  MACHINE=\"thetaGPU\"\n  CONDA_DATE=\"2023-01-11\"\nelse\n  echo \"Unknown machine\"\n  exit 1\nfi\n# Setup conda + build virtual env -----------------------------------------\nmodule load \"conda/${CONDA_DATE}\"\nconda activate base\ngit clone https://github.com/saforem2/l2hmc-qcd\ncd l2hmc-qcd\nmkdir -p \"venvs/${MACHINE}/${CONDA_DATE}\"\npython3 -m venv \"venvs/${MACHINE}/${CONDA_DATE}\" --system-site-packages\nsource \"venvs/${MACHINE}/${CONDA_DATE}/bin/activate\"\npython3 -m pip install --upgrade pip setuptools wheel\n# Install `l2hmc` ----------\npython3 -m pip install -e .\n# Train ----------------------------------------------------------------------\ncd src/l2hmc\n./bin/train.sh mode=test framework=pytorch backend=deepspeed seed=\"${RANDOM}\""
+  },
+  {
+    "objectID": "index.html#experiment-configuration-with-hydra",
+    "href": "index.html#experiment-configuration-with-hydra",
+    "title": "",
+    "section": "Experiment configuration with Hydra ",
+    "text": "Experiment configuration with Hydra \nThis project uses hydra for configuration management and supports distributed training for both PyTorch and TensorFlow.\nIn particular, we support the following combinations of framework + backend for distributed training:\n\nTensorFlow (+ Horovod for distributed training)\nPyTorch +\n\nDDP\nHorovod\nDeepSpeed\n\n\nThe main entry point is src/l2hmc/main.py, which contains the logic for running an end-to-end Experiment.\nAn Experiment consists of the following sub-tasks:\n\nTraining\nEvaluation\nHMC (for comparison and to measure model improvement)"
+  },
+  {
+    "objectID": "index.html#running-the-code",
+    "href": "index.html#running-the-code",
+    "title": "",
+    "section": "Running the Code",
+    "text": "Running the Code\n\n\nExperiment configuration with Hydra \nThis project uses hydra for configuration management and supports distributed training for both PyTorch and TensorFlow.\nIn particular, we support the following combinations of framework + backend for distributed training:\n\nTensorFlow (+ Horovod for distributed training)\nPyTorch +\n\nDDP\nHorovod\nDeepSpeed\n\n\nThe main entry point is src/l2hmc/main.py, which contains the logic for running an end-to-end Experiment.\nAn Experiment consists of the following sub-tasks:\n\nTraining\nEvaluation\nHMC (for comparison and to measure model improvement)"
+  },
+  {
+    "objectID": "index.html#installation",
+    "href": "index.html#installation",
+    "title": "",
+    "section": "Installation",
+    "text": "Installation\n\n\n\n\n\n\nWarning\n\n\n\n\n\nIt is recommended to use / install l2hmc into a virtual environment1 \n\n\n\n\n\nFrom source (RECOMMENDED)\n\ngit clone https://github.com/saforem2/l2hmc-qcd\ncd l2hmc-qcd\n# for development addons:\n# python3 -m pip install -e \".[dev]\"\npython3 -m pip install -e .\n\n\n From  l2hmc on PyPI \n\n\npython3 -m pip install l2hmc\n\n\nTest install:\npython3 -c 'import l2hmc ; print(l2hmc.__file__)'\n# output: /path/to/l2hmc-qcd/src/l2hmc/__init__.py"
   }
 ]

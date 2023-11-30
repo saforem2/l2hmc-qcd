@@ -113,6 +113,7 @@ def update_plot(
         fig.canvas.draw()
         display_id.update(fig)
 
+    plt.show()
     # return fig, ax
 
 

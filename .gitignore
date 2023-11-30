@@ -592,3 +592,5 @@ bin/*experiments*
 bin/*scale_*
 
 /.quarto/
+
+/.luarc.json

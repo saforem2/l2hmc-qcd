@@ -238,15 +238,14 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#overview" id="toc-overview" class="nav-link active" data-scroll-target="#overview">Overview</a>
+  <li><a href="#section" id="toc-section" class="nav-link active" data-scroll-target="#section"><span data-align="left" data-display="inline" width="20%" style="vertical-align:middle; line-height: 3.0em;"><img src="https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg" class="img-fluid"></span></a>
   <ul class="collapse">
-  <li><a href="#papers-slides-etc." id="toc-papers-slides-etc." class="nav-link" data-scroll-target="#papers-slides-etc.">Papers 📚, Slides 📊 etc.</a></li>
   <li><a href="#background" id="toc-background" class="nav-link" data-scroll-target="#background">Background</a></li>
-  </ul></li>
   <li><a href="#installation" id="toc-installation" class="nav-link" data-scroll-target="#installation">Installation</a></li>
   <li><a href="#running-the-code" id="toc-running-the-code" class="nav-link" data-scroll-target="#running-the-code">Running the Code</a>
   <ul class="collapse">
-  <li><a href="#configuring-your-experiment" id="toc-configuring-your-experiment" class="nav-link" data-scroll-target="#configuring-your-experiment">Configuring your <code>Experiment</code></a></li>
+  <li><a href="#experiment-configuration-with-hydra" id="toc-experiment-configuration-with-hydra" class="nav-link" data-scroll-target="#experiment-configuration-with-hydra"><code>Experiment</code> configuration with Hydra <img src="https://hydra.cc/img/logo.svg" width="10%" display="inline" style="vertical-align:middle;line-height:3.0em;" align="left"></a></li>
+  </ul></li>
   <li><a href="#running-an-experiment" id="toc-running-an-experiment" class="nav-link" data-scroll-target="#running-an-experiment">Running an <code>Experiment</code></a>
   <ul class="collapse">
   <li><a href="#running-at-alcf" id="toc-running-at-alcf" class="nav-link" data-scroll-target="#running-at-alcf">Running at ALCF</a></li>
@@ -267,68 +266,50 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 
 
 
-<div class="columns" style="display: flex; align-items: flex-start;">
-<div class="column" style="width:60%;">
-<div style="text-align:center;">
-<p><img src="https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg" class="img-fluid"></p>
-<p><a href="https://hits.seeyoufarm.com"><img alt="hits" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fsaforem2%2Fl2hmc-qcd&amp;count_bg=%2300CCFF&amp;title_bg=%23555555&amp;icon=&amp;icon_color=%23111111&amp;title=👋&amp;edge_flat=false"></a><br>
-<a href="https://github.com/saforem2/l2hmc-qcd/"><img alt="l2hmc-qcd" src="https://img.shields.io/badge/-l2hmc--qcd-252525?style=flat&amp;logo=github&amp;labelColor=gray"></a> <a href="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd"><img alt="codefactor" src="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge"></a> <br> <a href="https://arxiv.org/abs/2112.01582"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg"></a> <a href="https://arxiv.org/abs/2105.03418"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg"></a> <br> <a href="https://hydra.cc"><img alt="hydra" src="https://img.shields.io/badge/Config-Hydra-89b8cd"></a> <a href="https://pytorch.org/get-started/locally/"><img alt="pyTorch" src="https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&amp;logoColor=white"></a> <a href="https://www.tensorflow.org"><img alt="tensorflow" src="https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&amp;logo=TensorFlow&amp;logoColor=white"></a> <br> <a href="https://wandb.ai/l2hmc-qcd/l2hmc-qcd"><img src="https://raw.githubusercontent.com/wandb/assets/main/wandb-github-badge-28.svg" alt="Weights &amp; Biases monitoring" height="20"></a></p>
+<section id="section" class="level1">
+<h1><span data-align="left" data-display="inline" width="20%" style="vertical-align:middle; line-height: 3.0em;"><a href="https://saforem2.github.io/l2hmc-qcd"><img src="https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg" class="img-fluid"></a></span></h1>
+<div class="flex">
+<p><a href="https://hydra.cc"><img alt="hydra" src="https://img.shields.io/badge/Config-Hydra-89b8cd"></a> <a href="https://pytorch.org/get-started/locally/"><img alt="pyTorch" src="https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&amp;logoColor=white"></a> <a href="https://www.tensorflow.org"><img alt="tensorflow" src="https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&amp;logo=TensorFlow&amp;logoColor=white"></a></p>
+<p><a href="https://hits.seeyoufarm.com"><img alt="hits" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fsaforem2%2Fl2hmc-qcd&amp;count_bg=%2300CCFF&amp;title_bg=%23555555&amp;icon=&amp;icon_color=%23111111&amp;title=👋&amp;edge_flat=false"></a> <a href="https://github.com/saforem2/l2hmc-qcd/"><img alt="l2hmc-qcd" src="https://img.shields.io/badge/-l2hmc--qcd-252525?style=flat&amp;logo=github&amp;labelColor=gray"></a> <a href="https://wandb.ai/l2hmc-qcd/l2hmc-qcd"><img src="https://raw.githubusercontent.com/wandb/assets/main/wandb-github-badge-28.svg" alt="Weights &amp; Biases monitoring" height="20"></a></p>
+<p><a href="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd"><img alt="codefactor" src="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge"></a> <a href="https://arxiv.org/abs/2112.01582"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg"></a> <a href="https://arxiv.org/abs/2105.03418"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg"></a></p>
 </div>
-</div><div class="column" style="width:40%;">
-<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="[{{< fa solid list-ol >}} Contents]{.dim-text}">
-<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="true" aria-label="Toggle callout">
+<!-- ::: {.callout-tip collapse="false" icon="false" style="width:40%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="[ Contents]{.dim-text}"} -->
+<!---->
+<!-- - [Overview](#overview) -->
+<!--   * [Papers 📚, Slides 📊, etc.](https://github.com/saforem2/l2hmc-qcd/#training--experimenting) -->
+<!--   * [Background](#background) -->
+<!-- - [Installation](#installation) -->
+<!-- - [Training](#training) -->
+<!--   - [Configuration Management](#configuration-management) -->
+<!--   - [Running @ ALCF](#running-at-ALCF)  -->
+<!-- - [Details](#details) -->
+<!--   * [Organization](#organization) -->
+<!--       - [Lattice Dynamics](#lattice-dynamics) -->
+<!--       - [Network Architecture](#network-architecture) -->
+<!---->
+<!-- ::: -->
+<!---->
+<!-- ::: -->
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="[{{< fa solid list-ol >}} Papers 📚, Slides 📊 etc.]{.dim-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="true" aria-label="Toggle callout">
 <div class="callout-icon-container">
 <i class="callout-icon no-icon"></i>
 </div>
 <div class="callout-title-container flex-fill">
-<span class="dim-text"><i class="fa-solid fa-list-ol" aria-label="list-ol"></i> Contents</span>
+<span class="dim-text"><i class="fa-solid fa-list-ol" aria-label="list-ol"></i> Papers 📚, Slides 📊 etc.</span>
 </div>
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
-<div id="callout-1" class="callout-1-contents callout-collapse collapse show">
+<div id="callout-2" class="callout-2-contents callout-collapse collapse show">
 <div class="callout-body-container callout-body">
-<!-- <details closed><summary><b>Contents</b></summary> -->
-<ul>
-<li><a href="#overview">Overview</a>
-<ul>
-<li><a href="https://github.com/saforem2/l2hmc-qcd/#training--experimenting">Papers 📚, Slides 📊, etc.</a></li>
-<li><a href="#background">Background</a></li>
-</ul></li>
-<li><a href="#installation">Installation</a></li>
-<li><a href="#training">Training</a>
-<ul>
-<li><a href="#configuration-management">Configuration Management</a></li>
-<li><a href="#running-at-ALCF">Running @ ALCF</a></li>
-</ul></li>
-<li><a href="#details">Details</a>
-<ul>
-<li><a href="#organization">Organization</a>
-<ul>
-<li><a href="#dynamics---network">Dynamics / Network</a>
-<ul>
-<li><a href="#network-architecture">Network Architecture</a></li>
-</ul></li>
-</ul></li>
-</ul></li>
-</ul>
-<!-- </details> -->
-</div>
-</div>
-</div>
-</div>
-</div>
-<section id="overview" class="level1">
-<h1>Overview</h1>
-<section id="papers-slides-etc." class="level2">
-<h2 class="anchored" data-anchor-id="papers-slides-etc.">Papers 📚, Slides 📊 etc.</h2>
 <ul>
 <li><a href="https://saforem2.github.io/lattice23/#/title-slide">📊 Slides (07/31/2023 @ Lattice 2023)</a></li>
 <li><a href="./reports/">📕 Notebooks / Reports</a>:
 <ul>
 <li><a href="./qmd/l2hmc-2DU1.html">📓 2D <span class="math inline">U(1)</span> Example</a>
 <ul>
-<li><a href="./reports/l2hmc-2DU1.md">📙 2D U(1) Model (w/ <code>fp16</code> or <code>fp32</code> for training)</a></li>
-<li><a href="./src/l2hmc/notebooks/l2hmc-2dU1.ipynb">📒 4D SU(3) Model (w/ <code>complex128</code> + <code>fp64</code> for training)</a>
+<li><a href="./qmd/l2hmc-2DU1.html">📙 2D U(1) Model (w/ <code>fp16</code> or <code>fp32</code> for training)</a></li>
+<li><a href="./qmd/l2hmc-4DSU3.html">📒 4D SU(3) Model (w/ <code>complex128</code> + <code>fp64</code> for training)</a>
 <ul>
 <li><a href="https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/pytorch-SU3d4.ipynb">alt link (if github won’t load)</a></li>
 </ul></li>
@@ -348,7 +329,29 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 </ul></li>
 </ul></li>
 </ul>
-</section>
+<div class="callout callout-style-simple callout-none no-icon callout-titled" title="[{{< fa solid person-chalkboard size=fa-lg >}}]{.dim-text} $\hspace{2pt}$ [[**MLMC: Machine Learning Monte Carlo**](https://saforem2.github.io/lattice23) @ [Lattice 2023](https://indico.fnal.gov/event/57249/contributions/271305/) (07/2023)]{.dim-text}" style="width:100%;">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="dim-text"><i class="fa-solid fa-person-chalkboard fa-fa-lg" aria-label="person-chalkboard"></i></span> <span class="math inline">\hspace{2pt}</span> <span class="dim-text"><a href="https://saforem2.github.io/lattice23"><strong>MLMC: Machine Learning Monte Carlo</strong></a> @ <a href="https://indico.fnal.gov/event/57249/contributions/271305/">Lattice 2023</a> (07/2023)</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<iframe src="https://saforem2.github.io/lattice23/#/section" title="MLMC: Machine Learning Monte Carlo" width="100%" align="center" height="512" frameborder="0" webkitallowfullscreen="" mozallowfullscreen="" allowfullscreen="" style="border-radius:0.25rem;border:none;align:center;">
+<p>
+Your browser does not support iframes.
+</p>
+</iframe>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
 <section id="background" class="level2">
 <h2 class="anchored" data-anchor-id="background">Background</h2>
 <p>The L2HMC algorithm aims to improve upon <a href="https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo">HMC</a> by optimizing a carefully chosen loss function which is designed to minimize autocorrelations within the Markov Chain, thereby improving the efficiency of the sampler.</p>
@@ -363,11 +366,10 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 <li>Is capable of traversing low-density zones to mix between modes (often difficult for generic HMC).</li>
 </ul>
 </section>
-</section>
-<section id="installation" class="level1">
-<h1>Installation</h1>
+<section id="installation" class="level2">
+<h2 class="anchored" data-anchor-id="installation">Installation</h2>
 <div class="callout callout-style-simple callout-warning callout-titled" title="Warning" style="width:100%!important;">
-<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="true" aria-label="Toggle callout">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="true" aria-label="Toggle callout">
 <div class="callout-icon-container">
 <i class="callout-icon"></i>
 </div>
@@ -376,7 +378,7 @@ Warning
 </div>
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
-<div id="callout-2" class="callout-2-contents callout-collapse collapse show">
+<div id="callout-3" class="callout-3-contents callout-collapse collapse show">
 <div class="callout-body-container callout-body">
 <p>It is recommended to use / install <code>l2hmc</code> into a virtual environment<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a><br> <!-- (ideally one with either`pytorch [horovod,deepspeed], ` already installed) --></p>
 </div>
@@ -403,10 +405,11 @@ Warning
 <div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3</span> <span class="at">-c</span> <span class="st">'import l2hmc ; print(l2hmc.__file__)'</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="co"># output: /path/to/l2hmc-qcd/src/l2hmc/__init__.py</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details></section>
-<section id="running-the-code" class="level1">
-<h1>Running the Code</h1>
-<section id="configuring-your-experiment" class="level2">
-<h2 class="anchored" data-anchor-id="configuring-your-experiment">Configuring your <code>Experiment</code></h2>
+<section id="running-the-code" class="level2">
+<h2 class="anchored" data-anchor-id="running-the-code">Running the Code</h2>
+<!-- ## Configuring your `Experiment` -->
+<section id="experiment-configuration-with-hydra" class="level3">
+<h3 class="anchored" data-anchor-id="experiment-configuration-with-hydra"><code>Experiment</code> configuration with <a href="https://hydra.cc">Hydra</a> <img src="https://hydra.cc/img/logo.svg" width="10%" display="inline" style="vertical-align:middle;line-height:3.0em;" align="left"></h3>
 <p>This project uses <a href="https://hydra.cc"><code>hydra</code></a> for configuration management and supports distributed training for both PyTorch and TensorFlow.</p>
 <p>In particular, we support the following combinations of <code>framework</code> + <code>backend</code> for distributed training:</p>
 <ul>
@@ -425,6 +428,7 @@ Warning
 <li>Evaluation</li>
 <li>HMC (for comparison and to measure model improvement)</li>
 </ol>
+</section>
 </section>
 <section id="running-an-experiment" class="level2">
 <h2 class="anchored" data-anchor-id="running-an-experiment">Running an <code>Experiment</code></h2>
@@ -568,9 +572,9 @@ Warning
 </tr>
 </thead>
 <tbody class="list">
-<tr data-index="0" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1695407925854" data-listing-date-modified-sort="NaN" data-listing-filename-sort="posts.qmd">
+<tr data-index="0" data-listing-date-sort="1697691600000" data-listing-file-modified-sort="1695407925854" data-listing-date-modified-sort="NaN" data-listing-filename-sort="posts.qmd">
 <td>
-<span class="listing-date">Oct 4, 2023</span>
+<span class="listing-date">Oct 19, 2023</span>
 </td>
 <td>
 <span class="listing-title">undefined</span>
@@ -579,9 +583,9 @@ Warning
 <span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
 </td>
 </tr>
-<tr data-index="1" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1696425358594" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="1" data-listing-title-sort="Posts" data-listing-filename-sort="posts.qmd">
+<tr data-index="1" data-listing-date-sort="1697691600000" data-listing-file-modified-sort="1696425358594" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="1" data-listing-title-sort="Posts" data-listing-filename-sort="posts.qmd">
 <td>
-<span class="listing-date">Oct 4, 2023</span>
+<span class="listing-date">Oct 19, 2023</span>
 </td>
 <td>
 <a href="./qmd/posts.html" class="title listing-title">Posts</a>
@@ -590,9 +594,9 @@ Warning
 <span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
 </td>
 </tr>
-<tr data-index="2" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1695407549770" data-listing-date-modified-sort="NaN" data-listing-filename-sort="diffusion.qmd">
+<tr data-index="2" data-listing-date-sort="1697691600000" data-listing-file-modified-sort="1695407549770" data-listing-date-modified-sort="NaN" data-listing-filename-sort="diffusion.qmd">
 <td>
-<span class="listing-date">Oct 4, 2023</span>
+<span class="listing-date">Oct 19, 2023</span>
 </td>
 <td>
 <span class="listing-title">undefined</span>
@@ -601,9 +605,9 @@ Warning
 <span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
 </td>
 </tr>
-<tr data-index="3" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1696424852883" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="37" data-listing-title-sort="MCMC + Diffusion Sampling" data-listing-filename-sort="diffusion.qmd">
+<tr data-index="3" data-listing-date-sort="1697691600000" data-listing-file-modified-sort="1697762137509" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="37" data-listing-title-sort="MCMC + Diffusion Sampling" data-listing-filename-sort="diffusion.qmd">
 <td>
-<span class="listing-date">Oct 4, 2023</span>
+<span class="listing-date">Oct 19, 2023</span>
 </td>
 <td>
 <a href="./qmd/diffusion/diffusion.html" class="title listing-title">MCMC + Diffusion Sampling</a>
@@ -612,9 +616,9 @@ Warning
 <span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
 </td>
 </tr>
-<tr data-index="4" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1696423926990" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="34" data-listing-title-sort="Denoising Diffusion Probabilistic Models" data-listing-filename-sort="diffusion.qmd">
+<tr data-index="4" data-listing-date-sort="1697691600000" data-listing-file-modified-sort="1696423926990" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="34" data-listing-title-sort="Denoising Diffusion Probabilistic Models" data-listing-filename-sort="diffusion.qmd">
 <td>
-<span class="listing-date">Oct 4, 2023</span>
+<span class="listing-date">Oct 19, 2023</span>
 </td>
 <td>
 <a href="./qmd/diffusion-alt/diffusion.html" class="title listing-title">Denoising Diffusion Probabilistic Models</a>
@@ -623,9 +627,9 @@ Warning
 <span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
 </td>
 </tr>
-<tr data-index="5" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1694002343657" data-listing-date-modified-sort="NaN" data-listing-filename-sort="slides.qmd">
+<tr data-index="5" data-listing-date-sort="1697691600000" data-listing-file-modified-sort="1694002343657" data-listing-date-modified-sort="NaN" data-listing-filename-sort="slides.qmd">
 <td>
-<span class="listing-date">Oct 4, 2023</span>
+<span class="listing-date">Oct 19, 2023</span>
 </td>
 <td>
 <span class="listing-title">undefined</span>
@@ -634,9 +638,9 @@ Warning
 <span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
 </td>
 </tr>
-<tr data-index="6" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1696425383010" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="1" data-listing-title-sort="Recent Talks" data-listing-filename-sort="slides.qmd">
+<tr data-index="6" data-listing-date-sort="1697691600000" data-listing-file-modified-sort="1696425383010" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="1" data-listing-title-sort="Recent Talks" data-listing-filename-sort="slides.qmd">
 <td>
-<span class="listing-date">Oct 4, 2023</span>
+<span class="listing-date">Oct 19, 2023</span>
 </td>
 <td>
 <a href="./qmd/slides.html" class="title listing-title">Recent Talks</a>
@@ -645,9 +649,9 @@ Warning
 <span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
 </td>
 </tr>
-<tr data-index="7" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1695218524643" data-listing-date-modified-sort="NaN" data-listing-filename-sort="l2hmc-2DU1.qmd">
+<tr data-index="7" data-listing-date-sort="1697691600000" data-listing-file-modified-sort="1695218524643" data-listing-date-modified-sort="NaN" data-listing-filename-sort="l2hmc-2DU1.qmd">
 <td>
-<span class="listing-date">Oct 4, 2023</span>
+<span class="listing-date">Oct 19, 2023</span>
 </td>
 <td>
 <span class="listing-title">undefined</span>
@@ -656,9 +660,9 @@ Warning
 <span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
 </td>
 </tr>
-<tr data-index="8" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1696424833802" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="33" data-listing-title-sort="2D $U(1)$ Example" data-listing-filename-sort="l2hmc-2DU1.qmd">
+<tr data-index="8" data-listing-date-sort="1697691600000" data-listing-file-modified-sort="1696424833802" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="33" data-listing-title-sort="2D $U(1)$ Example" data-listing-filename-sort="l2hmc-2DU1.qmd">
 <td>
-<span class="listing-date">Oct 4, 2023</span>
+<span class="listing-date">Oct 19, 2023</span>
 </td>
 <td>
 <a href="./qmd/l2hmc-2DU1.html" class="title listing-title">2D <span class="math inline">U(1)</span> Example</a>
@@ -667,9 +671,9 @@ Warning
 <span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
 </td>
 </tr>
-<tr data-index="9" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1694006847669" data-listing-date-modified-sort="NaN" data-listing-filename-sort="l2hmc-4DSU3.qmd">
+<tr data-index="9" data-listing-date-sort="1697691600000" data-listing-file-modified-sort="1694006847669" data-listing-date-modified-sort="NaN" data-listing-filename-sort="l2hmc-4DSU3.qmd">
 <td>
-<span class="listing-date">Oct 4, 2023</span>
+<span class="listing-date">Oct 19, 2023</span>
 </td>
 <td>
 <span class="listing-title">undefined</span>
@@ -678,9 +682,9 @@ Warning
 <span class="listing-author">Sam Foreman <a href="https://orcid.org/0000-0002-9981-0876"><span class="orcid-green"><i class="ai  ai-orcid"></i></span></a></span>
 </td>
 </tr>
-<tr data-index="10" data-listing-date-sort="1696395600000" data-listing-file-modified-sort="1696424809974" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="8" data-listing-title-sort="4D $SU(3)$ Model" data-listing-filename-sort="l2hmc-4DSU3.qmd">
+<tr data-index="10" data-listing-date-sort="1697691600000" data-listing-file-modified-sort="1696424809974" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="8" data-listing-title-sort="4D $SU(3)$ Model" data-listing-filename-sort="l2hmc-4DSU3.qmd">
 <td>
-<span class="listing-date">Oct 4, 2023</span>
+<span class="listing-date">Oct 19, 2023</span>
 </td>
 <td>
 <a href="./qmd/l2hmc-4DSU3.html" class="title listing-title">4D <span class="math inline">SU(3)</span> Model</a>

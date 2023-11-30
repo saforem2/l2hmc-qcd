@@ -18,9 +18,8 @@ from typing import Generator
 import logging
 from enrich.style import STYLES
 from enrich.console import Console
-from enrich.logging import RichHandler
+from enrich.handler import RichHandler
 from omegaconf import DictConfig, OmegaConf
-import pandas as pd
 import pandas as pd
 import rich
 from rich import print
@@ -39,7 +38,6 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 import rich.syntax
-from rich.table import Table
 from rich.table import Table
 import rich.tree
 

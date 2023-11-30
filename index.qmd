@@ -1,10 +1,5 @@
 ---
 callout-appearance: simple
-# format:
-#    html:
-#       toc: true
-#       grid:
-#          body-width: 1150px
 title-block-banner: false
 sidebar: false
 editor:
@@ -38,16 +33,6 @@ listing:
       - "qmd/slides.qmd"
       - "qmd/l2hmc-2DU1.qmd"
       - "qmd/l2hmc-4DSU3.qmd"
-    # contents:
-    #   - "!../l2hmc-qcd/qmd/old/*.qmd"
-    #   # - "../l2hmc-qcd/qmd/**/*.qmd"
-    #   # - "../l2hmc-qcd/qmd/**/*.qmd"
-    #   - "qmd/posts.qmd"
-    #   - "qmd/diffusion/diffusion.qmd"
-    #   - "diffusion-alt/diffusion.qmd"
-    #   - "qmd/slides.qmd"
-    #   - "qmd/l2hmc-2DU1.qmd"
-    #   - "qmd/l2hmc-4DSU3.qmd"
     type: table
     sort: "date desc"
 format:
@@ -99,62 +84,49 @@ format:
     output-file: "l2hmc.md"
 ---
 
-:::: {.columns style="display: flex; align-items: flex-start;"}
+# [[![](https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg)](https://saforem2.github.io/l2hmc-qcd)]{align="left" display="inline" width="20%" style="vertical-align:middle; line-height: 3.0em;"}
 
-::: {.column width="60%"}
+::: {.flex}
 
-::: {style="text-align:center;"}
-
-![](https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg)
-
-<a href="https://hits.seeyoufarm.com"><img alt="hits" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fsaforem2%2Fl2hmc-qcd&count_bg=%2300CCFF&title_bg=%23555555&icon=&icon_color=%23111111&title=👋&edge_flat=false"></a>  
-<a href="https://github.com/saforem2/l2hmc-qcd/"><img alt="l2hmc-qcd" src="https://img.shields.io/badge/-l2hmc--qcd-252525?style=flat&logo=github&labelColor=gray"></a> <a href="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd"><img alt="codefactor" src="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge"></a>
-<br>
-<a href="https://arxiv.org/abs/2112.01582"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg"></a> <a href="https://arxiv.org/abs/2105.03418"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg"></a>
-<br>
 <a href="https://hydra.cc"><img alt="hydra" src="https://img.shields.io/badge/Config-Hydra-89b8cd"></a> <a href="https://pytorch.org/get-started/locally/"><img alt="pyTorch" src="https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&logoColor=white"></a> <a href="https://www.tensorflow.org"><img alt="tensorflow" src="https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white"></a>
-<br>
+
+<a href="https://hits.seeyoufarm.com"><img alt="hits" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fsaforem2%2Fl2hmc-qcd&count_bg=%2300CCFF&title_bg=%23555555&icon=&icon_color=%23111111&title=👋&edge_flat=false"></a> 
+<a href="https://github.com/saforem2/l2hmc-qcd/"><img alt="l2hmc-qcd" src="https://img.shields.io/badge/-l2hmc--qcd-252525?style=flat&logo=github&labelColor=gray"></a> 
 [<img src="https://raw.githubusercontent.com/wandb/assets/main/wandb-github-badge-28.svg" alt="Weights & Biases monitoring" height=20>](https://wandb.ai/l2hmc-qcd/l2hmc-qcd)
 
-:::
+<a href="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd"><img alt="codefactor" src="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge"></a>
+<a href="https://arxiv.org/abs/2112.01582"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg"></a> 
+<a href="https://arxiv.org/abs/2105.03418"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg"></a>
 
-:::
-
-::: {.column width="40%"}
-
-::: {.callout-tip collapse="false" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="[{{< fa solid list-ol >}} Contents]{.dim-text}"}
-
-<!-- <details closed><summary><b>Contents</b></summary> -->
-
-- [Overview](#overview)
-  * [Papers 📚, Slides 📊, etc.](https://github.com/saforem2/l2hmc-qcd/#training--experimenting)
-  * [Background](#background)
-- [Installation](#installation)
-- [Training](#training)
-  - [Configuration Management](#configuration-management)
-  - [Running @ ALCF](#running-at-ALCF) 
-- [Details](#details)
-  * [Organization](#organization)
-    + [Dynamics / Network](#dynamics---network)
-      - [Network Architecture](#network-architecture)
-
-<!-- </details> -->
 
 :::
 
-:::
 
-::::
+<!-- ::: {.callout-tip collapse="false" icon="false" style="width:40%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="[{{< fa solid list-ol >}} Contents]{.dim-text}"} -->
+<!---->
+<!-- - [Overview](#overview) -->
+<!--   * [Papers 📚, Slides 📊, etc.](https://github.com/saforem2/l2hmc-qcd/#training--experimenting) -->
+<!--   * [Background](#background) -->
+<!-- - [Installation](#installation) -->
+<!-- - [Training](#training) -->
+<!--   - [Configuration Management](#configuration-management) -->
+<!--   - [Running @ ALCF](#running-at-ALCF)  -->
+<!-- - [Details](#details) -->
+<!--   * [Organization](#organization) -->
+<!--       - [Lattice Dynamics](#lattice-dynamics) -->
+<!--       - [Network Architecture](#network-architecture) -->
+<!---->
+<!-- ::: -->
+<!---->
+<!-- ::: -->
 
-# Overview
+::: {.callout-tip collapse="false" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="[{{< fa solid list-ol >}} Papers 📚, Slides 📊 etc.]{.dim-text}"}
 
-
-## Papers 📚, Slides 📊 etc.
 - [📊 Slides (07/31/2023 @ Lattice 2023)](https://saforem2.github.io/lattice23/#/title-slide)
 - [📕 Notebooks / Reports](./reports/):
   - [📓 2D $U(1)$ Example](./qmd/l2hmc-2DU1.qmd)
-    - [📙 2D U(1) Model (w/ `fp16` or `fp32` for training)](./reports/l2hmc-2DU1.md)
-    - [📒 4D SU(3) Model (w/ `complex128` + `fp64` for training)](./src/l2hmc/notebooks/l2hmc-2dU1.ipynb)
+    - [📙 2D U(1) Model (w/ `fp16` or `fp32` for training)](./qmd/l2hmc-2DU1.qmd)
+    - [📒 4D SU(3) Model (w/ `complex128` + `fp64` for training)](./qmd/l2hmc-4DSU3.qmd)
       - [alt link (if github won't load)](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/pytorch-SU3d4.ipynb)
 
 - 📝 Papers:
@@ -164,6 +136,16 @@ format:
     - [Deep Learning Hamiltonian Monte Carlo](https://arxiv.org/abs/2105.03418) @ [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) **ICLR 2021**
         - 📚 : [arXiv:2105.03418](https://arxiv.org/abs/2105.03418)  
         - 📊 : [poster](https://www.bit.ly/l2hmc_poster)
+
+::: {.callout title="[{{< fa solid person-chalkboard size=fa-lg >}}]{.dim-text} $\hspace{2pt}$ [[**MLMC: Machine Learning Monte Carlo**](https://saforem2.github.io/lattice23) @ [Lattice 2023](https://indico.fnal.gov/event/57249/contributions/271305/) (07/2023)]{.dim-text}" collapse="true" style="width:100%;"}
+
+<iframe src="https://saforem2.github.io/lattice23/#/section" title="MLMC: Machine Learning Monte Carlo" width="100%" align="center" height="512" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen style="border-radius:0.25rem;border:none;align:center;">
+    <p>Your browser does not support iframes.</p>
+  </iframe>
+
+:::
+
+:::
 
 
 ## Background
@@ -189,7 +171,7 @@ Broadly, given an *analytically* described target distribution, π(x), L2HMC pro
 - Is able to efficiently mix between energy levels.
 - Is capable of traversing low-density zones to mix between modes (often difficult for generic HMC).
 
-# Installation
+## Installation
 
 ::: {.callout-warning title="Warning" collapse="false" style="width:100%!important;"}
 
@@ -245,9 +227,11 @@ python3 -c 'import l2hmc ; print(l2hmc.__file__)'
 # output: /path/to/l2hmc-qcd/src/l2hmc/__init__.py
 ```
 
-# Running the Code
+## Running the Code
 
-## Configuring your `Experiment`
+<!-- ## Configuring your `Experiment` -->
+
+### `Experiment` configuration with [Hydra](https://hydra.cc) <img src="https://hydra.cc/img/logo.svg" width="10%" display="inline" style="vertical-align:middle;line-height:3.0em;" align="left" >
 
 This project uses [`hydra`](https://hydra.cc) for configuration management and
 supports distributed training for both PyTorch and TensorFlow.

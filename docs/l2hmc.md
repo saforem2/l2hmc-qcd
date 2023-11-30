@@ -1,90 +1,89 @@
-Sam Foreman
 
-<div class="columns" style="display: flex; align-items: flex-start;">
+# <span align="left" display="inline" width="20%" style="vertical-align:middle; line-height: 3.0em;">[![](https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg)](https://saforem2.github.io/l2hmc-qcd)</span>
 
-<div class="column" width="60%">
+<div class="flex">
 
-<div style="text-align:center;">
-
-![](https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg)
-
-<a href="https://hits.seeyoufarm.com"><img alt="hits" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fsaforem2%2Fl2hmc-qcd&count_bg=%2300CCFF&title_bg=%23555555&icon=&icon_color=%23111111&title=👋&edge_flat=false"></a>  
-<a href="https://github.com/saforem2/l2hmc-qcd/"><img alt="l2hmc-qcd" src="https://img.shields.io/badge/-l2hmc--qcd-252525?style=flat&logo=github&labelColor=gray"></a>
-<a href="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd"><img alt="codefactor" src="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge"></a>
-<br>
-<a href="https://arxiv.org/abs/2112.01582"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg"></a>
-<a href="https://arxiv.org/abs/2105.03418"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg"></a>
-<br>
 <a href="https://hydra.cc"><img alt="hydra" src="https://img.shields.io/badge/Config-Hydra-89b8cd"></a>
 <a href="https://pytorch.org/get-started/locally/"><img alt="pyTorch" src="https://img.shields.io/badge/PyTorch-ee4c2c?logo=pytorch&logoColor=white"></a>
 <a href="https://www.tensorflow.org"><img alt="tensorflow" src="https://img.shields.io/badge/TensorFlow-%23FF6F00.svg?&logo=TensorFlow&logoColor=white"></a>
-<br>
+
+<a href="https://hits.seeyoufarm.com"><img alt="hits" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fsaforem2%2Fl2hmc-qcd&count_bg=%2300CCFF&title_bg=%23555555&icon=&icon_color=%23111111&title=👋&edge_flat=false"></a>
+<a href="https://github.com/saforem2/l2hmc-qcd/"><img alt="l2hmc-qcd" src="https://img.shields.io/badge/-l2hmc--qcd-252525?style=flat&logo=github&labelColor=gray"></a>
 [<img src="https://raw.githubusercontent.com/wandb/assets/main/wandb-github-badge-28.svg" alt="Weights & Biases monitoring" height=20>](https://wandb.ai/l2hmc-qcd/l2hmc-qcd)
 
-</div>
+<a href="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd"><img alt="codefactor" src="https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge"></a>
+<a href="https://arxiv.org/abs/2112.01582"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg"></a>
+<a href="https://arxiv.org/abs/2105.03418"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg"></a>
 
 </div>
 
-<div class="column" width="40%">
+<!-- ::: {.callout-tip collapse="false" icon="false" style="width:40%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="[ Contents]{.dim-text}"} -->
+<!---->
+<!-- - [Overview](#overview) -->
+<!--   * [Papers 📚, Slides 📊, etc.](https://github.com/saforem2/l2hmc-qcd/#training--experimenting) -->
+<!--   * [Background](#background) -->
+<!-- - [Installation](#installation) -->
+<!-- - [Training](#training) -->
+<!--   - [Configuration Management](#configuration-management) -->
+<!--   - [Running @ ALCF](#running-at-ALCF)  -->
+<!-- - [Details](#details) -->
+<!--   * [Organization](#organization) -->
+<!--       - [Lattice Dynamics](#lattice-dynamics) -->
+<!--       - [Network Architecture](#network-architecture) -->
+<!---->
+<!-- ::: -->
+<!---->
+<!-- ::: -->
 
 <div>
 
-> **<span class="dim-text"> Contents</span>**
+> **<span class="dim-text"> Papers 📚, Slides 📊 etc.</span>**
 >
-> <!-- <details closed><summary><b>Contents</b></summary> -->
+> - [📊 Slides (07/31/2023 @ Lattice
+>   2023)](https://saforem2.github.io/lattice23/#/title-slide)
+> - [📕 Notebooks / Reports](./reports/):
+>   - [📓 2D $U(1)$ Example](./qmd/l2hmc-2DU1.qmd)
+>     - [📙 2D U(1) Model (w/ `fp16` or `fp32` for
+>       training)](./qmd/l2hmc-2DU1.qmd)
+>     - [📒 4D SU(3) Model (w/ `complex128` + `fp64` for
+>       training)](./qmd/l2hmc-4DSU3.qmd)
+>       - [alt link (if github won’t
+>         load)](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/pytorch-SU3d4.ipynb)
+> - 📝 Papers:
+>   - [LeapfrogLayers: A Trainable Framework for Effective Topological
+>     Sampling](https://arxiv.org/abs/2112.01582), 2022  
+>   - [Accelerated Sampling Techniques for Lattice Gauge
+>     Theory](https://saforem2.github.io/l2hmc-dwq25/#/) @ [BNL & RBRC:
+>     DWQ @ 25](https://indico.bnl.gov/event/13576/) (12/2021)
+>   - [Training Topological Samplers for Lattice Gauge
+>     Theory](https://bit.ly/l2hmc-ect2021) from the [*ML for HEP, on
+>     and off the Lattice*](https://indico.ectstar.eu/event/77/) @
+>     $\mathrm{ECT}^{*}$ Trento (09/2021) (+ 📊
+>     [slides](https://www.bit.ly/l2hmc-ect2021))
+>   - [Deep Learning Hamiltonian Monte
+>     Carlo](https://arxiv.org/abs/2105.03418) @ [Deep Learning for
+>     Simulation (SimDL) Workshop](https://simdl.github.io/overview/)
+>     **ICLR 2021**
+>     - 📚 : [arXiv:2105.03418](https://arxiv.org/abs/2105.03418)  
+>     - 📊 : [poster](https://www.bit.ly/l2hmc_poster)
 >
-> - [Overview](#overview)
->   - [Papers 📚, Slides 📊,
->     etc.](https://github.com/saforem2/l2hmc-qcd/#training--experimenting)
->   - [Background](#background)
-> - [Installation](#installation)
-> - [Training](#training)
->   - [Configuration Management](#configuration-management)
->   - [Running @ ALCF](#running-at-ALCF)
-> - [Details](#details)
->   - [Organization](#organization)
->     - [Dynamics / Network](#dynamics---network)
->       - [Network Architecture](#network-architecture)
+> <div>
 >
-> <!-- </details> -->
+> > **<span class="dim-text"></span> $\hspace{2pt}$
+> > <span class="dim-text">[**MLMC: Machine Learning Monte
+> > Carlo**](https://saforem2.github.io/lattice23) @ [Lattice
+> > 2023](https://indico.fnal.gov/event/57249/contributions/271305/)
+> > (07/2023)</span>**
+> >
+> > <iframe src="https://saforem2.github.io/lattice23/#/section" title="MLMC: Machine Learning Monte Carlo" width="100%" align="center" height="512" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen style="border-radius:0.25rem;border:none;align:center;">
+> > <p>
+> > Your browser does not support iframes.
+> > </p>
+> > </iframe>
+>
+> </div>
 
 </div>
-
-</div>
-
-</div>
-
-# Overview
-
-## Papers 📚, Slides 📊 etc.
-
-- [📊 Slides (07/31/2023 @ Lattice
-  2023)](https://saforem2.github.io/lattice23/#/title-slide)
-- [📕 Notebooks / Reports](./reports/):
-  - [📓 2D $U(1)$ Example](./qmd/l2hmc-2DU1.qmd)
-    - [📙 2D U(1) Model (w/ `fp16` or `fp32` for
-      training)](./reports/l2hmc-2DU1.md)
-    - [📒 4D SU(3) Model (w/ `complex128` + `fp64` for
-      training)](./src/l2hmc/notebooks/l2hmc-2dU1.ipynb)
-      - [alt link (if github won’t
-        load)](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/pytorch-SU3d4.ipynb)
-- 📝 Papers:
-  - [LeapfrogLayers: A Trainable Framework for Effective Topological
-    Sampling](https://arxiv.org/abs/2112.01582), 2022  
-  - [Accelerated Sampling Techniques for Lattice Gauge
-    Theory](https://saforem2.github.io/l2hmc-dwq25/#/) @ [BNL & RBRC:
-    DWQ @ 25](https://indico.bnl.gov/event/13576/) (12/2021)
-  - [Training Topological Samplers for Lattice Gauge
-    Theory](https://bit.ly/l2hmc-ect2021) from the [*ML for HEP, on and
-    off the Lattice*](https://indico.ectstar.eu/event/77/) @
-    $\mathrm{ECT}^{*}$ Trento (09/2021) (+ 📊
-    [slides](https://www.bit.ly/l2hmc-ect2021))
-  - [Deep Learning Hamiltonian Monte
-    Carlo](https://arxiv.org/abs/2105.03418) @ [Deep Learning for
-    Simulation (SimDL) Workshop](https://simdl.github.io/overview/)
-    **ICLR 2021**
-    - 📚 : [arXiv:2105.03418](https://arxiv.org/abs/2105.03418)  
-    - 📊 : [poster](https://www.bit.ly/l2hmc_poster)
 
 ## Background
 
@@ -115,7 +114,7 @@ L2HMC provides a *statistically exact* sampler that:
 - Is capable of traversing low-density zones to mix between modes (often
   difficult for generic HMC).
 
-# Installation
+## Installation
 
 <div>
 
@@ -127,15 +126,18 @@ L2HMC provides a *statistically exact* sampler that:
 
 </div>
 
+<details open>
+<summary>
+<b>From source (RECOMMENDED)</b>
+</summary>
 
-    <details open><summary><b>From source (RECOMMENDED)</b></summary>
-
-    ```bash
-    git clone https://github.com/saforem2/l2hmc-qcd
-    cd l2hmc-qcd
-    # for development addons:
-    # python3 -m pip install -e ".[dev]"
-    python3 -m pip install -e .
+``` bash
+git clone https://github.com/saforem2/l2hmc-qcd
+cd l2hmc-qcd
+# for development addons:
+# python3 -m pip install -e ".[dev]"
+python3 -m pip install -e .
+```
 
 <details closed>
 <summary>
@@ -158,9 +160,11 @@ python3 -c 'import l2hmc ; print(l2hmc.__file__)'
 # output: /path/to/l2hmc-qcd/src/l2hmc/__init__.py
 ```
 
-# Running the Code
+## Running the Code
 
-## Configuring your `Experiment`
+<!-- ## Configuring your `Experiment` -->
+
+### `Experiment` configuration with [Hydra](https://hydra.cc) <img src="https://hydra.cc/img/logo.svg" width="10%" display="inline" style="vertical-align:middle;line-height:3.0em;" align="left" >
 
 This project uses [`hydra`](https://hydra.cc) for configuration
 management and supports distributed training for both PyTorch and
@@ -388,11 +392,8 @@ work along with the original paper:
 <a href="https://hits.seeyoufarm.com"><img align="center" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fsaforem2.github.io/l2hmc-qcd/&count_bg=%2300CCFF&title_bg=%23303030&icon=&icon_color=%23E7E7E7&title=hits&edge_flat=false"/></a>
 </p>
 
-[^1]: A good way to do this is on top of a `conda` environment, e.g.
-    \`\`\`bash conda activate base; \# with either {pytorch, tensorflow}
-    mkdir venv python3 -m venv venv –system-site-packages source
-    venv/bin/activate \# for development addons: \# python3 -m pip
-    install -e “.\[dev\]” python3 -m pip install -e .
+[^1]: A good way to do this is on top of a `conda` environment, e.g.:  
+    `bash   conda activate base;  # with either {pytorch, tensorflow}   mkdir venv   python3 -m venv venv --system-site-packages   source venv/bin/activate   # for development addons:   # python3 -m pip install -e ".[dev]"   python3 -m pip install -e .`
 
 [^2]: Note that throughout the code, we refer to the link variables as
     `x` and the conjugate momenta as `v`.
