@@ -1,21 +1,29 @@
+"""
+train4dSU3.py
+"""
+from __future__ import absolute_import, annotations, division, print_function
 import os
+import time
 from pathlib import Path
 from typing import Optional
+import yaml
 
 import lovely_tensors as lt
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import yaml
 import logging
+import opinionated
 
 import l2hmc.group.su3.pytorch.group as g
 # from l2hmc import get_logger
-from l2hmc.common import grab_tensor, print_dict
+from l2hmc.configs import CONF_DIR
+from l2hmc.common import grab_tensor
 from l2hmc.configs import dict_to_list_of_overrides, get_experiment
-from l2hmc.experiment.pytorch.experiment import Experiment, evaluate  # noqa  # noqa
+from l2hmc.experiment.pytorch.experiment import Experiment  # , evaluate  # noqa  # noqa
 from l2hmc.utils.dist import setup_torch
-from l2hmc.utils.plot_helpers import set_plot_style
+# from l2hmc.utils.plot_helpers import set_plot_style
+from l2hmc.utils.history import BaseHistory, summarize_dict
 
 lt.monkey_patch()
 
@@ -26,14 +34,22 @@ os.environ['MASTER_PORT'] = '5433'
 # plt.switch_backend('module://matplotlib-backend-kitty')
 
 # log = get_logger(__name__)
-log = logging.getLogger(__Name__)
+
+RLOG_YAML = CONF_DIR / 'hydra' / 'job_logging' / 'rich.yaml'
+with RLOG_YAML.open('r') as stream:
+    LOGCONF = dict(yaml.safe_load(stream))
+
+logging.config.dictConfig(LOGCONF)
+log = logging.getLogger(__name__)
+log.setLevel('DEBUG')
 
 _ = setup_torch(precision='float64', backend='DDP', seed=4351)
 
-set_plot_style()
+plt.style.use(opinionated.STYLES['opinionated_min'])
+# set_plot_style()
 
 from l2hmc.utils.plot_helpers import (  # noqa
-    set_plot_style,
+    # set_plot_style,
     plot_scalar,
     plot_chains,
     plot_leapfrogs
@@ -89,9 +105,80 @@ def plot_metric(
     raise ValueError
 
 
-def main():
-    from l2hmc.experiment.pytorch.experiment import train_step
-    set_plot_style()
+def HMC(
+        experiment: Experiment,
+        nsteps: Optional[int] = None,
+        beta: Optional[float] = None,
+        x: Optional[torch.Tensor] = None,
+        eps: Optional[float] = None,
+        nleapfrog: Optional[int] = None,
+        nlog: Optional[int] = 1,
+        nprint: Optional[int] = 1,
+) -> tuple[torch.Tensor, BaseHistory]:
+    """Run HMC on `experiment`"""
+    history_hmc = BaseHistory()
+    # x = state.x
+    for step in range(nsteps):
+        # log.info(f'HMC STEP: {step}')
+        tic = time.perf_counter()
+        x, metrics_ = experiment.trainer.hmc_step(
+            (x, beta),
+            eps=eps,
+            nleapfrog=nleapfrog
+        )
+        toc = time.perf_counter()
+        metrics = {
+            'hmc_step': step,
+            'dt': toc - tic,
+            **metrics_,
+        }
+        if step % nlog == 0 or step % nprint == 0:
+            avgs = history_hmc.update(metrics)
+            if step % nprint == 0:
+                summary = summarize_dict(avgs)
+                log.info(summary)
+    xhmc = experiment.trainer.dynamics.unflatten(x)
+    log.info(f"checkSU(x_hmc): {g.checkSU(xhmc)}")
+    history_hmc.plot_all()
+    return (xhmc, history_hmc)
+
+
+def eval(
+        experiment: Experiment,
+        nsteps: Optional[int] = None,
+        beta: Optional[float] = None,
+        x: Optional[torch.Tensor] = None,
+        nlog: Optional[int] = 1,
+        nprint: Optional[int] = 2,
+        grab: Optional[bool] = False,
+) -> tuple[torch.Tensor, BaseHistory]:
+    """Run eval on `experiment`"""
+    history_eval = BaseHistory()
+    for step in range(nsteps):
+        tic = time.perf_counter()
+        x, metrics_ = experiment.trainer.eval_step((x, beta))
+        toc = time.perf_counter()
+        metrics = {
+            'eval_step': step,
+            'dt': toc - tic,
+            **metrics_,
+        }
+        if step % nlog == 0 or step % nprint == 0:
+            avgs = history_eval.update(metrics)
+            if step % nprint == 0:
+                summary = summarize_dict(avgs)
+                log.info(summary)
+    xeval = experiment.trainer.dynamics.unflatten(x)
+    log.info(f"checkSU(x_hmc): {g.checkSU(xeval)}")
+    history_eval.plot_all()
+    return (xeval, history_eval)
+
+
+def main() -> tuple[torch.Tensor, dict[str, BaseHistory]]:
+    # from l2hmc.experiment.pytorch.experiment import train_step
+    # set_plot_style()
+    import opinionated
+    plt.style.use(opinionated.STYLES['opinionated_min'])
 
     su3conf = Path('./conf/su3-min.yaml')
     with su3conf.open('r') as stream:
@@ -104,21 +191,21 @@ def main():
     assert isinstance(state.x, torch.Tensor)
     assert isinstance(state.beta, torch.Tensor)
     assert isinstance(ptExpSU3, Experiment)
-    xhmc, history_hmc = evaluate(
+    xhmc, history_hmc = HMC(
         nsteps=10,
-        exp=ptExpSU3,
+        experiment=ptExpSU3,
         beta=state.beta,
         x=state.x,
         eps=0.1,
         nleapfrog=1,
-        job_type='hmc',
         nlog=1,
         nprint=2,
-        grab=True
     )
+    assert isinstance(history_hmc, BaseHistory)
     xhmc = ptExpSU3.trainer.dynamics.unflatten(xhmc)
     log.info(f"checkSU(x_hmc): {g.checkSU(xhmc)}")
-    plot_metrics(history_hmc, title='HMC', marker='.')
+    history_hmc.plot_all()
+    # plot_metrics(history_hmc, title='HMC', marker='.')
     # ptExpSU3.trainer.dynamics.init_weights(
     #     method='uniform',
     #     min=-1e-16,
@@ -127,37 +214,63 @@ def main():
     #     # xeps=0.001,
     #     # veps=0.001,
     # )
-    xeval, history_eval = evaluate(
+    xeval, history_eval = eval(
         nsteps=10,
-        exp=ptExpSU3,
+        experiment=ptExpSU3,
         beta=6.0,
         x=state.x,
-        job_type='eval',
         nlog=1,
-        nprint=2,
-        grab=True,
+        nprint=1,
     )
     xeval = ptExpSU3.trainer.dynamics.unflatten(xeval)
+    history_eval.plot_all()
     log.info(f"checkSU(x_eval): {g.checkSU(xeval)}")
-    plot_metrics(history_eval, title='Evaluate', marker='.')
+    # plot_metrics(history_eval, title='Evaluate', marker='.')
 
-    history = {}
+    history_train = BaseHistory()
     x = state.x
-    for step in range(20):
-        log.info(f'TRAIN STEP: {step}')
-        x, metrics = ptExpSU3.trainer.train_step((x, state.beta))
-        if (step > 0 and step % 2 == 0):
-            print_dict(metrics, grab=True)
-        if (step > 0 and step % 1 == 0):
-            for key, val in metrics.items():
-                try:
-                    history[key].append(val)
-                except KeyError:
-                    history[key] = [val]
+    for step in range(50):
+        # log.info(f'HMC STEP: {step}')
+        tic = time.perf_counter()
+        x, metrics_ = ptExpSU3.trainer.train_step(
+            (x, state.beta)
+        )
+        toc = time.perf_counter()
+        metrics = {
+            'train_step': step,
+            'dt': toc - tic,
+            **metrics_,
+        }
+        avgs = history_train.update(metrics)
+        summary = summarize_dict(avgs)
+        log.info(summary)
 
-    x = ptExpSU3.trainer.dynamics.unflatten(x)
-    log.info(f"checkSU(x_train): {g.checkSU(x)}")
-    plot_metrics(history, title='train', marker='.')
+    history_train.plot_all()
+    # histories = {
+    #     'train': history_train,
+    #     'eval': history_eval,
+    #     'hmc': history_hmc,
+    # }
+
+    # history = BaseHistory()
+    # x = state.x
+    # for step in range(20):
+    #     # log.info(f'TRAIN STEP: {step}')
+    #     tic = time.perf_counter()
+    #     x, metrics = ptExpSU3.trainer.train_step((x, state.beta))
+    #     toc = time.perf_counter()
+    #     if (step > 0 and step % 2 == 0):
+    #         print_dict(metrics, grab=True)
+    #     if (step > 0 and step % 1 == 0):
+    #         for key, val in metrics.items():
+    #             try:
+    #                 history[key].append(val)
+    #             except KeyError:
+    #                 history[key] = [val]
+    #
+    # x = ptExpSU3.trainer.dynamics.unflatten(x)
+    # log.info(f"checkSU(x_train): {g.checkSU(x)}")
+    # plot_metrics(history, title='train', marker='.')
     #
     # for step in range(20):
     #     log.info(f"train step: {step}")
@@ -165,8 +278,15 @@ def main():
     #     if step % 5 == 0:
     #         print_dict(metrics, grab=True)
 
-    return x, history
+    return (
+        x,
+        {
+            'train': history_train,
+            'eval': history_eval,
+            'hmc': history_hmc,
+        }
+    )
 
 
 if __name__ == '__main__':
-    main()
+    _ = main()
