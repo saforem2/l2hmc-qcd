@@ -2,28 +2,26 @@
 train4dSU3.py
 """
 from __future__ import absolute_import, annotations, division, print_function
+import json
+import logging
 import os
-import time
 from pathlib import Path
+import time
 from typing import Optional
-import yaml
 
 import lovely_tensors as lt
 import matplotlib.pyplot as plt
-import numpy as np
-import torch
-import logging
 import opinionated
+import torch
+import yaml
 
-import l2hmc.group.su3.pytorch.group as g
-# from l2hmc import get_logger
-from l2hmc.configs import CONF_DIR
-from l2hmc.common import grab_tensor
+from l2hmc.configs import CONF_DIR, OUTPUTS_DIR
 from l2hmc.configs import dict_to_list_of_overrides, get_experiment
-from l2hmc.experiment.pytorch.experiment import Experiment  # , evaluate  # noqa  # noqa
+from l2hmc.experiment.pytorch.experiment import Experiment
+import l2hmc.group.su3.pytorch.group as g
 from l2hmc.utils.dist import setup_torch
-# from l2hmc.utils.plot_helpers import set_plot_style
 from l2hmc.utils.history import BaseHistory, summarize_dict
+from l2hmc.utils.plot_helpers import get_timestamp
 
 lt.monkey_patch()
 
@@ -43,17 +41,32 @@ logging.config.dictConfig(LOGCONF)
 log = logging.getLogger(__name__)
 log.setLevel('DEBUG')
 
+DAY = get_timestamp('%Y-%m-%d')
+TIME = get_timestamp('%H-%M-%S')
+OUTDIR = OUTPUTS_DIR / "train4dSU3" / f"{DAY}" / f"{TIME}"
+OUTDIR.mkdir(exist_ok=True, parents=True)
+
+HMC_DIR = OUTDIR / "hmc"
+EVAL_DIR = OUTDIR / "eval"
+TRAIN_DIR = OUTDIR / "train"
+
+HMC_DIR.mkdir(exist_ok=True, parents=True)
+EVAL_DIR.mkdir(exist_ok=True, parents=True)
+TRAIN_DIR.mkdir(exist_ok=True, parents=True)
+
+log.critical(f"{OUTDIR=}")
+
 _ = setup_torch(precision='float64', backend='DDP', seed=4351)
 
 plt.style.use(opinionated.STYLES['opinionated_min'])
 # set_plot_style()
 
-from l2hmc.utils.plot_helpers import (  # noqa
-    # set_plot_style,
-    plot_scalar,
-    plot_chains,
-    plot_leapfrogs
-)
+# from l2hmc.utils.plot_helpers import (  # noqa
+#     # set_plot_style,
+#     # plot_scalar,
+#     # plot_chains,
+#     # plot_leapfrogs
+# )
 
 
 def savefig(fig: plt.Figure, fname: str, outdir: os.PathLike):
@@ -65,59 +78,62 @@ def savefig(fig: plt.Figure, fname: str, outdir: os.PathLike):
     fig.savefig(pngfile, transparent=True, bbox_inches='tight', dpi=300)
 
 
-def plot_metrics(metrics: dict, title: Optional[str] = None, **kwargs):
-    from l2hmc.utils.rich import is_interactive
-    outdir = Path(f"./plots-4dSU3/{title}")
-    outdir.mkdir(exist_ok=True, parents=True)
-    for key, val in metrics.items():
-        fig, ax = plot_metric(val, name=key, **kwargs)
-        if title is not None:
-            ax.set_title(title)
-        log.info(f"Saving {key} to {outdir}")
-        savefig(fig, f"{key}", outdir=outdir)
-        # fpath = outdir.joinpath(f"{key}")
-        # plt.savefig(f"{fpath}.svg", bbox_inches='tight')
-        # plt.savefig(f"{fpath}.png", bbox_inches='tight', dpi=300)
-        # log.info(f"Saving {title} {key} plot to {fpath}")
-        if not is_interactive():
-            plt.show()
+# def plot_metrics(metrics: dict, title: Optional[str] = None, **kwargs):
+#     from l2hmc.utils.rich import is_interactive
+#     outdir = Path(f"./plots-4dSU3/{title}")
+#     outdir.mkdir(exist_ok=True, parents=True)
+#     for key, val in metrics.items():
+#         fig, ax = plot_metric(val, name=key, **kwargs)
+#         if title is not None:
+#             ax.set_title(title)
+#         log.info(f"Saving {key} to {outdir}")
+#         savefig(fig, f"{key}", outdir=outdir)
+#         # fpath = outdir.joinpath(f"{key}")
+#         # plt.savefig(f"{fpath}.svg", bbox_inches='tight')
+#         # plt.savefig(f"{fpath}.png", bbox_inches='tight', dpi=300)
+#         # log.info(f"Saving {title} {key} plot to {fpath}")
+#         if not is_interactive():
+#             plt.show()
 
 
-def plot_metric(
-        metric: torch.Tensor,
-        name: Optional[str] = None,
-        **kwargs,
-):
-    assert len(metric) > 0
-    if isinstance(metric[0], (int, float, bool, np.floating)):
-        y = np.stack(metric)
-        return plot_scalar(y, ylabel=name, **kwargs)
-    element_shape = metric[0].shape
-    if len(element_shape) == 2:
-        y = grab_tensor(torch.stack(metric))
-        return plot_leapfrogs(y, ylabel=name)
-    if len(element_shape) == 1:
-        y = grab_tensor(torch.stack(metric))
-        return plot_chains(y, ylabel=name, **kwargs)
-    if len(element_shape) == 0:
-        y = grab_tensor(torch.stack(metric))
-        return plot_scalar(y, ylabel=name, **kwargs)
-    raise ValueError
+# def plot_metric(
+#         metric: torch.Tensor,
+#         name: Optional[str] = None,
+#         **kwargs,
+# ):
+#     assert len(metric) > 0
+#     if isinstance(metric[0], (int, float, bool, np.floating)):
+#         y = np.stack(metric)
+#         return plot_scalar(y, ylabel=name, **kwargs)
+#     element_shape = metric[0].shape
+#     if len(element_shape) == 2:
+#         y = grab_tensor(torch.stack(metric))
+#         return plot_leapfrogs(y, ylabel=name)
+#     if len(element_shape) == 1:
+#         y = grab_tensor(torch.stack(metric))
+#         return plot_chains(y, ylabel=name, **kwargs)
+#     if len(element_shape) == 0:
+#         y = grab_tensor(torch.stack(metric))
+#         return plot_scalar(y, ylabel=name, **kwargs)
+#     raise ValueError
 
 
 def HMC(
         experiment: Experiment,
-        nsteps: Optional[int] = None,
-        beta: Optional[float] = None,
+        nsteps: int = 10,
+        beta: float = 1.0,
+        nlog: int = 1,
+        nprint: int = 1,
         x: Optional[torch.Tensor] = None,
         eps: Optional[float] = None,
         nleapfrog: Optional[int] = None,
-        nlog: Optional[int] = 1,
-        nprint: Optional[int] = 1,
 ) -> tuple[torch.Tensor, BaseHistory]:
     """Run HMC on `experiment`"""
     history_hmc = BaseHistory()
     # x = state.x
+    if x is None:
+        state = experiment.trainer.dynamics.random_state(beta=beta)
+        x = state.x
     for step in range(nsteps):
         # log.info(f'HMC STEP: {step}')
         tic = time.perf_counter()
@@ -139,21 +155,24 @@ def HMC(
                 log.info(summary)
     xhmc = experiment.trainer.dynamics.unflatten(x)
     log.info(f"checkSU(x_hmc): {g.checkSU(xhmc)}")
-    history_hmc.plot_all()
+    history_hmc.plot_all(outdir=HMC_DIR)
     return (xhmc, history_hmc)
 
 
 def eval(
         experiment: Experiment,
-        nsteps: Optional[int] = None,
-        beta: Optional[float] = None,
+        nsteps: int = 10,
+        beta: float = 1.0,
+        nlog: int = 1,
+        nprint: int = 2,
         x: Optional[torch.Tensor] = None,
-        nlog: Optional[int] = 1,
-        nprint: Optional[int] = 2,
-        grab: Optional[bool] = False,
 ) -> tuple[torch.Tensor, BaseHistory]:
     """Run eval on `experiment`"""
     history_eval = BaseHistory()
+    if x is None:
+        state = experiment.trainer.dynamics.random_state(beta=beta)
+        x = state.x
+
     for step in range(nsteps):
         tic = time.perf_counter()
         x, metrics_ = experiment.trainer.eval_step((x, beta))
@@ -170,21 +189,20 @@ def eval(
                 log.info(summary)
     xeval = experiment.trainer.dynamics.unflatten(x)
     log.info(f"checkSU(x_hmc): {g.checkSU(xeval)}")
-    history_eval.plot_all()
+    history_eval.plot_all(outdir=EVAL_DIR)
     return (xeval, history_eval)
 
 
 def main() -> tuple[torch.Tensor, dict[str, BaseHistory]]:
     # from l2hmc.experiment.pytorch.experiment import train_step
     # set_plot_style()
-    import opinionated
     plt.style.use(opinionated.STYLES['opinionated_min'])
 
     su3conf = Path('./conf/su3-min.yaml')
     with su3conf.open('r') as stream:
         conf = dict(yaml.safe_load(stream))
 
-    log.info(conf)
+    log.info(json.dumps(conf, indent=4))
     overrides = dict_to_list_of_overrides(conf)
     ptExpSU3 = get_experiment(overrides=[*overrides], build_networks=True)
     state = ptExpSU3.trainer.dynamics.random_state(6.0)
@@ -194,17 +212,14 @@ def main() -> tuple[torch.Tensor, dict[str, BaseHistory]]:
     xhmc, history_hmc = HMC(
         nsteps=10,
         experiment=ptExpSU3,
-        beta=state.beta,
+        beta=state.beta.item(),
         x=state.x,
         eps=0.1,
         nleapfrog=1,
         nlog=1,
         nprint=2,
     )
-    assert isinstance(history_hmc, BaseHistory)
-    xhmc = ptExpSU3.trainer.dynamics.unflatten(xhmc)
-    log.info(f"checkSU(x_hmc): {g.checkSU(xhmc)}")
-    history_hmc.plot_all()
+    # assert isinstance(history_hmc, BaseHistory)
     # plot_metrics(history_hmc, title='HMC', marker='.')
     # ptExpSU3.trainer.dynamics.init_weights(
     #     method='uniform',
@@ -222,9 +237,9 @@ def main() -> tuple[torch.Tensor, dict[str, BaseHistory]]:
         nlog=1,
         nprint=1,
     )
-    xeval = ptExpSU3.trainer.dynamics.unflatten(xeval)
-    history_eval.plot_all()
-    log.info(f"checkSU(x_eval): {g.checkSU(xeval)}")
+    # xeval = ptExpSU3.trainer.dynamics.unflatten(xeval)
+    # history_eval.plot_all()
+    # log.info(f"checkSU(x_eval): {g.checkSU(xeval)}")
     # plot_metrics(history_eval, title='Evaluate', marker='.')
 
     history_train = BaseHistory()
@@ -245,7 +260,7 @@ def main() -> tuple[torch.Tensor, dict[str, BaseHistory]]:
         summary = summarize_dict(avgs)
         log.info(summary)
 
-    history_train.plot_all()
+    history_train.plot_all(outdir=TRAIN_DIR)
     # histories = {
     #     'train': history_train,
     #     'eval': history_eval,
