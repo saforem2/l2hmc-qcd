@@ -68,6 +68,16 @@ def get_experiment(
         return experiment
 
     elif framework in ['pt', 'pytorch', 'torch']:
+        import torch
+        DTYPES = {
+            'float16': torch.float16,
+            'float32': torch.float32,
+            'float64': torch.float64,
+            'fp16': torch.float16,
+            'fp32': torch.float32,
+            'fp64': torch.float64,
+        }
+
         cfg.framework = 'pytorch'
         # from l2hmc.utils.dist import setup_torch
         from ezpz import setup_torch
@@ -77,6 +87,17 @@ def get_experiment(
             backend=cfg.get('backend', 'DDP'),
             port=cfg.get('port', '2345')
         )
+        precision = cfg.get('precision', None)
+        # and precision in {
+        # 'fp64',
+        # 'double',
+        # 'float64'
+        # }:
+        if precision is not None:
+            log.warning(f'setting default dtype: {precision}')
+            torch.set_default_dtype(DTYPES.get(precision, torch.float32))
+
+        # if cfg.get('precision', None) is not None
         from l2hmc.experiment.pytorch.experiment import Experiment
         experiment = Experiment(cfg, keep=keep, skip=skip)
         return experiment

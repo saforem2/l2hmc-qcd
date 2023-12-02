@@ -31,16 +31,6 @@ ignore_warnings: true
 # name of the run, should be used along with experiment mode
 name: null
 # ----------------------------------------------------------------------------
-# defaults:
-#   - _self_
-#   - override /train: gpt2_medium.yaml
-#   - override /data: owt.yaml
-#   - override /model: gpt2_medium.yaml
-#   - override /optimizer: gpt2_medium.yaml
-#   - override /logdir: gpt2_medium.yaml
-#   - override /hydra/hydra_logging: colorlog
-#   - override /hydra/job_logging: custom  # colorlog
-
 defaults:
   - _self_
   # ------------------------------------------------------------------------------------------
