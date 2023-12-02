@@ -1,0 +1,6 @@
+loss:
+  charge_weight: 0.0
+  plaq_weight: 0.0
+  rmse_weight: 1.0
+  use_mixed_loss: false
+
