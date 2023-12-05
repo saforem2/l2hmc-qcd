@@ -56,6 +56,11 @@ FP16_SYNONYMS = ['float16', 'fp16', '16', 'half']
 FP32_SYNONYMS = ['float32', 'fp32', '32', 'single']
 FP64_SYNONYMS = ['float64', 'fp64', '64', 'double']
 
+PT_DTYPES = {k: torch.bfloat16 for k in BF16_SYNONYMS}
+PT_DTYPES |= {k: torch.float16 for k in FP16_SYNONYMS}
+PT_DTYPES |= {k: torch.float32 for k in FP32_SYNONYMS}
+PT_DTYPES |= {k: torch.float64 for k in FP64_SYNONYMS}
+
 ENV_FILTERS = [
     'PS1',
     'LSCOLORS',
