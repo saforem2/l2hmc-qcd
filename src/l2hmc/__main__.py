@@ -13,6 +13,8 @@ from __future__ import (
 )
 import logging
 import os
+import wandb
+# from ezpz import get_rank
 # import sys
 
 import time
@@ -31,20 +33,23 @@ from omegaconf.dictconfig import DictConfig
 comm = MPI.COMM_WORLD
 
 # from l2hmc import logger
-logger = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)
 # log = get_logger(__name__)
 # log = logging.getLogger()
 # _ = get_logger('root').setLevel(logging.INFO)
 # _ = get_logger('wandb').setLevel(logging.CRITICAL)
-_ = logging.getLogger('aim').setLevel(logging.CRITICAL)
+_ = logging.getLogger('wandb').setLevel(logging.INFO)
+_ = logging.getLogger('aim').setLevel(logging.INFO)
 _ = logging.getLogger('filelock').setLevel(logging.CRITICAL)
-_ = logging.getLogger('matplotlib').setLevel(logging.CRITICAL)
+_ = logging.getLogger('matplotlib').setLevel(logging.INFO)
 _ = logging.getLogger('PIL.PngImagePlugin').setLevel(logging.CRITICAL)
 _ = logging.getLogger('graphviz._tools').setLevel(logging.CRITICAL)
 _ = logging.getLogger('graphviz').setLevel(logging.CRITICAL)
 _ = logging.getLogger('deepspeed').setLevel(logging.INFO)
+_ = logging.getLogger('opinionated').setLevel(logging.INFO)
 
-log = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)
+LOG.setLevel(logging.DEBUG)
 
 
 def get_experiment(
@@ -68,16 +73,15 @@ def get_experiment(
         return experiment
 
     elif framework in ['pt', 'pytorch', 'torch']:
-        import torch
-        DTYPES = {
-            'float16': torch.float16,
-            'float32': torch.float32,
-            'float64': torch.float64,
-            'fp16': torch.float16,
-            'fp32': torch.float32,
-            'fp64': torch.float64,
-        }
-
+        # import torch
+        # DTYPES = {
+        #     'float16': torch.float16,
+        #     'float32': torch.float32,
+        #     'float64': torch.float64,
+        #     'fp16': torch.float16,
+        #     'fp32': torch.float32,
+        #     'fp64': torch.float64,
+        # }
         cfg.framework = 'pytorch'
         # from l2hmc.utils.dist import setup_torch
         from ezpz import setup_torch
@@ -87,15 +91,15 @@ def get_experiment(
             backend=cfg.get('backend', 'DDP'),
             port=cfg.get('port', '2345')
         )
-        precision = cfg.get('precision', None)
+        # precision = cfg.get('precision', None)
         # and precision in {
         # 'fp64',
         # 'double',
         # 'float64'
         # }:
-        if precision is not None:
-            log.warning(f'setting default dtype: {precision}')
-            torch.set_default_dtype(DTYPES.get(precision, torch.float32))
+        # if precision is not None:
+        #     log.warning(f'setting default dtype: {precision}')
+        #     torch.set_default_dtype(DTYPES.get(precision, torch.float32))
 
         # if cfg.get('precision', None) is not None
         from l2hmc.experiment.pytorch.experiment import Experiment
@@ -107,7 +111,10 @@ def get_experiment(
     )
 
 
-def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
+def run(
+        cfg: DictConfig,
+        overrides: Optional[list[str]] = None
+) -> str:
     from l2hmc.utils.plot_helpers import set_plot_style
     set_plot_style()
     import matplotlib.pyplot as plt
@@ -126,8 +133,8 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
             cdict = OmegaConf.to_container(conf)
             print_json(json.dumps(cdict))
         except Exception as e:
-            log.exception(e)
-            log.warning('Continuing!')
+            LOG.exception(e)
+            LOG.warning('Continuing!')
     should_train: bool = (
         ex.config.steps.nera > 0
         and ex.config.steps.nepoch > 0
@@ -143,19 +150,19 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
     if should_train:
         tstart = time.time()
         _ = ex.train()
-        log.info(f'Training took: {time.time() - tstart:.5f}s')
+        LOG.info(f'Training took: {time.time() - tstart:.5f}s')
         # --- [2.] Evaluate trained model ----------------------------------
         if ex.trainer._is_orchestrator and ex.config.steps.test > 0:
-            log.info('Evaluating trained model')
+            LOG.info('Evaluating trained model')
             estart = time.time()
             _ = ex.evaluate(job_type='eval', nchains=nchains_eval)
-            log.info(f'Evaluation took: {time.time() - estart:.5f}s')
+            LOG.info(f'Evaluation took: {time.time() - estart:.5f}s')
     # --- [3.] Run generic HMC for comparison ------------------------------
     if ex.trainer._is_orchestrator and ex.config.steps.test > 0:
-        log.info('Running generic HMC for comparison')
+        LOG.info('Running generic HMC for comparison')
         hstart = time.time()
         _ = ex.evaluate(job_type='hmc', nchains=nchains_eval)
-        log.info(f'HMC took: {time.time() - hstart:.5f}s')
+        LOG.info(f'HMC took: {time.time() - hstart:.5f}s')
         from l2hmc.utils.plot_helpers import measure_improvement
         # try:
         improvement = measure_improvement(
@@ -200,18 +207,59 @@ def run(cfg: DictConfig, overrides: Optional[list[str]] = None) -> str:
             # else:
             #     log.info(f'Unable to find {logfile.as_posix()}')
             # if ex.run is not None and ex.run is wandb.run:
-        log.critical(f'Model improvement: {improvement:.8f}')
+        LOG.critical(f'Model improvement: {improvement:.8f}')
         if wandb.run is not None:
-            log.critical(f'🚀 {wandb.run}')
-            log.critical(f'🔗 {wandb.run.url}')
-            log.critical(f'📂/: {wandb.run.dir}')
+            LOG.critical(f'🚀 {wandb.run.name}')
+            LOG.critical(f'🔗 {wandb.run.url}')
+            LOG.critical(f'📂/: {wandb.run.dir}')
+            artifact = wandb.Artifact('logdir', type='directory')
+            rundir = Path(os.getcwd())
+            # contents = [
+            #     rundir.joinpath(i) for i in os.listdir(rundir.as_posix())
+            #     if 'wandb' not in i and
+            # ]
+            # for c in contents:
+            #     if 'wandb' in c.as_posix():
+            #         continue
+            #     if c.is_dir():
+            #         try:
+            #             artifact.add_dir(c.as_posix())
+            #         except ValueError:
+            #             LOG.exception(f'Unable to add_dir: {c.as_posix()}')
+            #             continue
+            #     elif c.is_file():
+            #         try:
+            #             artifact.add_file(c.as_posix())
+            #         except ValueError:
+            #             LOG.exception(f'Unable to add_dir: {c.as_posix()}')
+            #             continue
+            dirs_ = ('pngs', 'network_diagrams', '.hydra')
+            files_ = (
+                '__main__.log',
+                'main_debug.log',
+                'main.log',
+                'model_improvement.svg',
+                'model_improvement.txt',
+                'plots.txt',
+            )
+            for file in files_:
+                if (fpath := rundir.joinpath(file)).is_file():
+                    LOG.info(f'Adding {file} to W&B artifact...')
+                    artifact.add_file(fpath.as_posix())
+            for dir_ in dirs_:
+                if (dpath := rundir.joinpath(dir_)).is_dir():
+                    LOG.info(f'Adding {dir_} to W&B artifact...')
+                    artifact.add_dir(dpath.as_posix())
+            # artifact.remove(rundir.joinpath('wandb').as_posix())
+            LOG.info(f'Logging {artifact} to  W&B')
+            wandb.run.log_artifact(artifact)
     if ex.trainer._is_orchestrator:
         try:
             ex.visualize_model()
         except Exception:
             # log.exception(e)
-            log.error('Unable to make visuals for model, continuing!')
-        log.critical(f"experiment dir: {Path(ex._outdir).as_posix()}")
+            LOG.error('Unable to make visuals for model, continuing!')
+        LOG.critical(f"experiment dir: {Path(ex._outdir).as_posix()}")
     return Path(ex._outdir).as_posix()
 
 
@@ -230,38 +278,13 @@ def main(cfg: DictConfig):
     output = run(cfg)
     fw = cfg.get('framework', None)
     be = cfg.get('backend', None)
-    comm.Barrier()
+    # comm.Barrier()
     if (
             str(fw).lower() in {'pt', 'torch', 'pytorch'}
             and str(be).lower() == 'ddp'
     ):
         from l2hmc.utils.dist import cleanup
         cleanup()
-    if wandb.run is not None:
-        artifact = wandb.Artifact('logdir', type='directory')
-        rundir = Path(os.getcwd())
-        dirs_ = ('pngs', 'network_diagrams', '.hydra')
-        files_ = (
-            '__main__.log',
-            'model_improvement.svg',
-            'model_improvement.txt',
-            'plots.txt',
-        )
-        for file in files_:
-            if (fpath := rundir.joinpath(file)).is_file():
-                log.info(f'Adding {file} to W&B artifact...')
-                artifact.add_file(fpath.as_posix())
-        for dir_ in dirs_:
-            if (dpath := rundir.joinpath(dir_)).is_dir():
-                log.info(f'Adding {dir_} to W&B artifact...')
-                artifact.add_dir(dpath.as_posix())
-        # files = [rundir.joinpath(i) for i in files_]
-        # dirs = [rundir.joinpath(i) for i in dirs_]
-        # log.info(f'Uploading {rundir.as_posix()} to wandb')
-        # artifact.add_dir(local_path=rundir.as_posix())
-        # artifact.remove(rundir.joinpath('wandb').as_posix())
-        log.info(f'Logging {artifact} to  W&B')
-        wandb.run.log_artifact(artifact)
     return output
 
 
@@ -269,17 +292,17 @@ if __name__ == '__main__':
     import sys
     # import warnings
     # warnings.filterwarnings('ignore')
-    import wandb
-    from ezpz import get_rank
+    # import wandb
+    # from ezpz import get_rank
     # wandb.require(experiment='service')
     start = time.time()
     outdir = main()
     end = time.time()
-    log.info(f'Run completed in: {end - start:4.4f} s')
+    LOG.info(f'Run completed in: {end - start:4.4f} s')
     if outdir is not None:
-        log.info(f'Run located in: {outdir}')
+        LOG.info(f'Run located in: {outdir}')
     if wandb.run is not None:
-        wandb.finish(0)
+        wandb.finish()
     # if get_rank() == 0:
     #     os._exit(0)
-    # sys.exit(0)
+    sys.exit(0)
