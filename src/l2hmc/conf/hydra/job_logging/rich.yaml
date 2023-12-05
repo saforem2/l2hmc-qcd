@@ -10,6 +10,12 @@ handlers:
     show_level: true
     enable_link_path: false
     level: DEBUG
+  file:
+    class: logging.FileHandler
+    formatter: simple
+    filename: main_debug.log
+    level: DEBUG
+    mode: w
   console:
     class: logging.FileHandler
     # formatter: simple
@@ -31,6 +37,6 @@ handlers:
   #   class: enrich.handler.RichHandler
   #   level: INFO
 root:
-  handlers: [stream, console]
+  handlers: [stream, console, file]
 disable_existing_loggers: false
 ...
