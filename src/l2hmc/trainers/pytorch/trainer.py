@@ -7,6 +7,7 @@ from __future__ import absolute_import, annotations, division, print_function
 from collections import defaultdict
 from contextlib import nullcontext
 import json
+import logging
 import os
 from pathlib import Path
 import socket
@@ -14,8 +15,8 @@ import time
 from typing import Any, Callable, Optional, Sequence
 
 import aim
+from aim import Distribution
 import deepspeed
-import logging
 from enrich.logging import RichHandler as EnRichHandler
 from hydra.utils import instantiate
 import numpy as np
@@ -32,9 +33,9 @@ from torch.cuda.amp.grad_scaler import GradScaler
 from torch.optim.lr_scheduler import LambdaLR
 import wandb
 
-# from l2hmc import get_logger
 from l2hmc.common import ScalarLike, get_timestamp, print_dict
-from l2hmc.configs import CHECKPOINTS_DIR, ExperimentConfig
+from l2hmc.configs import BF16_SYNONYMS, CHECKPOINTS_DIR, FP16_SYNONYMS, ExperimentConfig
+from l2hmc.configs import PT_DTYPES
 from l2hmc.dynamics.pytorch.dynamics import Dynamics
 from l2hmc.group.su3.pytorch.group import SU3
 from l2hmc.group.u1.pytorch.group import U1Phase
@@ -45,9 +46,9 @@ from l2hmc.network.pytorch.network import NetworkFactory
 from l2hmc.trackers.pytorch.trackers import update_summaries
 from l2hmc.trainers.trainer import BaseTrainer
 from l2hmc.utils.dist import setup_torch_distributed
-from l2hmc.utils.history import StopWatch, summarize_dict
+from l2hmc.utils.history import summarize_dict
 import l2hmc.utils.live_plots as plotter
-from l2hmc.utils.rich import get_width, is_interactive
+from l2hmc.utils.rich import is_interactive
 from l2hmc.utils.rich import get_console
 from l2hmc.utils.step_timer import StepTimer
 # WIDTH = int(os.environ.get('COLUMNS', 150))
@@ -135,9 +136,11 @@ class Trainer(BaseTrainer):
             self.config.learning_rate.lr_init,
             2 * self.steps.nepoch
         )
-        self.use_fp16: bool = (
-            self.config.precision.lower() in ['fp16', '16', 'half']
-        )
+        # self.use_fp16: bool = (
+        #     self.config.precision.lower() in ['fp16', '16', 'half']
+        # )
+        self.dtype = PT_DTYPES.get(self.config.precision, None)
+        assert self.dtype is not None
         dsetup: dict = setup_torch_distributed(self.config.backend)
         # self._device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.size: int = dsetup['size']
@@ -145,12 +148,13 @@ class Trainer(BaseTrainer):
         self.local_rank: int = dsetup['local_rank']
         self._is_orchestrator: bool = (self.local_rank == 0 and self.rank == 0)
         self._with_cuda: bool = torch.cuda.is_available()
-        self._dtype = torch.get_default_dtype()
+        # self._dtype = torch.get_default_dtype()
+        self._dtype = self.dtype
         self.device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
-        if torch.cuda.is_available() and self.use_fp16:
-            self._dtype = torch.get_autocast_gpu_dtype()
-            self.warning(f'Using {self._dtype} on {self.device}!')
-
+        # if torch.cuda.is_available() and self.use_fp16:
+        # torch.set_autocast_gpu_dtype(self.dtype)
+        # self._dtype = torch.get_autocast_gpu_dtype()
+        self.warning(f'Using {self.dtype} on {self.device}!')
         self.lattice = self.build_lattice()
         self.loss_fn = self.build_loss_fn()
         self.dynamics: Dynamics = self.build_dynamics(
@@ -167,9 +171,16 @@ class Trainer(BaseTrainer):
             else Path(ckpt_dir).resolve()
         )
         self.ckpt_dir.mkdir(exist_ok=True, parents=True)
+        # self.dynamics = self.dynamics.to(self.dtype)
+        # log.warning(f'{self.dynamics.dtype=}')
         # if self.use_fp16:
         #     self.dynamics = self.dynamics.to(torch.half)
         #     # self.warning(f'Dynamics.dtype: {self.dynamics.dtype}')
+        self._fstep = 0
+        self._bstep = 0
+        self._gstep = 0
+        self._estep = 0
+        self._hstep = 0
         # --------------------------------------------------------
         # NOTE:
         #   - If we want to try and resume training,
@@ -190,9 +201,6 @@ class Trainer(BaseTrainer):
                 )
         else:
             self._gstep: int = 0
-
-        self._estep = 0
-        self._hstep = 0
         # if self.config.dynamics.group == 'U1':
         self.warning('Using `torch.optim.Adam` optimizer')
         self._optimizer = torch.optim.Adam(
@@ -200,19 +208,28 @@ class Trainer(BaseTrainer):
             lr=self.config.learning_rate.lr_init
         )
         self.num_params = self.count_parameters(self.dynamics)
-        self.enable_autocast = (
-            self._dtype != torch.float64
-            and self.device != 'cpu'
+        self.autocast_context_train = torch.autocast(  # type:ignore
+                dtype=self._dtype,
+                device_type=self.device,
+                enabled=(
+                    self._dtype != torch.float64
+                    and self.device != 'cpu'
+                ),
+                # 'cuda' if torch.cuda.is_available() else 'cpu'
         )
-        if self.enable_autocast:
-            self.autocast_context_train = torch.autocast(  # type:ignore
-                    dtype=self._dtype,
-                    enabled=self.enable_autocast,
-                    device_type=self.device,
-                    # 'cuda' if torch.cuda.is_available() else 'cpu'
-            )
-        else:
-            self.autocast_context_train = nullcontext()
+        # self.enable_autocast = (
+        #     self._dtype != torch.float64
+        #     and self.device != 'cpu'
+        # )
+        # if self.enable_autocast:
+        #     self.autocast_context_train = torch.autocast(  # type:ignore
+        #             dtype=self._dtype,
+        #             enabled=self.enable_autocast,
+        #             device_type=self.device,
+        #             # 'cuda' if torch.cuda.is_available() else 'cpu'
+        #     )
+        # else:
+        #     self.autocast_context_train = nullcontext()
         # else:
         #     self.warning('Using `torch.optim.SGD` optimizer')
         #     self._optimizer = torch.optim.SGD(
@@ -294,14 +311,23 @@ class Trainer(BaseTrainer):
         #         (fp16 := self.ds_config.get('fp16', None)) is not None
         #         and fp16.get('enabled', False)
         # ):
-        if self.use_fp16:
+        # if self.use_fp16:
+        if self.dtype == torch.bfloat16:
+            log.warning('Using `bf16` in DeepSpeed config...')
+            self.ds_config |= {
+                'bf16': {
+                    'enabled': True,
+                }
+            }
+            self.dynamics = self.dynamics.to(torch.bfloat16)
+        if self.dtype == torch.float16:
             log.warning('Using `fp16` in DeepSpeed config...')
             self.ds_config |= {
                 'fp16': {
                     'enabled': True,
                 }
             }
-            self.dynamics = self.dynamics.to(torch.half)
+            self.dynamics = self.dynamics.to(torch.float16)
         # if self._is_chief:
         if self.rank == 0:
             print_json(json.dumps(self.ds_config, indent=4))
@@ -327,15 +353,17 @@ class Trainer(BaseTrainer):
         assert optimizer is not None
         self.dynamics_engine = engine
         self.optimizer = optimizer
-        self.use_fp16 = self.dynamics_engine.fp16_enabled()
+        # self.use_fp16 = self.dynamics_engine.fp16_enabled()
         self.device = self.dynamics_engine.local_rank
-        if self.use_fp16:
-            self._dtype = torch.half
+        # if self.use_fp16:
+        #     self._dtype = torch.half
 
     def _setup_horovod(self) -> None:
         import horovod.torch as hvd
         compression = (
-            hvd.Compression.fp16 if self.use_fp16
+            hvd.Compression.fp16 if (
+                self.dtype in {*BF16_SYNONYMS, *FP16_SYNONYMS}
+            )
             else hvd.Compression.none
         )
         self.optimizer = hvd.DistributedOptimizer(
@@ -395,15 +423,16 @@ class Trainer(BaseTrainer):
                         self.config.steps.nera * self.config.steps.nepoch
                     )
                 })
-        if not self.use_fp16:
-            fp16 = ds_config.get('fp16', None)
-            if fp16 is not None:
-                self.warning('Turning of `fp16` in ds_config!')
-                ds_config.update({
-                    'fp16': {
-                        'enabled': False,
-                    }
-                })
+        # if not self.use_fp16:
+        # if self.dtype not in {*BF16_SYNONYMS, *FP16_SYNONYMS}:
+        #     fp16 = ds_config.get('fp16', None)
+        #     if fp16 is not None:
+        #         self.warning('Turning of `fp16` in ds_config!')
+        #         ds_config.update({
+        #             'fp16': {
+        #                 'enabled': False,
+        #             }
+        #         })
         zero_opt_config = ds_config.get('zero_optimization', None)
         if zero_opt_config is not None:
             hostname = str(
@@ -833,7 +862,10 @@ class Trainer(BaseTrainer):
         xinit, beta = inputs
         assert isinstance(self.dynamics, Dynamics)
         assert isinstance(self.config, ExperimentConfig)
-        self.optimizer.zero_grad()
+        try:
+            self.optimizer.zero_grad()
+        except Exception:
+            pass
         xinit = self.g.compat_proj(xinit)  # .to(self.accelerator.device)
         if self.dynamics_engine is not None:
             xout, metrics = self.dynamics_engine((xinit, beta))
@@ -874,18 +906,12 @@ class Trainer(BaseTrainer):
     ) -> tuple[Tensor, dict]:
         self.dynamics.eval()
         xi, beta = inputs
-        if isinstance(beta, float):
-            beta = torch.tensor(beta)
-
-        if WITH_CUDA:
-            xi = xi.to(self.device)
-            beta = beta.to(self.device)
-            # xi, beta = xi.cuda(), beta.cuda()
-
+        beta = torch.tensor(beta) if isinstance(beta, float) else beta
+        assert isinstance(beta, Tensor)
+        beta = beta.to(self.device)
         xi = self.g.compat_proj(
             self.dynamics.unflatten(xi.to(self.device))
         )
-
         xo, metrics = self.dynamics.apply_transition_hmc(
             (xi, beta), eps=eps, nleapfrog=nleapfrog,
         )
@@ -894,9 +920,9 @@ class Trainer(BaseTrainer):
         if self.config.dynamics.verbose:
             lmetrics = self.loss_fn.lattice_metrics(xinit=xi, xout=xo)
             metrics.update(lmetrics)
-
         metrics.update({'loss': loss.item()})
         self.dynamics.train()
+        self._hstep += 1
         return xo.detach(), metrics
 
     def eval_step(
@@ -906,7 +932,6 @@ class Trainer(BaseTrainer):
         self.dynamics.eval()
         xinit, beta = inputs
         beta = torch.tensor(beta).to(self.device)
-        # xinit = xinit.to(self.device)
         xinit = self.g.compat_proj(
             self.dynamics.unflatten(xinit.to(self.device))
         )
@@ -915,39 +940,38 @@ class Trainer(BaseTrainer):
         #         dtype=torch.float32
         # ):
         xout, metrics = self.dynamics((xinit, beta))
-
         xprop = metrics.pop('mc_states').proposed.x
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
         if self.config.dynamics.verbose:
             lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
             metrics.update(lmetrics)
-
         metrics.update({
             'loss': loss.item(),
         })
         self.dynamics.train()
+        self._estep += 1
         return xout.detach(), metrics
 
     def get_context_manager(
             self,
             renderable: ConsoleRenderable,
     ) -> Live | nullcontext:
-        if make_live := (
-            self._is_orchestrator
-            and self.size == 1  # not worth the trouble when dist.
-            and not is_interactive()  # AND not in a jupyter / ipython kernel
-            and int(get_width()) > 100  # make sure wide enough to fit table
-        ):
-            return Live(
-                renderable,
-                console=console,
-                # screen=True,
-                transient=True,
-                # redirect_stdout=True,
-                auto_refresh=False,
-                vertical_overflow='visible'
-            )
-
+        # if make_live := (
+        #     self._is_orchestrator
+        #     and self.size == 1  # not worth the trouble when dist.
+        #     and not is_interactive()  # AND not in a jupyter / ipython kernel
+        #     and int(get_width()) > 100  # make sure wide enough to fit table
+        # ):
+        #     return Live(
+        #         renderable,
+        #         console=console,
+        #         # screen=True,
+        #         transient=True,
+        #         # redirect_stdout=True,
+        #         auto_refresh=False,
+        #         vertical_overflow='visible'
+        #     )
+        #
         return nullcontext()
 
     def get_printer(
@@ -1241,23 +1265,17 @@ class Trainer(BaseTrainer):
             x: torch.Tensor,
             beta: torch.Tensor,
     ) -> tuple[torch.Tensor, dict]:
-        # x = self.g.compat_proj(x.reshape(self.xshape)).to(self._dtype)
-        beta = beta.to(self._dtype).to(self.device)
         x.requires_grad_(True)
-        self.optimizer.zero_grad()
+        try:
+            self.optimizer.zero_grad()
+        except Exception:
+            pass
         with self.autocast_context_train:
-            if self._gstep == 0 and self._is_orchestrator:
-                log.debug(f'[TRAINING] x.dtype: {x.dtype}')
-                log.debug(f'[TRAINING] x.device: {x.device}')
-            # try:
             if self.dynamics_engine is not None:
                 xout, metrics = self.dynamics_engine((x, beta))
             else:
                 xout, metrics = self.dynamics((x, beta))
-            # except RuntimeError:
-            #     # if self._is_chief and self.
-            #     if self.world_size == 1 and self.rank == 0:
-            #         import pudb; pudb.set_trace()
+        self._fstep += 1
         return xout, metrics
 
     def backward_step(
@@ -1281,14 +1299,15 @@ class Trainer(BaseTrainer):
             self.optimizer.step()
         else:
             self.grad_scaler.scale(loss).backward()  # type:ignore
+            self.grad_scaler.unscale_(self.optimizer)
             if self.config.learning_rate.clip_norm > 0:
-                self.grad_scaler.unscale_(self.optimizer)
                 torch.nn.utils.clip_grad.clip_grad_norm(
                     parameters=self.dynamics.parameters(),
                     max_norm=self.config.learning_rate.clip_norm
                 )
             self.grad_scaler.step(self.optimizer)
             self.grad_scaler.update()
+        self._bstep += 1
         return loss
 
     def train_step(
@@ -1299,15 +1318,7 @@ class Trainer(BaseTrainer):
         xinit, beta = inputs
         xinit = self.g.compat_proj(xinit.reshape(self.xshape))
         beta = torch.tensor(beta) if isinstance(beta, float) else beta
-        # if WITH_CUDA:
-        #     if self.config.dynamics.group == 'U1':
-        #         # Send to GPU with specified (real) precision
-        #         xinit = xinit.to(self.device)  # .to(self._dtype)
-        #         beta = beta.to(self.device)  # .to(self._dtype)
-        #         # xinit, beta = xinit.cuda(), beta.cuda()
-        # if self.use_fp16:
-        #     xinit = xinit.half()
-        #     beta = beta.half()
+        assert isinstance(beta, Tensor)
         # ====================================================================
         # -----------------------  Train step  -------------------------------
         # ====================================================================
@@ -1349,109 +1360,7 @@ class Trainer(BaseTrainer):
                 lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
                 metrics.update(lmetrics)
         # t5 = timer.perf_counter()
-        return xout.detach(), metrics
-
-    def train_step_old(
-            self,
-            inputs: tuple[Tensor, Tensor | float],
-    ) -> tuple[Tensor, dict]:
-        """Logic for performing a single training step"""
-        xinit, beta = inputs
-        xinit = self.g.compat_proj(xinit.reshape(self.xshape))
-        beta = torch.tensor(beta) if isinstance(beta, float) else beta
-        if WITH_CUDA:
-            if self.config.dynamics.group == 'U1':
-                # Send to GPU with specified (real) precision
-                xinit = xinit.to(self.device)  # .to(self._dtype)
-                beta = beta.to(self.device)  # .to(self._dtype)
-                # xinit, beta = xinit.cuda(), beta.cuda()
-
-        if self.use_fp16:
-            xinit = xinit.half()
-            beta = beta.half()
-
-        # ====================================================================
-        # -----------------------  Train step  -------------------------------
-        # ====================================================================
-        # 1. Call model on inputs to generate:
-        #      a. PROPOSAL config `xprop`   (before MH acc / rej)
-        #      b. OUTPUT config `xout`      (after MH acc / rej)
-        # 2. Calc loss using `xinit`, `xprop` and `acc` (acceptance rate)
-        # 3. Backpropagate gradients and update network weights
-        # --------------------------------------------------------------------
-        # [1.] Forward call
-        xinit.requires_grad_(True)
-        self.optimizer.zero_grad()
-        with torch.autocast(dtype=self._dtype, enabled=self._dtype != torch.float64, device_type='cuda' if torch.cuda.is_available() else 'cpu'):
-            if self._gstep == 0 and self._is_orchestrator:
-                log.debug(f'[TRAINING] x.dtype: {xinit.dtype}')
-                log.debug(f'[TRAINING] x.device: {xinit.device}')
-
-            if self.dynamics_engine is not None:
-                xout, metrics = self.dynamics_engine((xinit, beta))
-            else:
-                xout, metrics = self.dynamics((xinit, beta))
-
-            xprop = metrics.pop('mc_states').proposed.x
-            # [2.] Calc loss
-            loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
-            if (aw := self.config.loss.aux_weight) > 0:
-                yinit = self.dynamics.unflatten(
-                    self.g.random(xout.shape).to(self.device)
-                )
-                # yinit = self.g.random(xout.shape).to(self.device)
-                yinit.requires_grad_(True)
-                if self.dynamics_engine is not None:
-                    _, metrics_ = self.dynamics_engine((yinit, beta))
-                else:
-                    _, metrics_ = self.dynamics((yinit, beta))
-                yprop = metrics_.pop('mc_states').proposed.x
-                aux_loss = aw * self.loss_fn(x_init=yinit,
-                                             x_prop=yprop,
-                                             acc=metrics_['acc'])
-                loss += aw * aux_loss
-
-        # # [3.] Backpropagate gradients
-        if (
-                self.config.backend.lower() in ['ds', 'deepspeed']
-                and self.dynamics_engine is not None
-        ):
-            self.dynamics_engine.backward(loss)  # type:ignore
-            self.dynamics_engine.step()  # type:ignore
-        elif self.grad_scaler is None:
-            if self.config.learning_rate.clip_norm > 0.0:
-                torch.nn.utils.clip_grad.clip_grad_norm(
-                    self.dynamics.parameters(),
-                    max_norm=self.clip_norm
-                )
-            loss.backward()
-            self.optimizer.step()
-
-        else:
-            self.grad_scaler.scale(loss).backward()  # type:ignore
-            if self.config.learning_rate.clip_norm > 0.0:
-                self.grad_scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad.clip_grad_norm(
-                    self.dynamics.parameters(),
-                    self.config.learning_rate.clip_norm
-                )
-            self.grad_scaler.step(self.optimizer)
-            self.grad_scaler.update()
-                    # if self.config.learning_rate.clip_norm > 0:
-                    #     self.grad_scaler.unscale_(self.optimizer)
-                    #     torch.nn.utils.clip_grad.clip_grad_norm_(
-                    #         self.dynamics.parameters(),
-                    #         max_norm=self.clip_norm
-                    #     )
-        if isinstance(loss, Tensor):
-            loss = loss.item()
-
-        metrics['loss'] = loss
-        if self.config.dynamics.verbose:
-            with torch.no_grad():
-                lmetrics = self.loss_fn.lattice_metrics(xinit=xinit, xout=xout)
-                metrics.update(lmetrics)
-
+        self._gstep += 1
         return xout.detach(), metrics
 
     def train_step_detailed(
@@ -1509,6 +1418,7 @@ class Trainer(BaseTrainer):
         if verbose:
             log.info(summary)
 
+        self._gstep += 1
         return xout.detach(), record
 
     def eval_step_detailed(
@@ -1559,6 +1469,7 @@ class Trainer(BaseTrainer):
         if verbose:
             log.info(summary)
 
+        self._estep += 1
         return xout, record
 
     def train_epoch(
@@ -1637,7 +1548,6 @@ class Trainer(BaseTrainer):
             for epoch in range(nepoch):
                 self.timers['train'].start()
                 x, metrics = self.train_step((x, beta))  # type:ignore
-                self._gstep += 1
                 dt = self.timers['train'].stop()
                 losses.append(metrics['loss'])
                 # if (acc := metrics.get('acc', None)) is not None:
@@ -1870,8 +1780,8 @@ class Trainer(BaseTrainer):
         assert nera is not None
         assert train_dir is not None
         plots = plotter.init_plots() if is_interactive() and make_plots else None
-        self.info(f'[TRAINING] x.dtype: {x.dtype}')
-        self.info(f'[TRAINING] self._dtype: {self._dtype}')
+        # self.info(f'[TRAINING] x.dtype: {x.dtype}')
+        # self.info(f'[TRAINING] self._dtype: {self._dtype}')
         for era in range(nera):
             b = torch.tensor(betas.get(str(era), beta_final))
             if era == (nera - 1) and self.steps.extend_last_era is not None:
@@ -2035,7 +1945,7 @@ class Trainer(BaseTrainer):
             except TypeError:
                 metric = torch.tensor(0.0)
 
-        return metric.detach().cpu().numpy()
+        return metric.to(torch.float32).detach().cpu().numpy()
 
     def aim_track(
             self,
