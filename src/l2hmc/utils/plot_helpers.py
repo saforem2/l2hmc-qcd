@@ -11,9 +11,9 @@ import os
 from pathlib import Path
 import time
 from typing import Any, Optional, Tuple
-import warnings
+# import warnings
 
-import opinionated
+# import opinionated
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -22,11 +22,9 @@ import xarray as xr
 # import torch
 # import tensorflow as tf
 
-import opinionated
 # from toolbox import set_plot_style
-from opinionated import STYLES
 
-from l2hmc.utils.rich import is_interactive
+# from l2hmc.utils.rich import is_interactive
 # from l2hmc.utils.logger import get_pylogger
 # import logging
 # from l2hmc import get_logger
@@ -40,7 +38,7 @@ except ImportError:
 # from l2hmc.experiment.pytorch.experiment import Experiment as ptExperiment
 # from l2hmc.experiment.tensorflow.experiment import Experiment as tfExperiment
 
-warnings.filterwarnings('ignore')
+# warnings.filterwarnings('ignore')
 
 # log = get_pylogger(__name__)
 log = logging.getLogger(__name__)
@@ -82,64 +80,66 @@ plt.style.use('default')
 def set_plot_style(**kwargs):
     #plt.style.use('default')
     #plt.style.use(opinionated.STYLES['opinionated_min'])
-    plt.rcParams.update({
-        'image.cmap': 'viridis',
-        'savefig.transparent': True,
-        # 'text.color': '#666666',
-        # 'xtick.color': '#66666604',
-        # 'ytick.color': '#66666604',
-        # 'ytick.labelcolor': '#666666',
-        # 'xtick.labelcolor': '#666666',
-        # 'axes.edgecolor': '#66666600',
-        # 'axes.labelcolor': '#666666',
-        # 'grid.linestyle': ':',
-        # 'grid.alpha': 0.4,
-        # 'grid.color': '#353535',
-        'path.simplify': True,
-        'savefig.bbox': 'tight',
-        'legend.labelcolor': '#838383',
-        # 'axes.labelcolor': (189, 189, 189, 1.0),
-        # 'grid.color': (0.434, 0.434, 0.434, 0.2),  # #66666602
-        # 'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
-        # 'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
-        'axes.facecolor': 'none',
-        'figure.facecolor': 'none',
-        'savefig.facecolor': 'none',
-        'savefig.format': 'svg',
-        'axes.edgecolor': 'none',
-        'axes.grid': True,
-        'axes.labelcolor': '#838383',
-        'axes.titlecolor': '#838383',
-        'grid.color': '#838383',
-        'text.color': '#838383',
-        'grid.linestyle': '--',
-        'grid.linewidth': 0.5,
-        'grid.alpha': 0.33,
-        'xtick.color': 'none',
-        'ytick.color': 'none',
-        'xtick.labelcolor': '#838383',
-        'legend.edgecolor': 'none',
-        'ytick.labelcolor': '#838383',
-        # 'savefig.transparent': True,
-    })
-    plt.rcParams['axes.prop_cycle'] = plt.cycler(
-        'color',
-        list(COLORS.values())
-    )
-    plt.rcParams['axes.labelcolor'] = '#838383'
-    plt.rcParams.update(**kwargs)
-    # plt.rcParams |= {'figure.figsize': [12.4, 4.8]}
-    # plt.style.use(STYLES['opinionated_min'])
-    # plt.rcParams['ytick.labelsize'] = 14.0
-    # plt.rcParams['xtick.labelsize'] = 14.0
-    # plt.rcParams['grid.alpha'] = 0.4
-    # grid_color = plt.rcParams['grid.color']
-    # if not is_interactive():
-    #     figsize = plt.rcParamsDefault.get('figure.figsize', (4.5, 3))
-    #     x = figsize[0]
-    #     y = figsize[1]
-    #     plt.rcParams['figure.figsize'] = [2.5 * x, 2. * y]
-    #     plt.rcParams['figure.dpi'] = 400
+    # plt.rcParams.update({
+    #     'image.cmap': 'viridis',
+    #     'savefig.transparent': True,
+    #     # 'text.color': '#666666',
+    #     # 'xtick.color': '#66666604',
+    #     # 'ytick.color': '#66666604',
+    #     # 'ytick.labelcolor': '#666666',
+    #     # 'xtick.labelcolor': '#666666',
+    #     # 'axes.edgecolor': '#66666600',
+    #     # 'axes.labelcolor': '#666666',
+    #     # 'grid.linestyle': ':',
+    #     # 'grid.alpha': 0.4,
+    #     # 'grid.color': '#353535',
+    #     'path.simplify': True,
+    #     'savefig.bbox': 'tight',
+    #     'legend.labelcolor': '#838383',
+    #     # 'axes.labelcolor': (189, 189, 189, 1.0),
+    #     # 'grid.color': (0.434, 0.434, 0.434, 0.2),  # #66666602
+    #     # 'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
+    #     # 'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
+    #     'axes.facecolor': 'none',
+    #     'figure.facecolor': 'none',
+    #     'savefig.facecolor': 'none',
+    #     'savefig.format': 'svg',
+    #     'axes.edgecolor': 'none',
+    #     'axes.grid': True,
+    #     'axes.labelcolor': '#838383',
+    #     'axes.titlecolor': '#838383',
+    #     'grid.color': '#838383',
+    #     'text.color': '#838383',
+    #     'grid.linestyle': '--',
+    #     'grid.linewidth': 0.5,
+    #     'grid.alpha': 0.33,
+    #     'xtick.color': 'none',
+    #     'ytick.color': 'none',
+    #     'xtick.labelcolor': '#838383',
+    #     'legend.edgecolor': 'none',
+    #     'ytick.labelcolor': '#838383',
+    #     # 'savefig.transparent': True,
+    # })
+    # plt.rcParams['axes.prop_cycle'] = plt.cycler(
+    #     'color',
+    #     list(COLORS.values())
+    # )
+    # plt.rcParams['axes.labelcolor'] = '#838383'
+    # plt.rcParams.update(**kwargs)
+    # # plt.rcParams |= {'figure.figsize': [12.4, 4.8]}
+    # # plt.style.use(STYLES['opinionated_min'])
+    # # plt.rcParams['ytick.labelsize'] = 14.0
+    # # plt.rcParams['xtick.labelsize'] = 14.0
+    # # plt.rcParams['grid.alpha'] = 0.4
+    # # grid_color = plt.rcParams['grid.color']
+    # # if not is_interactive():
+    # #     figsize = plt.rcParamsDefault.get('figure.figsize', (4.5, 3))
+    # #     x = figsize[0]
+    # #     y = figsize[1]
+    # #     plt.rcParams['figure.figsize'] = [2.5 * x, 2. * y]
+    # #     plt.rcParams['figure.dpi'] = 400
+    import opinionated
+    plt.style.use(opinionated.STYLES['opinionated_min'])
 
 
 def get_timestamp(fstr=None):
@@ -257,8 +257,8 @@ def measure_improvement(
 
         try:
             save_figure(fig, fname='model_improvement', outdir=outdir)
-        except:
-            import pudb; pudb.set_trace()
+        except Exception:
+            log.critrical('Unable to `measure_improvement(...)` !! (??) skipping...')
 
     return improvement
 
@@ -412,7 +412,6 @@ def plot_combined(
     subplots_kwargs.update({'figsize': figsize})
     subfigs = None
     num_chains = 10 if num_chains is None else num_chains
-
     _ = subplots_kwargs.pop('constrained_layout', True)
     figsize = (3 * figsize[0], 1.5 * figsize[1])
     fig = plt.figure(figsize=figsize, constrained_layout=True)
@@ -426,7 +425,6 @@ def plot_combined(
         color = '#3FB5AD'
     else:
         color = plot_kwargs.get('color', f'C{np.random.randint(5)}')
-
     (ax1, ax2) = subfigs[1].subplots(1, 2, sharey=True, gridspec_kw=gs_kw)
     ax1.grid(alpha=0.2)
     ax2.grid(False)
@@ -1029,7 +1027,7 @@ def make_ridgeplots(
                 _ = g.set_titles('')
                 _ = g.set(yticks=[])
                 _ = g.set(yticklabels=[])
-                plt.rcParams['axes.labelcolor'] = '#bdbdbd'
+                # plt.rcParams['axes.labelcolor'] = '#838383'
                 _ = g.set(xlabel=f'{key}')
                 _ = g.despine(bottom=True, left=True)
                 if outdir is not None and save_plot:
