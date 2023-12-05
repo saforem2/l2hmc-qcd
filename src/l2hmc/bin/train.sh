@@ -41,7 +41,7 @@ function sourceFile() {
 #┃ Make sure we're not already running; if so, exit here ┃
 #┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 function killIfRunning() {
-    PIDS=$(ps aux | grep -E 'mpi.+__main__.+py' | grep -v grep | awk '{print $2}')
+    PIDS=$(ps aux | grep -E "$USER.+mpi.+.+python3.+__main__.+py" | grep -v grep | awk '{print $2}')
     if [ -n "${PIDS}" ]; then
         echo "Already running! Exiting!"
         exit 1
