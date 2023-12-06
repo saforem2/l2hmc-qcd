@@ -2,11 +2,11 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://saforem2.github.io/l2hmc-qcd/index.html</loc>
-    <lastmod>2023-10-20T03:50:11.076Z</lastmod>
+    <lastmod>2023-12-06T05:30:03.280Z</lastmod>
   </url>
   <url>
     <loc>https://saforem2.github.io/l2hmc-qcd/qmd/l2hmc-4DSU3.html</loc>
-    <lastmod>2023-10-04T13:07:27.863Z</lastmod>
+    <lastmod>2023-12-05T20:26:07.079Z</lastmod>
   </url>
   <url>
     <loc>https://saforem2.github.io/l2hmc-qcd/qmd/slides.html</loc>
@@ -14,18 +14,30 @@
   </url>
   <url>
     <loc>https://saforem2.github.io/l2hmc-qcd/qmd/posts.html</loc>
-    <lastmod>2023-10-20T00:15:03.586Z</lastmod>
+    <lastmod>2023-12-06T14:13:24.444Z</lastmod>
   </url>
   <url>
     <loc>https://saforem2.github.io/l2hmc-qcd/qmd/diffusion/diffusion.html</loc>
-    <lastmod>2023-10-20T00:36:02.990Z</lastmod>
+    <lastmod>2023-12-05T20:26:05.462Z</lastmod>
   </url>
   <url>
     <loc>https://saforem2.github.io/l2hmc-qcd/qmd/l2hmc-2DU1.html</loc>
-    <lastmod>2023-10-20T00:15:20.392Z</lastmod>
+    <lastmod>2023-12-05T20:34:12.524Z</lastmod>
   </url>
   <url>
     <loc>https://saforem2.github.io/l2hmc-qcd/qmd/diffusion-alt/diffusion.html</loc>
     <lastmod>2023-10-20T00:17:01.658Z</lastmod>
+  </url>
+  <url>
+    <loc>https://saforem2.github.io/l2hmc-qcd/qmd/l2hmc-2dU1/l2hmc-2dU1.html</loc>
+    <lastmod>2023-12-06T14:13:33.647Z</lastmod>
+  </url>
+  <url>
+    <loc>https://saforem2.github.io/l2hmc-qcd/qmd/test/test.html</loc>
+    <lastmod>2023-12-05T21:02:15.519Z</lastmod>
+  </url>
+  <url>
+    <loc>https://saforem2.github.io/l2hmc-qcd/qmd/notebook/notebook.html</loc>
+    <lastmod>2023-12-06T04:11:52.381Z</lastmod>
   </url>
 </urlset>

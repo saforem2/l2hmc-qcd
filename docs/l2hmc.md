@@ -1,5 +1,5 @@
-
-# <span align="left" display="inline" width="20%" style="vertical-align:middle; line-height: 3.0em;">[![](https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg)](https://saforem2.github.io/l2hmc-qcd)</span>
+# <span align="left" display="inline" width="20%"
+style="vertical-align:middle; line-height: 3.0em;">[![](https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg)](https://saforem2.github.io/l2hmc-qcd)</span>
 
 <div class="flex">
 
@@ -387,6 +387,13 @@ work along with the original paper:
 > objective technical results and analysis.<br> Any subjective views or
 > opinions that might be expressed in the work do not necessarily
 > represent the views of the U.S. DOE or the United States Government.
+
+``` python
+from datetime import date
+print(f"Last updated: {date.today().strftime('%d %B %y')}")
+```
+
+    Last updated: 05 December 23
 
 <p align="center">
 <a href="https://hits.seeyoufarm.com"><img align="center" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fsaforem2.github.io/l2hmc-qcd/&count_bg=%2300CCFF&title_bg=%23303030&icon=&icon_color=%23E7E7E7&title=hits&edge_flat=false"/></a>

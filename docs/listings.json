@@ -1,14 +1,7 @@
 [
   {
     "listing": "/index.html",
-    "items": [
-      "/qmd/posts.html",
-      "/qmd/diffusion/diffusion.html",
-      "/qmd/diffusion-alt/diffusion.html",
-      "/qmd/slides.html",
-      "/qmd/l2hmc-2DU1.html",
-      "/qmd/l2hmc-4DSU3.html"
-    ]
+    "items": []
   },
   {
     "listing": "/qmd/posts.html",
@@ -16,8 +9,8 @@
       "/qmd/diffusion/diffusion.html",
       "/qmd/diffusion-alt/diffusion.html",
       "/qmd/slides.html",
-      "/qmd/l2hmc-2DU1.html",
-      "/qmd/l2hmc-4DSU3.html"
+      "/qmd/l2hmc-4DSU3.html",
+      "/qmd/l2hmc-2dU1/l2hmc-2dU1.html"
     ]
   }
 ]

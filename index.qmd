@@ -2,12 +2,24 @@
 callout-appearance: simple
 title-block-banner: false
 sidebar: false
+date: last-modified
 editor:
    render-on-save: true
 execute:
    freeze: true
-author: ""
-date: ""
+# author: ""
+# date: ""
+author:
+  # name: Sam Foreman
+  name: "Sam Foreman [[{{< ai orcid >}}]{.orcid-green}](https://orcid.org/0000-0002-9981-0876)"
+  url: https://samforeman.me
+  # orcid: 0000-0002-9981-0876
+  email: foremans@anl.gov
+citation:
+   author: Sam Foreman
+   type: webpage
+   title: "Posts"
+   url: https://saforem2.github.io/l2hmc-qcd/qmd/posts.html
 # title: "l2hmc-qcd"
 site-url: https://saforem2.github.io/l2hmc-qcd
 # author: ""
@@ -27,12 +39,13 @@ listing:
   - id: listings
     contents:
       # - "../qmd/**/*.qmd"
-      - "qmd/posts.qmd"
-      - "qmd/diffusion/diffusion.qmd"
-      - "qmd/diffusion-alt/diffusion.qmd"
-      - "qmd/slides.qmd"
-      - "qmd/l2hmc-2DU1.qmd"
-      - "qmd/l2hmc-4DSU3.qmd"
+      - "./qmd/posts.qmd"
+      - "./qmd/diffusion/diffusion.qmd"
+      - "./qmd/diffusion-alt/diffusion.qmd"
+      - "./qmd/slides.qmd"
+      # - "qmd/l2hmc-2DU1.qmd"
+      - "./qmd/l2hmc-2dU1/l2hmc-2dU1.qmd"
+      - "./qmd/l2hmc-4DSU3.qmd"
     type: table
     sort: "date desc"
 format:
@@ -396,7 +409,7 @@ An illustration of the `leapfrog layer` updating $(P, U) \rightarrow (P', U')$.
 ::: {#fig-poster}
 
 
-![](assets/l2hmc_poster.jpeg)
+![](assets/l2hmc_poster.jpeg){.preview-image}
 
 Overview of the L2HMC algorithm
 :::
@@ -448,6 +461,11 @@ If you use this code or found this work interesting, please cite our work along 
 > This work describes objective technical results and analysis.<br>
 > Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government.
 
+
+```{python}
+from datetime import date
+print(f"Last updated: {date.today().strftime('%d %B %y')}")
+```
 
 <p align="center">
 <a href="https://hits.seeyoufarm.com"><img align="center" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fsaforem2.github.io/l2hmc-qcd/&count_bg=%2300CCFF&title_bg=%23303030&icon=&icon_color=%23E7E7E7&title=hits&edge_flat=false"/></a>
