@@ -77,6 +77,7 @@ COLORS = {
 plt.style.use('default')
 # set_plot_style()
 
+
 def set_plot_style(**kwargs):
     #plt.style.use('default')
     #plt.style.use(opinionated.STYLES['opinionated_min'])
@@ -140,6 +141,7 @@ def set_plot_style(**kwargs):
     # #     plt.rcParams['figure.dpi'] = 400
     import opinionated
     plt.style.use(opinionated.STYLES['opinionated_min'])
+    plt.rcParams['axes.edgecolor'] = plt.rcParams['axes.facecolor']
 
 
 def get_timestamp(fstr=None):
@@ -242,7 +244,7 @@ def measure_improvement(
             loc='best',
             framealpha=0.1,
             ncol=2,
-            labelcolor='#bdbdbd',
+            labelcolor='#838383',
         )
         if title is not None:
             _ = ax.set_title(title)
@@ -496,8 +498,8 @@ def plot_dataArray(
 ) -> tuple:
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
-    set_plot_style()
-    plt.rcParams['axes.labelcolor'] = '#bdbdbd'
+    # set_plot_style()
+    plt.rcParams['axes.labelcolor'] = '#838383'
     figsize = subplots_kwargs.get('figsize', set_size())
     subplots_kwargs.update({'figsize': figsize})
     subfigs = None
@@ -629,6 +631,7 @@ def plot_array(
     if title is not None:
         _ = ax.set_title(title)
     _ = ax.legend(loc='best')
+    # sns.despine(ax, top=True, left=True, bottom=True, right=True)
     if outdir is not None:
         outfile = Path(outdir).joinpath(f'{key}.svg')
         if outfile.is_file():
