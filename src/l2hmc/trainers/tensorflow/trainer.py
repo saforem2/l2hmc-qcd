@@ -654,7 +654,7 @@ class Trainer(BaseTrainer):
             nchains: Optional[int] = None,
             eps: Optional[float] = None,
             nleapfrog: Optional[int] = None,
-            dynamic_step_size:  Optional[bool] = None,
+            dynamic_step_size: Optional[bool] = None,
             nprint: Optional[int] = None,
     ) -> dict:
         """Evaluate model."""
