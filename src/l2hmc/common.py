@@ -31,7 +31,7 @@ from l2hmc.utils.plot_helpers import (
     plot_dataArray,
     # set_plot_style
 )
-from l2hmc.utils.rich import get_console, is_interactive
+from l2hmc.utils.rich import is_interactive
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 
