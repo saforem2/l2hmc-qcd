@@ -84,7 +84,8 @@ project:
     - "./resources/diffusion-2dU1-Copy1.html"
 website:
   # twitter-card: true
-  open-graph: true
+  open-graph:
+    site-name: "l2hmc-qcd"
   repo-url: https://github.com/saforem2/l2hmc-qcd
   repo-actions: [source, edit, issue]
   google-analytics: G-XVM2Y822Y1
