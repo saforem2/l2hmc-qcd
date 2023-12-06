@@ -53,7 +53,7 @@
     "href": "index.html#acknowledgement",
     "title": "",
     "section": "Acknowledgement",
-    "text": "Acknowledgement\n\nNote This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357. This work describes objective technical results and analysis. Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government.\n\n\nfrom datetime import date\nprint(f\"Last updated: {date.today().strftime('%d %B %y')}\")\n\nLast updated: 05 December 23"
+    "text": "Acknowledgement\n\nNote This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357. This work describes objective technical results and analysis. Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government.\n\n\nfrom datetime import date\nprint(f\"Last updated: {date.today().strftime('%d %B %y')}\")\n\nLast updated: 06 December 23"
   },
   {
     "objectID": "index.html#posts",
@@ -284,7 +284,7 @@
     "href": "index.html#configuring-your-experiment",
     "title": "",
     "section": "Configuring your Experiment",
-    "text": "Configuring your Experiment"
+    "text": "Configuring your Experiment\nThis project uses hydra for configuration management and supports distributed training for both PyTorch and TensorFlow.\nIn particular, we support the following combinations of framework + backend for distributed training:\n\nTensorFlow (+ Horovod for distributed training)\nPyTorch +\n\nDDP\nHorovod\nDeepSpeed\n\n\nThe main entry point is src/l2hmc/main.py, which contains the logic for running an end-to-end Experiment.\nAn Experiment consists of the following sub-tasks:\n\nTraining\nEvaluation\nHMC (for comparison and to measure model improvement)"
   },
   {
     "objectID": "index.html#running-an-experiment",
