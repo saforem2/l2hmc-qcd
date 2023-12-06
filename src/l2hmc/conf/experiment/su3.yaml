@@ -27,7 +27,7 @@ ds_config_path: null
 print_config: true
 # ----------------------------------------------------------------------------
 # disable python warnings if they annoy you
-ignore_warnings: true
+ignore_warnings: false
 # name of the run, should be used along with experiment mode
 name: null
 # ----------------------------------------------------------------------------
@@ -40,9 +40,9 @@ defaults:
   - override /steps: default.yaml               # Defines num_era, num_epoch, num_test, etc.
   - override /wandb: default.yaml               # Weights & Biases config
   - override /logdir: default.yaml              # Defines where to run experiment using info from cfg
-  - override /annealing_schedule: default.yaml  # Defines annealing schedule to use for training
+  - override /annealing_schedule: constant.yaml  # Defines annealing schedule to use for training
   - override /learning_rate: default.yaml       # Defines initial lr, optimizer type, lr schedule, etc.
-  - override /mode: default.yaml
+  - override /mode: debug.yaml
   # ------------------------------------------------------------------------------------------
   #                                 OVERRIDES
   # ------------------------------------------------------------------------------------------

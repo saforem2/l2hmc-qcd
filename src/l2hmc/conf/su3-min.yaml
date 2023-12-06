@@ -5,15 +5,15 @@ annealing_schedule:
 backend: DDP
 conv: none
 dynamics:
-  eps: 0.1
-  eps_fixed: true
+  eps: 0.06
+  eps_fixed: false
   group: SU3
   latvolume:
-    - 1
-    - 1
-    - 1
-    - 1
-  nchains: 4
+    - 4
+    - 4
+    - 4
+    - 4
+  nchains: 64
   nleapfrog: 1
   use_separate_networks: false
   use_split_xnets: false
@@ -22,8 +22,8 @@ framework: pytorch
 init_aim: false
 init_wandb: false
 learning_rate:
-  clip_norm: 1.0
-  lr_init: 1.0e-05
+  # clip_norm: 1.0
+  lr_init: 1.0e-03
 loss:
   charge_weight: 0.0
   plaq_weight: 0.0

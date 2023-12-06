@@ -20,17 +20,17 @@ dynamics:
     - 4
     - 4
     - 4
-  nchains: 12
+  nchains: 8
   nleapfrog: 4
   merge_directions: true
-  use_separate_networks: true
-  use_split_xnets: true
+  use_separate_networks: false
+  use_split_xnets: false
   verbose: true
 learning_rate:
   clip_norm: 1.0
   lr_init: 1e-04
 loss:
-  aux_weight: 1.0
+  aux_weight: 0.0
   charge_weight: 0.0
   plaq_weight: 0.1
   rmse_weight: 0.1
@@ -42,7 +42,7 @@ net_weights:
     t: 1.0
   x:
     q: 1.0
-    s: 1.0
+    s: 0.0
     t: 1.0
 network:
   activation_fn: tanh
