@@ -330,7 +330,7 @@ class LatticeSU3(Lattice):
                 tape.watch(x)
                 s = self.action(x, beta)
 
-            dsdx = tape.gradient(s,  x)
+            dsdx = tape.gradient(s, x)
         else:
             s = self.action(x, beta)
             dsdx = tf.gradients(s, [x])[0]
@@ -364,7 +364,7 @@ class LatticeSU3(Lattice):
         # qsin = self._sin_charges(wloops)
         # qint = self._int_charges(wloops)
         # TODO: FIX ME
-        metrics = {'plaqs': plaqs,  'sinQ': q.sinQ, 'intQ': q.intQ}
+        metrics = {'plaqs': plaqs, 'sinQ': q.sinQ, 'intQ': q.intQ}
         if beta is not None:
             # s = self.action(x, beta)
             s, dsdx = self.action_with_grad(x, beta)
