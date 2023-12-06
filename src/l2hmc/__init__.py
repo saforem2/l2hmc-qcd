@@ -22,23 +22,34 @@ os.environ['PYTHONIOENCODING'] = 'utf-8'
 RANK = int(MPI.COMM_WORLD.Get_rank())
 WORLD_SIZE = int(MPI.COMM_WORLD.Get_size())
 
+log = logging.getLogger(__name__)
 
-# # Check that MPS is available
+
+# Check that MPS is available
 # if (
 #         torch.backends.mps.is_available()
 #         and torch.get_default_dtype() != torch.float64
 # ):
 #     DEVICE = torch.device("mps")
 # elif not torch.backends.mps.is_built():
-#     DEVICE = 'cpu'
 #     print(
 #         "MPS not available because the current PyTorch install was not "
 #         "built with MPS enabled."
 #     )
-# else:
 #     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+#     print(f"Using device: {DEVICE}")
+# else:
+#     DEVICE = 'cpu'
+#     print("Unknown device")
 #
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+DEVICE = (
+    'cuda' if torch.cuda.is_available()
+    # else (
+    #     'mps' if torch.has_mps and torch.get_default_dtype() != torch.float64
+    else 'cpu'
+    # )
+)
 print(f"Using device: {DEVICE}")
 
 
@@ -126,7 +137,6 @@ def get_logger(
     # log.handlers = []
     # from rich.logging import RichHandler
     from l2hmc.utils.rich import get_console, is_interactive
-    # format = "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
     if rank_zero_only:
         if RANK != 0:
             log.setLevel('CRITICAL')
@@ -159,9 +169,8 @@ def get_logger(
             )
         )
         log.setLevel(level)
-    if (
-            len(log.handlers) > 1
-            and all([i == log.handlers[0] for i in log.handlers])
+    if len(log.handlers) > 1 and all(
+        i == log.handlers[0] for i in log.handlers
     ):
         log.handlers = [log.handlers[0]]
     return log

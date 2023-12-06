@@ -14,9 +14,9 @@ from l2hmc.dynamics.pytorch.dynamics import Dynamics
 import torch
 
 
-# log = logging.getLogger(__name__)
-from l2hmc import get_logger
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# from l2hmc import get_logger
+# log = get_logger(__name__)
 
 
 def get_summary_writer(
@@ -29,9 +29,7 @@ def get_summary_writer(
     summary_dir = jobdir.joinpath('summaries')
     summary_dir.mkdir(exist_ok=True, parents=True)
 
-    writer = SummaryWriter(summary_dir.as_posix())
-
-    return writer
+    return SummaryWriter(summary_dir.as_posix())
 
 
 def load_from_ckpt(
@@ -40,17 +38,16 @@ def load_from_ckpt(
         cfg: DictConfig,
 ) -> tuple[torch.nn.Module, torch.optim.Optimizer, dict]:
     outdir = Path(cfg.get('outdir', os.getcwd()))
-    ckpts = list(outdir.joinpath('train', 'checkpoints').rglob('*.tar'))
-    if len(ckpts) > 0:
-        latest = max(ckpts, key=lambda p: p.stat().st_ctime)
-        if latest.is_file():
-            log.info(f'Loading from checkpoint: {latest}')
-            ckpt = torch.load(latest)
-        else:
-            raise FileNotFoundError(f'No checkpoints found in {outdir}')
-    else:
+    if not (
+        ckpts := list(outdir.joinpath('train', 'checkpoints').rglob('*.tar'))
+    ):
         raise FileNotFoundError(f'No checkpoints found in {outdir}')
 
+    latest = max(ckpts, key=lambda p: p.stat().st_ctime)
+    if not latest.is_file():
+        raise FileNotFoundError(f'No checkpoints found in {outdir}')
+    log.info(f'Loading from checkpoint: {latest}')
+    ckpt = torch.load(latest)
     dynamics.load_state_dict(ckpt['model_state_dict'])
     optimizer.load_state_dict(ckpt['optimizer_state_dict'])
     dynamics.assign_eps({

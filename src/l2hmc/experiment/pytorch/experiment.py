@@ -5,7 +5,7 @@ Implements ptExperiment, a pytorch-specific subclass of the
 Experiment base class.
 """
 from __future__ import absolute_import, annotations, division, print_function
-# import logging
+import logging
 # import os
 from os import PathLike
 from pathlib import Path
@@ -19,7 +19,7 @@ import torch
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from l2hmc.utils.history import BaseHistory
-from l2hmc import get_logger
+# from l2hmc import get_logger
 from l2hmc.configs import NetWeights
 from l2hmc.configs import ExperimentConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics as ptDynamics
@@ -32,13 +32,13 @@ from l2hmc.utils.dist import setup_torch_distributed
 from l2hmc.utils.rich import get_console
 from l2hmc.common import print_dict
 
-# log = logging.getLogger(__name__)
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# log = get_logger(__name__)
 
 
 Tensor = torch.Tensor
 
-from l2hmc.trainers.pytorch.trainer import Trainer
+# from l2hmc.trainers.pytorch.trainer import Trainer
 
 def train_step(
         x: torch.Tensor,
@@ -163,8 +163,8 @@ class Experiment(BaseExperiment):
             log.warning(
                 f'Initialize WandB from {self._rank}:{self._local_rank}'
             )
-            run = super()._init_wandb()
-            assert run is wandb.run
+            run = super()._init_wandb() if wandb.run is None else wandb.run
+            # assert run is wandb.run
             # run.watch(
             #     self.trainer.dynamics.networks,
             #     log='all',
@@ -341,10 +341,7 @@ class Experiment(BaseExperiment):
             # rich: Optional[bool] = None,
     ):
         jobdir = self.get_jobdir(job_type='train')
-        writer = None
-        if self._rank == 0:
-            writer = self.get_summary_writer()
-
+        writer = self.get_summary_writer() if self._rank == 0 else None
         # console = get_console(record=True)
         # self.trainer.set_console(console)
         tstart = time.time()
@@ -422,7 +419,7 @@ class Experiment(BaseExperiment):
         if not self.trainer._is_orchestrator:
             return None
 
-        assert job_type in ['eval', 'hmc']
+        assert job_type in {'eval', 'hmc'}
         jobdir = self.get_jobdir(job_type)
         writer = self.get_summary_writer()
         console = get_console(record=True)

@@ -23,8 +23,11 @@ listing:
       - "../qmd/diffusion/diffusion.qmd"
       - "../qmd/diffusion-alt/diffusion.qmd"
       - "../qmd/slides.qmd"
-      - "../qmd/l2hmc-2DU1.qmd"
+      # - "../qmd/l2hmc-2DU1.qmd"
       - "../qmd/l2hmc-4DSU3.qmd"
+      - "../qmd/l2hmc-2dU1/l2hmc-2dU1.qmd"
+      # - "../qmd/test/test.qmd"
+      # - "../qmd/notebook/notebook.qmd"
 #       - "!../qmd/dsblog.qmd"
     type: table
     sort: "date desc"
@@ -32,8 +35,8 @@ listing:
 
 ## External Links
 
-- [$U(1)$ Model in `2D`](./l2hmc-2DU1.qmd)
-- [$SU(3)$ Model in `4D`](./l2hmc-4DSU3.qmd)
+<!-- - [$U(1)$ Model in `2D`](./l2hmc-2DU1.qmd) -->
+<!-- - [$SU(3)$ Model in `4D`](./l2hmc-4DSU3.qmd) -->
 
 ::: {#listings}
 :::

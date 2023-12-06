@@ -15,9 +15,9 @@ from l2hmc.configs import flatten_dict
 
 
 # log = get_pylogger(__name__)
-from l2hmc import get_logger
-log = get_logger(__name__)
-# log = logging.getLogger(__name__)
+# from l2hmc import get_logger
+# log = get_logger(__name__)
+log = logging.getLogger(__name__)
 
 Layer = tf.keras.layers.Layer
 Model = tf.keras.models.Model
@@ -37,9 +37,7 @@ def log_step(tag: str, step: int) -> None:
 
 def check_tag(tag: str) -> str:
     tags = tag.split('/')
-    if len(tags) > 2 and (tags[0] == tags[1]):
-        return '/'.join(tags[1:])
-    return tag
+    return '/'.join(tags[1:]) if len(tags) > 2 and (tags[0] == tags[1]) else tag
 
 
 def log_item(
@@ -244,7 +242,7 @@ def update_summaries1(
         log_dict(metrics, step, prefix=job_type)
 
     if weights is not None:
-        log.info(f'Caught weights!')
+        log.info('Caught weights!')
         if isinstance(weights, dict):
             log_dict(weights, step=step, prefix=prefix)
 

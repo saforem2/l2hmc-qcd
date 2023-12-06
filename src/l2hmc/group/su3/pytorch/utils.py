@@ -4,30 +4,36 @@ group/pytorch/utils.py
 """
 from __future__ import absolute_import, annotations, division, print_function
 from math import pi as PI
+from re import S
 from typing import Optional, Sequence
 from typing import Callable
+import logging
 
 import numpy as np
 import torch
 # from l2hmc.group.pytorch.logm import charpoly3x3, su3_to_eigs, log3x3
 
-from l2hmc import get_logger, DEVICE
+from l2hmc import DEVICE
 
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# log = get_logger(__name__)
 
 Array = np.array
 Tensor = torch.Tensor
 
 
 # DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+NP_SQRT1by2 = np.sqrt(1. / 2.)
+NP_SQRT1by3 = np.sqrt(1. / 3.)
+TORCH_DTYPE = torch.get_default_dtype()
 
-SQRT1by2 = torch.tensor(np.sqrt(1. / 2.), device=DEVICE)
-SQRT1by3 = torch.tensor(np.sqrt(1. / 3.), device=DEVICE)
-SQRT3 = torch.tensor(3., device=DEVICE).sqrt_()
+SQRT1by2 = torch.tensor(NP_SQRT1by2, dtype=TORCH_DTYPE, device=DEVICE)
+SQRT1by3 = torch.tensor(NP_SQRT1by3, dtype=TORCH_DTYPE, device=DEVICE)
+SQRT3 = torch.tensor(3., dtype=TORCH_DTYPE, device=DEVICE).sqrt_()
 ONE_HALF = 1. / 2.
 ONE_THIRD = 1. / 3.
-TWO_PI = torch.tensor(2. * PI, dtype=torch.float64, device=DEVICE)
-EPS = torch.tensor(1e-12, dtype=torch.float64, device=DEVICE)
+TWO_PI = torch.tensor(2. * PI, dtype=TORCH_DTYPE, device=DEVICE)
+EPS = torch.tensor(1e-12, dtype=TORCH_DTYPE, device=DEVICE)
 
 
 f012 = +1.0
@@ -158,9 +164,7 @@ def norm2(
         x = x.abs()
     n = x.square()
     if exclude is None:
-        if len(axis) == 0:
-            return n
-        return n.sum(tuple(axis))
+        return n if len(axis) == 0 else n.sum(tuple(axis))
     return n.sum([i for i in range(len(n.shape)) if i not in exclude])
 
 

@@ -1,6 +1,6 @@
 ---
 title: "4D $SU(3)$ Model"
-jupyter: l2hmc
+# jupyter: l2hmc
 callout-appearance: simple
 title-block-banner: false
 editor:

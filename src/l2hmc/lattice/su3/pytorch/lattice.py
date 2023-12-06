@@ -15,9 +15,9 @@ import l2hmc.group.su3.pytorch.group as g
 from l2hmc.lattice.lattice import Lattice
 from l2hmc.configs import Charges
 
-# log = logging.getLogger(__name__)
-from l2hmc import get_logger
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# from l2hmc import get_logger
+# log = get_logger(__name__)
 
 Array = np.ndarray
 PI = np.pi
@@ -148,13 +148,10 @@ class LatticeSU3(Lattice):
                 # plaqs.append(plaq)
                 if needs_rect:
                     urul_, uuud_ = self._rectangles(x, u, v)
-                    rects.append(urul_)
-                    rects.append(uuud_)
+                    rects.extend((urul_, uuud_))
                     rcount += 1
                 else:
-                    rects.append(torch.zeros_like(plaq))
-                    rects.append(torch.zeros_like(plaq))
-
+                    rects.extend((torch.zeros_like(plaq), torch.zeros_like(plaq)))
         return plaqs, rects
 
     def _wilson_loops(
@@ -195,13 +192,10 @@ class LatticeSU3(Lattice):
                     tr_uuud_ = (
                         self.g.trace(self.g.mul(uu, ud_, adjoint_b=True))
                     )
-                    rects.append(tr_urul_)
-                    rects.append(tr_uuud_)
+                    rects.extend((tr_urul_, tr_uuud_))
                     rcount += 1
                 else:
-                    rects.append(torch.zeros_like(plaq))
-                    rects.append(torch.zeros_like(plaq))
-
+                    rects.extend((torch.zeros_like(plaq), torch.zeros_like(plaq)))
         return torch.stack(plaqs), torch.stack(rects)
 
     def _plaquettes(self, x: Tensor) -> Tensor:
@@ -363,7 +357,6 @@ class LatticeSU3(Lattice):
             wloops2: Optional[Tensor] = None
     ):
         log.error('TODO')
-        pass
 
     def charge_loss(
             self,
@@ -374,7 +367,6 @@ class LatticeSU3(Lattice):
             wloops2: Optional[Tensor] = None
     ):
         log.error('TODO')
-        pass
 
 
 if __name__ == '__main__':

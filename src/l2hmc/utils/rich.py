@@ -15,11 +15,11 @@ from typing import Optional
 from typing import Any
 from typing import Generator
 
+import logging
 from enrich.style import STYLES
 from enrich.console import Console
-from enrich.logging import RichHandler
+from enrich.handler import RichHandler
 from omegaconf import DictConfig, OmegaConf
-import pandas as pd
 import pandas as pd
 import rich
 from rich import print
@@ -39,15 +39,14 @@ from rich.progress import (
 )
 import rich.syntax
 from rich.table import Table
-from rich.table import Table
 import rich.tree
 
-from l2hmc import get_logger
+# from l2hmc import get_logger
 
 # from l2hmc.configs import Steps
 
 
-# log = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 # WIDTH = max(150, int(os.environ.get('COLUMNS', 150)))
 size = shutil.get_terminal_size()
@@ -83,19 +82,7 @@ def get_console(**kwargs) -> Console:
     interactive = is_interactive()
     from rich.theme import Theme
     theme = Theme(STYLES)
-    # outdir = Path(os.getcwd()).resolve().absolute()
-    # outfile = outdir.joinpath('console.log').as_posix()
-    # width = int(
-    #     max(
-    #         [
-    #             os.get_terminal_size()[0],
-    #             shutil.get_terminal_size()[0],
-    #         ]
-    #     )
-    # )
-    # if width <= 100:
-    #     width = 255
-    console = Console(
+    return Console(
         force_jupyter=interactive,
         log_path=False,
         theme=theme,
@@ -105,9 +92,6 @@ def get_console(**kwargs) -> Console:
         # width=int(width),
         **kwargs
     )
-    # from rich.console import Console
-    # console = Console()
-    return console
 
 
 def is_interactive() -> bool:
@@ -221,7 +205,7 @@ def add_columns(
     skip: Optional[str | list[str]] = None,
     keep: Optional[str | list[str]] = None,
 ) -> Table:
-    for key in avgs.keys():
+    for key in avgs:
         if skip is not None and key in skip:
             continue
         if keep is not None and key not in keep:
@@ -445,18 +429,14 @@ def printarr(*arrs, float_width=6):
             return 'None'
         if isinstance(a, int):
             return 'int'
-        if isinstance(a, float):
-            return 'float'
-        return str(a.dtype)
+        return 'float' if isinstance(a, float) else str(a.dtype)
 
     def shape_str(a):
         if a is None:
             return 'N/A'
         if isinstance(a, int):
             return 'scalar'
-        if isinstance(a, float):
-            return 'scalar'
-        return str(list(a.shape))
+        return 'scalar' if isinstance(a, float) else str(list(a.shape))
 
     def type_str(a):
         # TODO this is is weird... what's the better way?
@@ -477,7 +457,7 @@ def printarr(*arrs, float_width=6):
     def minmaxmean_str(a):
         if a is None:
             return ('N/A', 'N/A', 'N/A')
-        if isinstance(a, int) or isinstance(a, float):
+        if isinstance(a, (int, float)):
             return (format_float(a), format_float(a), format_float(a))
 
         # compute min/max/mean. if anything goes wrong, just print 'N/A'
@@ -558,7 +538,8 @@ BEAT_TIME = 0.008
 
 COLORS = ["cyan", "magenta", "red", "green", "blue", "purple"]
 
-log = get_logger(__name__)
+# log = get_logger(__name__)
+log = logging.getLogger(__name__)
 handlers = log.handlers
 if (
         len(handlers) > 0
@@ -647,11 +628,7 @@ class DataFramePrettify:
         for row in self.rows:
             with beat(self.delay_time):
 
-                if self.first_cols:
-                    row = row[: self.col_limit]
-                else:
-                    row = row[-self.col_limit:]
-
+                row = row[: self.col_limit] if self.first_cols else row[-self.col_limit:]
                 row = [str(item) for item in row]
                 self.table.add_row(*list(row))
 
@@ -709,15 +686,8 @@ class DataFramePrettify:
                 self.table.width = None
 
     def _add_caption(self):
-        if self.first_rows:
-            row_text = "first"
-        else:
-            row_text = "last"
-        if self.first_cols:
-            col_text = "first"
-        else:
-            col_text = "last"
-
+        row_text = "first" if self.first_rows else "last"
+        col_text = "first" if self.first_cols else "last"
         with beat(self.delay_time):
             self.table.caption = (
                 f"Only the {row_text} "

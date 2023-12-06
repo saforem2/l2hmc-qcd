@@ -3,16 +3,17 @@ plot_helpers.py
 
 Contains helpers for plotting.
 """
+
 from __future__ import absolute_import, annotations, division, print_function
 import datetime
-# import logging
+import logging
 import os
 from pathlib import Path
 import time
 from typing import Any, Optional, Tuple
-import warnings
+# import warnings
 
-import opinionated
+# import opinionated
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -21,29 +22,27 @@ import xarray as xr
 # import torch
 # import tensorflow as tf
 
-import opinionated
 # from toolbox import set_plot_style
-from opinionated import STYLES
 
-from l2hmc.utils.rich import is_interactive
+# from l2hmc.utils.rich import is_interactive
 # from l2hmc.utils.logger import get_pylogger
 # import logging
-from l2hmc import get_logger
+# from l2hmc import get_logger
 try:
     import matplotx
     MATPLOTX = True
-except (ImportError, ModuleNotFoundError):
+except ImportError:
     MATPLOTX = False
 
 
 # from l2hmc.experiment.pytorch.experiment import Experiment as ptExperiment
 # from l2hmc.experiment.tensorflow.experiment import Experiment as tfExperiment
 
-warnings.filterwarnings('ignore')
+# warnings.filterwarnings('ignore')
 
 # log = get_pylogger(__name__)
-# log = logging.getLogger(__name__)
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# log = get_logger(__name__)
 
 xplt = xr.plot  # type: ignore
 
@@ -78,75 +77,77 @@ COLORS = {
 plt.style.use('default')
 # set_plot_style()
 
+
 def set_plot_style(**kwargs):
     #plt.style.use('default')
     #plt.style.use(opinionated.STYLES['opinionated_min'])
-    plt.rcParams.update({
-        'image.cmap': 'viridis',
-        'savefig.transparent': True,
-        # 'text.color': '#666666',
-        # 'xtick.color': '#66666604',
-        # 'ytick.color': '#66666604',
-        # 'ytick.labelcolor': '#666666',
-        # 'xtick.labelcolor': '#666666',
-        # 'axes.edgecolor': '#66666600',
-        # 'axes.labelcolor': '#666666',
-        # 'grid.linestyle': ':',
-        # 'grid.alpha': 0.4,
-        # 'grid.color': '#353535',
-        'path.simplify': True,
-        'savefig.bbox': 'tight',
-        'legend.labelcolor': '#838383',
-        # 'axes.labelcolor': (189, 189, 189, 1.0),
-        # 'grid.color': (0.434, 0.434, 0.434, 0.2),  # #66666602
-        # 'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
-        # 'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
-        'axes.facecolor': 'none',
-        'figure.facecolor': 'none',
-        'savefig.facecolor': 'none',
-        'savefig.format': 'svg',
-        'axes.edgecolor': 'none',
-        'axes.grid': True,
-        'axes.labelcolor': '#838383',
-        'axes.titlecolor': '#838383',
-        'grid.color': '#838383',
-        'text.color': '#838383',
-        'grid.linestyle': '--',
-        'grid.linewidth': 0.5,
-        'grid.alpha': 0.33,
-        'xtick.color': 'none',
-        'ytick.color': 'none',
-        'xtick.labelcolor': '#838383',
-        'legend.edgecolor': 'none',
-        'ytick.labelcolor': '#838383',
-        # 'savefig.transparent': True,
-    })
-    plt.rcParams['axes.prop_cycle'] = plt.cycler(
-        'color',
-        list(COLORS.values())
-    )
-    plt.rcParams['axes.labelcolor'] = '#838383'
-    plt.rcParams.update(**kwargs)
-    # plt.rcParams |= {'figure.figsize': [12.4, 4.8]}
-    # plt.style.use(STYLES['opinionated_min'])
-    # plt.rcParams['ytick.labelsize'] = 14.0
-    # plt.rcParams['xtick.labelsize'] = 14.0
-    # plt.rcParams['grid.alpha'] = 0.4
-    # grid_color = plt.rcParams['grid.color']
-    # if not is_interactive():
-    #     figsize = plt.rcParamsDefault.get('figure.figsize', (4.5, 3))
-    #     x = figsize[0]
-    #     y = figsize[1]
-    #     plt.rcParams['figure.figsize'] = [2.5 * x, 2. * y]
-    #     plt.rcParams['figure.dpi'] = 400
+    # plt.rcParams.update({
+    #     'image.cmap': 'viridis',
+    #     'savefig.transparent': True,
+    #     # 'text.color': '#666666',
+    #     # 'xtick.color': '#66666604',
+    #     # 'ytick.color': '#66666604',
+    #     # 'ytick.labelcolor': '#666666',
+    #     # 'xtick.labelcolor': '#666666',
+    #     # 'axes.edgecolor': '#66666600',
+    #     # 'axes.labelcolor': '#666666',
+    #     # 'grid.linestyle': ':',
+    #     # 'grid.alpha': 0.4,
+    #     # 'grid.color': '#353535',
+    #     'path.simplify': True,
+    #     'savefig.bbox': 'tight',
+    #     'legend.labelcolor': '#838383',
+    #     # 'axes.labelcolor': (189, 189, 189, 1.0),
+    #     # 'grid.color': (0.434, 0.434, 0.434, 0.2),  # #66666602
+    #     # 'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
+    #     # 'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
+    #     'axes.facecolor': 'none',
+    #     'figure.facecolor': 'none',
+    #     'savefig.facecolor': 'none',
+    #     'savefig.format': 'svg',
+    #     'axes.edgecolor': 'none',
+    #     'axes.grid': True,
+    #     'axes.labelcolor': '#838383',
+    #     'axes.titlecolor': '#838383',
+    #     'grid.color': '#838383',
+    #     'text.color': '#838383',
+    #     'grid.linestyle': '--',
+    #     'grid.linewidth': 0.5,
+    #     'grid.alpha': 0.33,
+    #     'xtick.color': 'none',
+    #     'ytick.color': 'none',
+    #     'xtick.labelcolor': '#838383',
+    #     'legend.edgecolor': 'none',
+    #     'ytick.labelcolor': '#838383',
+    #     # 'savefig.transparent': True,
+    # })
+    # plt.rcParams['axes.prop_cycle'] = plt.cycler(
+    #     'color',
+    #     list(COLORS.values())
+    # )
+    # plt.rcParams['axes.labelcolor'] = '#838383'
+    # plt.rcParams.update(**kwargs)
+    # # plt.rcParams |= {'figure.figsize': [12.4, 4.8]}
+    # # plt.style.use(STYLES['opinionated_min'])
+    # # plt.rcParams['ytick.labelsize'] = 14.0
+    # # plt.rcParams['xtick.labelsize'] = 14.0
+    # # plt.rcParams['grid.alpha'] = 0.4
+    # # grid_color = plt.rcParams['grid.color']
+    # # if not is_interactive():
+    # #     figsize = plt.rcParamsDefault.get('figure.figsize', (4.5, 3))
+    # #     x = figsize[0]
+    # #     y = figsize[1]
+    # #     plt.rcParams['figure.figsize'] = [2.5 * x, 2. * y]
+    # #     plt.rcParams['figure.dpi'] = 400
+    import opinionated
+    plt.style.use(opinionated.STYLES['opinionated_min'])
+    plt.rcParams['axes.edgecolor'] = plt.rcParams['axes.facecolor']
 
 
 def get_timestamp(fstr=None):
     """Get formatted timestamp."""
     now = datetime.datetime.now()
-    if fstr is None:
-        return now.strftime('%Y-%m-%d-%H%M%S')
-    return now.strftime(fstr)
+    return now.strftime('%Y-%m-%d-%H%M%S') if fstr is None else now.strftime(fstr)
 
 
 def save_figure(fig: plt.Figure, fname: str, outdir: os.PathLike):
@@ -155,10 +156,13 @@ def save_figure(fig: plt.Figure, fname: str, outdir: os.PathLike):
     pngfile = pngdir.joinpath(f'{fname}.png')
     svgfile = Path(outdir).joinpath(f'{fname}.svg')
 
+    # try:
     _ = fig.savefig(pngfile, dpi=400, bbox_inches='tight')
     _ = fig.savefig(svgfile, dpi=400, bbox_inches='tight')
     with PLOTS_LOG.open('a') as f:
         f.write(f'{fname}: {svgfile.as_posix()}\n')
+    # except Exception as exc:
+    #     log.exception(exc)
 
 
 def savefig(fig: plt.Figure, outfile: os.PathLike):
@@ -189,8 +193,12 @@ def measure_improvement(
     ehist = experiment.trainer.histories.get('eval', None)
     hhist = experiment.trainer.histories.get('hmc', None)
     improvement = 0.0
-    # set_plot_style()
-    lw = plt.rcParams.get('axes.linewidth', 1.25)
+    set_plot_style()
+    # lw = plt.rcParams.get('axes.linewidth', 1.25)
+    import opinionated
+    plt.style.use(opinionated.STYLES['opinionated_min'])
+    lw = 1.25
+    lw_bold = 1.5 * lw
     if ehist is not None and hhist is not None:
         edset = ehist.get_dataset()
         hdset = hhist.get_dataset()
@@ -200,12 +208,12 @@ def measure_improvement(
         _ = ax.plot(
             dQint_eval,
             label='Trained',
-            lw=1.25 * lw,
+            lw=lw_bold,
             color=COLORS['blue'],
         )
         _ = ax.axhline(
             y=dQint_eval.values.mean(),
-            lw=1.25 * lw,
+            lw=lw_bold,
             color=COLORS['blue'],
             ls=':',
             label=f'avg:{dQint_eval.values.mean():.3f}'
@@ -219,7 +227,7 @@ def measure_improvement(
         )
         _ = ax.axhline(
             y=dQint_hmc.values.mean(),
-            lw=1.25 * lw,
+            lw=lw_bold,
             color=COLORS['red'],
             ls=':',
             label=f'avg:{dQint_hmc.values.mean():.3f}'
@@ -236,8 +244,7 @@ def measure_improvement(
             loc='best',
             framealpha=0.1,
             ncol=2,
-            labelcolor='#bdbdbd',
-            # shadow=True
+            labelcolor='#838383',
         )
         if title is not None:
             _ = ax.set_title(title)
@@ -250,7 +257,10 @@ def measure_improvement(
         with open(txtfile, 'w') as f:
             f.write(f'{improvement:.8f}')
 
-        save_figure(fig, fname='model_improvement', outdir=outdir)
+        try:
+            save_figure(fig, fname='model_improvement', outdir=outdir)
+        except Exception:
+            log.critrical('Unable to `measure_improvement(...)` !! (??) skipping...')
 
     return improvement
 
@@ -259,7 +269,7 @@ def plot_arr(
         metric: list,
         name: Optional[str] = None,
 ) -> FigAxes:
-    assert len(metric) > 0
+    assert metric
     y = np.stack(metric)
     if isinstance(metric[0], (int, float, bool, np.floating)):
         return plot_scalar(y, ylabel=name)
@@ -287,11 +297,7 @@ def plot_scalar(
     if x is None:
         x = np.arange(len(y))
 
-    if fig_axes is None:
-        fig, ax = subplots()
-    else:
-        fig, ax = fig_axes
-
+    fig, ax = subplots() if fig_axes is None else fig_axes
     _ = ax.plot(x, y, label=label, **kwargs)
     if xlabel is not None:
         _ = ax.set_xlabel(xlabel)
@@ -324,11 +330,7 @@ def plot_chains(
     if x is None:
         x = np.arange(y.shape[0])
 
-    if fig_axes is None:
-        fig, ax = subplots()
-    else:
-        fig, ax = fig_axes
-
+    fig, ax = subplots() if fig_axes is None else fig_axes
     if label is not None:
         label = f'{label}, avg: {y.mean():4.3g}'
 
@@ -373,11 +375,7 @@ def plot_leapfrogs(
 ) -> FigAxes:
     assert len(y.shape) == 3
 
-    if fig_axes is None:
-        fig, ax = subplots()
-    else:
-        fig, ax = fig_axes
-
+    fig, ax = subplots() if fig_axes is None else fig_axes
     if x is None:
         x = np.arange(y.shape[0])
 
@@ -416,7 +414,6 @@ def plot_combined(
     subplots_kwargs.update({'figsize': figsize})
     subfigs = None
     num_chains = 10 if num_chains is None else num_chains
-
     _ = subplots_kwargs.pop('constrained_layout', True)
     figsize = (3 * figsize[0], 1.5 * figsize[1])
     fig = plt.figure(figsize=figsize, constrained_layout=True)
@@ -430,7 +427,6 @@ def plot_combined(
         color = '#3FB5AD'
     else:
         color = plot_kwargs.get('color', f'C{np.random.randint(5)}')
-
     (ax1, ax2) = subfigs[1].subplots(1, 2, sharey=True, gridspec_kw=gs_kw)
     ax1.grid(alpha=0.2)
     ax2.grid(False)
@@ -502,8 +498,8 @@ def plot_dataArray(
 ) -> tuple:
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
-    set_plot_style()
-    plt.rcParams['axes.labelcolor'] = '#bdbdbd'
+    # set_plot_style()
+    plt.rcParams['axes.labelcolor'] = '#838383'
     figsize = subplots_kwargs.get('figsize', set_size())
     subplots_kwargs.update({'figsize': figsize})
     subfigs = None
@@ -635,6 +631,7 @@ def plot_array(
     if title is not None:
         _ = ax.set_title(title)
     _ = ax.legend(loc='best')
+    # sns.despine(ax, top=True, left=True, bottom=True, right=True)
     if outdir is not None:
         outfile = Path(outdir).joinpath(f'{key}.svg')
         if outfile.is_file():
@@ -1033,7 +1030,7 @@ def make_ridgeplots(
                 _ = g.set_titles('')
                 _ = g.set(yticks=[])
                 _ = g.set(yticklabels=[])
-                plt.rcParams['axes.labelcolor'] = '#bdbdbd'
+                # plt.rcParams['axes.labelcolor'] = '#838383'
                 _ = g.set(xlabel=f'{key}')
                 _ = g.despine(bottom=True, left=True)
                 if outdir is not None and save_plot:

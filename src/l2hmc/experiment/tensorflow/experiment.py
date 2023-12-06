@@ -6,7 +6,7 @@ a subclass of the base `l2hmc/Experiment` object.
 """
 from __future__ import absolute_import, division, print_function, annotations
 import os
-# import logging
+import logging
 
 from omegaconf import DictConfig
 
@@ -29,9 +29,9 @@ from l2hmc.experiment.experiment import BaseExperiment
 
 # log = logging.getLogger(__name__)
 # log = get_pylogger(__name__)
-# log = logging.getLogger(__name__)
-from l2hmc import get_logger
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# from l2hmc import get_logger
+# log = get_logger(__name__)
 
 # GLOBAL_RANK = hvd.rank()
 RANK = hvd.rank()
@@ -190,8 +190,7 @@ class Experiment(BaseExperiment):
         return super()._init_wandb()
 
     def init_aim(self):
-        run = super()._init_aim()
-        return run
+        return super()._init_aim()
 
     def get_summary_writer(self, outdir: Optional[os.PathLike] = None):
         outdir = self._outdir if outdir is None else outdir
@@ -273,7 +272,7 @@ class Experiment(BaseExperiment):
             nprint: Optional[int] = None,
     ) -> dict:
         """Evaluate model."""
-        assert job_type in ['eval', 'hmc']
+        assert job_type in {'eval', 'hmc'}
         if not self.trainer._is_orchestrator:
             return {}
 

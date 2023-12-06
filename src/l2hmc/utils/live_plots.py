@@ -21,8 +21,8 @@ from l2hmc.utils.rich import is_interactive
 _ = mplstyle.use('fast')
 
 
-# log = logging.getLogger(__name__)
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# log = get_logger(__name__)
 
 mplog = logging.getLogger('matplotlib')
 mplog.setLevel('CRITICAL')
@@ -96,10 +96,7 @@ def update_plot(
         return
 
     if isinstance(y, list):
-        if isinstance(y[0], np.ndarray):
-            yarr: np.ndarray = np.stack(y)
-        else:
-            yarr: np.ndarray = np.array(y)
+        yarr: np.ndarray = np.stack(y) if isinstance(y[0], np.ndarray) else np.array(y)
     else:
         yarr = y
 
@@ -116,6 +113,7 @@ def update_plot(
         fig.canvas.draw()
         display_id.update(fig)
 
+    plt.show()
     # return fig, ax
 
 

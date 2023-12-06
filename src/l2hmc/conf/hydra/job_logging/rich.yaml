@@ -1,0 +1,42 @@
+---
+version: 1
+formatters:
+  simple:
+    format: '[%(asctime)s][%(levelname)s][%(name)s] - %(message)s'
+handlers:
+  stream:
+    class: enrich.handler.RichHandler
+    show_time: true
+    show_level: true
+    enable_link_path: false
+    level: DEBUG
+  file:
+    class: logging.FileHandler
+    formatter: simple
+    filename: main_debug.log
+    level: DEBUG
+    mode: w
+  console:
+    class: logging.FileHandler
+    # formatter: simple
+    filename: ${hydra.job.name}.log
+    level: INFO
+    mode: w
+    # console:
+    #   (): enrich.console.Console
+    #   force_jupyter: false
+    #   log_path: false
+    #   soft_wrap: true
+    #   markup: true
+    # formatter: console
+    # console: 
+    # formatter: simple
+    # filename: ${hydra.job.name}.log
+    # mode: w
+  # term:
+  #   class: enrich.handler.RichHandler
+  #   level: INFO
+root:
+  handlers: [stream, console, file]
+disable_existing_loggers: false
+...

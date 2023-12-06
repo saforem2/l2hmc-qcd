@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Sam Foreman ">
-<meta name="dcterms.date" content="2023-10-04">
+<meta name="dcterms.date" content="2023-12-05">
 
 <title>l2hmc-qcd - MCMC + Diffusion Sampling</title>
 <style>
@@ -137,17 +137,19 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 <link rel="stylesheet" href="../css/callouts.css">
 <link rel="stylesheet" href="../css/profile.css">
 <meta property="og:title" content="l2hmc-qcd - MCMC + Diffusion Sampling">
+<meta property="og:description" content="">
 <meta property="og:image" content="https://saforem2.github.io/l2hmc-qcd/qmd/diffusion/assets/diffusion/fa5ecb88f2753cbd4123a5c4bd20a87fbfd4d143.svg">
 <meta property="og:site-name" content="l2hmc-qcd">
 <meta name="twitter:title" content="l2hmc-qcd - MCMC + Diffusion Sampling">
+<meta name="twitter:description" content="">
 <meta name="twitter:image" content="https://saforem2.github.io/l2hmc-qcd/qmd/diffusion/assets/diffusion/fa5ecb88f2753cbd4123a5c4bd20a87fbfd4d143.svg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="citation_title" content="MCMC + Diffusion Sampling">
 <meta name="citation_author" content="Sam Foreman">
-<meta name="citation_publication_date" content="2023-10-04">
-<meta name="citation_cover_date" content="2023-10-04">
+<meta name="citation_publication_date" content="2023-12-05">
+<meta name="citation_cover_date" content="2023-12-05">
 <meta name="citation_year" content="2023">
-<meta name="citation_online_date" content="2023-10-04">
+<meta name="citation_online_date" content="2023-12-05">
 <meta name="citation_fulltext_html_url" content="https://saforem2.github.io/l2hmc-qcd/qmd/diffusion/diffusion.html">
 <meta name="citation_language" content="en">
 <meta name="citation_reference" content="citation_title=The climate risk &amp;amp;amp; resilience portal (ClimRR) metadata and data dictionary;,citation_author=C. Burdi;,citation_author=Wall. T Branham;,citation_publication_date=2023;,citation_cover_date=2023;,citation_year=2023;,citation_fulltext_html_url=https://dub.sh/ClimRR-Metadata;">
@@ -168,7 +170,7 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container">
     <a href="../../index.html" class="navbar-brand navbar-brand-logo">
-    <img src="../.././favicon.svg" alt="" class="navbar-logo">
+    <img src="../.././assets/logo-crop.svg" alt="" class="navbar-logo">
     </a>
     <a class="navbar-brand" href="../../index.html">
     <span class="navbar-title">l2hmc-qcd</span>
@@ -245,7 +247,7 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
     <div>
     <div class="quarto-title-meta-heading"></div>
     <div class="quarto-title-meta-contents">
-      <p class="date">October 4, 2023</p>
+      <p class="date">December 5, 2023</p>
     </div>
   </div>
   
@@ -285,6 +287,7 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 <span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    backend<span class="op">=</span><span class="st">"DDP"</span>,</span>
 <span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    port<span class="op">=</span><span class="ss">f"</span><span class="sc">{</span>port<span class="sc">}</span><span class="ss">"</span></span>
 <span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
 <div class="cell-output cell-output-display">
     Using port: 5561
 </div>
@@ -296,7 +299,7 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;">Global Rank: <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">0</span> <span style="color: #800080; text-decoration-color: #800080">/</span> <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">0</span>
 </pre>
 </div>
-</div>
+<p>:::</p>
 <div id="b55dfeab-27a1-4322-af80-44380adbaadf" class="cell code" data-execution_count="3" data-execution="{&quot;iopub.execute_input&quot;:&quot;2023-09-21T17:23:29.371628Z&quot;,&quot;iopub.status.busy&quot;:&quot;2023-09-21T17:23:29.371422Z&quot;,&quot;iopub.status.idle&quot;:&quot;2023-09-21T17:23:30.756041Z&quot;,&quot;shell.execute_reply&quot;:&quot;2023-09-21T17:23:30.755862Z&quot;,&quot;shell.execute_reply.started&quot;:&quot;2023-09-21T17:23:29.371616Z&quot;}" data-jukit_cell_id="ZlqRKELWeh">
 <div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>matplotlib inline</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> matplotlib_inline</span>
@@ -1738,13 +1741,13 @@ nleapfrog=20</code></pre>
 <div id="quarto-appendix" class="default"><section class="quarto-appendix-contents"><h2 class="anchored quarto-appendix-heading">Citation</h2><div><div class="quarto-appendix-secondary-label">BibTeX citation:</div><pre class="sourceCode code-with-copy quarto-appendix-bibtex"><code class="sourceCode bibtex">@online{foreman2023,
   author = {Foreman, Sam},
   title = {MCMC + {Diffusion} {Sampling}},
-  date = {2023-10-04},
+  date = {2023-12-05},
   url = {https://saforem2.github.io/l2hmc-qcd/qmd/diffusion/diffusion.html},
   langid = {en}
 }
 </code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre><div class="quarto-appendix-secondary-label">For attribution, please cite this work as:</div><div id="ref-foreman2023" class="csl-entry quarto-appendix-citeas" role="listitem">
-Foreman, Sam. 2023. <span>“MCMC + Diffusion Sampling.”</span> October 4,
-2023. <a href="https://saforem2.github.io/l2hmc-qcd/qmd/diffusion/diffusion.html">https://saforem2.github.io/l2hmc-qcd/qmd/diffusion/diffusion.html</a>.
+Foreman, Sam. 2023. <span>“MCMC + Diffusion Sampling.”</span> December
+5, 2023. <a href="https://saforem2.github.io/l2hmc-qcd/qmd/diffusion/diffusion.html">https://saforem2.github.io/l2hmc-qcd/qmd/diffusion/diffusion.html</a>.
 </div></div></section></div></main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
 window.document.addEventListener("DOMContentLoaded", function (event) {

@@ -5,7 +5,7 @@ Pytorch implementation of Dynamics object for training L2HMC sampler.
 """
 from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass
-# import logging
+import logging
 from math import pi as PI
 import os
 from pathlib import Path
@@ -16,7 +16,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from l2hmc import get_logger
+# from l2hmc import get_logger
 import l2hmc.configs as cfgs
 from l2hmc.group.u1.pytorch.group import U1Phase
 from l2hmc.lattice.u1.pytorch.lattice import LatticeU1
@@ -25,8 +25,8 @@ from l2hmc.lattice.su3.pytorch.lattice import LatticeSU3
 from l2hmc.network.pytorch.network import NetworkFactory, dummy_network
 
 
-# log = logging.getLogger(__name__)
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# log = get_logger(__name__)
 
 TWO_PI = 2. * PI
 
@@ -230,12 +230,11 @@ class Dynamics(nn.Module):
         """Build networks."""
         split = self.config.use_split_xnets
         n = self.nlf if self.config.use_separate_networks else 1
-        networks = network_factory.build_networks(
+        return network_factory.build_networks(
             n,
             split,
             group=self.g,
         )
-        return networks
 
     def _build_xnet(
             self,
@@ -256,8 +255,6 @@ class Dynamics(nn.Module):
         """Build networks."""
         split = self.config.use_split_xnets
         n = self.nlf if self.config.use_separate_networks else 1
-        # return networks
-        pass
 
     @torch.no_grad()
     def _init_weight(
@@ -623,11 +620,11 @@ class Dynamics(nn.Module):
         x, beta = inputs
         x = x.to(self._device)  # .to(self._dtype)
         beta = beta.to(self._device)  # .to(self._dtype)
-        if self.config.merge_directions:
-            outputs = self.apply_transition_fb(inputs)
-        else:
-            outputs = self.apply_transition(inputs)
-        return outputs
+        return (
+            self.apply_transition_fb(inputs)
+            if self.config.merge_directions
+            else self.apply_transition(inputs)
+        )
 
     def flatten(self, x: Tensor) -> Tensor:
         return x.reshape(x.shape[0], -1)
@@ -1077,10 +1074,9 @@ class Dynamics(nn.Module):
             log.warning('Complex sumlogdet! Taking norm...?')
             sumlogdet = sumlogdet.norm()
         dh = h_init - h_prop + sumlogdet
-        prob = torch.exp(
+        return torch.exp(
             torch.minimum(dh, torch.zeros_like(dh, device=dh.device))
         ).to(state_init.x.device)
-        return prob
 
     @staticmethod
     def _get_accept_masks(px: Tensor) -> tuple[Tensor, Tensor]:
@@ -1134,9 +1130,7 @@ class Dynamics(nn.Module):
         if self.config.use_separate_networks:
             xnet = self.xnet.get_submodule(str(step))
             if self.config.use_split_xnets:
-                if first:
-                    return xnet.get_submodule('first')
-                return xnet.get_submodule('second')
+                return xnet.get_submodule('first') if first else xnet.get_submodule('second')
             return xnet
         return self.xnet
 

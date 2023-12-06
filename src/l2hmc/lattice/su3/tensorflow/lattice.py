@@ -14,9 +14,9 @@ from l2hmc.configs import Charges
 import l2hmc.group.su3.tensorflow.group as g
 from l2hmc.lattice.lattice import Lattice
 
-# log = logging.getLogger(__name__)
-from l2hmc import get_logger
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# from l2hmc import get_logger
+# log = get_logger(__name__)
 # from l2hmc.lattice.su3.lattice.
 
 # from typing import Generator
@@ -145,8 +145,7 @@ class LatticeSU3(Lattice):
         xv = x[:, v]  # type:ignore
         xuv = self.g.mul(xu, tf.roll(xv, shift=-1, axis=u+1))
         xvu = self.g.mul(xv, tf.roll(xu, shift=-1, axis=v+1))
-        plaq = self.g.trace(self.g.mul(xuv, xvu, adjoint_b=True))
-        return plaq
+        return self.g.trace(self.g.mul(xuv, xvu, adjoint_b=True))
 
     def _wilson_loops(
             self,
@@ -331,7 +330,7 @@ class LatticeSU3(Lattice):
                 tape.watch(x)
                 s = self.action(x, beta)
 
-            dsdx = tape.gradient(s,  x)
+            dsdx = tape.gradient(s, x)
         else:
             s = self.action(x, beta)
             dsdx = tf.gradients(s, [x])[0]
@@ -365,7 +364,7 @@ class LatticeSU3(Lattice):
         # qsin = self._sin_charges(wloops)
         # qint = self._int_charges(wloops)
         # TODO: FIX ME
-        metrics = {'plaqs': plaqs,  'sinQ': q.sinQ, 'intQ': q.intQ}
+        metrics = {'plaqs': plaqs, 'sinQ': q.sinQ, 'intQ': q.intQ}
         if beta is not None:
             # s = self.action(x, beta)
             s, dsdx = self.action_with_grad(x, beta)

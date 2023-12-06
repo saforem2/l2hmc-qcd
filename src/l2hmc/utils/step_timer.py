@@ -6,6 +6,7 @@ Contains implementation of StepTimer to automatically track timing data.
 from __future__ import absolute_import, annotations, division, print_function
 import time
 from typing import Optional
+import logging
 
 import numpy as np
 import os
@@ -16,10 +17,11 @@ import pandas as pd
 import functools
 import datetime
 
-from l2hmc import get_logger
+# from l2hmc import get_logger
 from l2hmc.common import get_timestamp
 
-log = get_logger(__name__)
+# log = get_logger(__name__)
+log = logging.getLogger(__name__)
 
 
 def log_execution_and_time(function):
@@ -89,15 +91,13 @@ class StepTimer:
         elapsed = np.sum(self.data)
         num_evals = evals_per_step * len(self.data)
         eval_rate = num_evals / elapsed
-        output = {
+        return {
             'eval_rate': eval_rate,
             'elapsed': elapsed,
             'num_evals': num_evals,
             'num_steps': len(self.data),
             'evals_per_step': evals_per_step,
         }
-
-        return output
 
     def write_eval_rate(
             self,

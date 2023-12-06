@@ -20,10 +20,13 @@ from hydra.core.config_store import ConfigStore
 import numpy as np
 from omegaconf import DictConfig
 import l2hmc.utils.dist as udist
+import logging
 
-from l2hmc import get_logger
+logger = logging.getLogger(__name__)
 
-logger = get_logger(__name__)
+# from l2hmc import get_logger
+
+# logger = get_logger(__name__)
 
 
 # -- Configure useful Paths -----------------------
@@ -48,9 +51,15 @@ OUTDIRS_FILE = OUTPUTS_DIR.joinpath('outdirs.log')
 # State = namedtuple('State', ['x', 'v', 'beta'])
 MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
 
+BF16_SYNONYMS = ['bfloat16', 'bf16', 'b16', 'bhalf']
 FP16_SYNONYMS = ['float16', 'fp16', '16', 'half']
 FP32_SYNONYMS = ['float32', 'fp32', '32', 'single']
 FP64_SYNONYMS = ['float64', 'fp64', '64', 'double']
+
+PT_DTYPES = {k: torch.bfloat16 for k in BF16_SYNONYMS}
+PT_DTYPES |= {k: torch.float16 for k in FP16_SYNONYMS}
+PT_DTYPES |= {k: torch.float32 for k in FP32_SYNONYMS}
+PT_DTYPES |= {k: torch.float64 for k in FP64_SYNONYMS}
 
 ENV_FILTERS = [
     'PS1',
@@ -695,6 +704,8 @@ class ExperimentConfig(BaseConfig):
 
         if self.precision in FP16_SYNONYMS:
             self.precision = 'fp16'
+        elif self.precision in BF16_SYNONYMS:
+            self.precision = 'bf16'
         elif self.precision in FP32_SYNONYMS:
             self.precision = 'float32'
         elif self.precision in FP64_SYNONYMS:

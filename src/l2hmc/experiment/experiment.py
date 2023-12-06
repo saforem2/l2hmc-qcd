@@ -5,10 +5,12 @@ Contains implementation of Experiment object, defined by a static config.
 """
 from __future__ import absolute_import, annotations, division, print_function
 from abc import ABC, abstractmethod
-# import logging
+import datetime
+import logging
 import os
 from pathlib import Path
-from typing import Optional, Any
+import socket
+from typing import Any, Optional
 
 import aim
 from hydra.utils import instantiate
@@ -16,21 +18,17 @@ import numpy as np
 from omegaconf import DictConfig, OmegaConf
 import wandb
 import xarray as xr
-import socket
 
 from l2hmc.common import get_timestamp, is_interactive, save_and_analyze_data
-from l2hmc.configs import (
-    AIM_DIR, ENV_FILTERS, ExperimentConfig, HERE, OUTDIRS_FILE
-)
+from l2hmc.configs import AIM_DIR, ENV_FILTERS, ExperimentConfig, HERE, OUTDIRS_FILE
 from l2hmc.trainers.trainer import BaseTrainer
-# from l2hmc.utils.logger import get_pylogger
 from l2hmc.utils.step_timer import StepTimer
 # import l2hmc.utils.plot_helpers as hplt
 
 # log = get_pylogger(__name__)
-# log = logging.getLogger(__name__)
-from l2hmc import get_logger
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# from l2hmc import get_logger
+# log = get_logger(__name__)
 
 
 # def get_logger(rank: int) -> logging.Logger:
@@ -128,9 +126,9 @@ class BaseExperiment(ABC):
             device: str,
             run_id: Optional[str] = None,
     ) -> None:
-        group = [self.config.framework, device]
-
-        self.config.wandb.setup.update({'group': '/'.join(group)})
+        # group = [self.config.framework, device]
+        #
+        # self.config.wandb.setup.update({'group': '/'.join(group)})
         if run_id is not None:
             self.config.wandb.setup.update({'id': run_id})
 
@@ -151,11 +149,12 @@ class BaseExperiment(ABC):
     ):
         if self.run is not None and self.run is wandb.run:
             raise ValueError('WandB already initialized!')
-
+        # from ezpz.dist import setup_wandb
         from wandb.util import generate_id
         run_id = generate_id()
         self.update_wandb_config(run_id=run_id)
         wandb.tensorboard.patch(root_logdir=os.getcwd())
+        # setup_wandb(pr)
         run = wandb.init(
             dir=os.getcwd(),
             # name=wbname,
@@ -180,8 +179,21 @@ class BaseExperiment(ABC):
                                           resolve=True,
                                           throw_on_missing=True)
         run.config.update(cfg_dict)
-        env = dict(os.environ)
-        for key in ENV_FILTERS + ['LS_COLORS', 'LSCOLORS']:
+        now = datetime.datetime.now()
+        dstr = now.strftime('%Y-%m-%d')
+        tstr = now.strftime('%H:%M:%S')
+        nstr = now.strftime('%Y-%m-%d-%H%M%S')
+        run.config.update({
+            'DATE': dstr,
+            'TIME': tstr,
+            'TSTAMP': nstr,
+        })
+        # env = dict(os.environ)
+        env = {
+            k: v for k, v in dict(os.environ).items()
+            if not k.startswith('_ModuleTable')
+        }
+        for key in ENV_FILTERS + ['LS_COLORS', 'LSCOLORS', 'PS1']:
             _ = env.pop(key, None)
         run.config.update({'env': env})
         exec = os.environ.get('EXEC', None)
@@ -197,31 +209,29 @@ class BaseExperiment(ABC):
         )
         if hostfile is not None:
             if (hpath := Path(hostfile).resolve()).is_file():
+                hosts = []
                 with hpath.open('r') as f:
-                    hosts = f.readlines()
+                    hosts.extend(f.readline().rstrip('\n') for _ in f)
                 run.config['hosts'] = hosts
-
-        machine = os.environ.get('MACHINE', None)
-        if machine is not None:
-            run.config['machine'] = machine
-
         try:
             hostname = socket.gethostbyaddr(socket.gethostname())[0].lower()
         except socket.herror:
             log.critical('Error getting hostname! Using `localhost`')
             hostname = 'localhost'
         run.config['hostname'] = hostname
-        if 'thetagpu' in hostname:
+        machine = os.environ.get('MACHINE', None)
+        if machine is not None:
+            run.config['machine'] = machine
+        elif 'thetagpu' in hostname:
             run.config['machine'] = 'ThetaGPU'
         elif 'x3' in hostname:
             run.config['machine'] = 'Polaris'
         elif 'x1' in hostname:
             run.config['machine'] = 'Sunspot'
-        # elif 'polaris' in hostname:
-        #     run.config['hostname'] = 'Polaris'
-        # else:
-        #     run.config['hostname'] = hostname
-
+        elif 'nid' in hostname:
+            run.config['machine'] = 'Perlmutter'
+        else:
+            run.config['machine'] = hostname
         return run
 
     def get_outdirs(self) -> tuple[Path, dict[str, Path]]:
@@ -240,7 +250,7 @@ class BaseExperiment(ABC):
             'eval': Path(outdir).joinpath('eval'),
             'hmc': Path(outdir).joinpath('hmc')
         }
-        for _, val in jobdirs.items():
+        for val in jobdirs.values():
             val.mkdir(exist_ok=True, parents=True)
 
         return outdir, jobdirs

@@ -4,13 +4,14 @@ Contains various utilities for tracking / logging metrics in TensorBoard / W&B
 """
 from __future__ import absolute_import, annotations, division, print_function
 from typing import Optional, Union
+import logging
 
 import numpy as np
 import torch
 from torch import nn
 from torch.utils.tensorboard.writer import SummaryWriter
 import wandb
-from l2hmc import get_logger
+# from l2hmc import get_logger
 
 from l2hmc.common import grab_tensor
 from l2hmc.utils.history import StopWatch
@@ -20,7 +21,8 @@ Array = np.ndarray
 Scalar = Union[float, int, bool, np.floating]
 ArrayLike = Union[Tensor, Array, Scalar]
 
-log = get_logger(__name__)
+# log = get_logger(__name__)
+log = logging.getLogger(__name__)
 
 
 def log_dict(
@@ -94,9 +96,7 @@ def log_step(
 
 def check_tag(tag: str) -> str:
     tags = tag.split('/')
-    if len(tags) > 2 and (tags[0] == tags[1]):
-        return '/'.join(tags[1:])
-    return tag
+    return '/'.join(tags[1:]) if len(tags) > 2 and (tags[0] == tags[1]) else tag
 
 
 def log_item(
@@ -161,9 +161,7 @@ def as_tensor(
         x = torch.nan_to_num(x)
     if isinstance(x, list):
         x = torch.stack(x)
-    if grab:
-        return grab_tensor(x)
-    return x
+    return grab_tensor(x) if grab else x
 
 
 def log_params_and_grads(
@@ -195,7 +193,6 @@ def log_params_and_grads(
         log.critical(
             'Failed to `wandb.log(grads)` '
         )
-        pass
 
 
 def update_summaries(
@@ -238,7 +235,7 @@ def update_summaries(
                 metrics = (
                     {f'{prefix}/wb/{k}': v for k, v in metrics.items()}
                     if use_tb else
-                    {f'{prefix}/{k}': v for k,  v in metrics.items()}
+                    {f'{prefix}/{k}': v for k, v in metrics.items()}
                 )
                 log_dict_wandb(metrics, step)
     assert isinstance(step, int) if step is not None else None

@@ -6,6 +6,7 @@ Contains various utilities for use with TensorFlow
 from __future__ import absolute_import, annotations, division, print_function
 import os
 from pathlib import Path
+import logging
 from typing import Any, Optional
 
 from omegaconf import DictConfig
@@ -21,8 +22,8 @@ from l2hmc.utils.rich import is_interactive
 TensorLike = tf.types.experimental.TensorLike
 
 
-# log = logging.getLogger(__name__)
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
+# log = get_logger(__name__)
 
 
 def get_summary_writer(cfg: DictConfig, job_type: str):
@@ -32,9 +33,7 @@ def get_summary_writer(cfg: DictConfig, job_type: str):
     sdir = jobdir.joinpath('summaries')
     sdir.mkdir(exist_ok=True, parents=True)
 
-    writer = tf.summary.create_file_writer(sdir.as_posix())  # type: ignore
-
-    return writer
+    return tf.summary.create_file_writer(sdir.as_posix())
 
 
 def evaluate(
@@ -46,7 +45,7 @@ def evaluate(
         eps: Optional[TensorLike] = None,
 ) -> dict:
     assert isinstance(nchains, int)
-    assert job_type in ['eval', 'hmc']
+    assert job_type in {'eval', 'hmc'}
     therm_frac = cfg.get('therm_frac', 0.2)
     jobdir = get_jobdir(cfg, job_type=job_type)
     writer = get_summary_writer(cfg, job_type=job_type)

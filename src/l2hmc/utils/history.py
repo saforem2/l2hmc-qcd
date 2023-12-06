@@ -7,7 +7,8 @@ from __future__ import absolute_import, annotations, division, print_function
 
 import os
 import time
-from contextlib import ContextDecorator, contextmanager
+from contextlib import ContextDecorator
+import opinionated
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -22,7 +23,8 @@ import wandb
 import xarray as xr
 
 import l2hmc.utils.plot_helpers as hplt
-from l2hmc import get_logger
+import logging
+# from l2hmc import get_logger
 from l2hmc.common import grab_tensor
 from l2hmc.configs import MonteCarloStates, Steps
 from l2hmc.configs import PROJECT_DIR
@@ -47,9 +49,9 @@ TF_FLOAT = tf.dtypes.as_dtype(tf.keras.backend.floatx())
 Scalar = Union[float, int, np.floating, bool]
 # Scalar = TF_FLOAT | PT_FLOAT | np.floating | int | bool
 
-# log = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
-log = get_logger(__name__)
+# log = get_logger(__name__)
 
 xplt = xr.plot  # type:ignore
 LW = plt.rcParams.get('axes.linewidth', 1.75)
@@ -181,10 +183,7 @@ class BaseHistory:
         if isinstance(metric, (Scalar, np.ndarray)):
             return metric
 
-        if (
-            isinstance(metric, tf.Tensor)
-            or isinstance(metric, torch.Tensor)
-        ):
+        if isinstance(metric, (tf.Tensor, torch.Tensor)):
             return grab_tensor(metric)
 
         if isinstance(metric, list):
@@ -305,8 +304,10 @@ class BaseHistory:
             ax1.grid(False)
             color = plot_kwargs.get('color', None)
             label = r'$\langle$' + f' {key} ' + r'$\rangle$'
-            ax.plot(steps, val.mean('chain'), lw=1.5*LW, label=label, **plot_kwargs)
-            sns.kdeplot(y=val.values.flatten(), ax=ax1, color=color, shade=True)
+            ax.plot(steps, val.mean('chain'), lw=1.5 *
+                    LW, label=label, **plot_kwargs)
+            sns.kdeplot(y=val.values.flatten(), ax=ax1,
+                        color=color, shade=True)
             ax1.set_xticks([])
             ax1.set_xticklabels([])
             sns.despine(ax=ax, top=True, right=True)
@@ -321,41 +322,30 @@ class BaseHistory:
             sns.despine(subfigs[0])
             ax0.plot(steps, val.mean('chain'), lw=2., color=color)
             for idx in range(min(num_chains, len(val.chain))):
-                ax0.plot(steps, val.values[idx, :], lw=1., alpha=0.7, color=color)
+                ax0.plot(steps, val.values[idx, :],
+                         lw=1., alpha=0.7, color=color)
 
+        elif len(val.shape) == 1:
+            fig, ax = plt.subplots(**subplots_kwargs)
+            assert isinstance(ax, plt.Axes)
+            ax.plot(steps, val.values, **plot_kwargs)
+            axes = ax
+        elif len(val.shape) == 3:
+            fig, ax = plt.subplots(**subplots_kwargs)
+            assert isinstance(ax, plt.Axes)
+            cmap = plt.get_cmap('viridis')
+            # nlf = arr.shape[1]
+            nlf = val.leapfrog
+            for idx in range(nlf):
+                y = val[:, idx, :].mean('chain')
+                pkwargs = {
+                    'color': cmap(idx / nlf),
+                    'label': f'{idx}',
+                }
+                ax.plot(steps, y, **pkwargs)
+            axes = ax
         else:
-            if len(val.shape) == 1:
-                fig, ax = plt.subplots(**subplots_kwargs)
-                assert isinstance(ax, plt.Axes)
-                ax.plot(steps, val.values, **plot_kwargs)
-                axes = ax
-            elif len(val.shape) == 3:
-                fig, ax = plt.subplots(**subplots_kwargs)
-                assert isinstance(ax, plt.Axes)
-                cmap = plt.get_cmap('viridis')
-                # nlf = arr.shape[1]
-                nlf = val.leapfrog
-                for idx in range(nlf):
-                    y = val[:, idx, :].mean('chain')
-                    pkwargs = {
-                        'color': cmap(idx / nlf),
-                        'label': f'{idx}',
-                    }
-                    ax.plot(steps, y, **pkwargs)
-                axes = ax
-            else:
-                raise ValueError('Unexpected shape encountered')
-
-            # ax.set_ylabel(key)
-
-            # if num_chains > 0 and len(val.chain) > 1:
-            #     lw = LW / 2.
-            #     for idx in range(min(num_chains, len(val.chain))):
-            #         # ax = subfigs[0].subplots(1, 1)
-            #         # plot values of invidual chains, arr[:, idx]
-            #         # where arr[:, idx].shape = [ndraws, 1]
-            #         ax.plot(steps, val.values[idx, :],
-            #                 alpha=0.5, lw=lw/2., **plot_kwargs)
+            raise ValueError('Unexpected shape encountered')
 
         matplotx.line_labels()
         ax.set_xlabel('draw')
@@ -373,35 +363,42 @@ class BaseHistory:
             val: np.ndarray,
             key: Optional[str] = None,
             therm_frac: Optional[float] = 0.,
-            num_chains: Optional[int] = 128,
+            num_chains: Optional[int] = None,
             title: Optional[str] = None,
             outdir: Optional[os.PathLike] = None,
             subplots_kwargs: Optional[dict[str, Any]] = None,
             plot_kwargs: Optional[dict[str, Any]] = None,
     ):
+        """Dependent on `val.shape`. If:
+
+        1. `len(val.shape) == 1`: `[steps]`
+        2. `len(val.shape) == 2`:  `[steps, chains]`
+        3. `len(val.shape) == 3`:  `[steps, nleapfrog, chains]`
+        """
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
         figsize = subplots_kwargs.get('figsize', hplt.set_size())
         subplots_kwargs.update({'figsize': figsize})
-        num_chains = 16 if num_chains is None else num_chains
+        num_chains = 32 if num_chains is None else num_chains
 
         # tmp = val[0]
         arr = np.array(val)
 
         subfigs = None
+        # Assume len(arr.shape) >= 1, with first dimension `steps`
         steps = np.arange(arr.shape[0])
         if therm_frac is not None and therm_frac > 0:
+            # Drop for thermalization
             drop = int(therm_frac * arr.shape[0])
             arr = arr[drop:]
             steps = steps[drop:]
 
+        # `arr.shape = [steps, chains]`
         if len(arr.shape) == 2:
             _ = subplots_kwargs.pop('constrained_layout', True)
-            figsize = (3 * figsize[0], 1.5 * figsize[1])
-
+            figsize = (3 * figsize[0], 2 * figsize[1])
             fig = plt.figure(figsize=figsize, constrained_layout=True)
             subfigs = fig.subfigures(1, 2)
-
             gs_kw = {'width_ratios': [1.33, 0.33]}
             (ax, ax1) = subfigs[1].subplots(
                 1,
@@ -413,7 +410,7 @@ class BaseHistory:
             ax1.grid(False)
             color = plot_kwargs.get('color', None)
             label = r'$\langle$' + f' {key} ' + r'$\rangle$'
-            ax.plot(steps, arr.mean(-1), lw=1.5*LW, label=label, **plot_kwargs)
+            ax.plot(steps, arr.mean(-1), lw=1.25*LW, label=label, **plot_kwargs)
             sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, shade=True)
             ax1.set_xticks([])
             ax1.set_xticklabels([])
@@ -421,8 +418,9 @@ class BaseHistory:
             # ax1.set_yticklabels([])
             sns.despine(ax=ax, top=True, right=True)
             sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
-            # ax.legend(loc='best', frameon=False)
             ax1.set_xlabel('')
+            if key is not None:
+                plt.legend(loc='best', frameon=False)
             # ax1.set_ylabel('')
             # ax.set_yticks(ax.get_yticks())
             # ax.set_yticklabels(ax.get_yticklabels())
@@ -450,22 +448,38 @@ class BaseHistory:
                     label = plot_kwargs.pop('label', None)
                     if label is not None:
                         label = f'{label}-{idx}'
-                    y = arr[:, idx, :]
+                    y = arr[:, idx, :num_chains]
                     color = cmap(idx / y.shape[1])
                     plot_kwargs['color'] = cmap(idx / y.shape[1])
                     if len(y.shape) == 2:
                         # TOO: Plot chains
                         if num_chains > 0:
                             for idx in range(min((num_chains, y.shape[1]))):
-                                _ = ax.plot(steps, y[:, idx],  # color,
-                                            lw=LW/2., alpha=0.8, **plot_kwargs)
+                                _ = ax.plot(
+                                    steps,
+                                    y[:, idx],
+                                    # color,
+                                    lw=LW/2.,
+                                    alpha=0.8,
+                                    **plot_kwargs
+                                )
 
-                        _ = ax.plot(steps, y.mean(-1),  # color=color,
-                                    label=label, **plot_kwargs)
+                        _ = ax.plot(
+                            steps,
+                            y.mean(-1),
+                            # color=color,
+                            label=label,
+                            **plot_kwargs
+                        )
                     else:
 
-                        _ = ax.plot(steps, y,  # color=color,
-                                    label=label, **plot_kwargs)
+                        _ = ax.plot(
+                            steps,
+                            y,
+                            # color=color,
+                            label=label,
+                            **plot_kwargs
+                        )
                 axes = ax
             else:
                 raise ValueError('Unexpected shape encountered')
@@ -516,7 +530,7 @@ class BaseHistory:
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
         set_plot_style()
-        plt.rcParams['axes.labelcolor'] = '#bdbdbd'
+        # plt.rcParams['axes.labelcolor'] = '#bdbdbd'
         figsize = subplots_kwargs.get('figsize', set_size())
         subplots_kwargs.update({'figsize': figsize})
         subfigs = None
@@ -736,7 +750,7 @@ class BaseHistory:
 
     def plot_all(
             self,
-            num_chains: int = 128,
+            num_chains: Optional[int] = None,
             therm_frac: float = 0.,
             title: Optional[str] = None,
             outdir: Optional[os.PathLike] = None,
@@ -745,9 +759,9 @@ class BaseHistory:
     ):
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
-
         dataset = self.get_dataset()
 
+        plt.style.use(opinionated.STYLES['opinionated_min'])
         _ = make_ridgeplots(
             dataset,
             outdir=outdir,
@@ -758,10 +772,15 @@ class BaseHistory:
             save_plot=(outdir is not None),
         )
 
+        plt.style.use(opinionated.STYLES['opinionated_min'])
+        max_chains = 64
         for idx, (key, val) in enumerate(dataset.data_vars.items()):
+            # val = val
             color = f'C{idx%9}'
             plot_kwargs['color'] = color
-
+            if 'chain' in val.dims:
+                nchains = max(max_chains, len(val.coords['chain']))
+                val = val.sel(chain=slice(0, nchains))
             fig, subfigs, ax = self.plot(
                 val=val.values.T.real,
                 key=str(key),
@@ -787,12 +806,24 @@ class BaseHistory:
                 plt.rcParams['axes.edgecolor'] = plt.rcParams['axes.facecolor']
                 ax = subfigs[0].subplots(1, 1)
                 # ax = fig[1].subplots(constrained_layout=True)
-                _ = xplt.pcolormesh(val, 'draw', 'chain', ax=ax,
-                                    robust=True, add_colorbar=True)
+                _ = xplt.pcolormesh(
+                    val,
+                    'draw',
+                    'chain',
+                    ax=ax,
+                    robust=True,
+                    add_colorbar=True,
+                    rasterized=True,
+                )
                 # im = val.plot(ax=ax, cbar_kwargs=cbar_kwargs)
                 # im.colorbar.set_label(f'{key}')  # , labelpad=1.25)
-                sns.despine(subfigs[0], top=True, right=True,
-                            left=True, bottom=True)
+                sns.despine(
+                    subfigs[0],
+                    top=True,
+                    right=True,
+                    left=True,
+                    bottom=True
+                )
             if outdir is not None:
                 dirs = {
                     'png': Path(outdir).joinpath("pngs/"),
