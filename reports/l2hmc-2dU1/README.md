@@ -469,7 +469,7 @@ outputs['pytorch']['train'] = ptExpU1.trainer.train(
 
 <div class="cell-output cell-output-display">
 
-<img src="output_21_0.svg" class="stretch" />
+<img src="assets/output_21_0.svg" class="stretch" />
 
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:14:13]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:108]</span> - ┏━━━━━━━━━━━━━━━━━━━━━━━━━┓
 </pre>
@@ -532,7 +532,7 @@ outputs['pytorch']['train'] = ptExpU1.trainer.train(
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:39:46]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:1623]</span> - <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">era</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">epoch</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">4800</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">tstep</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">4801</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">dt</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.304</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">beta</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">4.000</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">loss</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">-8.538</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">dQsin</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.256</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">dQint</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.095</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">energy</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">400.788</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">logprob</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">397.108</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">logdet</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">3.680</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">sldf</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">2.257</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">sldb</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">-1.907</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">sld</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">3.680</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">xeps</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.146</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">veps</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.148</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">acc</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.891</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">sumlogdet</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">-0.012</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">acc_mask</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.892</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">plaqs</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.863</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">intQ</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.018</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">sinQ</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.016</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">lr</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.001</span>
 </pre>
 
-<img src="output_21_31.svg" class="stretch" />
+<img src="assets/output_21_31.svg" class="stretch" />
 
 </div>
 
@@ -562,63 +562,63 @@ dset_train_pt = ptExpU1.save_dataset(job_type='train', nchains=32)
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:41:42]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[experiment.py:379]</span> - Creating summaries for WandB, Aim
 </pre>
 
-<img src="output_22_9.svg" class="stretch" />
+<img src="assets/output_22_9.svg" class="stretch" />
 
-<img src="output_22_10.svg" class="stretch" />
+<img src="assets/output_22_10.svg" class="stretch" />
 
-<img src="output_22_11.svg" class="stretch" />
+<img src="assets/output_22_11.svg" class="stretch" />
 
-<img src="output_22_12.svg" class="stretch" />
+<img src="assets/output_22_12.svg" class="stretch" />
 
-<img src="output_22_13.svg" class="stretch" />
+<img src="assets/output_22_13.svg" class="stretch" />
 
-<img src="output_22_14.svg" class="stretch" />
+<img src="assets/output_22_14.svg" class="stretch" />
 
-<img src="output_22_15.svg" class="stretch" />
+<img src="assets/output_22_15.svg" class="stretch" />
 
-<img src="output_22_16.svg" class="stretch" />
+<img src="assets/output_22_16.svg" class="stretch" />
 
-<img src="output_22_17.svg" class="stretch" />
+<img src="assets/output_22_17.svg" class="stretch" />
 
-<img src="output_22_18.svg" class="stretch" />
+<img src="assets/output_22_18.svg" class="stretch" />
 
-<img src="output_22_19.svg" class="stretch" />
+<img src="assets/output_22_19.svg" class="stretch" />
 
-<img src="output_22_20.svg" class="stretch" />
+<img src="assets/output_22_20.svg" class="stretch" />
 
-<img src="output_22_21.svg" class="stretch" />
+<img src="assets/output_22_21.svg" class="stretch" />
 
-<img src="output_22_22.svg" class="stretch" />
+<img src="assets/output_22_22.svg" class="stretch" />
 
-<img src="output_22_23.svg" class="stretch" />
+<img src="assets/output_22_23.svg" class="stretch" />
 
-<img src="output_22_24.svg" class="stretch" />
+<img src="assets/output_22_24.svg" class="stretch" />
 
-<img src="output_22_25.svg" class="stretch" />
+<img src="assets/output_22_25.svg" class="stretch" />
 
-<img src="output_22_26.svg" class="stretch" />
+<img src="assets/output_22_26.svg" class="stretch" />
 
-<img src="output_22_27.svg" class="stretch" />
+<img src="assets/output_22_27.svg" class="stretch" />
 
-<img src="output_22_28.svg" class="stretch" />
+<img src="assets/output_22_28.svg" class="stretch" />
 
-<img src="output_22_29.svg" class="stretch" />
+<img src="assets/output_22_29.svg" class="stretch" />
 
-<img src="output_22_30.svg" class="stretch" />
+<img src="assets/output_22_30.svg" class="stretch" />
 
-<img src="output_22_31.svg" class="stretch" />
+<img src="assets/output_22_31.svg" class="stretch" />
 
-<img src="output_22_32.svg" class="stretch" />
+<img src="assets/output_22_32.svg" class="stretch" />
 
-<img src="output_22_33.svg" class="stretch" />
+<img src="assets/output_22_33.svg" class="stretch" />
 
-<img src="output_22_34.svg" class="stretch" />
+<img src="assets/output_22_34.svg" class="stretch" />
 
-<img src="output_22_35.svg" class="stretch" />
+<img src="assets/output_22_35.svg" class="stretch" />
 
-<img src="output_22_36.svg" class="stretch" />
+<img src="assets/output_22_36.svg" class="stretch" />
 
-<img src="output_22_37.svg" class="stretch" />
+<img src="assets/output_22_37.svg" class="stretch" />
 
 </div>
 
@@ -652,7 +652,7 @@ dset_eval_pt = ptExpU1.save_dataset(job_type='eval', nchains=32)
 <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">nleapfrog</span>=<span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">None</span>
 </pre>
 
-<img src="output_25_3.svg" class="stretch" />
+<img src="assets/output_25_3.svg" class="stretch" />
 
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:42:06]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:1207]</span> - <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">estep</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">dt</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.140</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">beta</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">4.000</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">loss</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">-9.137</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">dQsin</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.269</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">dQint</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.148</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">energy</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">407.745</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">logprob</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">404.067</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">logdet</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">3.678</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">sldf</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">2.253</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">sldb</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">-1.896</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">sld</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">3.678</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">xeps</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.145</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">veps</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.147</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">acc</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.913</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">sumlogdet</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.004</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">acc_mask</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.930</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">plaqs</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.854</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">intQ</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.156</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">sinQ</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.151</span>
 </pre>
@@ -681,59 +681,59 @@ dset_eval_pt = ptExpU1.save_dataset(job_type='eval', nchains=32)
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:48:45]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[experiment.py:379]</span> - Creating summaries for WandB, Aim
 </pre>
 
-<img src="output_25_17.svg" class="stretch" />
+<img src="assets/output_25_17.svg" class="stretch" />
 
-<img src="output_25_18.svg" class="stretch" />
+<img src="assets/output_25_18.svg" class="stretch" />
 
-<img src="output_25_19.svg" class="stretch" />
+<img src="assets/output_25_19.svg" class="stretch" />
 
-<img src="output_25_20.svg" class="stretch" />
+<img src="assets/output_25_20.svg" class="stretch" />
 
-<img src="output_25_21.svg" class="stretch" />
+<img src="assets/output_25_21.svg" class="stretch" />
 
-<img src="output_25_22.svg" class="stretch" />
+<img src="assets/output_25_22.svg" class="stretch" />
 
-<img src="output_25_23.svg" class="stretch" />
+<img src="assets/output_25_23.svg" class="stretch" />
 
-<img src="output_25_24.svg" class="stretch" />
+<img src="assets/output_25_24.svg" class="stretch" />
 
-<img src="output_25_25.svg" class="stretch" />
+<img src="assets/output_25_25.svg" class="stretch" />
 
-<img src="output_25_26.svg" class="stretch" />
+<img src="assets/output_25_26.svg" class="stretch" />
 
-<img src="output_25_27.svg" class="stretch" />
+<img src="assets/output_25_27.svg" class="stretch" />
 
-<img src="output_25_28.svg" class="stretch" />
+<img src="assets/output_25_28.svg" class="stretch" />
 
-<img src="output_25_29.svg" class="stretch" />
+<img src="assets/output_25_29.svg" class="stretch" />
 
-<img src="output_25_30.svg" class="stretch" />
+<img src="assets/output_25_30.svg" class="stretch" />
 
-<img src="output_25_31.svg" class="stretch" />
+<img src="assets/output_25_31.svg" class="stretch" />
 
-<img src="output_25_32.svg" class="stretch" />
+<img src="assets/output_25_32.svg" class="stretch" />
 
-<img src="output_25_33.svg" class="stretch" />
+<img src="assets/output_25_33.svg" class="stretch" />
 
-<img src="output_25_34.svg" class="stretch" />
+<img src="assets/output_25_34.svg" class="stretch" />
 
-<img src="output_25_35.svg" class="stretch" />
+<img src="assets/output_25_35.svg" class="stretch" />
 
-<img src="output_25_36.svg" class="stretch" />
+<img src="assets/output_25_36.svg" class="stretch" />
 
-<img src="output_25_37.svg" class="stretch" />
+<img src="assets/output_25_37.svg" class="stretch" />
 
-<img src="output_25_38.svg" class="stretch" />
+<img src="assets/output_25_38.svg" class="stretch" />
 
-<img src="output_25_39.svg" class="stretch" />
+<img src="assets/output_25_39.svg" class="stretch" />
 
-<img src="output_25_40.svg" class="stretch" />
+<img src="assets/output_25_40.svg" class="stretch" />
 
-<img src="output_25_41.svg" class="stretch" />
+<img src="assets/output_25_41.svg" class="stretch" />
 
-<img src="output_25_42.svg" class="stretch" />
+<img src="assets/output_25_42.svg" class="stretch" />
 
-<img src="output_25_43.svg" class="stretch" />
+<img src="assets/output_25_43.svg" class="stretch" />
 
 </div>
 
@@ -767,7 +767,7 @@ dset_hmc_pt = ptExpU1.save_dataset(job_type='hmc', nchains=32)
 <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">nleapfrog</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">8</span>
 </pre>
 
-<img src="output_27_4.svg" class="stretch" />
+<img src="assets/output_27_4.svg" class="stretch" />
 
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:49:09]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:1207]</span> - <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">hstep</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">dt</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.018</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">beta</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">4.000</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">loss</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">46.645</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">dQsin</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.039</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">dQint</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.031</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">energy</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">412.712</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">logprob</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">412.712</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">logdet</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.000</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">acc</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.114</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">sumlogdet</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.000</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">acc_mask</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.125</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">plaqs</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.853</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">intQ</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">-0.117</span> <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">sinQ</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">-0.126</span>
 </pre>
@@ -790,43 +790,43 @@ dset_hmc_pt = ptExpU1.save_dataset(job_type='hmc', nchains=32)
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:52:14]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[experiment.py:379]</span> - Creating summaries for WandB, Aim
 </pre>
 
-<img src="output_27_15.svg" class="stretch" />
+<img src="assets/output_27_15.svg" class="stretch" />
 
-<img src="output_27_16.svg" class="stretch" />
+<img src="assets/output_27_16.svg" class="stretch" />
 
-<img src="output_27_17.svg" class="stretch" />
+<img src="assets/output_27_17.svg" class="stretch" />
 
-<img src="output_27_18.svg" class="stretch" />
+<img src="assets/output_27_18.svg" class="stretch" />
 
-<img src="output_27_19.svg" class="stretch" />
+<img src="assets/output_27_19.svg" class="stretch" />
 
-<img src="output_27_20.svg" class="stretch" />
+<img src="assets/output_27_20.svg" class="stretch" />
 
-<img src="output_27_21.svg" class="stretch" />
+<img src="assets/output_27_21.svg" class="stretch" />
 
-<img src="output_27_22.svg" class="stretch" />
+<img src="assets/output_27_22.svg" class="stretch" />
 
-<img src="output_27_23.svg" class="stretch" />
+<img src="assets/output_27_23.svg" class="stretch" />
 
-<img src="output_27_24.svg" class="stretch" />
+<img src="assets/output_27_24.svg" class="stretch" />
 
-<img src="output_27_25.svg" class="stretch" />
+<img src="assets/output_27_25.svg" class="stretch" />
 
-<img src="output_27_26.svg" class="stretch" />
+<img src="assets/output_27_26.svg" class="stretch" />
 
-<img src="output_27_27.svg" class="stretch" />
+<img src="assets/output_27_27.svg" class="stretch" />
 
-<img src="output_27_28.svg" class="stretch" />
+<img src="assets/output_27_28.svg" class="stretch" />
 
-<img src="output_27_29.svg" class="stretch" />
+<img src="assets/output_27_29.svg" class="stretch" />
 
-<img src="output_27_30.svg" class="stretch" />
+<img src="assets/output_27_30.svg" class="stretch" />
 
-<img src="output_27_31.svg" class="stretch" />
+<img src="assets/output_27_31.svg" class="stretch" />
 
-<img src="output_27_32.svg" class="stretch" />
+<img src="assets/output_27_32.svg" class="stretch" />
 
-<img src="output_27_33.svg" class="stretch" />
+<img src="assets/output_27_33.svg" class="stretch" />
 
 </div>
 
@@ -852,7 +852,7 @@ _ = tfExpU1.save_dataset(job_type='train', nchains=32)
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:52:30]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:198]</span> - No checkpoints found to load from. Continuing
 </pre>
 
-<img src="output_30_2.svg" class="stretch" />
+<img src="assets/output_30_2.svg" class="stretch" />
 
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:52:31]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:1259]</span> - ERA: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0</span> <span style="color: #008000; text-decoration-color: #008000">/</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">1</span>, BETA: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">4.000</span>
 </pre>
@@ -944,65 +944,65 @@ Lambda fuctions will be no more assumed to be used in the statement where they a
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:05:20]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[experiment.py:379]</span> - Creating summaries for WandB, Aim
 </pre>
 
-<img src="output_30_46.svg" class="stretch" />
+<img src="assets/output_30_46.svg" class="stretch" />
 
-<img src="output_30_47.svg" class="stretch" />
+<img src="assets/output_30_47.svg" class="stretch" />
 
-<img src="output_30_48.svg" class="stretch" />
+<img src="assets/output_30_48.svg" class="stretch" />
 
-<img src="output_30_49.svg" class="stretch" />
+<img src="assets/output_30_49.svg" class="stretch" />
 
-<img src="output_30_50.svg" class="stretch" />
+<img src="assets/output_30_50.svg" class="stretch" />
 
-<img src="output_30_51.svg" class="stretch" />
+<img src="assets/output_30_51.svg" class="stretch" />
 
-<img src="output_30_52.svg" class="stretch" />
+<img src="assets/output_30_52.svg" class="stretch" />
 
-<img src="output_30_53.svg" class="stretch" />
+<img src="assets/output_30_53.svg" class="stretch" />
 
-<img src="output_30_54.svg" class="stretch" />
+<img src="assets/output_30_54.svg" class="stretch" />
 
-<img src="output_30_55.svg" class="stretch" />
+<img src="assets/output_30_55.svg" class="stretch" />
 
-<img src="output_30_56.svg" class="stretch" />
+<img src="assets/output_30_56.svg" class="stretch" />
 
-<img src="output_30_57.svg" class="stretch" />
+<img src="assets/output_30_57.svg" class="stretch" />
 
-<img src="output_30_58.svg" class="stretch" />
+<img src="assets/output_30_58.svg" class="stretch" />
 
-<img src="output_30_59.svg" class="stretch" />
+<img src="assets/output_30_59.svg" class="stretch" />
 
-<img src="output_30_60.svg" class="stretch" />
+<img src="assets/output_30_60.svg" class="stretch" />
 
-<img src="output_30_61.svg" class="stretch" />
+<img src="assets/output_30_61.svg" class="stretch" />
 
-<img src="output_30_62.svg" class="stretch" />
+<img src="assets/output_30_62.svg" class="stretch" />
 
-<img src="output_30_63.svg" class="stretch" />
+<img src="assets/output_30_63.svg" class="stretch" />
 
-<img src="output_30_64.svg" class="stretch" />
+<img src="assets/output_30_64.svg" class="stretch" />
 
-<img src="output_30_65.svg" class="stretch" />
+<img src="assets/output_30_65.svg" class="stretch" />
 
-<img src="output_30_66.svg" class="stretch" />
+<img src="assets/output_30_66.svg" class="stretch" />
 
-<img src="output_30_67.svg" class="stretch" />
+<img src="assets/output_30_67.svg" class="stretch" />
 
-<img src="output_30_68.svg" class="stretch" />
+<img src="assets/output_30_68.svg" class="stretch" />
 
-<img src="output_30_69.svg" class="stretch" />
+<img src="assets/output_30_69.svg" class="stretch" />
 
-<img src="output_30_70.svg" class="stretch" />
+<img src="assets/output_30_70.svg" class="stretch" />
 
-<img src="output_30_71.svg" class="stretch" />
+<img src="assets/output_30_71.svg" class="stretch" />
 
-<img src="output_30_72.svg" class="stretch" />
+<img src="assets/output_30_72.svg" class="stretch" />
 
-<img src="output_30_73.svg" class="stretch" />
+<img src="assets/output_30_73.svg" class="stretch" />
 
-<img src="output_30_74.svg" class="stretch" />
+<img src="assets/output_30_74.svg" class="stretch" />
 
-<img src="output_30_75.svg" class="stretch" />
+<img src="assets/output_30_75.svg" class="stretch" />
 
 </div>
 
@@ -1036,7 +1036,7 @@ eval_steps = <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-w
 nleapfrog = <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">None</span>
 </pre>
 
-<img src="output_33_3.svg" class="stretch" />
+<img src="assets/output_33_3.svg" class="stretch" />
 
       0%|          | 0/2000 [00:00<?, ?it/s]
 
@@ -1067,59 +1067,59 @@ nleapfrog = <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-st
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:09:57]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[experiment.py:379]</span> - Creating summaries for WandB, Aim
 </pre>
 
-<img src="output_33_18.svg" class="stretch" />
+<img src="assets/output_33_18.svg" class="stretch" />
 
-<img src="output_33_19.svg" class="stretch" />
+<img src="assets/output_33_19.svg" class="stretch" />
 
-<img src="output_33_20.svg" class="stretch" />
+<img src="assets/output_33_20.svg" class="stretch" />
 
-<img src="output_33_21.svg" class="stretch" />
+<img src="assets/output_33_21.svg" class="stretch" />
 
-<img src="output_33_22.svg" class="stretch" />
+<img src="assets/output_33_22.svg" class="stretch" />
 
-<img src="output_33_23.svg" class="stretch" />
+<img src="assets/output_33_23.svg" class="stretch" />
 
-<img src="output_33_24.svg" class="stretch" />
+<img src="assets/output_33_24.svg" class="stretch" />
 
-<img src="output_33_25.svg" class="stretch" />
+<img src="assets/output_33_25.svg" class="stretch" />
 
-<img src="output_33_26.svg" class="stretch" />
+<img src="assets/output_33_26.svg" class="stretch" />
 
-<img src="output_33_27.svg" class="stretch" />
+<img src="assets/output_33_27.svg" class="stretch" />
 
-<img src="output_33_28.svg" class="stretch" />
+<img src="assets/output_33_28.svg" class="stretch" />
 
-<img src="output_33_29.svg" class="stretch" />
+<img src="assets/output_33_29.svg" class="stretch" />
 
-<img src="output_33_30.svg" class="stretch" />
+<img src="assets/output_33_30.svg" class="stretch" />
 
-<img src="output_33_31.svg" class="stretch" />
+<img src="assets/output_33_31.svg" class="stretch" />
 
-<img src="output_33_32.svg" class="stretch" />
+<img src="assets/output_33_32.svg" class="stretch" />
 
-<img src="output_33_33.svg" class="stretch" />
+<img src="assets/output_33_33.svg" class="stretch" />
 
-<img src="output_33_34.svg" class="stretch" />
+<img src="assets/output_33_34.svg" class="stretch" />
 
-<img src="output_33_35.svg" class="stretch" />
+<img src="assets/output_33_35.svg" class="stretch" />
 
-<img src="output_33_36.svg" class="stretch" />
+<img src="assets/output_33_36.svg" class="stretch" />
 
-<img src="output_33_37.svg" class="stretch" />
+<img src="assets/output_33_37.svg" class="stretch" />
 
-<img src="output_33_38.svg" class="stretch" />
+<img src="assets/output_33_38.svg" class="stretch" />
 
-<img src="output_33_39.svg" class="stretch" />
+<img src="assets/output_33_39.svg" class="stretch" />
 
-<img src="output_33_40.svg" class="stretch" />
+<img src="assets/output_33_40.svg" class="stretch" />
 
-<img src="output_33_41.svg" class="stretch" />
+<img src="assets/output_33_41.svg" class="stretch" />
 
-<img src="output_33_42.svg" class="stretch" />
+<img src="assets/output_33_42.svg" class="stretch" />
 
-<img src="output_33_43.svg" class="stretch" />
+<img src="assets/output_33_43.svg" class="stretch" />
 
-<img src="output_33_44.svg" class="stretch" />
+<img src="assets/output_33_44.svg" class="stretch" />
 
 </div>
 
@@ -1152,7 +1152,7 @@ eval_steps = <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-w
 nleapfrog = <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">8</span>
 </pre>
 
-<img src="output_35_4.svg" class="stretch" />
+<img src="assets/output_35_4.svg" class="stretch" />
 
       0%|          | 0/2000 [00:00<?, ?it/s]
 
@@ -1177,43 +1177,43 @@ nleapfrog = <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-we
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:16:17]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[experiment.py:379]</span> - Creating summaries for WandB, Aim
 </pre>
 
-<img src="output_35_16.svg" class="stretch" />
+<img src="assets/output_35_16.svg" class="stretch" />
 
-<img src="output_35_17.svg" class="stretch" />
+<img src="assets/output_35_17.svg" class="stretch" />
 
-<img src="output_35_18.svg" class="stretch" />
+<img src="assets/output_35_18.svg" class="stretch" />
 
-<img src="output_35_19.svg" class="stretch" />
+<img src="assets/output_35_19.svg" class="stretch" />
 
-<img src="output_35_20.svg" class="stretch" />
+<img src="assets/output_35_20.svg" class="stretch" />
 
-<img src="output_35_21.svg" class="stretch" />
+<img src="assets/output_35_21.svg" class="stretch" />
 
-<img src="output_35_22.svg" class="stretch" />
+<img src="assets/output_35_22.svg" class="stretch" />
 
-<img src="output_35_23.svg" class="stretch" />
+<img src="assets/output_35_23.svg" class="stretch" />
 
-<img src="output_35_24.svg" class="stretch" />
+<img src="assets/output_35_24.svg" class="stretch" />
 
-<img src="output_35_25.svg" class="stretch" />
+<img src="assets/output_35_25.svg" class="stretch" />
 
-<img src="output_35_26.svg" class="stretch" />
+<img src="assets/output_35_26.svg" class="stretch" />
 
-<img src="output_35_27.svg" class="stretch" />
+<img src="assets/output_35_27.svg" class="stretch" />
 
-<img src="output_35_28.svg" class="stretch" />
+<img src="assets/output_35_28.svg" class="stretch" />
 
-<img src="output_35_29.svg" class="stretch" />
+<img src="assets/output_35_29.svg" class="stretch" />
 
-<img src="output_35_30.svg" class="stretch" />
+<img src="assets/output_35_30.svg" class="stretch" />
 
-<img src="output_35_31.svg" class="stretch" />
+<img src="assets/output_35_31.svg" class="stretch" />
 
-<img src="output_35_32.svg" class="stretch" />
+<img src="assets/output_35_32.svg" class="stretch" />
 
-<img src="output_35_33.svg" class="stretch" />
+<img src="assets/output_35_33.svg" class="stretch" />
 
-<img src="output_35_34.svg" class="stretch" />
+<img src="assets/output_35_34.svg" class="stretch" />
 
 </div>
 
@@ -1476,7 +1476,7 @@ with plt.rc_context(
 
 <div class="cell-output cell-output-display">
 
-<img src="output_46_0.svg" class="stretch" />
+<img src="assets/output_46_0.svg" class="stretch" />
 
 </div>
 
@@ -1516,7 +1516,7 @@ plt.legend()
 
     <matplotlib.legend.Legend at 0x7efa2812ab90>
 
-<img src="output_47_1.svg" class="stretch" />
+<img src="assets/output_47_1.svg" class="stretch" />
 
 </div>
 
@@ -1577,7 +1577,7 @@ _ = ax[1].legend(loc='best', frameon=False)
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:32:51]</span><span style="color: #808000; text-decoration-color: #808000">[WARNING]</span><span style="color: #777777; text-decoration-color: #777777">[legend.py:1363]</span> - No artists with labels found to put in legend.  Note that artists whose label start with an underscore are ignored when <span style="color: #800080; text-decoration-color: #800080; font-weight: bold">legend</span><span style="font-weight: bold">()</span> is called with no argument.
 </pre>
 
-<img src="output_48_1.svg" class="stretch" />
+<img src="assets/output_48_1.svg" class="stretch" />
 
 </div>
 
@@ -1645,7 +1645,7 @@ Coordinates:
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:33:43]</span><span style="background-color: #ff0000; font-weight: bold">[CRITICAL]</span><span style="color: #777777; text-decoration-color: #777777">[3549449091.py:29]</span> - dQ_eval <span style="color: #008000; text-decoration-color: #008000">/</span> dQ_hmc: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">7.2375</span>
 </pre>
 
-<img src="output_50_5.svg" class="stretch" />
+<img src="assets/output_50_5.svg" class="stretch" />
 
 </div>
 
@@ -1676,7 +1676,7 @@ _ = ax[1].set_title(f'HMC, total: {htot.values}');
 
 <div class="cell-output cell-output-display">
 
-<img src="output_52_0.svg" class="stretch" />
+<img src="assets/output_52_0.svg" class="stretch" />
 
 </div>
 
@@ -1791,13 +1791,13 @@ for idx in range(4):
 
 <div class="cell-output cell-output-display">
 
-<img src="output_55_0.svg" class="stretch" />
+<img src="assets/output_55_0.svg" class="stretch" />
 
-<img src="output_55_1.svg" class="stretch" />
+<img src="assets/output_55_1.svg" class="stretch" />
 
-<img src="output_55_2.svg" class="stretch" />
+<img src="assets/output_55_2.svg" class="stretch" />
 
-<img src="output_55_3.svg" class="stretch" />
+<img src="assets/output_55_3.svg" class="stretch" />
 
 </div>
 
