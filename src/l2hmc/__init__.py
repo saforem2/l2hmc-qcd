@@ -137,7 +137,6 @@ def get_logger(
     # log.handlers = []
     # from rich.logging import RichHandler
     from l2hmc.utils.rich import get_console, is_interactive
-    # format = "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
     if rank_zero_only:
         if RANK != 0:
             log.setLevel('CRITICAL')
@@ -170,9 +169,8 @@ def get_logger(
             )
         )
         log.setLevel(level)
-    if (
-            len(log.handlers) > 1
-            and all([i == log.handlers[0] for i in log.handlers])
+    if len(log.handlers) > 1 and all(
+        i == log.handlers[0] for i in log.handlers
     ):
         log.handlers = [log.handlers[0]]
     return log

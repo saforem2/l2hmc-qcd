@@ -208,11 +208,10 @@ class BaseExperiment(ABC):
             ),
         )
         if hostfile is not None:
-            hosts = []
             if (hpath := Path(hostfile).resolve()).is_file():
+                hosts = []
                 with hpath.open('r') as f:
-                    for line in f:
-                        hosts.append(f.readline().rstrip('\n'))
+                    hosts.extend(f.readline().rstrip('\n') for _ in f)
                 run.config['hosts'] = hosts
         try:
             hostname = socket.gethostbyaddr(socket.gethostname())[0].lower()
@@ -223,17 +222,16 @@ class BaseExperiment(ABC):
         machine = os.environ.get('MACHINE', None)
         if machine is not None:
             run.config['machine'] = machine
+        elif 'thetagpu' in hostname:
+            run.config['machine'] = 'ThetaGPU'
+        elif 'x3' in hostname:
+            run.config['machine'] = 'Polaris'
+        elif 'x1' in hostname:
+            run.config['machine'] = 'Sunspot'
+        elif 'nid' in hostname:
+            run.config['machine'] = 'Perlmutter'
         else:
-            if 'thetagpu' in hostname:
-                run.config['machine'] = 'ThetaGPU'
-            elif 'x3' in hostname:
-                run.config['machine'] = 'Polaris'
-            elif 'x1' in hostname:
-                run.config['machine'] = 'Sunspot'
-            elif 'nid' in hostname:
-                run.config['machine'] = 'Perlmutter'
-            else:
-                run.config['machine'] = hostname
+            run.config['machine'] = hostname
         return run
 
     def get_outdirs(self) -> tuple[Path, dict[str, Path]]:
