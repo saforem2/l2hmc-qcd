@@ -246,9 +246,12 @@ class Trainer(BaseTrainer):
         if self.config.backend == 'DDP':
             from torch.nn.parallel import DistributedDataParallel as DDP
             self.optimizer = self._optimizer
+            find_unused_parameters = (
+                str(self.config.dynamics.group).lower() == 'su3'
+            )
             self.dynamics_engine = DDP(
                 self.dynamics,
-                # find_unused_parameters=True
+                find_unused_parameters=find_unused_parameters,
             )
             if self._dtype != torch.float64:
                 self.grad_scaler = GradScaler()
