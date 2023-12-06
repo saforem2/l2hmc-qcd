@@ -150,9 +150,9 @@ def HMC(
         }
         if step % nlog == 0 or step % nprint == 0:
             avgs = history_hmc.update(metrics)
-            if step % nprint == 0:
-                summary = summarize_dict(avgs)
-                log.info(summary)
+        if step % nprint == 0:
+            summary = summarize_dict(avgs)
+            log.info(summary)
     xhmc = experiment.trainer.dynamics.unflatten(x)
     log.info(f"checkSU(x_hmc): {g.checkSU(xhmc)}")
     history_hmc.plot_all(outdir=HMC_DIR)
@@ -184,9 +184,9 @@ def eval(
         }
         if step % nlog == 0 or step % nprint == 0:
             avgs = history_eval.update(metrics)
-            if step % nprint == 0:
-                summary = summarize_dict(avgs)
-                log.info(summary)
+        if step % nprint == 0:
+            summary = summarize_dict(avgs)
+            log.info(summary)
     xeval = experiment.trainer.dynamics.unflatten(x)
     log.info(f"checkSU(x_hmc): {g.checkSU(xeval)}")
     history_eval.plot_all(outdir=EVAL_DIR)
