@@ -235,7 +235,7 @@ def update_summaries(
                 metrics = (
                     {f'{prefix}/wb/{k}': v for k, v in metrics.items()}
                     if use_tb else
-                    {f'{prefix}/{k}': v for k,  v in metrics.items()}
+                    {f'{prefix}/{k}': v for k, v in metrics.items()}
                 )
                 log_dict_wandb(metrics, step)
     assert isinstance(step, int) if step is not None else None
