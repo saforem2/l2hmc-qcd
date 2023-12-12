@@ -183,6 +183,7 @@ format:
   html:
     toc: true
     self-contained: false
+    callout-appearance: simple
     # line-numbers: true
     # code-link: true
     # embed-resources: false
@@ -215,7 +216,7 @@ format:
     theme: 
       dark: 
         - css/common.scss
-        - css/dark.scss 
+        - css/dark.scss
         - css/syntax-dark.scss
       light:
         - css/common.scss

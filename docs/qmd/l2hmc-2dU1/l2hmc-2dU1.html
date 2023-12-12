@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Sam Foreman ">
-<meta name="dcterms.date" content="2023-12-06">
+<meta name="dcterms.date" content="2023-12-12">
 
 <title>l2hmc-qcd - l2hmc Example: 2D U(1)</title>
 <style>
@@ -83,6 +83,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-contrib/academicons-1.9.2/all.css" rel="stylesheet">
 <link href="../../site_libs/quarto-contrib/academicons-1.9.2/size.css" rel="stylesheet">
 <link href="../../site_libs/quarto-contrib/bootstrap-icons-1.9.1/all.css" rel="stylesheet">
+<script src="../../site_libs/quarto-contrib/iconify-1.0.7/iconify-icon.min.js"></script>
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -135,18 +136,18 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 <link rel="stylesheet" href="../../css/callouts.css">
 <meta property="og:title" content="l2hmc-qcd - l2hmc Example: 2D U(1)">
 <meta property="og:description" content="">
-<meta property="og:image" content="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg">
+<meta property="og:image" content="https://img.shields.io/badge/-View on GitHub-333333?style=flat&amp;logo=github&amp;labelColor=gray.png">
 <meta property="og:site-name" content="l2hmc-qcd">
 <meta name="twitter:title" content="l2hmc-qcd - l2hmc Example: 2D U(1)">
 <meta name="twitter:description" content="">
-<meta name="twitter:image" content="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg">
+<meta name="twitter:image" content="https://img.shields.io/badge/-View on GitHub-333333?style=flat&amp;logo=github&amp;labelColor=gray.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="citation_title" content="l2hmc-qcd">
 <meta name="citation_author" content="Sam Foreman">
-<meta name="citation_publication_date" content="2023-12-06">
-<meta name="citation_cover_date" content="2023-12-06">
+<meta name="citation_publication_date" content="2023-12-12">
+<meta name="citation_cover_date" content="2023-12-12">
 <meta name="citation_year" content="2023">
-<meta name="citation_online_date" content="2023-12-06">
+<meta name="citation_online_date" content="2023-12-12">
 <meta name="citation_fulltext_html_url" content="https://saforem2.github.io/l2hmc-qcd">
 <meta name="citation_language" content="en">
 <meta name="citation_reference" content="citation_title=The climate risk &amp;amp;amp; resilience portal (ClimRR) metadata and data dictionary;,citation_author=C. Burdi;,citation_author=Wall. T Branham;,citation_publication_date=2023;,citation_cover_date=2023;,citation_year=2023;,citation_fulltext_html_url=https://dub.sh/ClimRR-Metadata;">
@@ -217,7 +218,6 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
   <li><a href="#pytorch" id="toc-pytorch" class="nav-link" data-scroll-target="#pytorch">PyTorch</a>
   <ul class="collapse">
   <li><a href="#training" id="toc-training" class="nav-link" data-scroll-target="#training">Training</a></li>
-  <li><a href="#training-1" id="toc-training-1" class="nav-link" data-scroll-target="#training-1">Training</a></li>
   <li><a href="#inference" id="toc-inference" class="nav-link" data-scroll-target="#inference">Inference</a></li>
   </ul></li>
   <li><a href="#tensorflow" id="toc-tensorflow" class="nav-link" data-scroll-target="#tensorflow">TensorFlow</a>
@@ -260,7 +260,7 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
     <div>
     <div class="quarto-title-meta-heading"></div>
     <div class="quarto-title-meta-contents">
-      <p class="date">December 6, 2023</p>
+      <p class="date">December 12, 2023</p>
     </div>
   </div>
   
@@ -271,16 +271,24 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 </header>
 
 <!-- # `l2hmc` Example: 2d $U(1)$ -->
-<p><a href="https://arxiv.org/abs/2105.03418"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg" align="left"></a> <a href="https://arxiv.org/abs/2112.01582"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg" align="left" style="margin-left:10px;"></a><br></p>
+<p><span style="text-align:left;"><a href="https://github.com/saforem2/l2hmc-qcd/blob/main/reports/l2hmc-2dU1/README.md"><img src="https://img.shields.io/badge/-View%20on%20GitHub-333333?style=flat&amp;logo=github&amp;labelColor=gray.png" class="img-fluid"></a></span></p>
+<!-- [![](http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg)](https://arxiv.org/abs/2105.03418) [![](http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg)](https://arxiv.org/abs/2112.01582) -->
+<!-- <a href="https://arxiv.org/abs/2105.03418"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg" align="left"></a> <a href="https://arxiv.org/abs/2112.01582"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg" align="left" style="margin-left:10px;"></a><br> -->
 <p>This notebook will (attempt) to walk through the steps needed to successfully instantiate and “run” an experiment.</p>
 <p>For this example, we wish to train the L2HMC sampler for the 2D <span class="math inline">U(1)</span> lattice gauge model with Wilson action:</p>
 <p><span class="math display">
 S_{\beta}(n) = \beta \sum_{n}\sum_{\mu&lt;\nu}\mathrm{Re}\left[1 - U_{\mu\nu}(n) \right]
 </span></p>
-<p>This consists of the following steps: 1. Build an <code>Experiment</code> by parsing our configuration object 2. Train our model using the <code>Experiment.train()</code> method 3. Evaluate our trained model <code>Experiment.evaluate(job_type='eval')</code> 4. Compare our trained models’ performance against generic HMC <code>Experiment.evaluate(job_type='hmc')</code></p>
+<p>This consists of the following steps:</p>
+<ol type="1">
+<li><p>Build an <code>Experiment</code> by parsing our configuration object</p></li>
+<li><p>Train our model using the <code>Experiment.train()</code> method</p></li>
+<li><p>Evaluate our trained model <code>Experiment.evaluate(job_type='eval')</code></p></li>
+<li><p>Compare our trained models’ performance against generic HMC <code>Experiment.evaluate(job_type='hmc')</code></p></li>
+</ol>
 <div class="alert alert-block alert-info" style="background:rgba(102, 102, 102, 0.1);color:#666666; border-radius:5px; border: none;">
 <p><span style="font-weight:700; font-size:1.5em;">Evaluating Performance</span></p>
-<p>Explicitly, we measure the performance of our model by comparing the <em>tunneling rate</em> <span class="math inline">\delta Q</span> of our <strong>trained</strong> sampler to that of generic HMC.</p>
+<p>We measure the performance of our model by comparing the <em>tunneling rate</em> <span class="math inline">\delta Q</span> of our <strong>trained</strong> sampler to that of generic HMC.</p>
 <p>Explicitly, the tunneling rate is given by:</p>
 <p><span class="math display"> \delta Q = \frac{1}{N_{\mathrm{chains}}}\sum_{\mathrm{chains}} \left|Q_{i+1} - Q_{i}\right| </span></p>
 <p>where the difference is between subsequent states in a chain, and the sum is over all <span class="math inline">N</span> chains (each being ran in parallel, <em>independently</em>).</p>
@@ -289,6 +297,19 @@ S_{\beta}(n) = \beta \sum_{n}\sum_{\mu&lt;\nu}\mathrm{Re}\left[1 - U_{\mu\nu}(n)
 <section id="imports-setup" class="level2">
 <h2 class="anchored" data-anchor-id="imports-setup">Imports / Setup</h2>
 <div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">!</span> nvidia<span class="op">-</span>smi <span class="op">|</span> tail <span class="op">--</span>lines <span class="op">-</span><span class="dv">7</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<!-- ::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="[ Papers 📚, Slides 📊 etc.]{.dim-text}"} -->
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="`output:`">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<code>output:</code>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre><code>|        ID   ID                                                   Usage      |
 |=============================================================================|
@@ -297,6 +318,9 @@ S_{\beta}(n) = \beta \sum_{n}\sum_{\mu&lt;\nu}\mathrm{Re}\left[1 - U_{\mu\nu}(n)
 |    3   N/A  N/A   3989894      C   ...PU/2023-04-26/bin/python3     6021MiB |
 |    4   N/A  N/A   3981679      C   ...PU/2023-04-26/bin/python3     3951MiB |
 +-----------------------------------------------------------------------------+</code></pre>
+</div>
+</div>
+</div>
 </div>
 <div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>devices <span class="op">=</span> os.environ.get(<span class="st">'CUDA_VISIBLE_DEVICES'</span>, <span class="va">None</span>)</span>
@@ -587,8 +611,6 @@ Your GPU will likely run quickly with dtype policy mixed_float16 as it has compu
 </div>
 <section id="pytorch" class="level2">
 <h2 class="anchored" data-anchor-id="pytorch">PyTorch</h2>
-<section id="training" class="level3">
-<h3 class="anchored" data-anchor-id="training">Training</h3>
 <div class="sourceCode" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> time</span>
 <span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> l2hmc.utils.history <span class="im">import</span> BaseHistory, summarize_dict</span>
 <span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> l2hmc.utils.live_plots <span class="im">as</span> plotter</span>
@@ -602,17 +624,29 @@ Your GPU will likely run quickly with dtype policy mixed_float16 as it has compu
 <div class="cell-output cell-output-display">
 <pre><code>device(type='cuda', index=0)</code></pre>
 </div>
-</section>
-<section id="training-1" class="level3">
-<h3 class="anchored" data-anchor-id="training-1">Training</h3>
+<section id="training" class="level3">
+<h3 class="anchored" data-anchor-id="training">Training</h3>
 <div class="sourceCode" id="cb25"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>outputs[<span class="st">'pytorch'</span>][<span class="st">'train'</span>] <span class="op">=</span> ptExpU1.trainer.train(</span>
 <span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>    nera<span class="op">=</span><span class="dv">1</span>,</span>
 <span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a>    nepoch<span class="op">=</span><span class="dv">5000</span>,</span>
 <span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a>    beta<span class="op">=</span><span class="fl">4.0</span>,</span>
 <span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a>    <span class="co"># beta=[4.0, 4.25, 4.5, 4.75, 5.0],</span></span>
 <span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-display">
 <p><img src="output_21_0.svg" class="stretch img-fluid"></p>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="`output:`">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<code>output:</code>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<div class="cell-output cell-output-display">
+<!-- ![](output_21_0.svg){.stretch} -->
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:14:13]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:108]</span> - ┏━━━━━━━━━━━━━━━━━━━━━━━━━┓
 </pre>
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:14:13]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:109]</span> - ┃ ERA: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0</span> <span style="color: #008000; text-decoration-color: #008000">/</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">1</span>, BETA: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">4.000</span> ┃
@@ -675,8 +709,23 @@ Your GPU will likely run quickly with dtype policy mixed_float16 as it has compu
 </pre>
 <p><img src="output_21_31.svg" class="stretch img-fluid"></p>
 </div>
+</div>
+</div>
+</div>
 <div class="sourceCode" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="co"># dset_train = ptExpU1.trainer.histories['train'].plot_all(num_chains=128)</span></span>
 <span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>dset_train_pt <span class="op">=</span> ptExpU1.save_dataset(job_type<span class="op">=</span><span class="st">'train'</span>, nchains<span class="op">=</span><span class="dv">32</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="`output:`">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<code>output:</code>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:41:01]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[plot_helpers.py:1046]</span> - Saving figure to: <span style="color: #008000; text-decoration-color: #008000">/lus/grand/projects/DLHMC/foremans/locations/thetaGPU/projects/saforem2/l2hmc-qcd/src/l2hmc/notebooks/outputs/2023-12-05-111355/pytorch/plots/ridgeplots/svgs/</span><span style="color: #800080; text-decoration-color: #800080">energy_ridgeplot.svg</span>
 </pre>
@@ -726,6 +775,9 @@ Your GPU will likely run quickly with dtype policy mixed_float16 as it has compu
 <p><img src="output_22_36.svg" class="stretch img-fluid"></p>
 <p><img src="output_22_37.svg" class="stretch img-fluid"></p>
 </div>
+</div>
+</div>
+</div>
 </section>
 <section id="inference" class="level3">
 <h3 class="anchored" data-anchor-id="inference">Inference</h3>
@@ -739,6 +791,18 @@ Your GPU will likely run quickly with dtype policy mixed_float16 as it has compu
 <span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a>)</span>
 <span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a>dset_eval_pt <span class="op">=</span> ptExpU1.save_dataset(job_type<span class="op">=</span><span class="st">'eval'</span>, nchains<span class="op">=</span><span class="dv">32</span>)</span>
 <span id="cb27-8"><a href="#cb27-8" aria-hidden="true" tabindex="-1"></a><span class="co"># dset_eval_pt = ptExpU1.trainer.histories['eval'].plot_all()</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="`output:`">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<code>output:</code>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:42:03]</span><span style="color: #FD971F; text-decoration-color: #FD971F">[WARNING]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:467]</span> - x.shape <span style="font-weight: bold">(</span>original<span style="font-weight: bold">)</span>: <span style="color: #800080; text-decoration-color: #800080; font-weight: bold">torch.Size</span><span style="font-weight: bold">([</span><span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">2048</span>, <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">2</span>, <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">16</span>, <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">16</span><span style="font-weight: bold">])</span>
 </pre>
@@ -808,6 +872,9 @@ Your GPU will likely run quickly with dtype policy mixed_float16 as it has compu
 <p><img src="output_25_42.svg" class="stretch img-fluid"></p>
 <p><img src="output_25_43.svg" class="stretch img-fluid"></p>
 </div>
+</div>
+</div>
+</div>
 </section>
 <section id="hmc" class="level4">
 <h4 class="anchored" data-anchor-id="hmc">HMC</h4>
@@ -819,6 +886,18 @@ Your GPU will likely run quickly with dtype policy mixed_float16 as it has compu
 <span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a>)</span>
 <span id="cb28-7"><a href="#cb28-7" aria-hidden="true" tabindex="-1"></a>dset_hmc_pt <span class="op">=</span> ptExpU1.save_dataset(job_type<span class="op">=</span><span class="st">'hmc'</span>, nchains<span class="op">=</span><span class="dv">32</span>)</span>
 <span id="cb28-8"><a href="#cb28-8" aria-hidden="true" tabindex="-1"></a><span class="co"># dset_hmc_pt = ptExpU1.trainer.histories['hmc'].plot_all()</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="`output:`">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<code>output:</code>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:49:07]</span><span style="color: #FD971F; text-decoration-color: #FD971F">[WARNING]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:467]</span> - Step size `eps` not specified for HMC! Using default: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.2500</span> for generic HMC
 </pre>
@@ -876,6 +955,9 @@ Your GPU will likely run quickly with dtype policy mixed_float16 as it has compu
 <p><img src="output_27_32.svg" class="stretch img-fluid"></p>
 <p><img src="output_27_33.svg" class="stretch img-fluid"></p>
 </div>
+</div>
+</div>
+</div>
 </section>
 </section>
 </section>
@@ -891,12 +973,25 @@ Your GPU will likely run quickly with dtype policy mixed_float16 as it has compu
 <span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a>)</span>
 <span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a><span class="co"># dset_train_tf = tfExpU1.trainer.histories['train'].plot_all()</span></span>
 <span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a>_ <span class="op">=</span> tfExpU1.save_dataset(job_type<span class="op">=</span><span class="st">'train'</span>, nchains<span class="op">=</span><span class="dv">32</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><img src="output_30_2.svg" class="stretch img-fluid"></p>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="`output:`">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<code>output:</code>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:52:30]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:198]</span> - Looking for checkpoints in: <span style="color: #008000; text-decoration-color: #008000">/lus/grand/projects/DLHMC/foremans/locations/thetaGPU/projects/saforem2/l2hmc-qcd/src/l2hmc/checkpoints/U1/2-16-16/nlf-4/xsplit-True/sepnets-True/merge-True/net-16-16-16-16_dp-0.2_bn-True/</span><span style="color: #800080; text-decoration-color: #800080">tensorflow</span>
 </pre>
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:52:30]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:198]</span> - No checkpoints found to load from. Continuing
 </pre>
-<p><img src="output_30_2.svg" class="stretch img-fluid"></p>
+<!-- ![](output_30_2.svg){.stretch} -->
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:52:31]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:1259]</span> - ERA: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0</span> <span style="color: #008000; text-decoration-color: #008000">/</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">1</span>, BETA: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">4.000</span>
 </pre>
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:53:11]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:198]</span> - Thermalizing configs @ <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">4.00</span> took <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">40.3690</span> s
@@ -1015,6 +1110,9 @@ Lambda fuctions will be no more assumed to be used in the statement where they a
 <p><img src="output_30_74.svg" class="stretch img-fluid"></p>
 <p><img src="output_30_75.svg" class="stretch img-fluid"></p>
 </div>
+</div>
+</div>
+</div>
 </section>
 <section id="inference-1" class="level3">
 <h3 class="anchored" data-anchor-id="inference-1">Inference</h3>
@@ -1028,6 +1126,18 @@ Lambda fuctions will be no more assumed to be used in the statement where they a
 <span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a>)</span>
 <span id="cb31-7"><a href="#cb31-7" aria-hidden="true" tabindex="-1"></a><span class="co"># dset_eval_tf = tfExpU1.trainer.histories['eval'].plot_all()</span></span>
 <span id="cb31-8"><a href="#cb31-8" aria-hidden="true" tabindex="-1"></a>_ <span class="op">=</span> tfExpU1.save_dataset(job_type<span class="op">=</span><span class="st">'eval'</span>, nchains<span class="op">=</span><span class="dv">32</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="`output:`">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<code>output:</code>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:05:41]</span><span style="color: #FD971F; text-decoration-color: #FD971F">[WARNING]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:194]</span> - x.shape <span style="font-weight: bold">(</span>original<span style="font-weight: bold">)</span>: <span style="font-weight: bold">(</span><span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">2048</span>, <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">2</span>, <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">16</span>, <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">16</span><span style="font-weight: bold">)</span>
 </pre>
@@ -1098,6 +1208,9 @@ nleapfrog = <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-st
 <p><img src="output_33_43.svg" class="stretch img-fluid"></p>
 <p><img src="output_33_44.svg" class="stretch img-fluid"></p>
 </div>
+</div>
+</div>
+</div>
 </section>
 <section id="hmc-1" class="level4">
 <h4 class="anchored" data-anchor-id="hmc-1">HMC</h4>
@@ -1108,6 +1221,18 @@ nleapfrog = <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-st
 <span id="cb33-5"><a href="#cb33-5" aria-hidden="true" tabindex="-1"></a>    eval_steps<span class="op">=</span><span class="dv">2000</span>,</span>
 <span id="cb33-6"><a href="#cb33-6" aria-hidden="true" tabindex="-1"></a>)</span>
 <span id="cb33-7"><a href="#cb33-7" aria-hidden="true" tabindex="-1"></a>_ <span class="op">=</span> tfExpU1.save_dataset(job_type<span class="op">=</span><span class="st">'hmc'</span>, nchains<span class="op">=</span><span class="dv">32</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="{{< iconify mdi code-greater-than >}} `output:`">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<iconify-icon inline="" icon="mdi:code-greater-than"></iconify-icon> <code>output:</code>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:10:19]</span><span style="color: #FD971F; text-decoration-color: #FD971F">[WARNING]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:194]</span> - Step size `eps` not specified for HMC! Using default: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.2500</span> for generic HMC
 </pre>
@@ -1165,6 +1290,9 @@ nleapfrog = <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-we
 <p><img src="output_35_32.svg" class="stretch img-fluid"></p>
 <p><img src="output_35_33.svg" class="stretch img-fluid"></p>
 <p><img src="output_35_34.svg" class="stretch img-fluid"></p>
+</div>
+</div>
+</div>
 </div>
 </section>
 </section>
@@ -1647,12 +1775,12 @@ Coordinates:
 <div id="quarto-appendix" class="default"><section class="quarto-appendix-contents"><h2 class="anchored quarto-appendix-heading">Citation</h2><div><div class="quarto-appendix-secondary-label">BibTeX citation:</div><pre class="sourceCode code-with-copy quarto-appendix-bibtex"><code class="sourceCode bibtex">@online{foreman2023,
   author = {Foreman, Sam},
   title = {L2hmc-Qcd},
-  date = {2023-12-06},
+  date = {2023-12-12},
   url = {https://saforem2.github.io/l2hmc-qcd},
   langid = {en}
 }
 </code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre><div class="quarto-appendix-secondary-label">For attribution, please cite this work as:</div><div id="ref-foreman2023" class="csl-entry quarto-appendix-citeas" role="listitem">
-Foreman, Sam. 2023. <span>“L2hmc-Qcd.”</span> December 6, 2023. <a href="https://saforem2.github.io/l2hmc-qcd">https://saforem2.github.io/l2hmc-qcd</a>.
+Foreman, Sam. 2023. <span>“L2hmc-Qcd.”</span> December 12, 2023. <a href="https://saforem2.github.io/l2hmc-qcd">https://saforem2.github.io/l2hmc-qcd</a>.
 </div></div></section></div></main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
 window.document.addEventListener("DOMContentLoaded", function (event) {

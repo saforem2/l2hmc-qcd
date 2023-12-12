@@ -19,7 +19,7 @@ citation:
    author: Sam Foreman
    type: webpage
    title: "Posts"
-   url: https://saforem2.github.io/l2hmc-qcd/qmd/posts.html
+   url: https://saforem2.github.io/l2hmc-qcd/
 # title: "l2hmc-qcd"
 site-url: https://saforem2.github.io/l2hmc-qcd
 # author: ""
@@ -78,11 +78,10 @@ format:
     css:
       - ../css/default.css
       - ../css/callouts.css
-      - ../css/profile.css
-    theme: 
+    theme:
       dark:
         - ../css/syntax-dark.scss
-        - ../css/dark.scss 
+        - ../css/dark.scss
         - ../css/common.scss
       light:
         - ../css/syntax-light.scss
@@ -137,8 +136,8 @@ format:
 
 - [📊 Slides (07/31/2023 @ Lattice 2023)](https://saforem2.github.io/lattice23/#/title-slide)
 - [📕 Notebooks / Reports](./reports/):
-  - [📓 2D $U(1)$ Example](./qmd/l2hmc-2DU1.qmd)
-    - [📙 2D U(1) Model (w/ `fp16` or `fp32` for training)](./qmd/l2hmc-2DU1.qmd)
+  - [📓 2D $U(1)$ Example](./qmd/l2hmc-2DU1/l2hmc-2dU1.qmd)
+    - [📙 2D U(1) Model (w/ `fp16` or `fp32` for training)](./qmd/l2hmc-2dU1/l2hmc-2dU1.qmd)
     - [📒 4D SU(3) Model (w/ `complex128` + `fp64` for training)](./qmd/l2hmc-4DSU3.qmd)
       - [alt link (if github won't load)](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/pytorch-SU3d4.ipynb)
 

@@ -5,6 +5,7 @@ author:
   name: "Sam Foreman [[{{< ai orcid >}}]{.orcid-green}](https://orcid.org/0000-0002-9981-0876)"
   url: https://samforeman.me
   email: foremans@anl.gov
+callout-appearance: simple
 format:
   html: default
   gfm:
@@ -13,7 +14,11 @@ format:
 
 <!-- # `l2hmc` Example: 2d $U(1)$ -->
 
-<a href="https://arxiv.org/abs/2105.03418"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg" align="left"></a> <a href="https://arxiv.org/abs/2112.01582"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg" align="left" style="margin-left:10px;"></a><br>
+[[![](https://img.shields.io/badge/-View%20on%20GitHub-333333?style=flat&logo=github&labelColor=gray)](https://github.com/saforem2/l2hmc-qcd/blob/main/reports/l2hmc-2dU1/README.md)]{style="text-align:left;"}
+
+<!-- [![](http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg)](https://arxiv.org/abs/2105.03418) [![](http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg)](https://arxiv.org/abs/2112.01582) -->
+<!-- <a href="https://arxiv.org/abs/2105.03418"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2105.03418-B31B1B.svg" align="left"></a> <a href="https://arxiv.org/abs/2112.01582"><img alt="arxiv" src="http://img.shields.io/badge/arXiv-2112.01582-B31B1B.svg" align="left" style="margin-left:10px;"></a><br> -->
+
 
 
 This notebook will (attempt) to walk through the steps needed to successfully instantiate and "run" an experiment.
@@ -25,25 +30,33 @@ S_{\beta}(n) = \beta \sum_{n}\sum_{\mu<\nu}\mathrm{Re}\left[1 - U_{\mu\nu}(n) \r
 $$
 
 This consists of the following steps:
-  1. Build an `Experiment` by parsing our configuration object
-  2. Train our model using the `Experiment.train()` method
-  3. Evaluate our trained model `Experiment.evaluate(job_type='eval')`
-  4. Compare our trained models' performance against generic HMC `Experiment.evaluate(job_type='hmc')`
-  
+
+1. Build an `Experiment` by parsing our configuration object
+
+2. Train our model using the `Experiment.train()` method
+
+3. Evaluate our trained model `Experiment.evaluate(job_type='eval')`
+
+4. Compare our trained models' performance against generic HMC `Experiment.evaluate(job_type='hmc')`
+
 
 <div class="alert alert-block alert-info" style="background:rgba(102, 102, 102, 0.1);color:#666666; border-radius:5px; border: none;">
-    
+
 <span style="font-weight:700; font-size:1.5em;">Evaluating Performance</span>
-    
-Explicitly, we measure the performance of our model by comparing the _tunneling rate_ $\delta Q$ of our **trained** sampler to that of generic HMC.
-    
+
+We measure the performance of our model by comparing the _tunneling rate_
+$\delta Q$ of our **trained** sampler to that of generic HMC.
+
 Explicitly, the tunneling rate is given by:
-    
+
 $$ \delta Q = \frac{1}{N_{\mathrm{chains}}}\sum_{\mathrm{chains}} \left|Q_{i+1} - Q_{i}\right| $$
-    
-where the difference is between subsequent states in a chain, and the sum is over all $N$ chains (each being ran in parallel, _independently_).
-    
-Since our goal is to generate _independent configurations_, the more our sampler tunnels between different topological sectors (_tunneling rate_), the more efficient our sampler.
+
+where the difference is between subsequent states in a chain, and the sum is
+over all $N$ chains (each being ran in parallel, _independently_).
+
+Since our goal is to generate _independent configurations_, the more our
+sampler tunnels between different topological sectors (_tunneling rate_), the
+more efficient our sampler.
     
 </div>
 
@@ -54,6 +67,10 @@ Since our goal is to generate _independent configurations_, the more our sampler
 ! nvidia-smi | tail --lines -7
 ```
 
+<!-- ::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="[{{< fa solid list-ol >}} Papers 📚, Slides 📊 etc.]{.dim-text}"} -->
+
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="`output:` {{< iconify octicon unfold >}}"}
+
 ::: {.cell-output .cell-output-display}
 
     |        ID   ID                                                   Usage      |
@@ -63,6 +80,8 @@ Since our goal is to generate _independent configurations_, the more our sampler
     |    3   N/A  N/A   3989894      C   ...PU/2023-04-26/bin/python3     6021MiB |
     |    4   N/A  N/A   3981679      C   ...PU/2023-04-26/bin/python3     3951MiB |
     +-----------------------------------------------------------------------------+
+
+:::
 
 :::
 
@@ -534,9 +553,6 @@ Your GPU will likely run quickly with dtype policy mixed_float16 as it has compu
 
 ## PyTorch
 
-### Training
-
-
 ```python
 import time
 from l2hmc.utils.history import BaseHistory, summarize_dict
@@ -577,18 +593,18 @@ outputs['pytorch']['train'] = ptExpU1.trainer.train(
 )
 ```
 
+![](output_21_0.svg){.stretch}
+
+
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="`output:`"}
+
 ::: {.cell-output .cell-output-display}
 
-
-    
-![](output_21_0.svg){.stretch}
+<!-- ![](output_21_0.svg){.stretch} -->
 
 
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:14:13]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:108]</span> - ┏━━━━━━━━━━━━━━━━━━━━━━━━━┓
 </pre>
-
-
-
 
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:14:13]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:109]</span> - ┃ ERA: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0</span> <span style="color: #008000; text-decoration-color: #008000">/</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">1</span>, BETA: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">4.000</span> ┃
 </pre>
@@ -771,11 +787,15 @@ outputs['pytorch']['train'] = ptExpU1.trainer.train(
 
 :::
 
+:::
+
 
 ```python
 # dset_train = ptExpU1.trainer.histories['train'].plot_all(num_chains=128)
 dset_train_pt = ptExpU1.save_dataset(job_type='train', nchains=32)
 ```
+
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="`output:` {{< iconify octicon unfold >}}"}
 
 ::: {.cell-output .cell-output-display}
 
@@ -1009,6 +1029,8 @@ dset_train_pt = ptExpU1.save_dataset(job_type='train', nchains=32)
 
 :::
 
+:::
+
 ### Inference
 
 #### Evaluation
@@ -1024,6 +1046,8 @@ outputs['pytorch']['eval'] = ptExpU1.trainer.eval(
 dset_eval_pt = ptExpU1.save_dataset(job_type='eval', nchains=32)
 # dset_eval_pt = ptExpU1.trainer.histories['eval'].plot_all()
 ```
+
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="`output:` {{< iconify octicon unfold >}}"}
 
 ::: {.cell-output .cell-output-display}
 
@@ -1299,6 +1323,8 @@ dset_eval_pt = ptExpU1.save_dataset(job_type='eval', nchains=32)
 
 :::
 
+:::
+
 #### HMC
 
 
@@ -1312,6 +1338,8 @@ outputs['pytorch']['hmc'] = ptExpU1.trainer.eval(
 dset_hmc_pt = ptExpU1.save_dataset(job_type='hmc', nchains=32)
 # dset_hmc_pt = ptExpU1.trainer.histories['hmc'].plot_all()
 ```
+
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="`output:` {{< iconify octicon unfold >}}"}
 
 ::: {.cell-output .cell-output-display}
 
@@ -1527,6 +1555,8 @@ dset_hmc_pt = ptExpU1.save_dataset(job_type='hmc', nchains=32)
 
 :::
 
+:::
+
 ## TensorFlow
 
 ### Train
@@ -1542,6 +1572,8 @@ outputs['tensorflow']['train'] = tfExpU1.trainer.train(
 # dset_train_tf = tfExpU1.trainer.histories['train'].plot_all()
 _ = tfExpU1.save_dataset(job_type='train', nchains=32)
 ```
+
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="`output:` {{< iconify octicon unfold >}}"}
 
 ::: {.cell-output .cell-output-display}
 
@@ -1559,7 +1591,7 @@ _ = tfExpU1.save_dataset(job_type='train', nchains=32)
 
 
     
-![](output_30_2.svg){.stretch}
+<!-- ![](output_30_2.svg){.stretch} -->
     
 
 
@@ -2003,6 +2035,8 @@ Lambda fuctions will be no more assumed to be used in the statement where they a
 
 :::
 
+:::
+
 ### Inference
 
 #### Evaluate
@@ -2018,6 +2052,10 @@ outputs['tensorflow']['eval'] = tfExpU1.trainer.eval(
 # dset_eval_tf = tfExpU1.trainer.histories['eval'].plot_all()
 _ = tfExpU1.save_dataset(job_type='eval', nchains=32)
 ```
+
+![](output_30_2.svg){.stretch}
+
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="`output:` {{< iconify octicon unfold >}}"}
 
 ::: {.cell-output .cell-output-display}
 
@@ -2297,6 +2335,8 @@ nleapfrog = <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-st
 
 :::
 
+:::
+
 #### HMC
 
 
@@ -2309,6 +2349,8 @@ outputs['tensorflow']['hmc'] = tfExpU1.trainer.eval(
 )
 _ = tfExpU1.save_dataset(job_type='hmc', nchains=32)
 ```
+
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--bg-border)!important;" title="`output:` {{< iconify octicon unfold >}}"}
 
 ::: {.cell-output .cell-output-display}
 
@@ -2525,6 +2567,8 @@ nleapfrog = <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-we
 ![](output_35_34.svg){.stretch}
     
 
+
+:::
 
 :::
 
