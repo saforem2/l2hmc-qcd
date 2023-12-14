@@ -165,14 +165,14 @@
     "href": "index.html#acknowledgement",
     "title": "",
     "section": "Acknowledgement",
-    "text": "Acknowledgement\n\nNote This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357. This work describes objective technical results and analysis. Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government.\n\n\nfrom datetime import date\nprint(f\"Last updated: {date.today().strftime('%d %B %y')}\")\n\nLast updated: 06 December 23"
+    "text": "Acknowledgement\n\nNote This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357. This work describes objective technical results and analysis. Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government."
   },
   {
     "objectID": "index.html#footnotes",
     "href": "index.html#footnotes",
     "title": "",
     "section": "Footnotes",
-    "text": "Footnotes\n\n\nA good way to do this is on top of a conda environment, e.g.:\nbash   conda activate base;  # with either {pytorch, tensorflow}   mkdir venv   python3 -m venv venv --system-site-packages   source venv/bin/activate   # for development addons:   # python3 -m pip install -e \".[dev]\"   python3 -m pip install -e .↩︎\nNote that throughout the code, we refer to the link variables as x and the conjugate momenta as v.↩︎\nreferred to as vNet for the network used to update v↩︎\nreferred to as xNet for the network used to update x↩︎"
+    "text": "Footnotes\n\n\nA good way to do this is on top of a conda environment, e.g.:\nconda activate base;  # with either {pytorch, tensorflow}\nmkdir venv\npython3 -m venv venv --system-site-packages\nsource venv/bin/activate\n# for development addons:\n# python3 -m pip install -e \".[dev]\"\npython3 -m pip install -e .\n↩︎\nNote that throughout the code, we refer to the link variables as x and the conjugate momenta as v.↩︎\nreferred to as vNet for the network used to update v↩︎\nreferred to as xNet for the network used to update x↩︎"
   },
   {
     "objectID": "qmd/posts.html",
@@ -243,5 +243,12 @@
     "title": "Denoising Diffusion Probabilistic Models",
     "section": "Alternate",
     "text": "Alternate"
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "",
+    "section": "",
+    "text": "Last Updated: 12/13/2023 @ 18:00:09"
   }
 ]

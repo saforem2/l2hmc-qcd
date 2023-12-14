@@ -18,9 +18,10 @@ author:
 citation:
    author: Sam Foreman
    type: webpage
-   title: "Posts"
+   title: "L2HMC-QCD"
    url: https://saforem2.github.io/l2hmc-qcd/
 # title: "l2hmc-qcd"
+title: "[![](https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg)](https://saforem2.github.io/l2hmc-qcd)"
 site-url: https://saforem2.github.io/l2hmc-qcd
 # author: ""
 # listing:
@@ -96,7 +97,22 @@ format:
     output-file: "l2hmc.md"
 ---
 
-# [[![](https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg)](https://saforem2.github.io/l2hmc-qcd)]{align="left" display="inline" width="20%" style="vertical-align:middle; line-height: 3.0em;"}
+```{python}
+#| echo: false
+import datetime
+from rich import print
+now = datetime.datetime.now()
+day = now.strftime('%m/%d/%Y')
+time = now.strftime('%H:%M:%S')
+print(' '.join([
+  "[dim italic]Last Updated[/]:",
+  f"[#F06292]{day}[/]",
+  f"[dim]@[/]",
+  f"[#1A8FFF]{time}[/]"
+]))
+```
+
+<!-- # [[![](https://raw.githubusercontent.com/saforem2/l2hmc-qcd/main/assets/logo-small.svg)](https://saforem2.github.io/l2hmc-qcd)]{align="left" display="inline" width="20%" style="vertical-align:middle; line-height: 3.0em;"} -->
 
 ::: {.flex}
 
@@ -192,17 +208,17 @@ It is recommended to use / install `l2hmc` into a virtual environment[^venvs]<br
 
 :::
 
-[^venvs]:
-  A good way to do this is on top of a `conda` environment, e.g.:  
-  ```bash
-  conda activate base;  # with either {pytorch, tensorflow}
-  mkdir venv
-  python3 -m venv venv --system-site-packages
-  source venv/bin/activate
-  # for development addons:
-  # python3 -m pip install -e ".[dev]"
-  python3 -m pip install -e .
-  ```
+[^venvs]: A good way to do this is on top of a `conda` environment, e.g.:
+
+    ```bash
+    conda activate base;  # with either {pytorch, tensorflow}
+    mkdir venv
+    python3 -m venv venv --system-site-packages
+    source venv/bin/activate
+    # for development addons:
+    # python3 -m pip install -e ".[dev]"
+    python3 -m pip install -e .
+    ```
 
 
 <details open><summary><b>From source (RECOMMENDED)</b></summary>
@@ -243,7 +259,7 @@ python3 -c 'import l2hmc ; print(l2hmc.__file__)'
 
 <!-- ## Configuring your `Experiment` -->
 
-### `Experiment` configuration with [Hydra](https://hydra.cc) <img src="https://hydra.cc/img/logo.svg" width="10%" display="inline" style="vertical-align:middle;line-height:3.0em;" align="left" >
+### [`Experiment`](https://github.com/saforem2/l2hmc-qcd/tree/main/src/l2hmc/experiment) configuration with [Hydra](https://hydra.cc) <img src="https://hydra.cc/img/logo.svg" width="10%" display="inline" style="vertical-align:middle;line-height:3.0em;" align="left" >
 
 This project uses [`hydra`](https://hydra.cc) for configuration management and
 supports distributed training for both PyTorch and TensorFlow.
@@ -459,12 +475,6 @@ If you use this code or found this work interesting, please cite our work along 
 > This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357.<br>
 > This work describes objective technical results and analysis.<br>
 > Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government.
-
-
-```{python}
-from datetime import date
-print(f"Last updated: {date.today().strftime('%d %B %y')}")
-```
 
 <p align="center">
 <a href="https://hits.seeyoufarm.com"><img align="center" src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fsaforem2.github.io/l2hmc-qcd/&count_bg=%2300CCFF&title_bg=%23303030&icon=&icon_color=%23E7E7E7&title=hits&edge_flat=false"/></a>

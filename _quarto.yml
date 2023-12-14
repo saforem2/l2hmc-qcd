@@ -182,6 +182,7 @@ website:
 format:
   html:
     toc: true
+    toc-expand: 2
     self-contained: false
     callout-appearance: simple
     # line-numbers: true
