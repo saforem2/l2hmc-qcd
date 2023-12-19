@@ -152,10 +152,10 @@ print(' '.join([
 
 - [📊 Slides (07/31/2023 @ Lattice 2023)](https://saforem2.github.io/lattice23/#/title-slide)
 - [📕 Notebooks / Reports](./reports/):
-  - [📓 2D $U(1)$ Example](./qmd/l2hmc-2DU1/l2hmc-2dU1.qmd)
-    - [📙 2D U(1) Model (w/ `fp16` or `fp32` for training)](./qmd/l2hmc-2dU1/l2hmc-2dU1.qmd)
-    - [📒 4D SU(3) Model (w/ `complex128` + `fp64` for training)](./qmd/l2hmc-4DSU3.qmd)
-      - [alt link (if github won't load)](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/pytorch-SU3d4.ipynb)
+- [📓 2D $U(1)$ Example](https://saforem2.github.io/l2hmc-qcd/qmd/l2hmc-2dU1/l2hmc-2dU1.html)
+  - [📒 4D SU(3) Model (w/ `complex128` + `fp64` for training)](https://saforem2.github.io/l2hmc-qcd/qmd/l2hmc-4DSU3.html)
+    <!-- - [📙 2D U(1) Model (w/ `fp16` or `fp32` for training)](./qmd/l2hmc-2dU1/l2hmc-2dU1.qmd) -->
+      <!-- - [alt link (if github won't load)](https://nbviewer.org/github/saforem2/l2hmc-qcd/blob/dev/src/l2hmc/notebooks/pytorch-SU3d4.ipynb) -->
 
 - 📝 Papers:
     - [LeapfrogLayers: A Trainable Framework for Effective Topological Sampling](https://arxiv.org/abs/2112.01582), 2022  

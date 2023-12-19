@@ -65,8 +65,7 @@ more efficient our sampler.
 ! nvidia-smi | tail --lines -7
 ```
 
-::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[{{< iconify pixelarticons expand >}} `output`:]{.code-text}"}
-
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
     |        ID   ID                                                   Usage      |
@@ -78,7 +77,6 @@ more efficient our sampler.
     +-----------------------------------------------------------------------------+
 
 :::
-
 :::
 
 
@@ -89,13 +87,14 @@ print(devices)
 !getconf _NPROCESSORS_ONLN  # get number of availble CPUs
 ```
 
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
     None
     256
 
 :::
-
+:::
 ```python
 os.environ['TORCH_CPP_LOG_LEVEL'] = 'ERROR'
 os.environ['AUTOGRAPH_VERBOSITY'] = '10'
@@ -120,11 +119,13 @@ import matplotlib_inline
 matplotlib_inline.backend_inline.set_matplotlib_formats('svg', 'retina')
 ```
 
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
     The autoreload extension is already loaded. To reload it, use:
       %reload_ext autoreload
 
+:::
 :::
 
 
@@ -142,10 +143,12 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '5'
 ```
 
 
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
     5
 
+:::
 :::
 
 ```python
@@ -162,6 +165,7 @@ log = logging.getLogger()
 log.setLevel('INFO')
 ```
 
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
     --------------------------------------------------------------------------
@@ -173,6 +177,7 @@ log.setLevel('INFO')
 
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace">Using device: cuda </pre>
 
+:::
 :::
 
 
@@ -231,6 +236,7 @@ sns.set_context('notebook', font_scale=1.25)
 ```
 
 
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 
@@ -265,6 +271,7 @@ sns.set_context('notebook', font_scale=1.25)
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:12:27]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[dist.py:240]</span> - RANK: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0</span> <span style="color: #008000; text-decoration-color: #008000">/</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0</span> </pre>
 
 :::
+:::
 
 
 ```python
@@ -272,12 +279,14 @@ import l2hmc
 log.info(f'{l2hmc.__file__=}')
 ```
 
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:12:28]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[1221488284.py:2]</span> - l2hmc.<span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">__file__</span>=<span style="color: #008000; text-decoration-color: #008000">'/lus/grand/projects/DLHMC/foremans/locations/thetaGPU/projects/saforem2/l2hmc-qcd/src/l2hmc/__init__.py'</span> </pre>
 
 
+:::
 :::
 
 
@@ -370,6 +379,7 @@ log.info('\n'.join(OVERRIDES))
 ```
 
 
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:13:50]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[503454067.py:3]</span> - <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">seed</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">76043</span>
@@ -393,6 +403,7 @@ annealing_schedule.<span style="color: #ff00ff; text-decoration-color: #ff00ff; 
 
 
 :::
+:::
 
 
 
@@ -410,6 +421,7 @@ ptExpU1 = build_experiment(
 ```
 
 
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:13:55]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[dist.py:185]</span> - Using DDP for distributed training </pre>
@@ -441,6 +453,9 @@ ptExpU1 = build_experiment(
 
 
 :::
+:::
+
+
 
 
 ```python
@@ -458,6 +473,7 @@ tfExpU1 = build_experiment(
 ```
 
 
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:14:05]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[device_compatibility_check.py:130]</span> - Mixed precision compatibility check <span style="font-weight: bold">(</span>mixed_float16<span style="font-weight: bold">)</span>: OK
@@ -469,6 +485,7 @@ Your GPU will likely run quickly with dtype policy mixed_float16 as it has compu
 
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:14:05]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[dist.py:325]</span> - Using float32 precision </pre>
 
+:::
 :::
 
 
@@ -492,12 +509,14 @@ state = ptExpU1.trainer.dynamics.random_state(beta)
 state.x.device
 ```
 
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 
     device(type='cuda', index=0)
 
 
+:::
 :::
 
 
@@ -516,8 +535,7 @@ outputs['pytorch']['train'] = ptExpU1.trainer.train(
 ![](./assets/output_21_0.svg){.stretch}
 
 
-::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[{{< iconify pixelarticons expand >}} `output`:]{.code-text}"}
-
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 <!-- ![](./assets/output_21_0.svg){.stretch} -->
@@ -614,7 +632,6 @@ outputs['pytorch']['train'] = ptExpU1.trainer.train(
 
 
 :::
-
 :::
 
 
@@ -623,8 +640,7 @@ outputs['pytorch']['train'] = ptExpU1.trainer.train(
 dset_train_pt = ptExpU1.save_dataset(job_type='train', nchains=32)
 ```
 
-::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[{{< iconify pixelarticons expand >}} `output`:]{.code-text}"}
-
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 
@@ -829,7 +845,6 @@ dset_train_pt = ptExpU1.save_dataset(job_type='train', nchains=32)
 
 
 :::
-
 :::
 
 ### Inference
@@ -848,8 +863,7 @@ dset_eval_pt = ptExpU1.save_dataset(job_type='eval', nchains=32)
 # dset_eval_pt = ptExpU1.trainer.histories['eval'].plot_all()
 ```
 
-::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[{{< iconify pixelarticons expand >}} `output`:]{.code-text}"}
-
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 
@@ -1075,7 +1089,6 @@ dset_eval_pt = ptExpU1.save_dataset(job_type='eval', nchains=32)
 
 
 :::
-
 :::
 
 #### HMC
@@ -1092,8 +1105,7 @@ dset_hmc_pt = ptExpU1.save_dataset(job_type='hmc', nchains=32)
 # dset_hmc_pt = ptExpU1.trainer.histories['hmc'].plot_all()
 ```
 
-::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[{{< iconify pixelarticons expand >}} `output`:]{.code-text}"}
-
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 
@@ -1265,7 +1277,6 @@ dset_hmc_pt = ptExpU1.save_dataset(job_type='hmc', nchains=32)
 
 
 :::
-
 :::
 
 ## TensorFlow
@@ -1286,8 +1297,7 @@ _ = tfExpU1.save_dataset(job_type='train', nchains=32)
 
 ![](./assets/output_30_2.svg){.stretch}
 
-::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[{{< iconify pixelarticons expand >}} `output`:]{.code-text}"}
-
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 
@@ -1615,7 +1625,6 @@ Lambda fuctions will be no more assumed to be used in the statement where they a
 
 
 :::
-
 :::
 
 ### Inference
@@ -1635,8 +1644,7 @@ _ = tfExpU1.save_dataset(job_type='eval', nchains=32)
 ```
 
 
-::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[{{< iconify pixelarticons expand >}} `output`:]{.code-text}"}
-
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 
@@ -1866,7 +1874,6 @@ nleapfrog = <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-st
 
 
 :::
-
 :::
 
 #### HMC
@@ -1882,8 +1889,7 @@ outputs['tensorflow']['hmc'] = tfExpU1.trainer.eval(
 _ = tfExpU1.save_dataset(job_type='hmc', nchains=32)
 ```
 
-::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[{{< iconify pixelarticons expand >}} `output`:]{.code-text}"}
-
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text .italic}"}
 ::: {.cell-output .cell-output-display}
 
 
@@ -2059,7 +2065,6 @@ nleapfrog = <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-we
 
 
 :::
-
 :::
 
 # Model Performance
@@ -2172,6 +2177,7 @@ for fw in fws:
             dsets[fw][mode] = hist.get_dataset()
 ```
 
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 
@@ -2194,6 +2200,7 @@ for fw in fws:
 
 
 
+:::
 :::
 
 
@@ -2240,6 +2247,7 @@ log.info(f'{dqpte_tot=}')
 log.info(f'{dqpth_tot=}')
 ```
 
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 
@@ -2250,6 +2258,7 @@ log.info(f'{dqpth_tot=}')
 
 
 
+:::
 :::
 
 
@@ -2291,14 +2300,12 @@ with plt.rc_context(
 ```
 
 ::: {.cell-output .cell-output-display style="text-align: center;"}
-
 ::: {#fig-dQpt}
 
 ![](./assets/output_46_0.svg)
 
 $\delta Q$ for model trained with `PyTorch` (red) vs HMC (blue).
 :::
-
 :::
 
 
@@ -2335,14 +2342,12 @@ _ = plt.legend()
 ```
 
 ::: {.cell-output .cell-output-display style="text-align: center;"}
-
 ::: {#fig-dQpt}
 
 ![](./assets/output_47_1.svg)
 
 $\delta Q$ for model trained with `TensorFlow` (red) vs HMC (blue).
 :::
-
 :::
 
 
@@ -2398,6 +2403,7 @@ _ = ax[1].set_xlabel(
 _ = ax[1].legend(loc='best', frameon=False)
 ```
 
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 
@@ -2409,6 +2415,7 @@ _ = ax[1].legend(loc='best', frameon=False)
     
 
 
+:::
 :::
 
 ## TensorFlow Results
@@ -2446,6 +2453,7 @@ log.info(f"HMC: {dqh.astype(int).sum().T.values.sum()=}")
 log.critical(f"dQ_eval / dQ_hmc: {dqeh_ratio:.4f}")
 ```
 
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 
@@ -2487,6 +2495,7 @@ Coordinates:
 
 
 :::
+:::
 
 ### PyTorch Results
 
@@ -2514,6 +2523,7 @@ _ = ax[1].set_title(f'HMC, total: {htot.values}');
 #_ = fig.suptitle(fr'PyTorch Improvement: {100*(etot / htot):3.0f}%')
 ```
 
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 
@@ -2523,6 +2533,7 @@ _ = ax[1].set_title(f'HMC, total: {htot.values}');
 
 
 
+:::
 :::
 
 ```python
@@ -2537,6 +2548,7 @@ log.info(f"HMC: {dqh.astype(int).sum().T.values.sum()=}")
 log.critical(f"dQ_eval / dQ_hmc: {dqeh_ratio:.4f}")
 ```
 
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 
@@ -2572,6 +2584,7 @@ Coordinates:
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:35:35]</span><span style="background-color: #ff0000; font-weight: bold">[CRITICAL]</span><span style="color: #777777; text-decoration-color: #777777">[2202273834.py:9]</span> - dQ_eval <span style="color: #008000; text-decoration-color: #008000">/</span> dQ_hmc: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">8.4247</span> </pre>
 
 
+:::
 :::
 
 
@@ -2641,6 +2654,7 @@ for idx in range(4):
     _ = ax1.legend(loc='best', ncol=2, labelcolor='#939393')
 ```
 
+::: {.callout-tip collapse="true" icon="false" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}"}
 ::: {.cell-output .cell-output-display}
 
 
@@ -2668,5 +2682,6 @@ for idx in range(4):
 
 
 
+:::
 :::
 

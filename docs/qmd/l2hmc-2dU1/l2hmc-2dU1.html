@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Sam Foreman ">
-<meta name="dcterms.date" content="2023-12-13">
+<meta name="dcterms.date" content="2023-12-14">
 
 <title>l2hmc-qcd - l2hmc Example: 2D U(1)</title>
 <style>
@@ -83,7 +83,6 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-contrib/academicons-1.9.2/all.css" rel="stylesheet">
 <link href="../../site_libs/quarto-contrib/academicons-1.9.2/size.css" rel="stylesheet">
 <link href="../../site_libs/quarto-contrib/bootstrap-icons-1.9.1/all.css" rel="stylesheet">
-<script src="../../site_libs/quarto-contrib/iconify-1.0.7/iconify-icon.min.js"></script>
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -144,10 +143,10 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
 <meta name="twitter:card" content="summary_large_image">
 <meta name="citation_title" content="l2hmc-qcd">
 <meta name="citation_author" content="Sam Foreman">
-<meta name="citation_publication_date" content="2023-12-13">
-<meta name="citation_cover_date" content="2023-12-13">
+<meta name="citation_publication_date" content="2023-12-14">
+<meta name="citation_cover_date" content="2023-12-14">
 <meta name="citation_year" content="2023">
-<meta name="citation_online_date" content="2023-12-13">
+<meta name="citation_online_date" content="2023-12-14">
 <meta name="citation_fulltext_html_url" content="https://saforem2.github.io/l2hmc-qcd">
 <meta name="citation_language" content="en">
 <meta name="citation_reference" content="citation_title=The climate risk &amp;amp;amp; resilience portal (ClimRR) metadata and data dictionary;,citation_author=C. Burdi;,citation_author=Wall. T Branham;,citation_publication_date=2023;,citation_cover_date=2023;,citation_year=2023;,citation_fulltext_html_url=https://dub.sh/ClimRR-Metadata;">
@@ -260,7 +259,7 @@ gtag('config', 'G-XVM2Y822Y1', { 'anonymize_ip': true});
     <div>
     <div class="quarto-title-meta-heading"></div>
     <div class="quarto-title-meta-contents">
-      <p class="date">December 13, 2023</p>
+      <p class="date">December 14, 2023</p>
     </div>
   </div>
   
@@ -297,13 +296,13 @@ S_{\beta}(n) = \beta \sum_{n}\sum_{\mu&lt;\nu}\mathrm{Re}\left[1 - U_{\mu\nu}(n)
 <section id="imports-setup" class="level2">
 <h2 class="anchored" data-anchor-id="imports-setup">Imports / Setup</h2>
 <div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">!</span> nvidia<span class="op">-</span>smi <span class="op">|</span> tail <span class="op">--</span>lines <span class="op">-</span><span class="dv">7</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[{{< iconify pixelarticons expand >}} `output`:]{.code-text}">
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
 <div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
 <i class="callout-icon no-icon"></i>
 </div>
 <div class="callout-title-container flex-fill">
-<span class="code-text"><iconify-icon inline="" icon="pixelarticons:expand"></iconify-icon> <code>output</code>:</span>
+<span class="code-text"><code>output</code>:</span>
 </div>
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
@@ -325,9 +324,24 @@ S_{\beta}(n) = \beta \sum_{n}\sum_{\mu&lt;\nu}\mathrm{Re}\left[1 - U_{\mu\nu}(n)
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>devices <span class="op">=</span> os.environ.get(<span class="st">'CUDA_VISIBLE_DEVICES'</span>, <span class="va">None</span>)</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(devices)</span>
 <span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>getconf _NPROCESSORS_ONLN  <span class="co"># get number of availble CPUs</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="code-text"><code>output</code>:</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre><code>None
 256</code></pre>
+</div>
+</div>
+</div>
 </div>
 <div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>os.environ[<span class="st">'TORCH_CPP_LOG_LEVEL'</span>] <span class="op">=</span> <span class="st">'ERROR'</span></span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>os.environ[<span class="st">'AUTOGRAPH_VERBOSITY'</span>] <span class="op">=</span> <span class="st">'10'</span></span>
@@ -343,9 +357,24 @@ S_{\beta}(n) = \beta \sum_{n}\sum_{\mu&lt;\nu}\mathrm{Re}\left[1 - U_{\mu\nu}(n)
 <span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="op">%</span>matplotlib inline</span>
 <span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> matplotlib_inline</span>
 <span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>matplotlib_inline.backend_inline.set_matplotlib_formats(<span class="st">'svg'</span>, <span class="st">'retina'</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="code-text"><code>output</code>:</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre><code>The autoreload extension is already loaded. To reload it, use:
   %reload_ext autoreload</code></pre>
+</div>
+</div>
+</div>
 </div>
 <div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os</span>
 <span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> warnings</span>
@@ -357,8 +386,23 @@ S_{\beta}(n) = \beta \sum_{n}\sum_{\mu&lt;\nu}\mathrm{Re}\left[1 - U_{\mu\nu}(n)
 <span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>os.environ[<span class="st">'CUDA_VISIBLE_DEVICES'</span>] <span class="op">=</span> <span class="st">'5'</span></span>
 <span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="op">!</span>echo $CUDA_VISIBLE_DEVICES</span>
 <span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="co"># --------------------------------------</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="code-text"><code>output</code>:</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre><code>5</code></pre>
+</div>
+</div>
+</div>
 </div>
 <div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> yaml</span>
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> logging</span>
@@ -371,6 +415,18 @@ S_{\beta}(n) = \beta \sum_{n}\sum_{\mu&lt;\nu}\mathrm{Re}\left[1 - U_{\mu\nu}(n)
 <span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>logging.config.dictConfig(logconf)</span>
 <span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>log <span class="op">=</span> logging.getLogger()</span>
 <span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>log.setLevel(<span class="st">'INFO'</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="code-text"><code>output</code>:</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre><code>--------------------------------------------------------------------------
 WARNING: There was an error initializing an OpenFabrics device.
@@ -379,6 +435,9 @@ WARNING: There was an error initializing an OpenFabrics device.
   Local device: mlx5_0
 --------------------------------------------------------------------------</code></pre>
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace">Using device: cuda </pre>
+</div>
+</div>
+</div>
 </div>
 <div class="sourceCode" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> torch</span>
 <span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> opinionated</span>
@@ -431,6 +490,18 @@ WARNING: There was an error initializing an OpenFabrics device.
 <span id="cb13-49"><a href="#cb13-49" aria-hidden="true" tabindex="-1"></a>set_plot_style()</span>
 <span id="cb13-50"><a href="#cb13-50" aria-hidden="true" tabindex="-1"></a>plt.style.use(opinionated.STYLES[<span class="st">'opinionated_min'</span>])</span>
 <span id="cb13-51"><a href="#cb13-51" aria-hidden="true" tabindex="-1"></a>sns.set_context(<span class="st">'notebook'</span>, font_scale<span class="op">=</span><span class="fl">1.25</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="code-text"><code>output</code>:</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre><code>Failed to download font: Source Sans Pro, skipping!
 Failed to download font: Titillium WebRoboto Condensed, skipping!
@@ -447,10 +518,28 @@ To enable them in other operations, rebuild TensorFlow with the appropriate comp
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:12:27]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[distributed_c10d.py:476]</span> - Rank <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0</span>: Completed store-based barrier for key:store_based_barrier_key:<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">1</span> with <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">1</span> nodes. </pre>
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:12:27]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[dist.py:240]</span> - RANK: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0</span> <span style="color: #008000; text-decoration-color: #008000">/</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0</span> </pre>
 </div>
+</div>
+</div>
+</div>
 <div class="sourceCode" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> l2hmc</span>
 <span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>log.info(<span class="ss">f'</span><span class="sc">{</span>l2hmc<span class="sc">.</span><span class="va">__file__</span><span class="op">=</span><span class="sc">}</span><span class="ss">'</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="code-text"><code>output</code>:</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:12:28]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[1221488284.py:2]</span> - l2hmc.<span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">__file__</span>=<span style="color: #008000; text-decoration-color: #008000">'/lus/grand/projects/DLHMC/foremans/locations/thetaGPU/projects/saforem2/l2hmc-qcd/src/l2hmc/__init__.py'</span> </pre>
+</div>
+</div>
+</div>
 </div>
 </section>
 <section id="initialize-and-build-experiment-objects" class="level1">
@@ -527,6 +616,18 @@ To enable them in other operations, rebuild TensorFlow with the appropriate comp
 <div class="sourceCode" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> l2hmc.configs <span class="im">import</span> dict_to_list_of_overrides</span>
 <span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>OVERRIDES <span class="op">=</span> dict_to_list_of_overrides(DEFAULTS)</span>
 <span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>log.info(<span class="st">'</span><span class="ch">\n</span><span class="st">'</span>.join(OVERRIDES))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="code-text"><code>output</code>:</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:13:50]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[503454067.py:3]</span> - <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">seed</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">76043</span>
 <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">precision</span>=<span style="color: #ff00ff; text-decoration-color: #ff00ff">fp16</span>
@@ -547,6 +648,9 @@ steps.<span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: i
 annealing_schedule.<span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">beta_init</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">4.0</span>
 annealing_schedule.<span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">beta_final</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">4.0</span> </pre>
 </div>
+</div>
+</div>
+</div>
 <div class="sourceCode" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> l2hmc.__main__ <span class="im">import</span> build_experiment</span>
 <span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Build PyTorch Experiment</span></span>
@@ -557,6 +661,18 @@ annealing_schedule.<span style="color: #ff00ff; text-decoration-color: #ff00ff; 
 <span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a>        <span class="st">'backend=DDP'</span>,</span>
 <span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a>    ]</span>
 <span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-9-contents" aria-controls="callout-9" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="code-text"><code>output</code>:</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-9" class="callout-9-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:13:55]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[dist.py:185]</span> - Using DDP for distributed training </pre>
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:13:55]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[dist.py:162]</span> - Caught MASTER_PORT:<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">5249</span> from environment! </pre>
@@ -567,6 +683,9 @@ annealing_schedule.<span style="color: #ff00ff; text-decoration-color: #ff00ff; 
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:13:56]</span><span style="color: #FD971F; text-decoration-color: #FD971F">[WARNING]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:467]</span> - Using `torch.optim.Adam` optimizer </pre>
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:13:56]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:305]</span> - num_params in model: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">598344</span> </pre>
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:13:56]</span><span style="color: #FD971F; text-decoration-color: #FD971F">[WARNING]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:271]</span> - logging with freq <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">20</span> for wandb.watch </pre>
+</div>
+</div>
+</div>
 </div>
 <div class="sourceCode" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Build TensorFlow Experiment</span></span>
 <span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> tensorflow <span class="im">as</span> tf</span>
@@ -579,11 +698,26 @@ annealing_schedule.<span style="color: #ff00ff; text-decoration-color: #ff00ff; 
 <span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a>        <span class="st">'backend=horovod'</span>,</span>
 <span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a>    ]</span>
 <span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-10-contents" aria-controls="callout-10" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="code-text"><code>output</code>:</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-10" class="callout-10-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:14:05]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[device_compatibility_check.py:130]</span> - Mixed precision compatibility check <span style="font-weight: bold">(</span>mixed_float16<span style="font-weight: bold">)</span>: OK
 Your GPU will likely run quickly with dtype policy mixed_float16 as it has compute capability of at least <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">7.0</span>. Your GPU: NVIDIA A100-SXM4-80GB, compute capability <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">8.0</span> </pre>
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:14:05]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[dist.py:323]</span> - RANK: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0</span> <span style="color: #008000; text-decoration-color: #008000">/</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0</span> </pre>
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:14:05]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[dist.py:325]</span> - Using float32 precision </pre>
+</div>
+</div>
+</div>
 </div>
 <section id="pytorch" class="level2">
 <h2 class="anchored" data-anchor-id="pytorch">PyTorch</h2>
@@ -597,8 +731,23 @@ Your GPU will likely run quickly with dtype policy mixed_float16 as it has compu
 <span id="cb22-8"><a href="#cb22-8" aria-hidden="true" tabindex="-1"></a>beta <span class="op">=</span> <span class="fl">4.0</span></span>
 <span id="cb22-9"><a href="#cb22-9" aria-hidden="true" tabindex="-1"></a>state <span class="op">=</span> ptExpU1.trainer.dynamics.random_state(beta)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="sourceCode" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>state.x.device</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-11-contents" aria-controls="callout-11" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="code-text"><code>output</code>:</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-11" class="callout-11-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre><code>device(type='cuda', index=0)</code></pre>
+</div>
+</div>
+</div>
 </div>
 <section id="training" class="level3">
 <h3 class="anchored" data-anchor-id="training">Training</h3>
@@ -609,17 +758,17 @@ Your GPU will likely run quickly with dtype policy mixed_float16 as it has compu
 <span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a>    <span class="co"># beta=[4.0, 4.25, 4.5, 4.75, 5.0],</span></span>
 <span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p><img src="./assets/output_21_0.svg" class="stretch img-fluid"></p>
-<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[{{< iconify pixelarticons expand >}} `output`:]{.code-text}">
-<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-2-contents" aria-controls="callout-2" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-12-contents" aria-controls="callout-12" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
 <i class="callout-icon no-icon"></i>
 </div>
 <div class="callout-title-container flex-fill">
-<span class="code-text"><iconify-icon inline="" icon="pixelarticons:expand"></iconify-icon> <code>output</code>:</span>
+<span class="code-text"><code>output</code>:</span>
 </div>
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
-<div id="callout-2" class="callout-2-contents callout-collapse collapse">
+<div id="callout-12" class="callout-12-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <!-- ![](./assets/output_21_0.svg){.stretch} -->
@@ -660,17 +809,17 @@ Your GPU will likely run quickly with dtype policy mixed_float16 as it has compu
 </div>
 <div class="sourceCode" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="co"># dset_train = ptExpU1.trainer.histories['train'].plot_all(num_chains=128)</span></span>
 <span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>dset_train_pt <span class="op">=</span> ptExpU1.save_dataset(job_type<span class="op">=</span><span class="st">'train'</span>, nchains<span class="op">=</span><span class="dv">32</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[{{< iconify pixelarticons expand >}} `output`:]{.code-text}">
-<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-3-contents" aria-controls="callout-3" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-13-contents" aria-controls="callout-13" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
 <i class="callout-icon no-icon"></i>
 </div>
 <div class="callout-title-container flex-fill">
-<span class="code-text"><iconify-icon inline="" icon="pixelarticons:expand"></iconify-icon> <code>output</code>:</span>
+<span class="code-text"><code>output</code>:</span>
 </div>
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
-<div id="callout-3" class="callout-3-contents callout-collapse collapse">
+<div id="callout-13" class="callout-13-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:41:01]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[plot_helpers.py:1046]</span> - Saving figure to: <span style="color: #008000; text-decoration-color: #008000">/lus/grand/projects/DLHMC/foremans/locations/thetaGPU/projects/saforem2/l2hmc-qcd/src/l2hmc/notebooks/outputs/2023-12-05-111355/pytorch/plots/ridgeplots/svgs/</span><span style="color: #800080; text-decoration-color: #800080">energy_ridgeplot.svg</span> </pre>
@@ -728,17 +877,17 @@ Your GPU will likely run quickly with dtype policy mixed_float16 as it has compu
 <span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a>)</span>
 <span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a>dset_eval_pt <span class="op">=</span> ptExpU1.save_dataset(job_type<span class="op">=</span><span class="st">'eval'</span>, nchains<span class="op">=</span><span class="dv">32</span>)</span>
 <span id="cb27-8"><a href="#cb27-8" aria-hidden="true" tabindex="-1"></a><span class="co"># dset_eval_pt = ptExpU1.trainer.histories['eval'].plot_all()</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[{{< iconify pixelarticons expand >}} `output`:]{.code-text}">
-<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-4-contents" aria-controls="callout-4" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-14-contents" aria-controls="callout-14" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
 <i class="callout-icon no-icon"></i>
 </div>
 <div class="callout-title-container flex-fill">
-<span class="code-text"><iconify-icon inline="" icon="pixelarticons:expand"></iconify-icon> <code>output</code>:</span>
+<span class="code-text"><code>output</code>:</span>
 </div>
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
-<div id="callout-4" class="callout-4-contents callout-collapse collapse">
+<div id="callout-14" class="callout-14-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:42:03]</span><span style="color: #FD971F; text-decoration-color: #FD971F">[WARNING]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:467]</span> - x.shape <span style="font-weight: bold">(</span>original<span style="font-weight: bold">)</span>: <span style="color: #800080; text-decoration-color: #800080; font-weight: bold">torch.Size</span><span style="font-weight: bold">([</span><span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">2048</span>, <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">2</span>, <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">16</span>, <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">16</span><span style="font-weight: bold">])</span> </pre>
@@ -807,17 +956,17 @@ Your GPU will likely run quickly with dtype policy mixed_float16 as it has compu
 <span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a>)</span>
 <span id="cb28-7"><a href="#cb28-7" aria-hidden="true" tabindex="-1"></a>dset_hmc_pt <span class="op">=</span> ptExpU1.save_dataset(job_type<span class="op">=</span><span class="st">'hmc'</span>, nchains<span class="op">=</span><span class="dv">32</span>)</span>
 <span id="cb28-8"><a href="#cb28-8" aria-hidden="true" tabindex="-1"></a><span class="co"># dset_hmc_pt = ptExpU1.trainer.histories['hmc'].plot_all()</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[{{< iconify pixelarticons expand >}} `output`:]{.code-text}">
-<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-5-contents" aria-controls="callout-5" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-15-contents" aria-controls="callout-15" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
 <i class="callout-icon no-icon"></i>
 </div>
 <div class="callout-title-container flex-fill">
-<span class="code-text"><iconify-icon inline="" icon="pixelarticons:expand"></iconify-icon> <code>output</code>:</span>
+<span class="code-text"><code>output</code>:</span>
 </div>
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
-<div id="callout-5" class="callout-5-contents callout-collapse collapse">
+<div id="callout-15" class="callout-15-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:49:07]</span><span style="color: #FD971F; text-decoration-color: #FD971F">[WARNING]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:467]</span> - Step size `eps` not specified for HMC! Using default: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.2500</span> for generic HMC </pre>
@@ -881,17 +1030,17 @@ Your GPU will likely run quickly with dtype policy mixed_float16 as it has compu
 <span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a><span class="co"># dset_train_tf = tfExpU1.trainer.histories['train'].plot_all()</span></span>
 <span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a>_ <span class="op">=</span> tfExpU1.save_dataset(job_type<span class="op">=</span><span class="st">'train'</span>, nchains<span class="op">=</span><span class="dv">32</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <p><img src="./assets/output_30_2.svg" class="stretch img-fluid"></p>
-<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[{{< iconify pixelarticons expand >}} `output`:]{.code-text}">
-<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-6-contents" aria-controls="callout-6" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-16-contents" aria-controls="callout-16" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
 <i class="callout-icon no-icon"></i>
 </div>
 <div class="callout-title-container flex-fill">
-<span class="code-text"><iconify-icon inline="" icon="pixelarticons:expand"></iconify-icon> <code>output</code>:</span>
+<span class="code-text"><code>output</code>:</span>
 </div>
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
-<div id="callout-6" class="callout-6-contents callout-collapse collapse">
+<div id="callout-16" class="callout-16-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 11:52:30]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:198]</span> - Looking for checkpoints in: <span style="color: #008000; text-decoration-color: #008000">/lus/grand/projects/DLHMC/foremans/locations/thetaGPU/projects/saforem2/l2hmc-qcd/src/l2hmc/checkpoints/U1/2-16-16/nlf-4/xsplit-True/sepnets-True/merge-True/net-16-16-16-16_dp-0.2_bn-True/</span><span style="color: #800080; text-decoration-color: #800080">tensorflow</span> </pre>
@@ -989,17 +1138,17 @@ Lambda fuctions will be no more assumed to be used in the statement where they a
 <span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a>)</span>
 <span id="cb31-7"><a href="#cb31-7" aria-hidden="true" tabindex="-1"></a><span class="co"># dset_eval_tf = tfExpU1.trainer.histories['eval'].plot_all()</span></span>
 <span id="cb31-8"><a href="#cb31-8" aria-hidden="true" tabindex="-1"></a>_ <span class="op">=</span> tfExpU1.save_dataset(job_type<span class="op">=</span><span class="st">'eval'</span>, nchains<span class="op">=</span><span class="dv">32</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[{{< iconify pixelarticons expand >}} `output`:]{.code-text}">
-<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-7-contents" aria-controls="callout-7" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-17-contents" aria-controls="callout-17" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
 <i class="callout-icon no-icon"></i>
 </div>
 <div class="callout-title-container flex-fill">
-<span class="code-text"><iconify-icon inline="" icon="pixelarticons:expand"></iconify-icon> <code>output</code>:</span>
+<span class="code-text"><code>output</code>:</span>
 </div>
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
-<div id="callout-7" class="callout-7-contents callout-collapse collapse">
+<div id="callout-17" class="callout-17-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:05:41]</span><span style="color: #FD971F; text-decoration-color: #FD971F">[WARNING]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:194]</span> - x.shape <span style="font-weight: bold">(</span>original<span style="font-weight: bold">)</span>: <span style="font-weight: bold">(</span><span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">2048</span>, <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">2</span>, <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">16</span>, <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">16</span><span style="font-weight: bold">)</span> </pre>
@@ -1068,17 +1217,17 @@ nleapfrog = <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-st
 <span id="cb33-5"><a href="#cb33-5" aria-hidden="true" tabindex="-1"></a>    eval_steps<span class="op">=</span><span class="dv">2000</span>,</span>
 <span id="cb33-6"><a href="#cb33-6" aria-hidden="true" tabindex="-1"></a>)</span>
 <span id="cb33-7"><a href="#cb33-7" aria-hidden="true" tabindex="-1"></a>_ <span class="op">=</span> tfExpU1.save_dataset(job_type<span class="op">=</span><span class="st">'hmc'</span>, nchains<span class="op">=</span><span class="dv">32</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[{{< iconify pixelarticons expand >}} `output`:]{.code-text}">
-<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-8-contents" aria-controls="callout-8" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text .italic}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-18-contents" aria-controls="callout-18" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
 <i class="callout-icon no-icon"></i>
 </div>
 <div class="callout-title-container flex-fill">
-<span class="code-text"><iconify-icon inline="" icon="pixelarticons:expand"></iconify-icon> <code>output</code>:</span>
+<span class="code-text italic"><code>output</code>:</span>
 </div>
 <div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
 </div>
-<div id="callout-8" class="callout-8-contents callout-collapse collapse">
+<div id="callout-18" class="callout-18-contents callout-collapse collapse">
 <div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:10:19]</span><span style="color: #FD971F; text-decoration-color: #FD971F">[WARNING]</span><span style="color: #777777; text-decoration-color: #777777">[trainer.py:194]</span> - Step size `eps` not specified for HMC! Using default: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">0.2500</span> for generic HMC </pre>
@@ -1211,6 +1360,18 @@ nleapfrog = <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-we
 <span id="cb37-14"><a href="#cb37-14" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> hist <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span>:</span>
 <span id="cb37-15"><a href="#cb37-15" aria-hidden="true" tabindex="-1"></a>            log.info(<span class="ss">f'Getting dataset for </span><span class="sc">{</span>fw<span class="sc">}</span><span class="ss">: </span><span class="sc">{</span>mode<span class="sc">}</span><span class="ss">'</span>)</span>
 <span id="cb37-16"><a href="#cb37-16" aria-hidden="true" tabindex="-1"></a>            dsets[fw][mode] <span class="op">=</span> hist.get_dataset()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-19-contents" aria-controls="callout-19" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="code-text"><code>output</code>:</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-19" class="callout-19-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:16:33]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[2324717418.py:15]</span> - Getting dataset for pt: train </pre>
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:16:33]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[2324717418.py:15]</span> - Getting dataset for pt: eval </pre>
@@ -1218,6 +1379,9 @@ nleapfrog = <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-we
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:16:33]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[2324717418.py:15]</span> - Getting dataset for tf: train </pre>
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:16:33]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[2324717418.py:15]</span> - Getting dataset for tf: eval </pre>
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:16:33]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[2324717418.py:15]</span> - Getting dataset for tf: hmc </pre>
+</div>
+</div>
+</div>
 </div>
 <div class="sourceCode" id="cb38"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a>dset_eval_pt <span class="op">=</span> ptExpU1.trainer.histories[<span class="st">'eval'</span>].get_dataset()</span>
 <span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a>dset_hmc_pt <span class="op">=</span> ptExpU1.trainer.histories[<span class="st">'hmc'</span>].get_dataset()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
@@ -1243,9 +1407,24 @@ nleapfrog = <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-we
 <span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a>dqpth_tot <span class="op">=</span> dqpth.<span class="bu">sum</span>().values.item()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="sourceCode" id="cb42"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a>log.info(<span class="ss">f'</span><span class="sc">{</span>dqpte_tot<span class="op">=</span><span class="sc">}</span><span class="ss">'</span>)</span>
 <span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a>log.info(<span class="ss">f'</span><span class="sc">{</span>dqpth_tot<span class="op">=</span><span class="sc">}</span><span class="ss">'</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-20-contents" aria-controls="callout-20" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="code-text"><code>output</code>:</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-20" class="callout-20-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:16:34]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[853527999.py:1]</span> - <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">dqpte_tot</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">1261</span> </pre>
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:16:34]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[853527999.py:2]</span> - <span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">dqpth_tot</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">170</span> </pre>
+</div>
+</div>
+</div>
 </div>
 <div class="sourceCode" id="cb43"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> plt.rc_context(</span>
 <span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a>    {</span>
@@ -1375,9 +1554,24 @@ nleapfrog = <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-we
 <span id="cb45-47"><a href="#cb45-47" aria-hidden="true" tabindex="-1"></a>    <span class="co">#f'# tunneling events / {dqpte.shape[-1]} configurations'</span></span>
 <span id="cb45-48"><a href="#cb45-48" aria-hidden="true" tabindex="-1"></a>)</span>
 <span id="cb45-49"><a href="#cb45-49" aria-hidden="true" tabindex="-1"></a>_ <span class="op">=</span> ax[<span class="dv">1</span>].legend(loc<span class="op">=</span><span class="st">'best'</span>, frameon<span class="op">=</span><span class="va">False</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-21-contents" aria-controls="callout-21" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="code-text"><code>output</code>:</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-21" class="callout-21-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:32:51]</span><span style="color: #FD971F; text-decoration-color: #FD971F">[WARNING]</span><span style="color: #777777; text-decoration-color: #777777">[legend.py:1363]</span> - No artists with labels found to put in legend.  Note that artists whose label start with an underscore are ignored when <span style="color: #800080; text-decoration-color: #800080; font-weight: bold">legend</span><span style="font-weight: bold">()</span> is called with no argument. </pre>
 <p><img src="./assets/output_48_1.svg" class="stretch img-fluid"></p>
+</div>
+</div>
+</div>
 </div>
 <section id="tensorflow-results" class="level2">
 <h2 class="anchored" data-anchor-id="tensorflow-results">TensorFlow Results</h2>
@@ -1410,6 +1604,18 @@ nleapfrog = <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-we
 <span id="cb46-27"><a href="#cb46-27" aria-hidden="true" tabindex="-1"></a>log.info(<span class="ss">f"TensorFlow, HMC</span><span class="ch">\n</span><span class="ss"> </span><span class="sc">{</span>dqh<span class="sc">.</span>astype(<span class="bu">int</span>)<span class="sc">.</span><span class="bu">sum</span>(<span class="st">'chain'</span>)<span class="sc">.</span>T<span class="op">=</span><span class="sc">}</span><span class="ss">"</span>)</span>
 <span id="cb46-28"><a href="#cb46-28" aria-hidden="true" tabindex="-1"></a>log.info(<span class="ss">f"HMC: </span><span class="sc">{</span>dqh<span class="sc">.</span>astype(<span class="bu">int</span>)<span class="sc">.</span><span class="bu">sum</span>()<span class="sc">.</span>T<span class="sc">.</span>values<span class="sc">.</span><span class="bu">sum</span>()<span class="op">=</span><span class="sc">}</span><span class="ss">"</span>)</span>
 <span id="cb46-29"><a href="#cb46-29" aria-hidden="true" tabindex="-1"></a>log.critical(<span class="ss">f"dQ_eval / dQ_hmc: </span><span class="sc">{</span>dqeh_ratio<span class="sc">:.4f}</span><span class="ss">"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-22-contents" aria-controls="callout-22" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="code-text"><code>output</code>:</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-22" class="callout-22-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:33:43]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[3549449091.py:25]</span> - TensorFlow, EVAL
  <span style="color: #800080; text-decoration-color: #800080; font-weight: bold">dqe.astype</span><span style="font-weight: bold">(</span>int<span style="font-weight: bold">)</span><span style="color: #800080; text-decoration-color: #800080; font-weight: bold">.sum</span><span style="font-weight: bold">(</span><span style="color: #008000; text-decoration-color: #008000">'chain'</span><span style="font-weight: bold">)</span>.<span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">T</span>=<span style="font-weight: bold">&lt;</span><span style="color: #ff00ff; text-decoration-color: #ff00ff; font-weight: bold">xarray.DataArray</span><span style="color: #000000; text-decoration-color: #000000"> </span><span style="color: #008000; text-decoration-color: #008000">'dQint'</span><span style="color: #000000; text-decoration-color: #000000"> </span><span style="color: #000000; text-decoration-color: #000000; font-weight: bold">(</span><span style="color: #000000; text-decoration-color: #000000">draw: </span><span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">90</span><span style="color: #000000; text-decoration-color: #000000; font-weight: bold">)</span><span style="font-weight: bold">&gt;</span>
@@ -1435,6 +1641,9 @@ Coordinates:
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:33:43]</span><span style="background-color: #ff0000; font-weight: bold">[CRITICAL]</span><span style="color: #777777; text-decoration-color: #777777">[3549449091.py:29]</span> - dQ_eval <span style="color: #008000; text-decoration-color: #008000">/</span> dQ_hmc: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">7.2375</span> </pre>
 <p><img src="./assets/output_50_5.svg" class="stretch img-fluid"></p>
 </div>
+</div>
+</div>
+</div>
 <section id="pytorch-results" class="level3">
 <h3 class="anchored" data-anchor-id="pytorch-results">PyTorch Results</h3>
 <div class="sourceCode" id="cb47"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a>sns.set_context(<span class="st">'notebook'</span>, font_scale<span class="op">=</span><span class="fl">1.25</span>)</span>
@@ -1457,8 +1666,23 @@ Coordinates:
 <span id="cb47-18"><a href="#cb47-18" aria-hidden="true" tabindex="-1"></a>_ <span class="op">=</span> ax[<span class="dv">0</span>].set_title(<span class="ss">f'Eval, total: </span><span class="sc">{</span>etot<span class="sc">.</span>values<span class="sc">}</span><span class="ss">'</span>)<span class="op">;</span></span>
 <span id="cb47-19"><a href="#cb47-19" aria-hidden="true" tabindex="-1"></a>_ <span class="op">=</span> ax[<span class="dv">1</span>].set_title(<span class="ss">f'HMC, total: </span><span class="sc">{</span>htot<span class="sc">.</span>values<span class="sc">}</span><span class="ss">'</span>)<span class="op">;</span></span>
 <span id="cb47-20"><a href="#cb47-20" aria-hidden="true" tabindex="-1"></a><span class="co">#_ = fig.suptitle(fr'PyTorch Improvement: {100*(etot / htot):3.0f}%')</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-23-contents" aria-controls="callout-23" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="code-text"><code>output</code>:</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-23" class="callout-23-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <p><img src="./assets/output_52_0.svg" class="stretch img-fluid"></p>
+</div>
+</div>
+</div>
 </div>
 <div class="sourceCode" id="cb48"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a>dqe_tot <span class="op">=</span> dqe.astype(<span class="bu">int</span>).<span class="bu">sum</span>().T.values.<span class="bu">sum</span>()</span>
 <span id="cb48-2"><a href="#cb48-2" aria-hidden="true" tabindex="-1"></a>dqh_tot <span class="op">=</span> dqh.astype(<span class="bu">int</span>).<span class="bu">sum</span>().T.values.<span class="bu">sum</span>()</span>
@@ -1469,6 +1693,18 @@ Coordinates:
 <span id="cb48-7"><a href="#cb48-7" aria-hidden="true" tabindex="-1"></a>log.info(<span class="ss">f"TensorFlow, HMC</span><span class="ch">\n</span><span class="ss"> </span><span class="sc">{</span>dqh<span class="sc">.</span>astype(<span class="bu">int</span>)<span class="sc">.</span><span class="bu">sum</span>(<span class="st">'chain'</span>)<span class="sc">.</span>T<span class="op">=</span><span class="sc">}</span><span class="ss">"</span>)</span>
 <span id="cb48-8"><a href="#cb48-8" aria-hidden="true" tabindex="-1"></a>log.info(<span class="ss">f"HMC: </span><span class="sc">{</span>dqh<span class="sc">.</span>astype(<span class="bu">int</span>)<span class="sc">.</span><span class="bu">sum</span>()<span class="sc">.</span>T<span class="sc">.</span>values<span class="sc">.</span><span class="bu">sum</span>()<span class="op">=</span><span class="sc">}</span><span class="ss">"</span>)</span>
 <span id="cb48-9"><a href="#cb48-9" aria-hidden="true" tabindex="-1"></a>log.critical(<span class="ss">f"dQ_eval / dQ_hmc: </span><span class="sc">{</span>dqeh_ratio<span class="sc">:.4f}</span><span class="ss">"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-24-contents" aria-controls="callout-24" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="code-text"><code>output</code>:</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-24" class="callout-24-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:35:35]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[2202273834.py:5]</span> - PyTorch, EVAL
  <span style="color: #800080; text-decoration-color: #800080; font-weight: bold">dqe.astype</span><span style="font-weight: bold">(</span>int<span style="font-weight: bold">)</span><span style="color: #800080; text-decoration-color: #800080; font-weight: bold">.sum</span><span style="font-weight: bold">(</span><span style="color: #008000; text-decoration-color: #008000">'chain'</span><span style="font-weight: bold">)</span>.<span style="color: #ff00ff; text-decoration-color: #ff00ff; font-style: italic">T</span>=<span style="font-weight: bold">&lt;</span><span style="color: #ff00ff; text-decoration-color: #ff00ff; font-weight: bold">xarray.DataArray</span><span style="color: #000000; text-decoration-color: #000000"> </span><span style="color: #008000; text-decoration-color: #008000">'dQint'</span><span style="color: #000000; text-decoration-color: #000000"> </span><span style="color: #000000; text-decoration-color: #000000; font-weight: bold">(</span><span style="color: #000000; text-decoration-color: #000000">draw: </span><span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">90</span><span style="color: #000000; text-decoration-color: #000000; font-weight: bold">)</span><span style="font-weight: bold">&gt;</span>
@@ -1492,6 +1728,9 @@ Coordinates:
   * draw     <span style="font-weight: bold">(</span>draw<span style="font-weight: bold">)</span> int64 <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">110</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">111</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">112</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">113</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">114</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">115</span> <span style="color: #FD971F; text-decoration-color: #FD971F">...</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">194</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">195</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">196</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">197</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">198</span> <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">199</span> </pre>
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:35:35]</span><span style="color: #2196F3; text-decoration-color: #2196F3">[INFO]</span><span style="color: #777777; text-decoration-color: #777777">[2202273834.py:8]</span> - HMC: <span style="color: #800080; text-decoration-color: #800080; font-weight: bold">dqh.astype</span><span style="font-weight: bold">(</span>int<span style="font-weight: bold">)</span><span style="color: #800080; text-decoration-color: #800080; font-weight: bold">.sum</span><span style="font-weight: bold">()</span><span style="color: #800080; text-decoration-color: #800080; font-weight: bold">.T.values.sum</span><span style="font-weight: bold">()</span>=<span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">73</span> </pre>
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:monospace"><span style="color: #838383; text-decoration-color: #838383">[2023-12-05 12:35:35]</span><span style="background-color: #ff0000; font-weight: bold">[CRITICAL]</span><span style="color: #777777; text-decoration-color: #777777">[2202273834.py:9]</span> - dQ_eval <span style="color: #008000; text-decoration-color: #008000">/</span> dQ_hmc: <span style="color: #1A8FFF; text-decoration-color: #1A8FFF; font-weight: bold">8.4247</span> </pre>
+</div>
+</div>
+</div>
 </div>
 </section>
 </section>
@@ -1557,11 +1796,26 @@ Coordinates:
 <span id="cb49-58"><a href="#cb49-58" aria-hidden="true" tabindex="-1"></a>                     )</span>
 <span id="cb49-59"><a href="#cb49-59" aria-hidden="true" tabindex="-1"></a>    _ <span class="op">=</span> ax.legend(loc<span class="op">=</span><span class="st">'best'</span>, ncol<span class="op">=</span><span class="dv">2</span>, labelcolor<span class="op">=</span><span class="st">'#939393'</span>)</span>
 <span id="cb49-60"><a href="#cb49-60" aria-hidden="true" tabindex="-1"></a>    _ <span class="op">=</span> ax1.legend(loc<span class="op">=</span><span class="st">'best'</span>, ncol<span class="op">=</span><span class="dv">2</span>, labelcolor<span class="op">=</span><span class="st">'#939393'</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="callout callout-style-simple callout-tip no-icon callout-titled" style="width:100%; background-color: var(--bg-transparent)!important; border-color: var(--collapsed-border-color)!important;" title="[`output`:]{.code-text}">
+<div class="callout-header d-flex align-content-center" data-bs-toggle="collapse" data-bs-target=".callout-25-contents" aria-controls="callout-25" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="code-text"><code>output</code>:</span>
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-25" class="callout-25-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
 <div class="cell-output cell-output-display">
 <p><img src="./assets/output_55_0.svg" class="stretch img-fluid"></p>
 <p><img src="./assets/output_55_1.svg" class="stretch img-fluid"></p>
 <p><img src="./assets/output_55_2.svg" class="stretch img-fluid"></p>
 <p><img src="./assets/output_55_3.svg" class="stretch img-fluid"></p>
+</div>
+</div>
+</div>
 </div>
 
 
@@ -1571,12 +1825,12 @@ Coordinates:
 <div id="quarto-appendix" class="default"><section class="quarto-appendix-contents"><h2 class="anchored quarto-appendix-heading">Citation</h2><div><div class="quarto-appendix-secondary-label">BibTeX citation:</div><pre class="sourceCode code-with-copy quarto-appendix-bibtex"><code class="sourceCode bibtex">@online{foreman2023,
   author = {Foreman, Sam},
   title = {L2hmc-Qcd},
-  date = {2023-12-13},
+  date = {2023-12-14},
   url = {https://saforem2.github.io/l2hmc-qcd},
   langid = {en}
 }
 </code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre><div class="quarto-appendix-secondary-label">For attribution, please cite this work as:</div><div id="ref-foreman2023" class="csl-entry quarto-appendix-citeas" role="listitem">
-Foreman, Sam. 2023. <span>“L2hmc-Qcd.”</span> December 13, 2023. <a href="https://saforem2.github.io/l2hmc-qcd">https://saforem2.github.io/l2hmc-qcd</a>.
+Foreman, Sam. 2023. <span>“L2hmc-Qcd.”</span> December 14, 2023. <a href="https://saforem2.github.io/l2hmc-qcd">https://saforem2.github.io/l2hmc-qcd</a>.
 </div></div></section></div></main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
 window.document.addEventListener("DOMContentLoaded", function (event) {
